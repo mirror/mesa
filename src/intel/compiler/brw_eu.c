@@ -228,6 +228,18 @@ void brw_set_default_swsb(struct brw_codegen *p, struct tgl_swsb value)
    p->current->swsb = value;
 }
 
+void brw_gfx12hp_swsb_stall(struct brw_codegen *p, bool stall_next)
+{
+   if (p->devinfo->verx10 < 125)
+      return;
+
+   if (!stall_next || brw_get_default_swsb(p).mode != TGL_SBID_NULL)
+      brw_SYNC(p, TGL_SYNC_NOP);
+
+   if (stall_next)
+      brw_set_default_swsb(p, tgl_swsb_regdist(1));
+}
+
 void brw_push_insn_state( struct brw_codegen *p )
 {
    assert(p->current != &p->stack[BRW_EU_MAX_INSN_STACK-1]);

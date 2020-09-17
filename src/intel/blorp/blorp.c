@@ -314,8 +314,27 @@ blorp_hiz_op(struct blorp_batch *batch, struct blorp_surf *surf,
                            params.depth.view.base_level);
       params.y1 = u_minify(params.depth.surf.logical_level0_px.height,
                            params.depth.view.base_level);
-      params.x1 = ALIGN(params.x1, 8);
-      params.y1 = ALIGN(params.y1, 4);
+
+      /* From Bspec 3DSTATE_WM_HZ_OP_BODY -> Clear Rectangle Y Max and Clear
+       * Rectangle X Max field :
+       *
+       *    The final X and Y Max values, after LOD adjustment described above,
+       *    have to be manually 8x4 or 8x8 aligned for Depth and HZ Resolve
+       *    passes only.
+       *
+       *    For multisample set to 1X together with Z format set to 16bpp, need
+       *    to aligned to 8x8 and for rest of the cases it should be aligned to
+       *    8x4 pixels.
+       */
+      if (batch->blorp->isl_dev->info->gen >= 12 &&
+          surf->surf->format == ISL_FORMAT_R16_UNORM &&
+          params.depth.surf.samples == 1) {
+         params.x1 = ALIGN(params.x1, 8);
+         params.y1 = ALIGN(params.y1, 8);
+      } else {
+         params.x1 = ALIGN(params.x1, 8);
+         params.y1 = ALIGN(params.y1, 4);
+      }
 
       if (params.depth.view.base_level == 0) {
          /* TODO: What about MSAA? */

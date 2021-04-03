@@ -36,6 +36,10 @@ extern "C" {
 #define anv_drv_const_size(field) \
    (sizeof(((struct anv_push_constants *)0)->field))
 
+bool
+anv_nir_lower_conservative_rasterization(nir_shader *nir,
+                                         const struct brw_wm_prog_key *key);
+
 #define anv_load_driver_uniform(b, components, field)                   \
    nir_load_push_constant(b, components,                                \
                           anv_drv_const_size(field) * 8,                \

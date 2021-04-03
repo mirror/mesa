@@ -380,7 +380,12 @@ struct brw_wm_prog_key {
    bool coarse_pixel:1;
    bool null_push_constant_tbimr_workaround:1;
 
-   uint64_t padding:35;
+   /* 0: None, 1: over-estimate, 2: under-estimate */
+   unsigned vk_conservative:2;
+   /* Used to implement Wa_220856683 */
+   unsigned conservative_sample_mask:16;
+
+   uint64_t padding:16;
 };
 
 struct brw_cs_prog_key {

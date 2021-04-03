@@ -475,6 +475,7 @@ populate_wm_prog_key(struct anv_pipeline_stage *stage,
                      const struct vk_multisample_state *ms,
                      const struct vk_fragment_shading_rate_state *fsr,
                      const struct vk_render_pass_state *rp,
+                     const struct vk_rasterization_state *rs,
                      const enum intel_sometimes is_mesh)
 {
    const struct anv_device *device = pipeline->base.device;
@@ -558,6 +559,17 @@ populate_wm_prog_key(struct anv_pipeline_stage *stage,
 
   key->null_push_constant_tbimr_workaround =
      device->info->needs_null_push_constant_tbimr_workaround;
+
+   /* Key values were carefully chose to match Vulkan */
+   key->vk_conservative =
+      BITSET_TEST(dynamic, MESA_VK_DYNAMIC_RS_CONSERVATIVE_MODE) ?
+         VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT :
+         rs ? rs->conservative_mode :
+            VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT;
+   const unsigned samples = ms ? ms->rasterization_samples : 1;
+   key->conservative_sample_mask = BITFIELD_MASK(samples);
+   if (ms && ms->sample_mask)
+      key->conservative_sample_mask &= ms->sample_mask;
 }
 
 static void
@@ -1485,6 +1497,9 @@ anv_pipeline_compile_fs(const struct brw_compiler *compiler,
                         bool use_primitive_replication,
                         char **error_str)
 {
+   NIR_PASS_V(fs_stage->nir, anv_nir_lower_conservative_rasterization,
+              &fs_stage->key.wm);
+
    /* When using Primitive Replication for multiview, each view gets its own
     * position slot.
     */
@@ -1766,7 +1781,7 @@ anv_graphics_pipeline_init_keys(struct anv_graphics_base_pipeline *pipeline,
                               pipeline,
                               state->dynamic,
                               raster_enabled ? state->ms : NULL,
-                              state->fsr, state->rp, is_mesh);
+                              state->fsr, state->rp, state->rs, is_mesh);
          break;
       }
 

@@ -1657,11 +1657,12 @@ emit_3dstate_ps_extra(struct anv_graphics_pipeline *pipeline,
 #endif
 
       ps.InputCoverageMaskState = ICMS_NONE;
-      assert(!wm_prog_data->inner_coverage); /* Not available in SPIR-V */
       if (!wm_prog_data->uses_sample_mask)
          ps.InputCoverageMaskState = ICMS_NONE;
       else if (brw_wm_prog_data_is_coarse(wm_prog_data, 0))
          ps.InputCoverageMaskState  = ICMS_NORMAL;
+      else if (wm_prog_data->inner_coverage)
+         ps.InputCoverageMaskState = ICMS_INNER_CONSERVATIVE;
       else if (wm_prog_data->post_depth_coverage)
          ps.InputCoverageMaskState = ICMS_DEPTH_COVERAGE;
       else

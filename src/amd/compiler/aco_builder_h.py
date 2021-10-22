@@ -474,6 +474,9 @@ public:
       if (!post_ra && (!b.op.hasRegClass() || b.op.regClass().type() == RegType::sgpr))
          b = copy(def(v1), b);
 
+      /* create a carry-out definition to CSE with uadd_carry */
+      carry_out |= !post_ra;
+
       if (!carry_in.op.isUndefined())
          return vop2(aco_opcode::v_addc_co_u32, Definition(dst), def(lm), a, b, carry_in);
       else if (program->gfx_level >= GFX10 && carry_out)

@@ -2061,8 +2061,11 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    }
 
    /* Don't remove label_extract if we can't apply the extract to
-    * neg/abs instructions because we'll likely combine it into another valu. */
-   if (!(ctx.info[instr->definitions[0].tempId()].label & (label_neg | label_abs)))
+    * neg/abs instructions because we'll likely combine it into another valu. VOP3 additions
+    * might be turned into VOP2.
+    */
+   if (!(ctx.info[instr->definitions[0].tempId()].label &
+         (label_neg | label_abs | (ctx.program->gfx_level >= GFX9 ? label_add_sub : 0))))
       check_sdwa_extract(ctx, instr);
 }
 
@@ -3714,6 +3717,26 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
       return;
 
    if (instr->isVALU() || instr->isSALU()) {
+      /* shrink addition instructions */
+      if (ctx.program->gfx_level >= GFX9 &&
+          (instr->opcode == aco_opcode::v_add_co_u32_e64 ||
+           instr->opcode == aco_opcode::v_add_co_u32) &&
+          ctx.uses[instr->definitions[1].tempId()] == 0) {
+         if (instr->opcode == aco_opcode::v_add_co_u32_e64)
+            instr->format = asVOP3(Format::VOP2);
+         instr->opcode = aco_opcode::v_add_u32;
+         instr->definitions.pop_back();
+
+         if (instr->usesModifiers()) {
+            /* leave the format alone */
+         } else if (instr->operands[1].isOfType(RegType::vgpr)) {
+            instr->format = Format::VOP2;
+         } else if (instr->operands[0].isOfType(RegType::vgpr)) {
+            std::swap(instr->operands[0], instr->operands[1]);
+            instr->format = Format::VOP2;
+         }
+      }
+
       /* Apply SDWA. Do this after label_instruction() so it can remove
        * label_extract if not all instructions can take SDWA. */
       for (unsigned i = 0; i < instr->operands.size(); i++) {

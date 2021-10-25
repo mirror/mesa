@@ -784,8 +784,6 @@ spec@arb_gpu_shader5@execution@built-in-functions@fs-interpolateatsample-block-a
 spec@arb_multi_draw_indirect@arb_draw_elements_base_vertex-multidrawelements -indirect,Fail
 spec@arb_multi_draw_indirect@gl-3.0-multidrawarrays-vertexid -indirect,Fail
 
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
 spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceiv,Fail
 spec@arb_program_interface_query@arb_program_interface_query-resource-query,Fail
 spec@arb_program_interface_query@arb_program_interface_query-resource-query@GL_BUFFER_VARIABLE,Fail

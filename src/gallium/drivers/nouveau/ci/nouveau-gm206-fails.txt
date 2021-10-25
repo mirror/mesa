@@ -146,8 +146,6 @@ spec@arb_multi_draw_indirect@arb_draw_elements_base_vertex-multidrawelements -in
 spec@arb_multi_draw_indirect@gl-3.0-multidrawarrays-vertexid -indirect,Crash
 spec@arb_occlusion_query@occlusion_query_meta_no_fragments,Fail
 spec@arb_pixel_buffer_object@pbo-getteximage,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
 
 spec@arb_query_buffer_object@coherency,Fail
 spec@arb_query_buffer_object@coherency@index-buffer-GL_COMPUTE_SHADER_INVOCATIONS,Fail

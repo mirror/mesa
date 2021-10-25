@@ -1005,9 +1005,6 @@ spec@arb_framebuffer_no_attachments@arb_framebuffer_no_attachments-atomic@MS4,Fa
 spec@arb_get_program_binary@restore-sso-program,Fail
 spec@arb_occlusion_query@occlusion_query_meta_no_fragments,Fail
 
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
-
 spec@arb_provoking_vertex@arb-provoking-vertex-clipped-geometry-flatshading,Fail
 spec@arb_provoking_vertex@arb-provoking-vertex-render,Fail
 

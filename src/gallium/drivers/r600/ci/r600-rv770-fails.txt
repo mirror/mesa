@@ -665,9 +665,6 @@ spec@arb_pipeline_statistics_query@arb_pipeline_statistics_query-vert,Fail
 
 spec@arb_pixel_buffer_object@texsubimage-unpack pbo,Fail
 
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
-
 spec@arb_sample_shading@builtin-gl-sample-mask 2,Fail
 spec@arb_sample_shading@builtin-gl-sample-mask 4,Fail
 spec@arb_sample_shading@builtin-gl-sample-mask 6,Fail

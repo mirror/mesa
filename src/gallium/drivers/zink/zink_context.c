@@ -231,6 +231,11 @@ zink_context_destroy(struct pipe_context *pctx)
    hash_table_foreach(&ctx->framebuffer_cache, he)
       zink_destroy_framebuffer(screen, he->data);
 
+   if (ctx->cs_clear_render_target)
+      pctx->delete_compute_state(pctx, ctx->cs_clear_render_target);
+   if (ctx->cs_clear_render_target_1d_array)
+      pctx->delete_compute_state(pctx, ctx->cs_clear_render_target_1d_array);
+
    hash_table_foreach(ctx->render_pass_cache, he)
       zink_destroy_render_pass(screen, he->data);
 
@@ -5751,4 +5756,19 @@ zink_cmd_debug_marker_end(struct zink_context *ctx, VkCommandBuffer cmdbuf, bool
 {
    if (emitted)
       VKCTX(CmdEndDebugUtilsLabelEXT)(cmdbuf);
+}
+
+void
+zink_compute_internal(struct zink_context *ctx, struct pipe_grid_info *info, void *shader, bool render_condition)
+{
+   /* Dispatch compute. */
+   void *saved_cs = ctx->curr_compute;
+   if (!render_condition && ctx->render_condition_active)
+      zink_stop_conditional_render(ctx);
+   ctx->base.bind_compute_state(&ctx->base, shader);
+   ctx->base.launch_grid(&ctx->base, info);
+   ctx->base.bind_compute_state(&ctx->base, saved_cs);
+
+   if (!render_condition && ctx->render_condition_active)
+      zink_start_conditional_render(ctx);
 }

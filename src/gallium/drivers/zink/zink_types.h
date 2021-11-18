@@ -1841,6 +1841,8 @@ struct zink_context {
 
    struct zink_descriptor_data dd;
 
+   struct zink_shader *cs_clear_render_target;
+   struct zink_shader *cs_clear_render_target_1d_array;
    struct zink_compute_pipeline_state compute_pipeline_state;
    struct zink_compute_program *curr_compute;
 

@@ -1485,12 +1485,14 @@ struct zink_screen {
    bool can_hic_shader_read;
 
    uint32_t gfx_queue;
+   uint32_t video_decode_queue;
    uint32_t sparse_queue;
    uint32_t max_queues;
    uint32_t timestamp_valid_bits;
    VkDevice dev;
    VkQueue queue; //gfx+compute
    VkQueue queue_sparse;
+   VkQueue queue_video_decode; //video decode
    simple_mtx_t queue_lock;
    VkDebugUtilsMessengerEXT debugUtilsCallbackHandle;
 

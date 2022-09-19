@@ -37,6 +37,8 @@
 #include "genX_mi_builder.h"
 #include "genX_cmd_draw_generated_flush.h"
 
+#include "util/u_memory.h"
+
 static void genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
                                         uint32_t pipeline);
 
@@ -1737,6 +1739,68 @@ anv_resource_barrier_wait_stage(const struct anv_cmd_buffer *cmd_buffer,
 
    return RESOURCE_BARRIER_STAGE_PIXEL;
 }
+
+static void anv_emit_barrier_for_type(struct anv_cmd_buffer *cmd_buffer,
+                                      struct GENX(RESOURCE_BARRIER_BODY) body,
+                                      const enum GENX(RESOURCE_BARRIER_TYPE) type)
+{
+   body.BarrierType = type;
+   anv_batch_emit(&cmd_buffer->batch, GENX(RESOURCE_BARRIER), barrier) {
+      barrier.PredicateEnable = cmd_buffer->state.conditional_render_enabled;
+      barrier.ResourceBarrierBody = body;
+   }
+}
+
+static void anv_add_resource_barrier(struct anv_cmd_buffer *cmd_buffer,
+                                     const enum GENX(RESOURCE_BARRIER_STAGE) signalStage,
+                                     const VkAccessFlags2 srcAccessMask,
+                                     const VkPipelineStageFlags2 dstStageMask,
+                                     const VkAccessFlags2 dstAccessMask)
+{
+   struct anv_device *device = cmd_buffer->device;
+   const struct intel_device_info *devinfo = device->info;
+   assert(devinfo->ver >= 20);
+   assert(signalStage != RESOURCE_BARRIER_STAGE_TOP);
+
+   struct GENX(RESOURCE_BARRIER_BODY) body = { 0 };
+   anv_resource_barrier_body_for_access_flags(cmd_buffer, &body,
+                                              srcAccessMask | dstAccessMask);
+   body.SignalStage = signalStage;
+   body.WaitStage =
+      anv_resource_barrier_wait_stage(cmd_buffer, dstStageMask);
+   body.BarrierIDAddress = cmd_buffer->device->workaround_address;
+
+   if (body.SignalStage && !body.WaitStage) {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_SIGNAL);
+   } else if (body.WaitStage && !body.SignalStage) {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_WAIT);
+   } else {
+      anv_emit_barrier_for_type(cmd_buffer, body, RESOURCE_BARRIER_TYPE_IMMEDIATE);
+   }
+}
+
+static void fill_access_mask_for_stage(struct anv_cmd_buffer *cmd_buffer,
+                                       const VkPipelineStageFlags2 srcStageMask,
+                                       const VkAccessFlags2 srcAccessMask,
+                                       const VkPipelineStageFlags2 dstStageMask,
+                                       const VkAccessFlags2 dstAccessMask)
+{
+   struct intel_access_mask *access_mask_per_stage =
+      cmd_buffer->state.access_mask_per_stage;
+
+   enum GENX(RESOURCE_BARRIER_STAGE) hw_src_stage =
+      anv_resource_barrier_signal_stage(cmd_buffer, srcStageMask);
+
+   assert(util_is_power_of_two_or_zero(hw_src_stage));
+
+   int idx = hw_src_stage ? ffs(hw_src_stage) - 1 : 0;
+   assert(idx < ARRAY_SIZE(cmd_buffer->state.access_mask_per_stage));
+
+   access_mask_per_stage[idx].srcAccess |= srcAccessMask;
+   access_mask_per_stage[idx].dstAccess |= dstAccessMask;
+   access_mask_per_stage[idx].dstStageMask |= dstStageMask;
+   return;
+}
 #endif /* GFX_VER >= 20 */
 
 ALWAYS_INLINE enum anv_pipe_bits
@@ -1987,6 +2051,31 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
 #endif
 
    enum anv_pipe_bits bits = cmd_buffer->state.pending_pipe_bits;
+
+#if GFX_VER >= 20
+   const struct intel_access_mask null_access_mask = { 0 };
+   uint32_t array_size = ARRAY_SIZE(cmd_buffer->state.access_mask_per_stage);
+   for (int i = 0; i < array_size; i++) {
+      const enum GENX(RESOURCE_BARRIER_STAGE) signal_stage = i ? 1 << i : 0;
+      const struct intel_access_mask access_mask =
+         cmd_buffer->state.access_mask_per_stage[i];
+
+      /* CCS pipelines can only handle the GPGPU signalling stage */
+      if (cmd_buffer->state.current_pipeline == GPGPU &&
+          signal_stage != RESOURCE_BARRIER_STAGE_GPGPU)
+          continue;
+
+      if (!access_mask.srcAccess && !access_mask.dstAccess)
+         continue;
+
+      anv_add_resource_barrier(cmd_buffer,
+                               signal_stage,
+                               access_mask.srcAccess,
+                               access_mask.dstStageMask,
+                               access_mask.dstAccess);
+      cmd_buffer->state.access_mask_per_stage[i] = null_access_mask;
+   }
+#endif
 
    if (unlikely(cmd_buffer->device->physical->always_flush_cache))
       bits |= ANV_PIPE_FLUSH_BITS | ANV_PIPE_INVALIDATE_BITS;
@@ -4413,6 +4502,7 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
    struct anv_device *device = cmd_buffer->device;
 #endif
    bool flush_query_copies = false;
+   bool usePipeControl = GFX_VER < 20;
 
    for (uint32_t d = 0; d < n_dep_infos; d++) {
       const VkDependencyInfo *dep_info = &dep_infos[d];
@@ -4423,6 +4513,14 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          dst_flags |= mem_barrier->dstAccessMask;
 
          src_stages |= dep_info->pMemoryBarriers[i].srcStageMask;
+#if GFX_VER >= 20
+         if (!usePipeControl)
+            fill_access_mask_for_stage(cmd_buffer,
+                                       mem_barrier->srcStageMask,
+                                       mem_barrier->srcAccessMask,
+                                       mem_barrier->dstStageMask,
+                                       mem_barrier->dstAccessMask);
+#endif
 
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
@@ -4457,6 +4555,14 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          dst_flags |= buf_barrier->dstAccessMask;
 
          src_stages |= buf_barrier->srcStageMask;
+#if GFX_VER >= 20
+         if (!usePipeControl)
+            fill_access_mask_for_stage(cmd_buffer,
+                                       buf_barrier->srcStageMask,
+                                       buf_barrier->srcAccessMask,
+                                       buf_barrier->dstStageMask,
+                                       buf_barrier->dstAccessMask);
+#endif
 
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
@@ -4489,6 +4595,15 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          dst_flags |= img_barrier->dstAccessMask;
 
          src_stages |= img_barrier->srcStageMask;
+#if GFX_VER >= 20
+         if (!usePipeControl)
+            fill_access_mask_for_stage(cmd_buffer,
+                                       img_barrier->srcStageMask,
+                                       img_barrier->srcAccessMask,
+                                       img_barrier->dstStageMask,
+                                       img_barrier->dstAccessMask);
+#endif
+
 
          ANV_FROM_HANDLE(anv_image, image, img_barrier->image);
          const VkImageSubresourceRange *range = &img_barrier->subresourceRange;
@@ -4593,9 +4708,21 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
-   enum anv_pipe_bits bits =
-      anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags) |
-      anv_pipe_invalidate_bits_for_access_flags(cmd_buffer, dst_flags);
+   if (usePipeControl) {
+      enum anv_pipe_bits bits =
+         anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags) |
+         anv_pipe_invalidate_bits_for_access_flags(cmd_buffer, dst_flags);
+
+      /* Copies from query pools are executed with a shader writing through the
+      * dataport.
+      */
+      if (flush_query_copies) {
+         bits |= (GFX_VER >= 12 ?
+                  ANV_PIPE_HDC_PIPELINE_FLUSH_BIT : ANV_PIPE_DATA_CACHE_FLUSH_BIT);
+      }
+
+      if (dst_flags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT)
+         genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
 
    /* What stage require a stall at pixel scoreboard */
    VkPipelineStageFlags2 pb_stall_stages =
@@ -4661,29 +4788,29 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       bits |= ANV_PIPE_CS_STALL_BIT;
 
 #if GFX_VER < 20
-   /* Our HW implementation of the sparse feature lives in the GAM unit
-    * (interface between all the GPU caches and external memory). As a result
-    * writes to NULL bound images & buffers that should be ignored are
-    * actually still visible in the caches. The only way for us to get correct
-    * NULL bound regions to return 0s is to evict the caches to force the
-    * caches to be repopulated with 0s.
-    */
-   if (apply_sparse_flushes)
-      bits |= ANV_PIPE_FLUSH_BITS;
+      /* Our HW implementation of the sparse feature lives in the GAM unit
+       * (interface between all the GPU caches and external memory). As a result
+       * writes to NULL bound images & buffers that should be ignored are
+       * actually still visible in the caches. The only way for us to get correct
+       * NULL bound regions to return 0s is to evict the caches to force the
+       * caches to be repopulated with 0s.
+       */
+      if (apply_sparse_flushes)
+         bits |= ANV_PIPE_FLUSH_BITS;
 #endif
 
-   /* Copies from query pools are executed with a shader writing through the
-    * dataport.
-    */
-   if (flush_query_copies) {
-      bits |= (GFX_VER >= 12 ?
-               ANV_PIPE_HDC_PIPELINE_FLUSH_BIT : ANV_PIPE_DATA_CACHE_FLUSH_BIT);
+      anv_add_pending_pipe_bits(cmd_buffer, bits, reason);
+
+   } else {
+      /* If any of the access flags require conditional rendering
+       * we need to use pipe controls to stall the pipeline
+       */
+      if ((src_flags | dst_flags) &
+          VK_ACCESS_2_CONDITIONAL_RENDERING_READ_BIT_EXT)
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_CS_STALL_BIT,
+                                   "conditional rendering");
    }
-
-   if (dst_flags & VK_ACCESS_INDIRECT_COMMAND_READ_BIT)
-      genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
-
-   anv_add_pending_pipe_bits(cmd_buffer, bits, reason);
 }
 
 void genX(CmdPipelineBarrier2)(

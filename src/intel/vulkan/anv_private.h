@@ -3933,6 +3933,12 @@ enum anv_cmd_descriptor_buffer_mode {
    ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER,
 };
 
+struct intel_access_mask {
+   VkAccessFlags2 srcAccess;
+   VkAccessFlags2 dstAccess;
+   VkPipelineStageFlags2 dstStageMask;
+};
+
 /** State required while building cmd buffer */
 struct anv_cmd_state {
    /* PIPELINE_SELECT.PipelineSelection */
@@ -3945,6 +3951,7 @@ struct anv_cmd_state {
    struct anv_cmd_ray_tracing_state             rt;
 
    enum anv_pipe_bits                           pending_pipe_bits;
+   struct intel_access_mask                     access_mask_per_stage[8];
 
    /**
     * Whether the last programmed STATE_BASE_ADDRESS references

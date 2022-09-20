@@ -1571,6 +1571,97 @@ genX(invalidate_aux_map)(struct anv_batch *batch,
 #endif
 }
 
+#if GFX_VER >= 20
+static void
+anv_resource_barrier_body_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
+                                           struct GENX(RESOURCE_BARRIER_BODY) *body,
+                                           const VkAccessFlags2 flags)
+{
+   const VkAccessFlags2 L1DataportUAVFlushFlags =
+      VK_ACCESS_2_SHADER_WRITE_BIT |
+      VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
+      VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR |
+      VK_ACCESS_2_MEMORY_WRITE_BIT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT |
+      VK_ACCESS_2_HOST_READ_BIT |
+      VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+   const VkAccessFlags2 ColorCacheFlags =
+      VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_2_MEMORY_WRITE_BIT |
+      VK_ACCESS_2_HOST_READ_BIT |
+      VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+   const VkAccessFlags2 DepthCacheFlags =
+      VK_ACCESS_2_HOST_READ_BIT |
+      VK_ACCESS_2_MEMORY_WRITE_BIT |
+      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT |
+      VK_ACCESS_2_TRANSFER_WRITE_BIT;
+
+   const VkAccessFlags2 L1DataportCacheInvalidateFlags =
+      VK_ACCESS_2_HOST_WRITE_BIT |
+      VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_READ_BIT |
+      VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+      VK_ACCESS_2_UNIFORM_READ_BIT |
+      VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR |
+      VK_ACCESS_2_SHADER_READ_BIT |
+      VK_ACCESS_2_MEMORY_READ_BIT |
+      VK_ACCESS_2_SHADER_STORAGE_READ_BIT |
+      VK_ACCESS_2_CONDITIONAL_RENDERING_READ_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_READ_BIT_EXT;
+
+   const VkAccessFlags2 TextureROFlags =
+      VK_ACCESS_2_HOST_WRITE_BIT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFER_READ_BIT |
+      VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+      VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT |
+      VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+      VK_ACCESS_2_SHADER_READ_BIT |
+      VK_ACCESS_2_MEMORY_READ_BIT;
+
+   const VkAccessFlags2 VFROFlags =
+      VK_ACCESS_2_HOST_WRITE_BIT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT |
+      VK_ACCESS_2_INDEX_READ_BIT |
+      VK_ACCESS_2_VERTEX_ATTRIBUTE_READ_BIT |
+      VK_ACCESS_2_MEMORY_READ_BIT;
+
+   const VkAccessFlags2 ConstantCacheFlags =
+      VK_ACCESS_2_HOST_WRITE_BIT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT |
+      VK_ACCESS_2_INDIRECT_COMMAND_READ_BIT |
+      VK_ACCESS_2_UNIFORM_READ_BIT |
+      VK_ACCESS_2_SHADER_BINDING_TABLE_READ_BIT_KHR |
+      VK_ACCESS_2_SHADER_READ_BIT |
+      VK_ACCESS_2_MEMORY_READ_BIT;
+
+   const VkAccessFlags2 StateROFlags =
+      VK_ACCESS_2_HOST_WRITE_BIT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFORM_FEEDBACK_COUNTER_WRITE_BIT_EXT |
+      VK_ACCESS_2_TRANSFER_READ_BIT |
+      VK_ACCESS_2_COLOR_ATTACHMENT_READ_BIT |
+      VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT |
+      VK_ACCESS_2_SHADER_SAMPLED_READ_BIT |
+      VK_ACCESS_2_MEMORY_READ_BIT |
+      VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT;
+
+   body->L1DataportCacheInvalidate = L1DataportCacheInvalidateFlags & flags;
+   body->DepthCache = DepthCacheFlags & flags;
+   body->ColorCache = ColorCacheFlags & flags;
+   body->L1DataportUAVFlush = L1DataportUAVFlushFlags & flags;
+   body->TextureRO = TextureROFlags & flags;
+   body->StateRO = StateROFlags & flags;
+   body->VFRO = VFROFlags & flags;
+   body->ConstantCache = ConstantCacheFlags & flags;
+}
+#endif /* GFX_VER >= 20 */
+
 ALWAYS_INLINE enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,

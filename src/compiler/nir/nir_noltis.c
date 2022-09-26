@@ -99,6 +99,31 @@ nir_noltis_tile *nir_noltis_tile_create(nir_noltis *noltis,
    return tile;
 }
 
+static bool
+nir_noltis_add_src_as_edge(nir_src *src, void *in_state)
+{
+   nir_noltis_tile *tile = in_state;
+
+   nir_noltis_tile_add_edge(tile, src->ssa->parent_instr);
+
+   return true;
+}
+
+/**
+ * Makes a simple tile for the instr, with the NIR instr's srcs as edges and the
+ * given cost, and a NULL tile->data.
+ *
+ * Used for optimization passes where you aren't doing anything to this NIR instr.
+ */
+void
+nir_noltis_tile_create_noop(nir_noltis *noltis, nir_instr *instr, int cost)
+{
+   nir_noltis_tile *tile = nir_noltis_tile_create(noltis, instr, NULL);
+   tile->cost = cost;
+
+   nir_foreach_src(instr, nir_noltis_add_src_as_edge, tile);
+}
+
 void
 nir_noltis_tile_add_edge(nir_noltis_tile *tile, nir_instr *instr)
 {

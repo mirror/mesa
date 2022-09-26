@@ -84,6 +84,8 @@ nir_noltis *nir_noltis_create(void *mem_ctx, nir_function_impl *impl);
 nir_noltis_tile *nir_noltis_tile_create(nir_noltis *noltis,
                                         nir_instr *instr,
                                         void *data);
+void nir_noltis_tile_create_noop(nir_noltis *noltis, nir_instr *instr, int cost);
+
 void nir_noltis_tile_add_edge(nir_noltis_tile *tile, nir_instr *instr);
 void nir_noltis_tile_add_interior(nir_noltis_tile *tile, nir_instr *instr);
 

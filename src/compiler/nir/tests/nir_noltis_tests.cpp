@@ -149,3 +149,44 @@ TEST_F(nir_noltis_test, paper_example)
    EXPECT_EQ(nir_noltis_get_tile(noltis, y->parent_instr),
              (nir_noltis_tile *)NULL);
 }
+
+
+TEST_F(nir_noltis_test, fuse_ffma_basic)
+{
+   nir_def *x = nir_imm_int(b, 0);
+   nir_def *y = nir_imm_int(b, 1);
+   nir_def *z = nir_imm_int(b, 2);
+   nir_def *mul = nir_fmul(b, x, y);
+   nir_def *add = nir_fadd(b, mul, z);
+
+   /* unary op to give us a reference to the add result after transformation */
+   nir_def *result_fneg = nir_fneg(b, add);
+
+   ASSERT_TRUE(nir_opt_fuse_ffma(b->shader, NULL));
+   nir_validate_shader(b->shader, "after fuse_ffma");
+
+   nir_alu_instr *fneg_instr = nir_instr_as_alu(result_fneg->parent_instr);
+   nir_alu_instr *fma_instr = nir_instr_as_alu(fneg_instr->src[0].src.ssa->parent_instr);
+   ASSERT_EQ(fma_instr->op, nir_op_ffma);
+}
+
+TEST_F(nir_noltis_test, fuse_ffma_matrix)
+{
+   nir_def *x = nir_imm_vec4(b, 0, 1, 2, 3);
+   nir_def *m[4] = {
+      nir_imm_vec4(b, 1, 0, 0, 0),
+      nir_imm_vec4(b, 0, 2, 0, 0),
+      nir_imm_vec4(b, 0, 0, 3, 0),
+      nir_imm_vec4(b, 0, 0, 0, 4),
+   };
+
+   nir_def *last = nir_fmul(b, x, m[0]);
+   for (int i = 1; i < 4; i++)
+      last = nir_fadd(b, last, nir_fmul(b, x, m[i]));
+
+   ASSERT_TRUE(nir_opt_fuse_ffma(b->shader, NULL));
+   nir_validate_shader(b->shader, "after fuse_ffma");
+}
+
+/* XXX: test banned fuse */
+/* XXX: test costs? */

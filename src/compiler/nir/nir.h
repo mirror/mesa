@@ -3887,9 +3887,14 @@ typedef struct nir_shader_compiler_options {
    bool lower_ffma16;
    bool lower_ffma32;
    bool lower_ffma64;
+   /* Simple ffma fusion -- see nir_opt_fuse_ffma() for some more controls on fusing. */
    bool fuse_ffma16;
    bool fuse_ffma32;
    bool fuse_ffma64;
+   /* Lower inexact ffma to mul/add early in algebraic so that other opts can
+    * affect them, assuming that we'll fuse them back later.
+    */
+   bool split_ffma;
    bool lower_flrp16;
    bool lower_flrp32;
    /** Lowers flrp when it does not support doubles */

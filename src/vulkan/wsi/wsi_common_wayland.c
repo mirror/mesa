@@ -43,6 +43,7 @@
 #include "wsi_common_private.h"
 #include "fifo-v1-client-protocol.h"
 #include "commit-timing-v1-client-protocol.h"
+#include "wsi_common_drm.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
 #include "linux-drm-syncobj-v1-client-protocol.h"
@@ -597,63 +598,10 @@ wsi_wl_display_add_wl_shm_format(struct wsi_wl_display *display,
                                           DRM_FORMAT_MOD_INVALID);
 }
 
-static uint32_t
-wl_drm_format_for_vk_format(VkFormat vk_format, bool alpha)
-{
-   switch (vk_format) {
-#if 0
-   case VK_FORMAT_A4R4G4B4_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_ARGB4444 : DRM_FORMAT_XRGB4444;
-   case VK_FORMAT_A4B4G4R4_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_ABGR4444 : DRM_FORMAT_XBGR4444;
-#endif
-#if UTIL_ARCH_LITTLE_ENDIAN
-   case VK_FORMAT_R4G4B4A4_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_RGBA4444 : DRM_FORMAT_RGBX4444;
-   case VK_FORMAT_B4G4R4A4_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_BGRA4444 : DRM_FORMAT_BGRX4444;
-   case VK_FORMAT_R5G6B5_UNORM_PACK16:
-      return DRM_FORMAT_RGB565;
-   case VK_FORMAT_B5G6R5_UNORM_PACK16:
-      return DRM_FORMAT_BGR565;
-   case VK_FORMAT_A1R5G5B5_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_ARGB1555 : DRM_FORMAT_XRGB1555;
-   case VK_FORMAT_R5G5B5A1_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_RGBA5551 : DRM_FORMAT_RGBX5551;
-   case VK_FORMAT_B5G5R5A1_UNORM_PACK16:
-      return alpha ? DRM_FORMAT_BGRA5551 : DRM_FORMAT_BGRX5551;
-   case VK_FORMAT_A2R10G10B10_UNORM_PACK32:
-      return alpha ? DRM_FORMAT_ARGB2101010 : DRM_FORMAT_XRGB2101010;
-   case VK_FORMAT_A2B10G10R10_UNORM_PACK32:
-      return alpha ? DRM_FORMAT_ABGR2101010 : DRM_FORMAT_XBGR2101010;
-   case VK_FORMAT_R16G16B16A16_UNORM:
-      return alpha ? DRM_FORMAT_ABGR16161616 : DRM_FORMAT_XBGR16161616;
-   case VK_FORMAT_R16G16B16A16_SFLOAT:
-      return alpha ? DRM_FORMAT_ABGR16161616F : DRM_FORMAT_XBGR16161616F;
-#endif
-   case VK_FORMAT_R8G8B8_UNORM:
-   case VK_FORMAT_R8G8B8_SRGB:
-      return DRM_FORMAT_XBGR8888;
-   case VK_FORMAT_R8G8B8A8_UNORM:
-   case VK_FORMAT_R8G8B8A8_SRGB:
-      return alpha ? DRM_FORMAT_ABGR8888 : DRM_FORMAT_XBGR8888;
-   case VK_FORMAT_B8G8R8_UNORM:
-   case VK_FORMAT_B8G8R8_SRGB:
-      return DRM_FORMAT_BGRX8888;
-   case VK_FORMAT_B8G8R8A8_UNORM:
-   case VK_FORMAT_B8G8R8A8_SRGB:
-      return alpha ? DRM_FORMAT_ARGB8888 : DRM_FORMAT_XRGB8888;
-
-   default:
-      assert(!"Unsupported Vulkan format");
-      return DRM_FORMAT_INVALID;
-   }
-}
-
 static enum wl_shm_format
 wl_shm_format_for_vk_format(VkFormat vk_format, bool alpha)
 {
-   uint32_t drm_format = wl_drm_format_for_vk_format(vk_format, alpha);
+   uint32_t drm_format = wsi_common_drm_format_for_vk_format(vk_format, alpha);
    if (drm_format == DRM_FORMAT_INVALID) {
       return 0;
    }
@@ -2923,7 +2871,7 @@ wsi_wl_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->vk_format = pCreateInfo->imageFormat;
    chain->buffer_type = buffer_type;
    if (buffer_type == WSI_WL_BUFFER_NATIVE) {
-      chain->drm_format = wl_drm_format_for_vk_format(chain->vk_format, alpha);
+      chain->drm_format = wsi_common_drm_format_for_vk_format(chain->vk_format, alpha);
    } else {
       chain->shm_format = wl_shm_format_for_vk_format(chain->vk_format, alpha);
    }

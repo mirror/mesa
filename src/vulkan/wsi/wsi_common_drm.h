@@ -28,6 +28,9 @@
 extern "C" {
 #endif
 
+uint32_t
+wsi_common_drm_format_for_vk_format(VkFormat vk_format, bool alpha);
+
 bool
 wsi_common_drm_devices_equal(int fd_a, int fd_b);
 

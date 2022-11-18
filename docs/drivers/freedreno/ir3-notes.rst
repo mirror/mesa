@@ -401,3 +401,7 @@ Register Assignment
 TODO
 
 
+IR3
+===
+
+.. include:: ../../isaspec_rst/ir3.rst

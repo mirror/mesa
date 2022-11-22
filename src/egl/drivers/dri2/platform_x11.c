@@ -721,86 +721,6 @@ dri2_x11_add_configs_for_visuals(struct dri2_egl_display *dri2_dpy,
    }
 }
 
-#ifdef HAVE_X11_DRI2
-static EGLBoolean
-dri2_copy_region(_EGLDisplay *disp, _EGLSurface *draw,
-                 xcb_xfixes_region_t region)
-{
-   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
-   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
-   enum xcb_dri2_attachment_t render_attachment;
-   xcb_dri2_copy_region_cookie_t cookie;
-
-   /* No-op for a pixmap or pbuffer surface */
-   if (draw->Type == EGL_PIXMAP_BIT || draw->Type == EGL_PBUFFER_BIT)
-      return EGL_TRUE;
-
-   assert(!dri2_dpy->kopper);
-   dri_flush_drawable(dri2_surf->dri_drawable);
-
-   if (dri2_surf->have_fake_front)
-      render_attachment = XCB_DRI2_ATTACHMENT_BUFFER_FAKE_FRONT_LEFT;
-   else
-      render_attachment = XCB_DRI2_ATTACHMENT_BUFFER_BACK_LEFT;
-
-   cookie = xcb_dri2_copy_region_unchecked(
-      dri2_dpy->conn, dri2_surf->drawable, region,
-      XCB_DRI2_ATTACHMENT_BUFFER_FRONT_LEFT, render_attachment);
-   free(xcb_dri2_copy_region_reply(dri2_dpy->conn, cookie, NULL));
-
-   return EGL_TRUE;
-}
-
-static int64_t
-dri2_x11_swap_buffers_msc(_EGLDisplay *disp, _EGLSurface *draw, int64_t msc,
-                          int64_t divisor, int64_t remainder)
-{
-   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
-   struct dri2_egl_surface *dri2_surf = dri2_egl_surface(draw);
-   uint32_t msc_hi = msc >> 32;
-   uint32_t msc_lo = msc & 0xffffffff;
-   uint32_t divisor_hi = divisor >> 32;
-   uint32_t divisor_lo = divisor & 0xffffffff;
-   uint32_t remainder_hi = remainder >> 32;
-   uint32_t remainder_lo = remainder & 0xffffffff;
-   xcb_dri2_swap_buffers_cookie_t cookie;
-   xcb_dri2_swap_buffers_reply_t *reply;
-   int64_t swap_count = -1;
-
-   if (draw->SwapBehavior == EGL_BUFFER_PRESERVED ||
-       !dri2_dpy->swap_available) {
-      swap_count = dri2_copy_region(disp, draw, dri2_surf->region) ? 0 : -1;
-   } else {
-      dri2_flush_drawable_for_swapbuffers(disp, draw);
-
-      cookie = xcb_dri2_swap_buffers_unchecked(
-         dri2_dpy->conn, dri2_surf->drawable, msc_hi, msc_lo, divisor_hi,
-         divisor_lo, remainder_hi, remainder_lo);
-
-      reply = xcb_dri2_swap_buffers_reply(dri2_dpy->conn, cookie, NULL);
-
-      if (reply) {
-         swap_count = combine_u32_into_u64(reply->swap_hi, reply->swap_lo);
-         free(reply);
-      }
-   }
-
-   /* Since we aren't watching for the server's invalidate events like we're
-    * supposed to (due to XCB providing no mechanism for filtering the events
-    * the way xlib does), and SwapBuffers is a common cause of invalidate
-    * events, just shove one down to the driver, even though we haven't told
-    * the driver that we're the kind of loader that provides reliable
-    * invalidate events.  This causes the driver to request buffers again at
-    * its next draw, so that we get the correct buffers if a pageflip
-    * happened.  The driver should still be using the viewport hack to catch
-    * window resizes.
-    */
-   dri_invalidate_drawable(dri2_surf->dri_drawable);
-
-   return swap_count;
-}
-#endif
-
 static EGLBoolean
 dri2_x11_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
 {
@@ -822,12 +742,6 @@ dri2_x11_swap_buffers(_EGLDisplay *disp, _EGLSurface *draw)
       return EGL_TRUE;
    }
 
-#ifdef HAVE_X11_DRI2
-   if (dri2_x11_swap_buffers_msc(disp, draw, 0, 0, 0) == -1) {
-      /* Swap failed with a window drawable. */
-      return _eglError(EGL_BAD_NATIVE_WINDOW, __func__);
-   }
-#endif
    return EGL_TRUE;
 }
 

@@ -78,7 +78,6 @@
 #include "loader.h"
 #include "loader_x11.h"
 #include "loader_dri_helper.h"
-#include "dri2.h"
 #include "util/u_debug.h"
 #include "dri_util.h"
 

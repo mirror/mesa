@@ -146,14 +146,14 @@ loopback_vertex_list(struct gl_context *ctx,
 
    /* Reuse BO mapping when possible to avoid costly mapping on every glCallList(). */
    if (_mesa_bufferobj_mapped(bo, MAP_INTERNAL)) {
-      if (list->cold->bo_bytes_used <= bo->Mappings[MAP_INTERNAL].Length)
+      if (list->cold->bo_end <= bo->Mappings[MAP_INTERNAL].Length)
          buffer = bo->Mappings[MAP_INTERNAL].Pointer;
       else
          _mesa_bufferobj_unmap(ctx, bo, MAP_INTERNAL);
    }
 
-   if (!buffer && list->cold->bo_bytes_used)
-      buffer = _mesa_bufferobj_map_range(ctx, 0, list->cold->bo_bytes_used, GL_MAP_READ_BIT,
+   if (!buffer && list->cold->bo_end)
+      buffer = _mesa_bufferobj_map_range(ctx, 0, list->cold->bo_end, GL_MAP_READ_BIT,
                                          bo, MAP_INTERNAL);
 
    /* TODO: in this case, we shouldn't create a bo at all and instead keep

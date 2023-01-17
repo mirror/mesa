@@ -75,5 +75,11 @@ void vbo_save_destroy( struct gl_context *ctx )
    if (save->copied.buffer)
       free(save->copied.buffer);
 
-   _mesa_reference_buffer_object(ctx, &save->current_bo, NULL);
+   if (save->free_bo_pool) {
+      for (int i = 0; i < VBO_SAVE_FREE_BO_POOL_SIZE; i++) {
+         struct free_bo_pool_entry *entry = &save->free_bo_pool[i];
+         _mesa_reference_buffer_object(ctx, &entry->bo, NULL);
+      }
+      free(save->free_bo_pool);
+   }
 }

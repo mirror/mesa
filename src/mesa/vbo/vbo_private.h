@@ -39,6 +39,7 @@
 #include "main/macros.h"
 #include "state_tracker/st_atom.h"
 
+#define VBO_SAVE_FREE_BO_POOL_SIZE 128
 
 struct _glapi_table;
 

@@ -148,6 +148,23 @@ struct vbo_exec_context
 #endif
 };
 
+/* Default size for the buffer holding the vertices and the indices.
+ * A bigger buffer helps reducing the number of draw calls but may
+ * waste memory.
+ * 1MB was picked because a lower value reduces viewperf snx tests
+ * performance but larger values cause high VRAM usage (because
+ * larger buffers will be shared by more display lists which reduces
+ * the likelyhood of freeing the buffer).
+ */
+#define VBO_SAVE_BUFFER_SIZE    (1024 * 1024)
+#define VBO_SAVE_BUFFER_PER_BIT    (1 * 1024)
+#define VBO_SAVE_BUFFER_N_BITS (VBO_SAVE_BUFFER_SIZE / VBO_SAVE_BUFFER_PER_BIT)
+#define VBO_SAVE_BUFFER_N_WORDS BITSET_WORDS(VBO_SAVE_BUFFER_N_BITS)
+
+struct free_bo_pool_entry {
+   BITSET_DECLARE(free_mask, VBO_SAVE_BUFFER_N_BITS);
+   struct gl_buffer_object *bo;
+};
 
 struct vbo_save_context {
    GLbitfield64 enabled; /**< mask of enabled vbo arrays. */
@@ -159,8 +176,6 @@ struct vbo_save_context {
 
    struct vbo_save_vertex_store *vertex_store;
    struct vbo_save_primitive_store *prim_store;
-   struct gl_buffer_object *current_bo;
-   unsigned current_bo_bytes_used;
 
    fi_type vertex[VBO_ATTRIB_MAX*4];	   /* current values */
    fi_type *attrptr[VBO_ATTRIB_MAX];
@@ -176,6 +191,8 @@ struct vbo_save_context {
    GLboolean dangling_attr_ref;
    GLboolean out_of_memory;  /**< True if last VBO allocation failed */
    bool no_current_update;
+
+   struct free_bo_pool_entry *free_bo_pool;
 };
 
 GLboolean

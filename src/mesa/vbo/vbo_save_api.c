@@ -125,10 +125,6 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "api_exec_decl.h"
 #include "api_save.h"
 
-#ifdef ERROR
-#undef ERROR
-#endif
-
 /* An interesting VBO number/name to help with debugging */
 #define VBO_BUF_ID  12345
 

@@ -834,8 +834,8 @@ enum isl_aux_usage {
     * CCS-compressed surface contains valid data at all times.
     *
     * :invariant: The surface is a color surface
-    * :invariant: :c:member:`isl_surf.samples` == 1 for GFX 12, GFX 20 can
-    *             be multisampled
+    * :invariant: :c:member:`isl_surf.samples` == 1 for GFX 12, GFX 12.5 and
+    *             newer can be multisampled
     */
    ISL_AUX_USAGE_HIZ_CCS_WT,
 

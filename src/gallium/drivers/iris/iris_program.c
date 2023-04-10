@@ -3713,8 +3713,8 @@ iris_finalize_nir(struct pipe_screen *_screen, struct nir_shader *nir)
       brw_preprocess_nir(screen->brw, nir, &opts);
 
       NIR_PASS_V(nir, brw_nir_lower_storage_image,
+                 screen->brw,
                  &(struct brw_nir_lower_storage_image_opts) {
-                    .devinfo      = devinfo,
                     .lower_loads  = true,
                     .lower_stores = true,
                  });

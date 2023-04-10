@@ -187,13 +187,13 @@ void brw_nir_lower_fs_outputs(nir_shader *nir);
 bool brw_nir_lower_cmat(nir_shader *nir, unsigned subgroup_size);
 
 struct brw_nir_lower_storage_image_opts {
-   const struct intel_device_info *devinfo;
-
    bool lower_loads;
    bool lower_stores;
+   bool lower_loads_without_formats;
 };
 
 bool brw_nir_lower_storage_image(nir_shader *nir,
+                                 const struct brw_compiler *compiler,
                                  const struct brw_nir_lower_storage_image_opts *opts);
 
 bool brw_nir_lower_mem_access_bit_sizes(nir_shader *shader,

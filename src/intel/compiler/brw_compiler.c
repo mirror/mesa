@@ -27,6 +27,7 @@
 #include "brw_private.h"
 #include "dev/intel_debug.h"
 #include "compiler/nir/nir.h"
+#include "isl/isl.h"
 #include "util/u_debug.h"
 
 const struct nir_shader_compiler_options brw_scalar_nir_options = {
@@ -201,6 +202,26 @@ brw_compiler_create(void *mem_ctx, const struct intel_device_info *devinfo)
          (unsigned)debug_get_num_option("INTEL_MESH_HEADER_PACKING", 3);
    compiler->mesh.mue_compaction =
          debug_get_bool_option("INTEL_MESH_COMPACTION", true);
+
+   /* Build a list of storage format compatible in component bit size &
+    * isl_base_type. We can apply the same lowering to those.
+    */
+   compiler->num_lowered_storage_formats = 0;
+   for (enum isl_format fmt = 0; fmt < ISL_FORMAT_RAW; fmt++) {
+      if (!isl_is_storage_image_format(devinfo, fmt))
+         continue;
+
+      if (isl_lower_storage_image_format(devinfo, fmt) == fmt)
+         continue;
+
+      compiler->lowered_storage_formats =
+         reralloc_array_size(compiler,
+                             compiler->lowered_storage_formats,
+                             sizeof(compiler->lowered_storage_formats[0]),
+                             compiler->num_lowered_storage_formats + 1);
+      compiler->lowered_storage_formats[
+         compiler->num_lowered_storage_formats++] = fmt;
+   }
 
    return compiler;
 }

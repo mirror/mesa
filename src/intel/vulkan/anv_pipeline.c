@@ -702,6 +702,9 @@ anv_pipeline_hash_common(struct mesa_sha1 *ctx,
 
    const int spilling_rate = device->physical->compiler->spilling_rate;
    _mesa_sha1_update(ctx, &spilling_rate, sizeof(spilling_rate));
+
+   const bool erwf = device->physical->emulate_read_without_format;
+   _mesa_sha1_update(ctx, &erwf, sizeof(erwf));
 }
 
 static void
@@ -1047,6 +1050,12 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                 * loads.
                 */
                .lower_loads = true,
+               .lower_stores = false,
+               /* Software emulation for shaderStorageImageReadWithoutFormat
+                * on Gfx11/12.0.
+                */
+               .lower_loads_without_formats =
+                  pdevice->emulate_read_without_format,
             });
 
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_global,

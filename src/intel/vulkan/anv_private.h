@@ -1118,6 +1118,9 @@ struct anv_physical_device {
     /** Can the platform support cooperative matrices and is it enabled? */
     bool                                        has_cooperative_matrix;
 
+    /** Whether to emulate shaderStorageImageReadWithoutFormat */
+    bool                                        emulate_read_without_format;
+
     struct {
       uint32_t                                  family_count;
       struct anv_queue_family                   families[ANV_MAX_QUEUE_FAMILIES];
@@ -2775,6 +2778,9 @@ struct anv_storage_image_descriptor {
     * RESINFO result.
     */
    uint32_t image_depth;
+
+   /** Image format (enum isl_format) */
+   uint32_t format;
 };
 
 /** Struct representing a address/range descriptor
@@ -3056,6 +3062,8 @@ struct anv_buffer_state {
 
 struct anv_buffer_view {
    struct vk_buffer_view vk;
+
+   enum isl_format format;
 
    struct anv_address address;
 

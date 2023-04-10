@@ -67,6 +67,7 @@ genX_bits_included_symbols = [
   'RENDER_SURFACE_STATE::Width',
   'RENDER_SURFACE_STATE::Height',
   'RENDER_SURFACE_STATE::Depth',
+  'RENDER_SURFACE_STATE::Surface Format',
   'RENDER_SURFACE_STATE::Surface Type',
   'RENDER_SURFACE_STATE::Render Target View Extent',
   'CLEAR_COLOR',

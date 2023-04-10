@@ -417,9 +417,10 @@ get_features(const struct anv_physical_device *pdevice,
       .shaderStorageImageExtendedFormats        = true,
       .shaderStorageImageMultisample            = false,
       /* Gfx12.5 has all the required format supported in HW for typed
-       * read/writes
+       * read/writes, on Gfx11 & Gfx12.0 we emulate for 3 formats.
        */
-      .shaderStorageImageReadWithoutFormat      = pdevice->info.verx10 >= 125,
+      .shaderStorageImageReadWithoutFormat      = pdevice->info.verx10 >= 125 ||
+                                                  pdevice->emulate_read_without_format,
       .shaderStorageImageWriteWithoutFormat     = true,
       .shaderUniformBufferArrayDynamicIndexing  = true,
       .shaderSampledImageArrayDynamicIndexing   = true,
@@ -2566,6 +2567,12 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    device->video_encode_enabled = debug_get_bool_option("ANV_VIDEO_ENCODE", false);
 
    device->uses_ex_bso = device->info.verx10 >= 125;
+
+   /* Limited to those generations where it's only emulate 3 missing
+    * formats.
+    */
+   device->emulate_read_without_format = device->info.verx10 == 110 ||
+                                         device->info.verx10 == 120;
 
    /* For now always use indirect descriptors. We'll update this
     * to !uses_ex_bso when all the infrastructure is built up.

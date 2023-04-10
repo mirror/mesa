@@ -775,6 +775,8 @@ image("order", dest_comp=1, flags=[CAN_ELIMINATE, CAN_REORDER])
 # Multisample fragment mask load
 # src_comp[0] is same as image load src_comp[0]
 image("fragment_mask_load_amd", src_comp=[4], dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE, CAN_REORDER])
+# Return the Intel format value (enum isl_format)
+image("format_intel", dest_comp=1, flags=[CAN_ELIMINATE])
 
 # Vulkan descriptor set intrinsics
 #

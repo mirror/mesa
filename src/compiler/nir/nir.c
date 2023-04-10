@@ -2677,6 +2677,7 @@ nir_rewrite_image_intrinsic(nir_intrinsic_instr *intrin, nir_def *src,
       CASE(store_raw_intel)
       CASE(fragment_mask_load_amd)
       CASE(store_block_agx)
+      CASE(format_intel)
 #undef CASE
    default:
       unreachable("Unhanded image intrinsic");
@@ -3671,4 +3672,3 @@ nir_atomic_op_to_alu(nir_atomic_op op)
 
    unreachable("Invalid nir_atomic_op");
 }
-

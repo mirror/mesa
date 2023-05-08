@@ -535,18 +535,20 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
       driverNameDisplayGPU = loader_get_driver_for_fd(psc->fd_display_gpu);
       if (driverNameDisplayGPU) {
 
-         /* check if driver name is matching so that non mesa drivers
-          * will not crash. Also need this check since image extension
-          * pointer from render gpu is shared with display gpu. Image
-          * extension pointer is shared because it keeps things simple.
+         /* check if driver name is matching or display gpu is virtio_gpu
+	  * so that non mesa drivers will not crash. Also need this check
+	  * since image extension pointer from render gpu is shared with
+	  * display gpu. Image extension pointer is shared because it keeps
+	  * things simple.
           */
-         if (strcmp(driverName, driverNameDisplayGPU) == 0) {
+         if (strcmp(driverName, driverNameDisplayGPU) == 0 ||
+             strcmp(driverNameDisplayGPU, "virtio_gpu") == 0) {
             psc->driScreenDisplayGPU = driCreateNewScreen3(screen, psc->fd_display_gpu,
                                                            loader_extensions,
                                                            DRI_SCREEN_DRI3,
                                                            &driver_configs, driver_name_is_inferred,
                                                            priv->has_multibuffer, psc);
-         }
+	 }
 
          free(driverNameDisplayGPU);
       }

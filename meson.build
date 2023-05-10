@@ -733,7 +733,7 @@ if _power8.allowed()
         int main() {
           vector unsigned char r;
           vector unsigned int v = vec_splat_u32 (1);
-          r = __builtin_vec_vgbbd ((vector unsigned char) v);
+          r = __builtin_altivec_vgbbd ((vector unsigned char) v);
           return 0;
         }''',
         args : '-mpower8-vector',

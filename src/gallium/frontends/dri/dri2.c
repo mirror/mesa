@@ -624,11 +624,7 @@ dri2_flush_frontbuffer(struct dri_context *ctx,
     */
    _mesa_glthread_finish(ctx->st->ctx);
 
-   if (drawable->stvis.samples > 1) {
-      /* Resolve the buffer used for front rendering. */
-      dri_pipe_blit(ctx->st->pipe, drawable->textures[statt],
-                    drawable->msaa_textures[statt]);
-   }
+   dri_drawable_msaa_resolve(ctx->st->pipe, drawable, statt);
 
    if (drawable->textures[statt]) {
       pipe->flush_resource(pipe, drawable->textures[statt]);

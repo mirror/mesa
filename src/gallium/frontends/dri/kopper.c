@@ -420,12 +420,8 @@ kopper_flush_frontbuffer(struct dri_context *ctx,
 
    drawable->flushing = true;
 
-   if (drawable->stvis.samples > 1) {
-      /* Resolve the front buffer. */
-      dri_pipe_blit(ctx->st->pipe,
-                    drawable->textures[ST_ATTACHMENT_FRONT_LEFT],
-                    drawable->msaa_textures[ST_ATTACHMENT_FRONT_LEFT]);
-   }
+   dri_drawable_msaa_resolve(ctx->st->pipe, drawable, ST_ATTACHMENT_FRONT_LEFT);
+
    ptex = drawable->textures[statt];
 
    if (ptex) {

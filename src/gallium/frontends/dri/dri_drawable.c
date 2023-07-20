@@ -117,6 +117,19 @@ dri_st_framebuffer_validate(struct st_context *st,
    return true;
 }
 
+/* Emits an MSAA resolve blit from the MSAA shadow resource to the actual window
+ * system drawable.
+ */
+void
+dri_drawable_msaa_resolve(struct pipe_context *pctx, struct dri_drawable *drawable,
+                          enum st_attachment_type statt)
+{
+   if (drawable->stvis.samples <= 1)
+      return;
+
+   dri_pipe_blit(pctx, drawable->textures[statt], drawable->msaa_textures[statt]);
+}
+
 static bool
 dri_st_framebuffer_flush_front(struct st_context *st,
                                struct pipe_frontend_drawable *pdrawable,
@@ -432,10 +445,7 @@ notify_before_flush_cb(void* _args)
        (args->reason == __DRI2_THROTTLE_SWAPBUFFER ||
         args->reason == __DRI2_NOTHROTTLE_SWAPBUFFER ||
         args->reason == __DRI2_THROTTLE_COPYSUBBUFFER)) {
-      /* Resolve the MSAA back buffer. */
-      dri_pipe_blit(st->pipe,
-                    args->drawable->textures[ST_ATTACHMENT_BACK_LEFT],
-                    args->drawable->msaa_textures[ST_ATTACHMENT_BACK_LEFT]);
+      dri_drawable_msaa_resolve(st->pipe, args->drawable, ST_ATTACHMENT_BACK_LEFT);
 
       if ((args->reason == __DRI2_THROTTLE_SWAPBUFFER ||
            args->reason == __DRI2_NOTHROTTLE_SWAPBUFFER) &&

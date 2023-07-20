@@ -555,7 +555,7 @@ _mesa_regen_renderbuffer_surface(struct gl_context *ctx,
 }
 
 /**
- * Create or update the pipe_surface of a FBO renderbuffer.
+ * Create or update the pipe_surface of a renderbuffer.
  * This is usually called after st_finalize_texture.
  */
 void

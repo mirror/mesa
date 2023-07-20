@@ -509,7 +509,7 @@ drisw_allocate_textures(struct dri_context *stctx,
             drawable->textures[statts[i]] =
                screen->base.screen->resource_create(screen->base.screen, &templ);
 
-         if (drawable->stvis.samples > 1) {
+         if (drawable->uses_msaa_textures) {
             templ.bind = templ.bind &
                ~(PIPE_BIND_SCANOUT | PIPE_BIND_SHARED | PIPE_BIND_DISPLAY_TARGET);
             templ.nr_samples = drawable->stvis.samples;

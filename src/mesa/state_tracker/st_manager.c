@@ -271,6 +271,13 @@ st_framebuffer_validate(struct gl_framebuffer *stfb,
       }
 
       u_surface_default_template(&surf_tmpl, textures[i]);
+
+      if (stfb->Visual.samples > 1 && textures[i]->nr_samples <= 1) {
+         /* Set up for multisampled rendering to single sampled. */
+         surf_tmpl.nr_samples = stfb->Visual.samples;
+         rb->rtt_nr_samples = stfb->Visual.samples;
+      }
+
       ps = st->pipe->create_surface(st->pipe, textures[i], &surf_tmpl);
       if (ps) {
          st_set_ws_renderbuffer_surface(rb, ps);

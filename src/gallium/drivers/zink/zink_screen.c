@@ -783,6 +783,20 @@ zink_init_screen_caps(struct zink_screen *screen)
 
    caps->surface_sample_count = screen->vk_version >= VK_MAKE_VERSION(1,2,0);
 
+   /* Ask the frontend to avoid using MSRTT to implement winsys MSAA, due to various failures.
+    *
+    * turnip:
+    * "begin_rendering: Assertion
+    *  `ctx->dynamic_fb.attachments[PIPE_MAX_COLOR_BUFS].imageLayout !=
+    *  VK_IMAGE_LAYOUT_UNDEFINED' failed."
+    *
+    * intel:
+    * "ZINK: failed to create transient resource!
+    *  02:01:06.946: ERROR - Piglit error: copyteximage: ../src/intel/vulkan/anv_blorp.c:2155:
+    *  anv_image_msaa_resolve: Assertion `dst_image->vk.samples == 1' failed."
+    */
+   caps->avoid_surface_sample_count = true;
+
    caps->shader_group_vote =
       (screen->info.have_vulkan11 &&
        (screen->info.subgroup.supportedOperations & VK_SUBGROUP_FEATURE_VOTE_BIT) &&

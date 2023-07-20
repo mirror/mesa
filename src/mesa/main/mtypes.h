@@ -2570,7 +2570,7 @@ struct gl_renderbuffer
    bool is_rtt; /**< whether Driver.RenderTexture was called */
    unsigned rtt_face, rtt_slice;
    bool rtt_layered; /**< whether glFramebufferTexture was called */
-   unsigned rtt_nr_samples; /**< from FramebufferTexture2DMultisampleEXT */
+   unsigned rtt_nr_samples; /**< from FramebufferTexture2DMultisampleEXT or winsys MSRTT */
    unsigned rtt_numviews;
 };
 

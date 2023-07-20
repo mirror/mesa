@@ -528,6 +528,10 @@ Capability about the features and limits of the driver/GPU.
 * ``pipe_caps.surface_sample_count``: Whether the driver
   supports pipe_surface overrides of resource nr_samples. If set, will
   enable :ext:`GL_EXT_multisampled_render_to_texture`.
+* ``pipe_caps.avoid_surface_sample_count``: Whether the driver is buggy when
+  pipe_surface overrides resource nr_samples -- used for a freedreno workaround
+  where we want EXT_msrtt for webgl, but the impl is incomplete so we can't
+  support all of GLES3.
 * ``pipe_caps.image_atomic_float_add``: Atomic floating point adds are
   supported on images, buffers, and shared memory.
 * ``pipe_caps.glsl_tess_levels_as_inputs``: True if the driver wants TESSINNER and TESSOUTER to be inputs (rather than system values) for tessellation evaluation shaders.

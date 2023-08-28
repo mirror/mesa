@@ -230,8 +230,8 @@ add the new Mesa version X.Y.
 
 Check that there are no distribution breaking changes and revert them if
 needed. For example: files being overwritten on install, etc. Happens
-extremely rarely - we had only one case so far (see commit
-2ced8eb136528914e1bf4e000dea06a9d53c7e04).
+extremely rarely - we had only one case so far (see
+:commit:`2ced8eb136528914e1bf4e000dea06a9d53c7e04`).
 
 Making a new release
 --------------------

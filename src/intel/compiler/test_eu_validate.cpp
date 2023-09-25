@@ -3375,3 +3375,32 @@ TEST_P(validation_test, dpas_src_subreg_nr)
       clear_instructions(p);
    }
 }
+
+TEST_P(validation_test, wa_14017715663)
+{
+   if (devinfo.ver < 20)
+      return;
+
+   /* Implement checks for Wa 14017715663
+    *
+    * Compiler must not produce instruction with the following condition:
+    *
+    * Dst is byte datatype with a stride greater or equal to 4 and Src1 operand is
+    * word datatype with odd offset. Instead a move instruction must be used with
+    * such pattern to align to a even offset.
+    */
+
+   brw_ADD(p, g0, g0, g0);
+   brw_inst_set_exec_size(&devinfo, last_inst, BRW_EXECUTE_16);
+   brw_inst_set_dst_file_type(&devinfo, last_inst, FIXED_GRF, BRW_TYPE_B);
+   brw_inst_set_dst_da_reg_nr(&devinfo, last_inst, 16);
+   brw_inst_set_dst_da1_subreg_nr(&devinfo, last_inst, 2);
+   brw_inst_set_src0_file_type(&devinfo, last_inst, FIXED_GRF, BRW_TYPE_B);
+   brw_inst_set_src0_da_reg_nr(&devinfo, last_inst, 1);
+   brw_inst_set_src0_da1_subreg_nr(&devinfo, last_inst, 1);
+   brw_inst_set_src1_file_type(&devinfo, last_inst, FIXED_GRF, BRW_TYPE_W);
+   brw_inst_set_src1_da_reg_nr(&devinfo, last_inst, 3);
+   brw_inst_set_src1_da1_subreg_nr(&devinfo, last_inst, 9);
+
+   EXPECT_FALSE(validate(p));
+}

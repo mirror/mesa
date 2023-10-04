@@ -987,6 +987,8 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
               layout->independent_sets,
               layout, &stage->bind_map, &push_map, mem_ctx);
 
+   NIR_PASS_V(nir, brw_nir_lower_sample_index_in_coord);
+
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo,
             anv_nir_ubo_addr_format(pdevice, stage->key.base.robust_flags));
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ssbo,

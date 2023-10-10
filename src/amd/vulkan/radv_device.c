@@ -1462,6 +1462,9 @@ radv_GetImageMemoryRequirements2(VkDevice _device, const VkImageMemoryRequiremen
    pMemoryRequirements->memoryRequirements.size = size;
    pMemoryRequirements->memoryRequirements.alignment = alignment;
 
+   if (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)
+      pMemoryRequirements->memoryRequirements.memoryTypeBits &= pdev->memory_types_host_visible;
+
    vk_foreach_struct (ext, pMemoryRequirements->pNext) {
       switch (ext->sType) {
       case VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS: {

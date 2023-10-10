@@ -804,6 +804,11 @@ endif
 with_clover_spirv = with_gallium_clover and get_option('opencl-spirv')
 with_clc = with_microsoft_clc or with_intel_clc or with_gallium_asahi or with_asahi_vk or with_gallium_rusticl or with_clover_spirv
 
+with_vcl = get_option('vcl')
+if with_vcl
+  add_languages('rust', required: true)
+endif
+
 dep_clc = null_dep
 if with_gallium_clover or with_clc
   dep_clc = dependency('libclc')
@@ -2409,3 +2414,6 @@ summary(perfetto_summary, section: 'Perfetto', bool_yn: true, list_sep: ' ')
 
 teflon_summary = {'Enabled': with_teflon}
 summary(teflon_summary, section: 'Teflon (TensorFlow Lite delegate)', bool_yn: true, list_sep: ' ')
+
+vcl_summary = {'Enabled': with_vcl}
+summary(vcl_summary, section: 'VCL', bool_yn: true)

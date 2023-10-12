@@ -656,8 +656,6 @@ _mesa_update_renderbuffer_surface(struct gl_context *ctx,
    struct pipe_surface *surf = *psurf;
 
    if (!surf ||
-       surf->texture->nr_samples != rb->NumSamples ||
-       surf->texture->nr_storage_samples != rb->NumStorageSamples ||
        surf->format != format ||
        surf->texture != resource ||
        surf->width != rtt_width ||

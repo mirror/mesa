@@ -234,6 +234,11 @@ struct nvk_cmd_buffer {
    struct util_dynarray pushes;
 
    uint64_t tls_space_needed;
+
+   struct {
+      struct nvk_video_session *vid;
+      struct nvk_video_session_params *params;
+   } video;
 };
 
 VK_DEFINE_HANDLE_CASTS(nvk_cmd_buffer, vk.base, VkCommandBuffer,

@@ -31,6 +31,7 @@
 #include "vk_device.h"
 #include "vk_drm_syncobj.h"
 #include "vk_shader_module.h"
+#include "vulkan/vulkan_core.h"
 #include "vulkan/wsi/wsi_common.h"
 
 #include <sys/sysmacros.h>
@@ -196,6 +197,9 @@ nvk_get_device_extensions(const struct nvk_instance *instance,
       .KHR_variable_pointers = true,
       .KHR_vertex_attribute_divisor = true,
       .KHR_vulkan_memory_model = nvk_use_nak(info),
+      .KHR_video_queue = true,
+      .KHR_video_decode_queue = true,
+      .KHR_video_decode_h264 = true,
       .KHR_workgroup_memory_explicit_layout = true,
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_4444_formats = true,
@@ -1143,7 +1147,7 @@ nvk_get_device_properties(const struct nvk_instance *instance,
 
    /* VK_EXT_host_image_copy */
 
-   /* Not sure if there are layout specific things, so for now just reporting 
+   /* Not sure if there are layout specific things, so for now just reporting
     * all layouts from extensions.
     */
    static const VkImageLayout supported_layouts[] = {
@@ -1449,6 +1453,13 @@ nvk_create_drm_physical_device(struct vk_instance *_instance,
                      VK_QUEUE_SPARSE_BINDING_BIT,
       .queue_count = 1,
    };
+
+   pdev->queue_families[pdev->queue_family_count++] = (struct nvk_queue_family) {
+      .queue_flags = VK_QUEUE_VIDEO_DECODE_BIT_KHR |
+                     VK_QUEUE_TRANSFER_BIT |
+                     VK_QUEUE_SPARSE_BINDING_BIT,
+      .queue_count = 1,
+   };
    assert(pdev->queue_family_count <= ARRAY_SIZE(pdev->queue_families));
 
    pdev->vk.supported_sync_types = nvkmd->sync_types;
@@ -1617,6 +1628,24 @@ nvk_GetPhysicalDeviceQueueFamilyProperties2(
             }
          }
       }
+   }
+
+   if (!pQueueFamilyProperties)
+      return;
+   for (uint32_t i = 0; i < *pQueueFamilyPropertyCount; i++) {
+     vk_foreach_struct (ext, pQueueFamilyProperties[i].pNext) {
+       switch (ext->sType) {
+       case VK_STRUCTURE_TYPE_QUEUE_FAMILY_VIDEO_PROPERTIES_KHR: {
+          VkQueueFamilyVideoPropertiesKHR *prop = (VkQueueFamilyVideoPropertiesKHR *)ext;
+          if (pQueueFamilyProperties[i].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR)
+             prop->videoCodecOperations =
+                VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+          break;
+       }
+       default:
+          break;
+       }
+     }
    }
 }
 

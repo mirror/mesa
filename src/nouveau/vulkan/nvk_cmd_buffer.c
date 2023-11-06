@@ -297,6 +297,8 @@ nvk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
 
    nvk_reset_cmd_buffer(&cmd->vk, 0);
 
+   if (cmd->vk.pool->queue_family_index == 1)
+      return VK_SUCCESS;
    /* Start with a nop so we have at least something to submit */
    struct nv_push *p = nvk_cmd_buffer_push(cmd, 2);
    P_MTHD(p, NV90B5, NOP);

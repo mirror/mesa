@@ -63,6 +63,7 @@ nvk_files = files(
   'nvk_shader.h',
   'nvk_upload_queue.c',
   'nvk_upload_queue.h',
+  'nvk_video.c',
   'nvk_wsi.c',
   'nvk_wsi.h',
   'nvkmd/nouveau/nvkmd_nouveau.h',

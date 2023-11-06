@@ -21,6 +21,7 @@ nv_classes = [
   'clc397',
   'clc3c0',
   'clc597',
+  'clc5b0',
   'clc5c0',
   'clc697',
   'clc6c0',

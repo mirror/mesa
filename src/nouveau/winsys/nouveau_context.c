@@ -228,3 +228,49 @@ nouveau_ws_context_killed(struct nouveau_ws_context *context)
    /* nouveau returns ENODEV once the channel was killed */
    return ret == -ENODEV;
 }
+
+int
+nouveau_ws_vid_context_create(struct nouveau_ws_device *dev, struct nouveau_ws_vid_context **out)
+{
+   struct drm_nouveau_channel_alloc req = { .fb_ctxdma_handle = ~0, .tt_ctxdma_handle = 0x300 };
+   uint32_t classes[NOUVEAU_WS_CONTEXT_MAX_CLASSES];
+   uint32_t base;
+
+   *out = CALLOC_STRUCT(nouveau_ws_vid_context);
+   if (!*out)
+      return -ENOMEM;
+
+   int ret = drmCommandWriteRead(dev->fd, DRM_NOUVEAU_CHANNEL_ALLOC, &req, sizeof(req));
+   if (ret)
+      goto fail_chan;
+
+   ret = nouveau_ws_context_query_classes(dev->fd, req.channel, classes);
+   if (ret)
+      goto fail_chan;
+
+   base = (0xbeef + req.channel) << 16;
+   uint32_t obj_class = nouveau_ws_context_find_class(classes, 0xb0);
+   ret = nouveau_ws_subchan_alloc(dev->fd, req.channel, base | 0x00b0, obj_class,
+                                  &(*out)->dec);
+   if (ret)
+      goto fail_subchan;
+
+   (*out)->channel = req.channel;
+   (*out)->dev = dev;
+   return 0;
+
+fail_subchan:
+   nouveau_ws_subchan_dealloc(dev->fd, &(*out)->dec);
+   nouveau_ws_channel_dealloc(dev->fd, req.channel);
+fail_chan:
+   FREE(*out);
+   return ret;
+}
+
+void
+nouveau_ws_vid_context_destroy(struct nouveau_ws_vid_context *context)
+{
+   nouveau_ws_subchan_dealloc(context->dev->fd, &context->dec);
+   nouveau_ws_channel_dealloc(context->dev->fd, context->channel);
+   FREE(context);
+}

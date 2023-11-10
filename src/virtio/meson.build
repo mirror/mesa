@@ -11,4 +11,5 @@ subdir('vdrm')
 
 if with_vcl
   subdir('vcl')
+  subdir('targets/vcl')
 endif

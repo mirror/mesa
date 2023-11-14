@@ -3,4 +3,4 @@
  * SPDX-License-Identifier: MIT
  */
 
-mod api;
+pub mod icd;

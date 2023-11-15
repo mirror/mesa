@@ -12,7 +12,7 @@ use vcl_opencl_gen::*;
 use std::ffi::CStr;
 use std::ptr;
 
-pub static _DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
+pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetPlatformIDs: Some(clGetPlatformIDs),
     clGetPlatformInfo: None,
     clGetDeviceIDs: None,

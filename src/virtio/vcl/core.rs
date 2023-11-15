@@ -3,5 +3,4 @@
  * SPDX-License-Identifier: MIT
  */
 
-mod api;
-pub mod core;
+pub mod platform;

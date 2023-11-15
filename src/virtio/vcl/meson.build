@@ -10,6 +10,8 @@ vcl_bindgen_args = [
   '--raw-line', 'unsafe impl std::marker::Sync for _cl_icd_dispatch {}',
   # avoids warning such as: `extern` block uses type `u128`, which is not FFI-safe
   '--allowlist-type', 'cl_.*',
+  # brings in CL_SUCCESS, CL_INVALID_VALUE, and so on..
+  '--allowlist-var', 'CL_.*',
 ]
 
 vcl_opencl_bindings_rs = rust.bindgen(
@@ -37,10 +39,38 @@ vcl_opencl_gen = static_library(
   rust_args : [vcl_gen_args],
 )
 
+vcl_proc_macros_files = files(
+  '../../gallium/frontends/rusticl/proc/lib.rs',
+)
+
+vcl_proc_macros = shared_library(
+  'vcl_proc_macros',
+  [vcl_proc_macros_files],
+  rust_crate_type : 'proc-macro',
+)
+
+libmesa_rust_util_files = files(
+  '../../gallium/frontends/rusticl/util/lib.rs',
+  '../../gallium/frontends/rusticl/util/assert.rs',
+  '../../gallium/frontends/rusticl/util/bitset.rs',
+  '../../gallium/frontends/rusticl/util/feature.rs',
+  '../../gallium/frontends/rusticl/util/properties.rs',
+  '../../gallium/frontends/rusticl/util/ptr.rs',
+  '../../gallium/frontends/rusticl/util/string.rs',
+)
+
+libmesa_rust_util = static_library(
+  'mesa_rust_util',
+  [libmesa_rust_util_files],
+  gnu_symbol_visibility : 'hidden',
+  rust_crate_type : 'rlib',
+)
+
 vcl_files = files(
   'lib.rs',
   'api.rs',
-  'api/icd.rs'
+  'api/icd.rs',
+  'api/platform.rs',
 )
 
 libvcl = static_library(
@@ -48,5 +78,9 @@ libvcl = static_library(
   [vcl_files],
   gnu_symbol_visibility : 'hidden',
   rust_crate_type : 'staticlib',
-  link_with : [vcl_opencl_gen]
+  link_with : [
+    vcl_opencl_gen,
+    vcl_proc_macros,
+    libmesa_rust_util,
+  ]
 )

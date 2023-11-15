@@ -5,13 +5,15 @@
 
 #![allow(non_snake_case)]
 
-use vcl_opencl_gen::cl_icd_dispatch;
+use crate::api::platform::*;
+
+use vcl_opencl_gen::*;
 
 use std::ffi::CStr;
 use std::ptr;
 
 pub static _DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
-    clGetPlatformIDs: None,
+    clGetPlatformIDs: Some(clGetPlatformIDs),
     clGetPlatformInfo: None,
     clGetDeviceIDs: None,
     clGetDeviceInfo: None,
@@ -76,7 +78,7 @@ pub static _DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueMarker: None,
     clEnqueueWaitForEvents: None,
     clEnqueueBarrier: None,
-    clGetExtensionFunctionAddress: None,
+    clGetExtensionFunctionAddress: Some(clGetExtensionFunctionAddress),
     clCreateFromGLBuffer: None,
     clCreateFromGLTexture2D: None,
     clCreateFromGLTexture3D: None,
@@ -162,20 +164,36 @@ pub static _DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetContextDestructorCallback: ptr::null_mut(),
 };
 
+pub type CLError = cl_int;
+pub type CLResult<T> = Result<T, CLError>;
+
 #[no_mangle]
-extern "C" fn clGetExtensionFunctionAddress(
-    function_name: *const ::std::os::raw::c_char,
-) -> *mut ::std::ffi::c_void {
-    cl_get_extension_function_address(function_name)
+extern "C" fn clIcdGetPlatformIDsKHR(
+    num_entries: cl_uint,
+    platforms: *mut cl_platform_id,
+    num_platforms: *mut cl_uint,
+) -> cl_int {
+    platform::clGetPlatformIDs(num_entries, platforms, num_platforms)
 }
 
-extern "C" fn cl_get_extension_function_address(
+macro_rules! cl_ext_func {
+    ($func:ident: $api_type:ident) => {{
+        let _func: $api_type = Some($func);
+        $func as *mut ::std::ffi::c_void
+    }};
+}
+
+#[rustfmt::skip]
+#[no_mangle]
+extern "C" fn clGetExtensionFunctionAddress(
     function_name: *const ::std::os::raw::c_char,
 ) -> *mut ::std::ffi::c_void {
     if function_name.is_null() {
         return ptr::null_mut();
     }
     match unsafe { CStr::from_ptr(function_name) }.to_str().unwrap() {
+        // cl_khr_icd: https://registry.khronos.org/OpenCL/sdk/3.0/docs/man/html/cl_khr_icd.html
+        "clIcdGetPlatformIDsKHR" => cl_ext_func!(clIcdGetPlatformIDsKHR: clIcdGetPlatformIDsKHR_fn),
         _ => ptr::null_mut(),
     }
 }

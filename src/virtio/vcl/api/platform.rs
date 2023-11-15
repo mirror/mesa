@@ -44,3 +44,44 @@ fn get_platform_ids(
 
     Ok(())
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use std::ptr;
+
+    #[test]
+    fn test_get_platform_ids_invalid() {
+        assert_eq!(
+            get_platform_ids(0, ptr::null_mut(), ptr::null_mut()),
+            Err(CL_INVALID_VALUE)
+        );
+        assert_eq!(
+            get_platform_ids(1, ptr::null_mut(), ptr::null_mut()),
+            Err(CL_INVALID_VALUE)
+        );
+
+        let mut platform = ptr::null_mut();
+        assert_eq!(
+            get_platform_ids(0, &mut platform, ptr::null_mut()),
+            Err(CL_INVALID_VALUE)
+        );
+        assert_eq!(platform, ptr::null_mut());
+    }
+
+    #[test]
+    fn test_get_platform_ids_valid() {
+        let mut num_platforms = 0;
+        let mut platform = ptr::null_mut();
+
+        assert_eq!(
+            get_platform_ids(0, ptr::null_mut(), &mut num_platforms),
+            Ok(())
+        );
+        assert_eq!(num_platforms, 1);
+
+        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
+        assert_eq!(platform, Platform::get().as_ptr());
+    }
+}

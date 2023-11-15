@@ -84,3 +84,5 @@ libvcl = static_library(
     libmesa_rust_util,
   ]
 )
+
+rust.test('vcl-unit-tests', libvcl)

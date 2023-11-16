@@ -5,12 +5,16 @@
 
 #![allow(non_snake_case)]
 
-use crate::api::icd::CLResult; 
-use crate::core::platform::Platform;
+use crate::api::icd::CLResult;
+use crate::api::util::*;
+use crate::core::platform::*;
 
 use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
-use vcl_proc_macros::cl_entrypoint;
+use vcl_proc_macros::*;
+
+use std::mem::MaybeUninit;
+use std::ptr;
 
 #[cl_entrypoint(clGetPlatformIDs)]
 fn get_platform_ids(
@@ -45,11 +49,30 @@ fn get_platform_ids(
     Ok(())
 }
 
+#[cl_info_entrypoint(clGetPlatformInfo)]
+impl CLInfo<cl_platform_info> for cl_platform_id {
+    fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        if *self == ptr::null_mut() {
+            return Err(CL_INVALID_PLATFORM);
+        }
+
+        Ok(match q {
+            CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
+            CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
+            CL_PLATFORM_NAME => cl_prop("vcl"),
+            CL_PLATFORM_PROFILE => cl_prop("FULL_PROFILE"),
+            CL_PLATFORM_VENDOR => cl_prop("Mesa/X.org"),
+            // OpenCL<space><major_version.minor_version><space><platform-specific information>
+            CL_PLATFORM_VERSION => cl_prop("OpenCL 1.0 "),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-
-    use std::ptr;
 
     #[test]
     fn test_get_platform_ids_invalid() {
@@ -83,5 +106,41 @@ mod test {
 
         assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
         assert_eq!(platform, Platform::get().as_ptr());
+    }
+
+    #[test]
+    fn test_get_platform_info() {
+        let mut platform = ptr::null_mut();
+        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
+
+        const PV_SIZE: usize = 256;
+        let mut pv = ['\0'; PV_SIZE];
+        let pv_ptr = pv.as_mut_ptr() as _;
+        let mut pv_size_ret = 0;
+
+        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, pv_ptr, &mut pv_size_ret);
+        assert_eq!(res, Ok(()));
+
+        let res = clGetPlatformInfo(
+            ptr::null_mut(),
+            CL_PLATFORM_NAME,
+            PV_SIZE,
+            pv_ptr,
+            &mut pv_size_ret,
+        );
+        assert_eq!(res, CL_INVALID_PLATFORM);
+
+        const WRONG_PARAM: u32 = 42;
+        let res = platform.get_info(WRONG_PARAM, PV_SIZE, pv_ptr, &mut pv_size_ret);
+        assert_eq!(res, Err(CL_INVALID_VALUE));
+
+        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, ptr::null_mut(), &mut pv_size_ret);
+        assert_eq!(res, Ok(()));
+
+        let res = platform.get_info(CL_PLATFORM_NAME, 0, pv_ptr, &mut pv_size_ret);
+        assert_eq!(res, Err(CL_INVALID_VALUE));
+
+        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, pv_ptr, ptr::null_mut());
+        assert_eq!(res, Ok(()));
     }
 }

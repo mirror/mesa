@@ -5,7 +5,7 @@
 
 use crate::api::icd::DISPATCH;
 
-use vcl_opencl_gen::{cl_icd_dispatch, cl_platform_id};
+use vcl_opencl_gen::*;
 
 use std::sync::Once;
 
@@ -15,6 +15,20 @@ pub struct Platform {
 }
 
 static PLATFORM_ONCE: Once = Once::new();
+
+macro_rules! gen_cl_exts {
+    (@COUNT $e:expr) => { 1 };
+    (@COUNT $e:expr, $($es:expr),+) => { 1 + gen_cl_exts!(@COUNT $($es),*) };
+
+    (@CONCAT $e:tt) => { $e };
+    (@CONCAT $e:tt, $($es:tt),+) => { concat!($e, ' ', gen_cl_exts!(@CONCAT $($es),*)) };
+
+    ([$(($major:expr, $minor:expr, $patch:expr, $ext:tt)$(,)?)+]) => {
+        pub static PLATFORM_EXTENSION_STR: &str = concat!(gen_cl_exts!(@CONCAT $($ext),*));
+    }
+}
+
+gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
 static mut PLATFORM: Platform = Platform {
     dispatch: &DISPATCH,

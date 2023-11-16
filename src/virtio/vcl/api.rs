@@ -5,3 +5,4 @@
 
 pub mod icd;
 mod platform;
+pub mod util;

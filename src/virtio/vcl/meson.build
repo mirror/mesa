@@ -71,6 +71,7 @@ vcl_files = files(
   'api.rs',
   'api/icd.rs',
   'api/platform.rs',
+  'api/util.rs',
 )
 
 libvcl = static_library(

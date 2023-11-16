@@ -5,6 +5,7 @@
 
 #![allow(non_snake_case)]
 
+use crate::api::platform;
 use crate::api::platform::*;
 
 use vcl_opencl_gen::*;
@@ -14,7 +15,7 @@ use std::ptr;
 
 pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetPlatformIDs: Some(clGetPlatformIDs),
-    clGetPlatformInfo: None,
+    clGetPlatformInfo: Some(platform::clGetPlatformInfo),
     clGetDeviceIDs: None,
     clGetDeviceInfo: None,
     clCreateContext: None,
@@ -194,6 +195,24 @@ extern "C" fn clGetExtensionFunctionAddress(
     match unsafe { CStr::from_ptr(function_name) }.to_str().unwrap() {
         // cl_khr_icd: https://registry.khronos.org/OpenCL/sdk/3.0/docs/man/html/cl_khr_icd.html
         "clIcdGetPlatformIDsKHR" => cl_ext_func!(clIcdGetPlatformIDsKHR: clIcdGetPlatformIDsKHR_fn),
+        "clGetPlatformInfo" => cl_ext_func!(clGetPlatformInfo: cl_api_clGetPlatformInfo),
         _ => ptr::null_mut(),
     }
+}
+
+#[no_mangle]
+extern "C" fn clGetPlatformInfo(
+    platform: cl_platform_id,
+    param_name: cl_platform_info,
+    param_value_size: usize,
+    param_value: *mut ::std::ffi::c_void,
+    param_value_size_ret: *mut usize,
+) -> cl_int {
+    platform::clGetPlatformInfo(
+        platform,
+        param_name,
+        param_value_size,
+        param_value,
+        param_value_size_ret,
+    )
 }

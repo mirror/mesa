@@ -4,6 +4,8 @@
  */
 
 use crate::api::icd::DISPATCH;
+use crate::core::device::*;
+use crate::dev::virtgpu::VirtGpuError;
 
 use vcl_opencl_gen::*;
 
@@ -12,6 +14,7 @@ use std::sync::Once;
 #[repr(C)]
 pub struct Platform {
     dispatch: &'static cl_icd_dispatch,
+    devices: Vec<Device>,
 }
 
 static PLATFORM_ONCE: Once = Once::new();
@@ -32,12 +35,17 @@ gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
 static mut PLATFORM: Platform = Platform {
     dispatch: &DISPATCH,
+    devices: Vec::new(),
 };
 
 impl Platform {
-    pub fn init_once() {
+    pub fn init_once() -> Result<(), VirtGpuError> {
         // SAFETY: no concurrent static mut access due to std::Once
-        PLATFORM_ONCE.call_once(|| {});
+        PLATFORM_ONCE.call_once(|| {
+            let devices = Device::all().expect("Failed to get devices");
+            unsafe { PLATFORM.devices = devices };
+        });
+        Ok(())
     }
 
     pub fn get() -> &'static Self {

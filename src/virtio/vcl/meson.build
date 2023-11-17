@@ -1,7 +1,7 @@
 # Copyright © 2023-2024 Qualcomm Innovation Center, Inc. All Rights Reserved.
 # SPDX-License-Identifier: MIT
 
-rust = import('unstable-rust')
+rust = import('rust')
 
 cl_c_args = ['-DCL_TARGET_OPENCL_VERSION=100']
 
@@ -66,12 +66,33 @@ libmesa_rust_util = static_library(
   rust_crate_type : 'rlib',
 )
 
+vcl_drm_bindings_rs = rust.bindgen(
+  input : 'vcl_drm_bindings.h',
+  output : 'vcl_drm_bindings.rs',
+  dependencies: [dep_libdrm],
+)
+
+vcl_drm_gen = static_library(
+  'vcl_drm_gen',
+  vcl_drm_bindings_rs,
+  gnu_symbol_visibility : 'hidden',
+  rust_crate_type : 'rlib',
+  rust_args : [vcl_gen_args],
+  dependencies : [dep_libdrm],
+)
+
 vcl_files = files(
   'lib.rs',
   'api.rs',
   'api/icd.rs',
   'api/platform.rs',
   'api/util.rs',
+  'core.rs',
+  'core/device.rs',
+  'core/platform.rs',
+  'dev.rs',
+  'dev/drm.rs',
+  'dev/virtgpu.rs',
 )
 
 libvcl = static_library(
@@ -83,6 +104,7 @@ libvcl = static_library(
     vcl_opencl_gen,
     vcl_proc_macros,
     libmesa_rust_util,
+    vcl_drm_gen,
   ]
 )
 

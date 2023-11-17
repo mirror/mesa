@@ -33,7 +33,10 @@ fn get_platform_ids(
     }
 
     // Run initialization code once
-    Platform::init_once();
+    if Platform::init_once().is_err() {
+        // Failure to allocate resources required by the implementation on the host
+        return Err(CL_OUT_OF_HOST_MEMORY);
+    }
 
     // A list of OpenCL platforms available should be stored in platforms.
     // The cl_platform_id values returned in platforms are ICD compatible and can be used to identify a

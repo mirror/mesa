@@ -3,5 +3,5 @@
  * SPDX-License-Identifier: MIT
  */
 
-mod device;
-pub mod platform;
+pub mod drm;
+pub mod virtgpu;

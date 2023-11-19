@@ -383,6 +383,7 @@ llvmpipe_init_screen_caps(struct pipe_screen *screen)
    caps->atomic_float_minmax = LLVM_VERSION_MAJOR >= 15;
    caps->nir_images_as_deref = false;
    caps->alpha_to_coverage_dither_control = true;
+   caps->polygon_offset_units_unscaled = true;
 
    caps->min_line_width =
    caps->min_line_width_aa =

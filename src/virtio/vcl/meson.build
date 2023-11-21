@@ -81,6 +81,23 @@ vcl_drm_gen = static_library(
   dependencies : [dep_libdrm],
 )
 
+virglrenderer_c_args = ['-DVIRGL_RENDERER_UNSTABLE_APIS']
+
+vcl_virglrenderer_bindings_rs = rust.bindgen(
+  input : 'vcl_virglrenderer_bindings.h',
+  output : 'vcl_virglrenderer_bindings.rs',
+  include_directories : inc_virtio,
+  c_args : [virglrenderer_c_args],
+)
+
+vcl_virglrenderer_gen = static_library(
+  'vcl_virglrenderer_gen',
+  vcl_virglrenderer_bindings_rs,
+  gnu_symbol_visibility : 'hidden',
+  rust_crate_type : 'rlib',
+  rust_args : [vcl_gen_args],
+)
+
 vcl_files = files(
   'lib.rs',
   'api.rs',
@@ -105,6 +122,7 @@ libvcl = static_library(
     vcl_proc_macros,
     libmesa_rust_util,
     vcl_drm_gen,
+    vcl_virglrenderer_gen,
   ]
 )
 

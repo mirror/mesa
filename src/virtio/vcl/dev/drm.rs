@@ -110,4 +110,14 @@ impl DrmDevice {
 
         ret
     }
+
+    pub fn ioctl<T>(&self, request: u64, arg: &mut T) -> Result<(), VirtGpuError> {
+        let ret = unsafe { drmIoctl(self.file.as_raw_fd(), request, arg as *mut _ as _) };
+        if ret != 0 {
+            eprintln!("Failed ioctl: {}", std::io::Error::last_os_error());
+            Err(VirtGpuError::Ioctl)
+        } else {
+            Ok(())
+        }
+    }
 }

@@ -54,12 +54,12 @@ fn get_platform_ids(
 #[cl_info_entrypoint(clGetPlatformInfo)]
 impl CLInfo<cl_platform_info> for cl_platform_id {
     fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
-        self.get_ref()?;
+        let platform = self.get_ref()?;
 
         Ok(match q {
             CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
             CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
-            CL_PLATFORM_NAME => cl_prop("vcl"),
+            CL_PLATFORM_NAME => cl_prop(platform.get_name()),
             CL_PLATFORM_PROFILE => cl_prop("FULL_PROFILE"),
             CL_PLATFORM_VENDOR => cl_prop("Mesa/X.org"),
             // OpenCL<space><major_version.minor_version><space><platform-specific information>

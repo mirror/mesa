@@ -6,12 +6,12 @@
 use crate::dev::virtgpu::*;
 
 pub struct Device {
-    _gpu: VirtGpu,
+    pub gpu: VirtGpu,
 }
 
 impl Device {
     pub fn new(gpu: VirtGpu) -> Self {
-        Self { _gpu: gpu }
+        Self { gpu: gpu }
     }
 
     pub fn all() -> Result<Vec<Device>, VirtGpuError> {

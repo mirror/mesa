@@ -9,12 +9,14 @@ use crate::dev::virtgpu::VirtGpuError;
 
 use vcl_opencl_gen::*;
 
+use std::ffi::CString;
 use std::sync::Once;
 
 #[repr(C)]
 pub struct Platform {
     dispatch: &'static cl_icd_dispatch,
     devices: Vec<Device>,
+    pub name: Option<CString>,
 }
 
 static PLATFORM_ONCE: Once = Once::new();
@@ -36,6 +38,7 @@ gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 static mut PLATFORM: Platform = Platform {
     dispatch: &DISPATCH,
     devices: Vec::new(),
+    name: None,
 };
 
 impl Platform {
@@ -43,7 +46,23 @@ impl Platform {
         // SAFETY: no concurrent static mut access due to std::Once
         PLATFORM_ONCE.call_once(|| {
             let devices = Device::all().expect("Failed to get devices");
-            unsafe { PLATFORM.devices = devices };
+
+            let mut name = String::from("vcl");
+            if let Some(device) = devices.get(0) {
+                let host_platform_name = device
+                    .gpu
+                    .capset
+                    .get_host_platform_name()
+                    .to_str()
+                    .expect("Failed to parse host platform name");
+                name = format!("{name} ({host_platform_name})");
+            }
+            let name_cstr = CString::new(name).expect("Failed to create CString for platform name");
+
+            unsafe {
+                PLATFORM.name = Some(name_cstr);
+                PLATFORM.devices = devices;
+            };
         });
         Ok(())
     }
@@ -56,6 +75,14 @@ impl Platform {
 
     pub fn as_ptr(&self) -> cl_platform_id {
         (self as *const Self) as cl_platform_id
+    }
+
+    pub fn get_name(&self) -> &str {
+        self.name
+            .as_ref()
+            .unwrap()
+            .to_str()
+            .expect("Failed to parse platform name")
     }
 }
 

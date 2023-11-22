@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-use crate::api::icd::DISPATCH;
+use crate::api::icd::*;
 use crate::core::device::*;
 use crate::dev::virtgpu::VirtGpuError;
 
@@ -56,5 +56,19 @@ impl Platform {
 
     pub fn as_ptr(&self) -> cl_platform_id {
         (self as *const Self) as cl_platform_id
+    }
+}
+
+pub trait GetPlatformRef {
+    fn get_ref(&self) -> CLResult<&'static Platform>;
+}
+
+impl GetPlatformRef for cl_platform_id {
+    fn get_ref(&self) -> CLResult<&'static Platform> {
+        if !self.is_null() && *self == Platform::get().as_ptr() {
+            Ok(Platform::get())
+        } else {
+            Err(CL_INVALID_PLATFORM)
+        }
     }
 }

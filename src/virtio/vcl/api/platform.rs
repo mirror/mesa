@@ -14,7 +14,6 @@ use vcl_opencl_gen::*;
 use vcl_proc_macros::*;
 
 use std::mem::MaybeUninit;
-use std::ptr;
 
 #[cl_entrypoint(clGetPlatformIDs)]
 fn get_platform_ids(
@@ -55,9 +54,7 @@ fn get_platform_ids(
 #[cl_info_entrypoint(clGetPlatformInfo)]
 impl CLInfo<cl_platform_info> for cl_platform_id {
     fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
-        if *self == ptr::null_mut() {
-            return Err(CL_INVALID_PLATFORM);
-        }
+        self.get_ref()?;
 
         Ok(match q {
             CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
@@ -76,6 +73,8 @@ impl CLInfo<cl_platform_info> for cl_platform_id {
 #[cfg(test)]
 mod test {
     use super::*;
+
+    use std::ptr;
 
     #[test]
     fn test_get_platform_ids_invalid() {
@@ -126,6 +125,16 @@ mod test {
 
         let res = clGetPlatformInfo(
             ptr::null_mut(),
+            CL_PLATFORM_NAME,
+            PV_SIZE,
+            pv_ptr,
+            &mut pv_size_ret,
+        );
+        assert_eq!(res, CL_INVALID_PLATFORM);
+
+        const WRONG_PLATFORM: cl_platform_id = unsafe { std::mem::transmute(42u64) };
+        let res = clGetPlatformInfo(
+            WRONG_PLATFORM,
             CL_PLATFORM_NAME,
             PV_SIZE,
             pv_ptr,

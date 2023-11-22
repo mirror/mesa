@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+mod device;
 pub mod icd;
 mod platform;
 pub mod util;

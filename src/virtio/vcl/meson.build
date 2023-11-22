@@ -102,6 +102,7 @@ vcl_files = files(
   'lib.rs',
   'api.rs',
   'api/icd.rs',
+  'api/device.rs',
   'api/platform.rs',
   'api/util.rs',
   'core.rs',

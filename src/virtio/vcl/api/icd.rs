@@ -5,6 +5,7 @@
 
 #![allow(non_snake_case)]
 
+use crate::api::device::*;
 use crate::api::platform;
 use crate::api::platform::*;
 
@@ -16,7 +17,7 @@ use std::ptr;
 pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetPlatformIDs: Some(clGetPlatformIDs),
     clGetPlatformInfo: Some(platform::clGetPlatformInfo),
-    clGetDeviceIDs: None,
+    clGetDeviceIDs: Some(clGetDeviceIDs),
     clGetDeviceInfo: None,
     clCreateContext: None,
     clCreateContextFromType: None,

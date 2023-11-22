@@ -84,6 +84,16 @@ impl Platform {
             .to_str()
             .expect("Failed to parse platform name")
     }
+
+    pub fn get_devices<'a>(&'a self, device_type: cl_device_type) -> Vec<&'a Device> {
+        // We only support GPUs
+        let v: u32 = device_type.try_into().unwrap_or(0);
+        if v & (CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_DEFAULT) != 0 {
+            self.devices.iter().collect()
+        } else {
+            Vec::default()
+        }
+    }
 }
 
 pub trait GetPlatformRef {

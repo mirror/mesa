@@ -16,7 +16,7 @@ use vcl_proc_macros::*;
 use std::mem::MaybeUninit;
 
 #[cl_entrypoint(clGetPlatformIDs)]
-fn get_platform_ids(
+pub fn get_platform_ids(
     num_entries: cl_uint,
     platforms: *mut cl_platform_id,
     num_platforms: *mut cl_uint,

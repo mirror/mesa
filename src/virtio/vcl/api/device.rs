@@ -4,15 +4,16 @@
  */
 
 use crate::api::icd::*;
-use crate::api::util::check_cl_device_type;
+use crate::api::util::*;
 use crate::core::platform::GetPlatformRef;
 
 use vcl_opencl_gen::*;
-use vcl_proc_macros::cl_entrypoint;
+use vcl_proc_macros::*;
 
 use mesa_rust_util::ptr::CheckedPtr;
 
 use std::cmp::min;
+use std::mem::MaybeUninit;
 
 #[cl_entrypoint(clGetDeviceIDs)]
 fn get_device_ids(
@@ -60,6 +61,19 @@ fn get_device_ids(
     }
 
     Ok(())
+}
+
+#[cl_info_entrypoint(clGetDeviceInfo)]
+impl CLInfo<cl_device_info> for cl_device_id {
+    fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let dev = self.get_ref()?;
+
+        #[allow(non_upper_case_globals)]
+        Ok(match q {
+            CL_DEVICE_NAME => cl_prop::<&str>(&dev.gpu.drm_device.name.as_str()),
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
 }
 
 #[cfg(test)]

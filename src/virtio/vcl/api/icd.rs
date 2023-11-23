@@ -18,7 +18,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetPlatformIDs: Some(clGetPlatformIDs),
     clGetPlatformInfo: Some(platform::clGetPlatformInfo),
     clGetDeviceIDs: Some(clGetDeviceIDs),
-    clGetDeviceInfo: None,
+    clGetDeviceInfo: Some(clGetDeviceInfo),
     clCreateContext: None,
     clCreateContextFromType: None,
     clRetainContext: None,

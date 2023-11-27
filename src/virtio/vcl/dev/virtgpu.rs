@@ -4,6 +4,7 @@
  */
 
 use crate::dev::drm::*;
+use crate::protocol::ring::VirtGpuRing;
 use vcl_drm_gen::*;
 use vcl_virglrenderer_gen::*;
 
@@ -23,6 +24,7 @@ pub struct VirtGpu {
     pub drm_device: Rc<DrmDevice>,
     pub params: VirtGpuParams,
     pub capset: VirtGpuCapset,
+    pub ring: VirtGpuRing,
 }
 
 static VIRTGPU_ONCE: Once = Once::new();
@@ -50,6 +52,17 @@ impl VirtGpu {
         unsafe { VIRTGPU.as_ref().unwrap() }
     }
 
+    pub fn get_mut() -> &'static mut Self {
+        debug_assert!(VIRTGPU_ONCE.is_completed());
+        // This is NOT safe
+        unsafe { VIRTGPU.as_mut().unwrap() }
+    }
+
+    pub fn get_ring(&mut self) -> &mut VirtGpuRing {
+        debug_assert!(VIRTGPU_ONCE.is_completed());
+        &mut self.ring
+    }
+
     pub fn new(drm_device: DrmDevice) -> Result<Self, VirtGpuError> {
         let drm_device = Rc::new(drm_device);
 
@@ -65,10 +78,14 @@ impl VirtGpu {
         drm_device.init_context()?;
 
         let capset = VirtGpuCapset::new(&drm_device)?;
+
+        let ring = VirtGpuRing::new(drm_device.clone())?;
+
         let ret = Self {
             drm_device,
             params,
             capset,
+            ring,
         };
         Ok(ret)
     }

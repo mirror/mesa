@@ -129,6 +129,10 @@ vcl_files = files(
   'dev/drm.rs',
   'dev/virtgpu.rs',
   'dev/resource.rs',
+  'protocol.rs',
+  'protocol/cs_impl.rs',
+  'protocol/cs.rs',
+  'protocol/ring.rs',
 )
 
 libvcl = static_library(

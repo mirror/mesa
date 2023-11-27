@@ -6,3 +6,4 @@
 mod api;
 pub mod core;
 pub mod dev;
+pub mod protocol;

@@ -406,6 +406,12 @@ Core Mesa environment variables
    drirc config files. The user-local one will still be used. Mostly useful for
    internal debugging.
 
+.. envvar:: MESA_WAYLAND_DISABLE_TIMESTAMPS
+
+   If set, ignore wayland protocol for setting timestamps on image. This
+   retains the old behaviour of using frame callbacks for pacing in both
+   Vulkan and GL.
+
 NIR passes environment variables
 --------------------------------
 

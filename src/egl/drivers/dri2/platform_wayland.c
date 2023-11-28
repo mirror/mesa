@@ -52,8 +52,14 @@
 #include "loader_dri_helper.h"
 #include "dri_util.h"
 #include <loader_wayland_helper.h>
+#include "util/os_time.h"
+#include "util/timespec.h"
+#include "util/u_debug.h"
 
+#include "commit-timing-v1-client-protocol.h"
+#include "fifo-v1-client-protocol.h"
 #include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "presentation-time-client-protocol.h"
 #include "wayland-drm-client-protocol.h"
 #include <wayland-client.h>
 #include <wayland-egl-backend.h>
@@ -756,6 +762,24 @@ dri2_wl_create_window_surface(_EGLDisplay *disp, _EGLConfig *conf,
    wl_proxy_set_queue((struct wl_proxy *)dri2_surf->wl_surface_wrapper,
                       dri2_surf->wl_queue);
 
+   if (dri2_dpy->wp_presentation &&
+       dri2_dpy->fifo_manager &&
+       dri2_dpy->commit_timing_manager)
+      dri2_surf->can_timestamp = true;
+
+   if (dri2_surf->can_timestamp) {
+      dri2_surf->wp_presentation_wrapper =
+         wl_proxy_create_wrapper(dri2_dpy->wp_presentation);
+      wl_proxy_set_queue((struct wl_proxy *) dri2_surf->wp_presentation_wrapper,
+                         dri2_surf->wl_queue);
+      dri2_surf->fifo =
+         wp_fifo_manager_v1_get_fifo(dri2_dpy->fifo_manager,
+                                     dri2_surf->wl_surface_wrapper);
+      dri2_surf->commit_timer =
+         wp_commit_timing_manager_v1_get_timer(dri2_dpy->commit_timing_manager,
+                                               dri2_surf->wl_surface_wrapper);
+   }
+
    if (dri2_dpy->wl_dmabuf &&
        zwp_linux_dmabuf_v1_get_version(dri2_dpy->wl_dmabuf) >=
           ZWP_LINUX_DMABUF_V1_GET_SURFACE_FEEDBACK_SINCE_VERSION) {
@@ -866,6 +890,17 @@ dri2_wl_destroy_surface(_EGLDisplay *disp, _EGLSurface *surf)
       dri2_surf->wl_win->driver_private = NULL;
       dri2_surf->wl_win->resize_callback = NULL;
       dri2_surf->wl_win->destroy_window_callback = NULL;
+   }
+
+   if (dri2_surf->can_timestamp) {
+      dri2_surf->can_timestamp = false;
+      wp_fifo_v1_destroy(dri2_surf->fifo);
+      wp_commit_timer_v1_destroy(dri2_surf->commit_timer);
+      wl_proxy_wrapper_destroy(dri2_surf->wp_presentation_wrapper);
+   }
+
+   if (dri2_surf->presentation_feedback) {
+      wp_presentation_feedback_destroy(dri2_surf->presentation_feedback);
    }
 
    wl_proxy_wrapper_destroy(dri2_surf->wl_surface_wrapper);
@@ -1452,6 +1487,8 @@ wayland_throttle_callback(void *data, struct wl_callback *callback,
 
    dri2_surf->throttle_callback = NULL;
    wl_callback_destroy(callback);
+
+   dri2_surf->throttle_state = DRI2_EGL_THROTTLE_STATE_FRAME_CALLBACK;
 }
 
 static const struct wl_callback_listener throttle_listener = {
@@ -1613,17 +1650,159 @@ try_damage_buffer(struct dri2_egl_surface *dri2_surf, const EGLint *rects,
 }
 
 static void
+presentation_handle_sync_output(void *data,
+                                struct wp_presentation_feedback *feedback,
+                                struct wl_output *output)
+{
+}
+
+static void
+presentation_handle_presented(void *data,
+                              struct wp_presentation_feedback *feedback,
+                              uint32_t tv_sec_hi, uint32_t tv_sec_lo,
+                              uint32_t tv_nsec, uint32_t refresh,
+                              uint32_t seq_hi, uint32_t seq_lo,
+                              uint32_t flags)
+{
+   struct dri2_egl_surface *dri2_surf = data;
+   struct timespec presentation_time;
+
+   dri2_surf->presentation_feedback = NULL;
+   wp_presentation_feedback_destroy(feedback);
+   dri2_surf->refresh_nsec = refresh;
+   presentation_time.tv_sec = ((uint64_t)tv_sec_hi << 32) + tv_sec_lo;
+   presentation_time.tv_nsec = tv_nsec;
+   dri2_surf->displayed_time = timespec_to_nsec(&presentation_time);
+}
+
+static void
+presentation_handle_discarded(void *data,
+                              struct wp_presentation_feedback *feedback)
+{
+   struct dri2_egl_surface *dri2_surf = data;
+
+   dri2_surf->presentation_feedback = NULL;
+   wp_presentation_feedback_destroy(feedback);
+   /* Keep our displayed time artificially up to date while we're occluded.
+    * The FIFO constraint is satisfied immediately for occluded surfaces,
+    * so scheduling in the past while we're not visible leads to
+    * improper throttling.
+    */
+   dri2_surf->displayed_time = os_time_get_nano();
+
+   dri2_surf->throttle_state = DRI2_EGL_THROTTLE_STATE_DISCARDED;
+}
+
+static const struct wp_presentation_feedback_listener
+      pres_feedback_listener = {
+   presentation_handle_sync_output,
+   presentation_handle_presented,
+   presentation_handle_discarded,
+};
+
+static void
+set_timestamp(struct dri2_egl_surface *surf, int interval)
+{
+   uint64_t target = 0;
+   struct timespec target_ts;
+   uint64_t refresh;
+   bool late;
+
+   if (!surf->displayed_time)
+      return;
+
+   refresh = surf->refresh_nsec;
+
+   if (refresh == 0)
+      refresh = 16666666;
+
+   refresh *= interval;
+
+   /* We'd like to target the next refresh interval after our previous target
+    * time, but if our most recent display time is already past that, we're
+    * too late to hit it.
+    *
+    * Note that presentation feedback will give times in the future because
+    * the compositor can know the exact presentation time before the page
+    * flip actually occurs.
+    *
+    * For that reason displayed time + refresh is still potentially a
+    * time in the future we can reasonably hit.
+    */
+   late = surf->displayed_time > surf->last_target_time + refresh;
+   if (surf->last_target_time == 0 || late)
+      target = surf->displayed_time + refresh;
+   else
+      target = surf->last_target_time + refresh;
+
+   /* Take back 500 us as a safety margin, to ensure we don't miss our
+    * target due to round-off error.
+    */
+   target -= 500000;
+
+   timespec_from_nsec(&target_ts, target);
+   wp_commit_timer_v1_set_timestamp(surf->commit_timer,
+                                    target_ts.tv_sec >> 32, target_ts.tv_sec,
+                                    target_ts.tv_nsec,
+                                    WP_COMMIT_TIMER_V1_STAGE_PRESENTATION,
+                                    WP_COMMIT_TIMER_V1_ROUNDING_MODE_NOT_BEFORE);
+
+   surf->last_target_time = target;
+}
+
+static void
 prepare_throttle(struct dri2_egl_surface *dri2_surf)
 {
-   assert(!dri2_surf->throttle_callback);
-
    if (dri2_surf->base.SwapInterval == 0)
       return;
 
-   dri2_surf->throttle_callback =
-      wl_surface_frame(dri2_surf->wl_surface_wrapper);
-   wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                            dri2_surf);
+   if (!dri2_surf->throttle_callback) {
+      dri2_surf->throttle_callback =
+         wl_surface_frame(dri2_surf->wl_surface_wrapper);
+      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
+                               dri2_surf);
+   }
+
+   if (!dri2_surf->can_timestamp)
+      return;
+
+   dri2_surf->presentation_feedback =
+      wp_presentation_feedback(dri2_surf->wp_presentation_wrapper,
+                               dri2_surf->wl_surface_wrapper);
+   wp_presentation_feedback_add_listener(dri2_surf->presentation_feedback,
+                                         &pres_feedback_listener,
+                                         dri2_surf);
+
+   set_timestamp(dri2_surf, dri2_surf->base.SwapInterval);
+   wp_fifo_v1_set_barrier(dri2_surf->fifo);
+   wp_fifo_v1_wait_barrier(dri2_surf->fifo);
+   /* By doing an extra commit, we're certain to receive either a
+    * presentation feedback presented or discarded message when
+    * the next commit is processed. This lets us use presentation_time
+    * as our timing mechanism.
+    */
+   wl_surface_commit(dri2_surf->wl_surface_wrapper);
+   wp_fifo_v1_wait_barrier(dri2_surf->fifo);
+}
+
+static bool
+ready(struct dri2_egl_surface *dri2_surf)
+{
+   switch (dri2_surf->throttle_state) {
+   case DRI2_EGL_THROTTLE_STATE_INIT:
+      return true;
+   case DRI2_EGL_THROTTLE_STATE_COMMITTED:
+      if (dri2_surf->base.SwapInterval == 0)
+         return !dri2_surf->throttle_callback;
+      else
+         return false;
+   case DRI2_EGL_THROTTLE_STATE_FRAME_CALLBACK:
+      return true;
+   case DRI2_EGL_THROTTLE_STATE_DISCARDED:
+      return true;
+   }
+
+   assert(!"Corrupted throttle state");
 }
 
 static void
@@ -1633,6 +1812,9 @@ finish_frame(struct dri2_egl_surface *dri2_surf)
       dri2_egl_display(dri2_surf->base.Resource.Display);
 
    prepare_throttle(dri2_surf);
+
+   dri2_surf->throttle_state = DRI2_EGL_THROTTLE_STATE_COMMITTED;
+
    wl_surface_commit(dri2_surf->wl_surface_wrapper);
    if (dri2_surf->base.SwapInterval == 0) {
       /* If we're not waiting for a frame callback then we'll at least throttle
@@ -1654,7 +1836,7 @@ dri2_wl_surface_throttle(struct dri2_egl_surface *dri2_surf)
    struct dri2_egl_display *dri2_dpy =
       dri2_egl_display(dri2_surf->base.Resource.Display);
 
-   while (dri2_surf->throttle_callback != NULL)
+   while (!ready(dri2_surf))
       if (loader_wayland_dispatch(dri2_dpy->wl_dpy, dri2_surf->wl_queue, NULL) ==
           -1)
          return EGL_FALSE;
@@ -2075,12 +2257,44 @@ static const struct zwp_linux_dmabuf_feedback_v1_listener
       .done = default_dmabuf_feedback_done,
 };
 
+static bool
+registry_handle_global_common(struct dri2_egl_display *dri2_dpy,
+                              struct wl_registry *registry,
+                              uint32_t name, const char *interface,
+                              uint32_t version)
+{
+   bool no_timestamps =
+      debug_get_bool_option("MESA_WAYLAND_DISABLE_TIMESTAMPS", false);
+
+   if (!no_timestamps &&
+       strcmp(interface, wp_presentation_interface.name) == 0) {
+      dri2_dpy->wp_presentation = wl_registry_bind(registry, name,
+         &wp_presentation_interface, 1);
+      return true;
+   } else if (!no_timestamps &&
+              strcmp(interface, wp_commit_timing_manager_v1_interface.name) == 0) {
+      dri2_dpy->commit_timing_manager =
+         wl_registry_bind(registry, name, &wp_commit_timing_manager_v1_interface, 1);
+      return true;
+   } else if (!no_timestamps &&
+              strcmp(interface, wp_fifo_manager_v1_interface.name) == 0) {
+      dri2_dpy->fifo_manager =
+         wl_registry_bind(registry, name, &wp_fifo_manager_v1_interface, 1);
+      return true;
+   }
+
+   return false;
+}
+
 static void
 registry_handle_global_drm(void *data, struct wl_registry *registry,
                            uint32_t name, const char *interface,
                            uint32_t version)
 {
    struct dri2_egl_display *dri2_dpy = data;
+
+   if (registry_handle_global_common(data, registry, name, interface, version))
+     return;
 
    if (strcmp(interface, wl_drm_interface.name) == 0) {
       dri2_dpy->wl_drm_version = MIN2(version, 2);
@@ -2109,12 +2323,21 @@ static const struct wl_registry_listener registry_listener_drm = {
 static void
 dri2_wl_setup_swap_interval(_EGLDisplay *disp)
 {
-   /* We can't use values greater than 1 on Wayland because we are using the
-    * frame callback to synchronise the frame and the only way we be sure to
+   struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
+   int max;
+
+   /* We can't use values greater than 1 on Wayland when we are using the
+    * frame callback to synchronise the frame because the only way we can be sure to
     * get a frame callback is to attach a new buffer. Therefore we can't just
     * sit drawing nothing to wait until the next ‘n’ frame callbacks */
+   max = 1;
 
-   dri2_setup_swap_interval(disp, 1);
+   if (dri2_dpy->wp_presentation &&
+      dri2_dpy->fifo_manager &&
+      dri2_dpy->commit_timing_manager)
+      max = EGL_MAX_SWAP_INTERVAL;
+
+   dri2_setup_swap_interval(disp, max);
 }
 
 static const struct dri2_egl_display_vtbl dri2_wl_display_vtbl = {
@@ -2796,6 +3019,9 @@ registry_handle_global_kopper(void *data, struct wl_registry *registry,
 {
    struct dri2_egl_display *dri2_dpy = data;
 
+   if (registry_handle_global_common(data, registry, name, interface, version))
+     return;
+
    if (strcmp(interface, wl_shm_interface.name) == 0) {
       dri2_dpy->wl_shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
       wl_shm_add_listener(dri2_dpy->wl_shm, &shm_listener, dri2_dpy);
@@ -2825,6 +3051,9 @@ registry_handle_global_swrast(void *data, struct wl_registry *registry,
                               uint32_t version)
 {
    struct dri2_egl_display *dri2_dpy = data;
+
+   if (registry_handle_global_common(data, registry, name, interface, version))
+     return;
 
    if (strcmp(interface, wl_shm_interface.name) == 0) {
       dri2_dpy->wl_shm = wl_registry_bind(registry, name, &wl_shm_interface, 1);
@@ -3083,10 +3312,16 @@ dri2_teardown_wayland(struct dri2_egl_display *dri2_dpy)
       zwp_linux_dmabuf_v1_destroy(dri2_dpy->wl_dmabuf);
    if (dri2_dpy->wl_shm)
       wl_shm_destroy(dri2_dpy->wl_shm);
+   if (dri2_dpy->wp_presentation)
+      wp_presentation_destroy(dri2_dpy->wp_presentation);
    if (dri2_dpy->wl_registry)
       wl_registry_destroy(dri2_dpy->wl_registry);
    if (dri2_dpy->wl_dpy_wrapper)
       wl_proxy_wrapper_destroy(dri2_dpy->wl_dpy_wrapper);
+   if (dri2_dpy->fifo_manager)
+      wp_fifo_manager_v1_destroy(dri2_dpy->fifo_manager);
+   if (dri2_dpy->commit_timing_manager)
+      wp_commit_timing_manager_v1_destroy(dri2_dpy->commit_timing_manager);
    if (dri2_dpy->wl_queue)
       wl_event_queue_destroy(dri2_dpy->wl_queue);
 

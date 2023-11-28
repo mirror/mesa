@@ -4,12 +4,13 @@
  */
 
 use vcl_drm_gen::*;
+use vcl_virglrenderer_gen::virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL;
 
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::{ffi::CStr, fs::File, ptr};
 
-use super::virtgpu::VirtGpuError;
+use super::virtgpu::{VirtGpuError, VirtGpuParamId};
 
 /// 4.1.2 PCI Device Discovery: https://docs.oasis-open.org/virtio/virtio/v1.3/virtio-v1.3.html
 const VIRT_PCI_VENDOR_ID: u16 = 0x1af4;
@@ -117,9 +118,42 @@ impl DrmDevice {
         let ret = unsafe { drmIoctl(self.file.as_raw_fd(), request, arg as *mut _ as _) };
         if ret != 0 {
             eprintln!("Failed ioctl: {}", std::io::Error::last_os_error());
-            Err(VirtGpuError::Ioctl)
+            Err(VirtGpuError::Ioctl(ret))
         } else {
             Ok(())
         }
+    }
+
+    pub fn get_param(&self, param: VirtGpuParamId) -> Result<u64, VirtGpuError> {
+        let mut value = 0;
+        let mut getparam = drm_virtgpu_getparam {
+            param: param.id(),
+            value: &mut value as *mut _ as _,
+        };
+        self.ioctl(drm_ioctl_virtgpu_GETPARAM as u64, &mut getparam)?;
+        Ok(value)
+    }
+
+    pub fn init_context(&self) -> Result<(), VirtGpuError> {
+        let mut ctx_set_param = drm_virtgpu_context_set_param {
+            param: virtgpu_context_param_CAPSET_ID as u64,
+            value: virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL as u64,
+        };
+
+        let mut ctx_init = drm_virtgpu_context_init {
+            ctx_set_params: &mut ctx_set_param as *mut _ as _,
+            pad: 0,
+            num_params: 1,
+        };
+
+        if let Err(VirtGpuError::Ioctl(ret)) =
+            self.ioctl(drm_ioctl_virtgpu_CONTEXT_INIT as u64, &mut ctx_init)
+        {
+            if std::io::Error::last_os_error().raw_os_error() != Some(EEXIST as _) {
+                return Err(VirtGpuError::Ioctl(ret));
+            }
+        }
+
+        Ok(())
     }
 }

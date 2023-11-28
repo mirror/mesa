@@ -70,6 +70,7 @@ vcl_drm_bindings_rs = rust.bindgen(
   input : 'vcl_drm_bindings.h',
   output : 'vcl_drm_bindings.rs',
   dependencies: [dep_libdrm],
+  include_directories: [inc_include],
 )
 
 vcl_drm_gen = static_library(

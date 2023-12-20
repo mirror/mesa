@@ -5610,6 +5610,8 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
                .lower_index_to_offset = true,
             });
 
+   NIR_PASS(_, nir, pan_lower_buf_image_coords);
+
    NIR_PASS(_, nir, nir_lower_image_atomics_to_global, NULL, NULL);
 
    /* on bifrost, lower MSAA load/stores to 3D load/stores */

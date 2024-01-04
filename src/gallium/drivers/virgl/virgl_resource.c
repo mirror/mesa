@@ -668,6 +668,8 @@ static struct pipe_resource *virgl_resource_create_front(struct pipe_screen *scr
          printf("virgl: couldn't query layout for %d x %d res, bind 0x%x\n", templ->width0, templ->height0, templ->bind);
       } else {
          winsys_stride = layout.planes[0].stride;
+         vflags |= PIPE_RESOURCE_FLAG_MAP_PERSISTENT;
+         vflags |= PIPE_RESOURCE_FLAG_MAP_COHERENT;
       }
    }
    virgl_resource_layout(&res->b, &res->metadata, 0, winsys_stride, 0, 0);

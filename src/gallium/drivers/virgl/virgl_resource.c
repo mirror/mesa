@@ -644,14 +644,33 @@ static struct pipe_resource *virgl_resource_create_front(struct pipe_screen *scr
    unsigned vbind, vflags;
    struct virgl_screen *vs = virgl_screen(screen);
    struct virgl_resource *res = CALLOC_STRUCT(virgl_resource);
+   struct virgl_resource_layout layout;
    uint32_t alloc_size;
+   uint32_t winsys_stride = 0;
+   bool ret;
 
    res->b = *templ;
    res->b.screen = &vs->base;
    pipe_reference_init(&res->b.reference, 1);
    vbind = pipe_to_virgl_bind(vs, templ->bind);
    vflags = pipe_to_virgl_flags(vs, templ->flags);
-   virgl_resource_layout(&res->b, &res->metadata, 0, 0, 0, 0);
+
+   /* When dGPU try to import buffer created by virtio-gpu, it would fail
+    * because the stride of iGPU buffer is not correct for dGPU buffer.
+    * So here we use resource_query_layout to get stride first.
+    */
+   if (templ->bind & PIPE_BIND_LINEAR) {
+      memset(&layout, 0, sizeof(layout));
+      ret = vs->vws->resource_query_layout(vs->vws, NULL, &layout,
+                                           templ->format, vbind,
+                                           res->b.width0, res->b.height0);
+      if (!ret) {
+         printf("virgl: couldn't query layout for %d x %d res, bind 0x%x\n", templ->width0, templ->height0, templ->bind);
+      } else {
+         winsys_stride = layout.planes[0].stride;
+      }
+   }
+   virgl_resource_layout(&res->b, &res->metadata, 0, winsys_stride, 0, 0);
 
    if ((vs->caps.caps.v2.capability_bits & VIRGL_CAP_APP_TWEAK_SUPPORT) &&
        vs->tweak_gles_emulate_bgra &&
@@ -671,7 +690,7 @@ static struct pipe_resource *virgl_resource_create_front(struct pipe_screen *scr
       alloc_size = 1;
    else
       alloc_size = res->metadata.total_size;
-   
+
    res->hw_res = vs->vws->resource_create(vs->vws, templ->target,
                                           map_front_private,
                                           templ->format, vbind,

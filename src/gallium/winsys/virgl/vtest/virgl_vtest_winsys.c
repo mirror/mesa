@@ -681,6 +681,18 @@ virgl_vtest_resource_cache_entry_release(struct virgl_resource_cache_entry *entr
    virgl_hw_res_destroy(vtws, res);
 }
 
+static bool
+virgl_vtest_resource_query_layout(struct virgl_winsys *vws,
+                                  struct virgl_hw_res *hw_res,
+                                  struct virgl_resource_layout *layout,
+                                  uint32_t format,
+                                  uint32_t bind,
+                                  uint32_t width,
+                                  uint32_t height)
+{
+   return false;
+}
+
 struct virgl_winsys *
 virgl_vtest_winsys_wrap(struct sw_winsys *sws)
 {
@@ -725,6 +737,8 @@ virgl_vtest_winsys_wrap(struct sw_winsys *sws)
    vtws->base.supports_encoded_transfers = (vtws->protocol_version >= 2);
 
    vtws->base.flush_frontbuffer = virgl_vtest_flush_frontbuffer;
+
+   vtws->base.resource_query_layout = virgl_vtest_resource_query_layout;
 
    return &vtws->base;
 }

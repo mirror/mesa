@@ -130,6 +130,124 @@ static bool virgl_drm_resource_is_busy(struct virgl_winsys *vws,
    return false;
 }
 
+static int
+virgl_drm_winsys_create_query_bo(struct virgl_drm_winsys *qdws,
+                                 uint32_t *bo_handle,
+                                 uint32_t *res_handle,
+                                 void **out_addr)
+{
+   int32_t ret = 0;
+   struct drm_virtgpu_resource_create_blob drm_rc_blob = { 0 };
+   struct drm_virtgpu_map map = {0};
+   uint32_t cmd[VIRGL_PIPE_RES_CREATE_SIZE + 1] = {0};
+   uint32_t total_size = ALIGN(sizeof(struct virgl_resource_layout), getpagesize());
+   int blob_id = 0;
+
+   blob_id = p_atomic_inc_return(&qdws->blob_id);
+   cmd[0] = VIRGL_CMD0(VIRGL_CCMD_PIPE_RESOURCE_CREATE, 0, VIRGL_PIPE_RES_CREATE_SIZE);
+   cmd[VIRGL_PIPE_RES_CREATE_BIND] = VIRGL_BIND_QUERY_BUFFER;
+   cmd[VIRGL_PIPE_RES_CREATE_TARGET] = PIPE_BUFFER;
+   cmd[VIRGL_PIPE_RES_CREATE_WIDTH] = total_size;
+   cmd[VIRGL_PIPE_RES_CREATE_HEIGHT] = 1;
+   cmd[VIRGL_PIPE_RES_CREATE_DEPTH] = 1;
+   cmd[VIRGL_PIPE_RES_CREATE_FLAGS] =
+	   VIRGL_RESOURCE_FLAG_MAP_PERSISTENT | VIRGL_RESOURCE_FLAG_MAP_COHERENT;
+   cmd[VIRGL_PIPE_RES_CREATE_BLOB_ID] = blob_id;
+
+   drm_rc_blob.cmd = (unsigned long)(void *)&cmd;
+   drm_rc_blob.cmd_size = 4 * (VIRGL_PIPE_RES_CREATE_SIZE + 1);
+   drm_rc_blob.size = total_size;
+   drm_rc_blob.blob_mem = VIRTGPU_BLOB_MEM_HOST3D;
+   drm_rc_blob.blob_flags = VIRTGPU_BLOB_FLAG_USE_MAPPABLE;
+   drm_rc_blob.blob_id = (uint64_t) blob_id;
+
+   ret = drmIoctl(qdws->fd, DRM_IOCTL_VIRTGPU_RESOURCE_CREATE_BLOB, &drm_rc_blob);
+   if (ret < 0) {
+      _debug_printf("failed to create share bo\n");
+      return ret;
+   }
+
+   *res_handle = drm_rc_blob.res_handle;
+   *bo_handle = drm_rc_blob.bo_handle;
+
+   map.handle = drm_rc_blob.bo_handle;
+   ret = drmIoctl(qdws->fd, DRM_IOCTL_VIRTGPU_MAP, &map);
+   if (ret < 0) {
+      _debug_printf("failed to create share bo\n");
+      return ret;
+   }
+
+   *out_addr = mmap(NULL, drm_rc_blob.size, PROT_WRITE | PROT_READ, MAP_SHARED,
+                    qdws->fd, map.offset);
+
+   if (!out_addr || out_addr == MAP_FAILED) {
+      _debug_printf("mmap failed with %s\n", strerror(errno));
+      return -1;
+   }
+   return 0;
+}
+
+static bool
+virgl_drm_resource_query_layout(struct virgl_winsys *vws,
+                                struct virgl_hw_res *res,
+                                struct virgl_resource_layout *layout,
+                                uint32_t format,
+                                uint32_t bind,
+                                uint32_t width,
+                                uint32_t height)
+{
+   struct virgl_drm_winsys *qdws = virgl_drm_winsys(vws);
+   struct drm_virtgpu_execbuffer eb;
+   struct drm_virtgpu_3d_wait waitcmd;
+   struct drm_gem_close args;
+   uint32_t cmd[VIRGL_QUERY_LAYOUT_SIZE + 1];
+   uint32_t bo_handle;
+   uint32_t res_handle;
+   void *bo_addr = NULL;
+   int ret;
+
+   virgl_drm_winsys_create_query_bo(qdws, &bo_handle,
+                                    &res_handle, &bo_addr);
+
+   cmd[0] = VIRGL_CMD0(VIRGL_CCMD_QUERY_LAYOUT, 0, VIRGL_QUERY_LAYOUT_SIZE);
+   cmd[VIRGL_QUERY_LAYOUT_HANDLE] = res_handle;
+   cmd[VIRGL_QUERY_LAYOUT_FORMAT] = pipe_to_virgl_format(format);
+   cmd[VIRGL_QUERY_LAYOUT_BIND] = bind;
+   cmd[VIRGL_QUERY_LAYOUT_WIDTH] = width;
+   cmd[VIRGL_QUERY_LAYOUT_HEIGHT] = height;
+
+   memset(&eb, 0, sizeof(eb));
+   eb.command = (uintptr_t)cmd;
+   eb.size = (1 + VIRGL_QUERY_LAYOUT_SIZE) * 4;
+   eb.num_bo_handles = 1;
+   eb.bo_handles = (uintptr_t)&bo_handle;
+   ret = drmIoctl(qdws->fd, DRM_IOCTL_VIRTGPU_EXECBUFFER, &eb);
+   if (ret) {
+      _debug_printf("failed to create share bo: kernel said %d to RQL\n", ret);
+      return false;
+   }
+
+   memset(&waitcmd, 0, sizeof(waitcmd));
+   waitcmd.handle = bo_handle;
+   ret = drmIoctl(qdws->fd, DRM_IOCTL_VIRTGPU_WAIT, &waitcmd);
+   if (ret) {
+      _debug_printf("waiting got error - %d, slow gpu or hang?\n", errno);
+      return false;
+   }
+
+   memcpy(layout, bo_addr, sizeof(struct virgl_resource_layout));
+
+   memset(&args, 0, sizeof(args));
+   args.handle = bo_handle;
+   ret = drmIoctl(qdws->fd, DRM_IOCTL_GEM_CLOSE, &args);
+   if (ret) {
+      _debug_printf("gem close got error - %d\n", errno);
+      return false;
+   }
+
+   return true;
+}
+
 static void
 virgl_drm_winsys_destroy(struct virgl_winsys *qws)
 {
@@ -1268,6 +1386,7 @@ virgl_drm_winsys_create(int drmFD)
    qdws->base.resource_map = virgl_drm_resource_map;
    qdws->base.resource_wait = virgl_drm_resource_wait;
    qdws->base.resource_is_busy = virgl_drm_resource_is_busy;
+   qdws->base.resource_query_layout = virgl_drm_resource_query_layout;
    qdws->base.cmd_buf_create = virgl_drm_cmd_buf_create;
    qdws->base.cmd_buf_destroy = virgl_drm_cmd_buf_destroy;
    qdws->base.submit_cmd = virgl_drm_winsys_submit_cmd;
@@ -1286,6 +1405,7 @@ virgl_drm_winsys_create(int drmFD)
 
    qdws->base.supports_coherent = params[param_resource_blob].value &&
                                   params[param_host_visible].value;
+
    return &qdws->base;
 
 }

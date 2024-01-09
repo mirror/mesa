@@ -3,28 +3,27 @@
  * SPDX-License-Identifier: MIT
  */
 
-use crate::{api::icd::DISPATCH, dev::virtgpu::*};
+use crate::api::icd::CLObjectBase;
+use crate::{dev::virtgpu::*, impl_cl_type_trait};
 
-use vcl_opencl_gen::{cl_device_id, cl_icd_dispatch};
+use vcl_opencl_gen::*;
+
+impl_cl_type_trait!(cl_device_id, Device, CL_INVALID_DEVICE);
 
 pub struct Device {
-    _dispatch: &'static cl_icd_dispatch,
+    base: CLObjectBase<CL_INVALID_DEVICE>,
     pub gpu: VirtGpu,
 }
 
 impl Device {
     pub fn new(gpu: VirtGpu) -> Self {
         Self {
-            _dispatch: &DISPATCH,
+            base: CLObjectBase::new(),
             gpu: gpu,
         }
     }
 
     pub fn all() -> Result<Vec<Device>, VirtGpuError> {
         Ok(VirtGpu::all()?.into_iter().map(Self::new).collect())
-    }
-
-    pub fn as_ptr(&self) -> cl_device_id {
-        self as *const Self as _
     }
 }

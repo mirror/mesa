@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-use crate::api::icd::CLResult;
+use crate::api::icd::*;
 use crate::api::util::check_cl_device_type;
 use crate::core::platform::GetPlatformRef;
 
@@ -54,7 +54,7 @@ fn get_device_ids(
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             unsafe {
-                *devices.add(i) = devs[i].as_ptr();
+                *devices.add(i) = cl_device_id::from_ptr(devs[i]);
             }
         }
     }

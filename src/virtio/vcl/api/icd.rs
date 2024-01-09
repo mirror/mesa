@@ -169,6 +169,104 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
 pub type CLError = cl_int;
 pub type CLResult<T> = Result<T, CLError>;
 
+#[repr(C)]
+pub struct CLObjectBase<const ERR: i32> {
+    dispatch: &'static cl_icd_dispatch,
+    type_err: i32,
+}
+
+impl<const ERR: i32> Default for CLObjectBase<ERR> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<const ERR: i32> CLObjectBase<ERR> {
+    pub fn new() -> Self {
+        Self {
+            dispatch: &DISPATCH,
+            type_err: ERR,
+        }
+    }
+
+    pub fn check_ptr(ptr: *const Self) -> CLResult<()> {
+        if ptr.is_null() {
+            return Err(ERR);
+        }
+
+        unsafe {
+            if !::std::ptr::eq((*ptr).dispatch, &DISPATCH) {
+                return Err(ERR);
+            }
+
+            if (*ptr).type_err != ERR {
+                return Err(ERR);
+            }
+
+            Ok(())
+        }
+    }
+}
+
+pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
+    fn get_ptr(&self) -> CLResult<*const T>;
+
+    // TODO:  I can't find a trait that would let me say T: pointer so that
+    // I can do the cast in the main trait implementation.  So we need to
+    // implement that as part of the macro where we know the real type.
+    fn from_ptr(ptr: *const T) -> Self;
+
+    fn get_ref(&self) -> CLResult<&T> {
+        unsafe { Ok(self.get_ptr()?.as_ref().unwrap()) }
+    }
+}
+
+#[macro_export]
+macro_rules! impl_cl_type_trait {
+    ($cl: ident, $t: path, $err: ident) => {
+        impl $crate::api::icd::ReferenceCountedAPIPointer<$t, $err> for $cl {
+            fn get_ptr(&self) -> $crate::api::icd::CLResult<*const $t> {
+                type Base = $crate::api::icd::CLObjectBase<$err>;
+                Base::check_ptr(self.cast())?;
+
+                let offset = ::mesa_rust_util::offset_of!($t, base);
+                let mut obj_ptr: *const u8 = self.cast();
+                // SAFETY: We offset the pointer back from the ICD specified base type to our
+                //         internal type.
+                unsafe { obj_ptr = obj_ptr.sub(offset) }
+                Ok(obj_ptr.cast())
+            }
+
+            fn from_ptr(ptr: *const $t) -> Self {
+                if ptr.is_null() {
+                    return std::ptr::null_mut();
+                }
+                let offset = ::mesa_rust_util::offset_of!($t, base);
+                // SAFETY: The resulting pointer is safe as we simply offset into the ICD specified
+                //         base type.
+                unsafe { (ptr as *const u8).add(offset) as Self }
+            }
+        }
+
+        // there are two reason to implement those traits for all objects
+        //   1. it speeds up operations
+        //   2. we want to check for real equality more explicit to stay conformant with the API
+        //      and to not break in subtle ways e.g. using CL objects as keys in HashMaps.
+        impl std::cmp::Eq for $t {}
+        impl std::cmp::PartialEq for $t {
+            fn eq(&self, other: &Self) -> bool {
+                (self as *const Self) == (other as *const Self)
+            }
+        }
+
+        impl std::hash::Hash for $t {
+            fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+                (self as *const Self).hash(state);
+            }
+        }
+    };
+}
+
 #[no_mangle]
 extern "C" fn clIcdGetPlatformIDsKHR(
     num_entries: cl_uint,

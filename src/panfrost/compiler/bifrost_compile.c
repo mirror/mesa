@@ -5611,6 +5611,7 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
             });
 
    NIR_PASS(_, nir, pan_lower_buf_image_coords);
+   NIR_PASS(_, nir, pan_lower_buf_tex_coords);
 
    NIR_PASS(_, nir, nir_lower_image_atomics_to_global, NULL, NULL);
 

@@ -426,6 +426,7 @@ void pan_nir_collect_varyings(nir_shader *s, struct pan_shader_info *info,
                               enum pan_mediump_vary mediump);
 
 bool pan_lower_buf_image_coords(nir_shader *s);
+bool pan_lower_buf_tex_coords(nir_shader *s);
 
 /*
  * Helper returning the subgroup size. Generally, this is equal to the number of

@@ -5,21 +5,19 @@
 
 use crate::api::icd::*;
 use crate::core::device::*;
-use crate::dev::virtgpu::VirtGpuError;
+use crate::impl_cl_type_trait;
 
 use vcl_opencl_gen::*;
 
 use std::ffi::CString;
-use std::sync::Once;
 
-#[repr(C)]
+impl_cl_type_trait!(cl_platform_id, Platform, CL_INVALID_PLATFORM);
+
 pub struct Platform {
-    dispatch: &'static cl_icd_dispatch,
+    base: CLObjectBase<CL_INVALID_PLATFORM>,
     devices: Vec<Device>,
     pub name: Option<CString>,
 }
-
-static PLATFORM_ONCE: Once = Once::new();
 
 macro_rules! gen_cl_exts {
     (@COUNT $e:expr) => { 1 };
@@ -35,44 +33,7 @@ macro_rules! gen_cl_exts {
 
 gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
-static mut PLATFORM: Platform = Platform {
-    dispatch: &DISPATCH,
-    devices: Vec::new(),
-    name: None,
-};
-
 impl Platform {
-    pub fn init_once() -> Result<(), VirtGpuError> {
-        // SAFETY: no concurrent static mut access due to std::Once
-        PLATFORM_ONCE.call_once(|| {
-            let devices = Device::all().expect("Failed to get devices");
-
-            let mut name = String::from("vcl");
-            if let Some(device) = devices.get(0) {
-                let host_platform_name = device
-                    .gpu
-                    .capset
-                    .get_host_platform_name()
-                    .to_str()
-                    .expect("Failed to parse host platform name");
-                name = format!("{name} ({host_platform_name})");
-            }
-            let name_cstr = CString::new(name).expect("Failed to create CString for platform name");
-
-            unsafe {
-                PLATFORM.name = Some(name_cstr);
-                PLATFORM.devices = devices;
-            };
-        });
-        Ok(())
-    }
-
-    pub fn get() -> &'static Self {
-        debug_assert!(PLATFORM_ONCE.is_completed());
-        // SAFETY: no mut references exist at this point
-        unsafe { &PLATFORM }
-    }
-
     pub fn as_ptr(&self) -> cl_platform_id {
         (self as *const Self) as cl_platform_id
     }
@@ -92,20 +53,6 @@ impl Platform {
             self.devices.iter().collect()
         } else {
             Vec::default()
-        }
-    }
-}
-
-pub trait GetPlatformRef {
-    fn get_ref(&self) -> CLResult<&'static Platform>;
-}
-
-impl GetPlatformRef for cl_platform_id {
-    fn get_ref(&self) -> CLResult<&'static Platform> {
-        if !self.is_null() && *self == Platform::get().as_ptr() {
-            Ok(Platform::get())
-        } else {
-            Err(CL_INVALID_PLATFORM)
         }
     }
 }

@@ -8,6 +8,7 @@ use vcl_drm_gen::*;
 use vcl_virglrenderer_gen::*;
 
 use std::ffi::CStr;
+use std::sync::Once;
 
 #[derive(Debug)]
 pub enum VirtGpuError {
@@ -20,7 +21,31 @@ pub struct VirtGpu {
     pub capset: VirtGpuCapset,
 }
 
+static VIRTGPU_ONCE: Once = Once::new();
+
+static mut VIRTGPU: Option<VirtGpu> = None;
+
 impl VirtGpu {
+    pub fn init_once() -> Result<(), VirtGpuError> {
+        // SAFETY: no concurrent static mut access due to std::Once
+        VIRTGPU_ONCE.call_once(|| {
+            let drm_devices = DrmDevice::virtgpus().expect("Failed to find VirtIO-GPUs");
+            assert!(!drm_devices.is_empty(), "Failed to find VirtIO-GPUs");
+
+            let first_drm_device = drm_devices.into_iter().nth(0).unwrap();
+            let virtgpu =
+                VirtGpu::new(first_drm_device).expect("Failed to create VirtGpu from DRM device");
+            unsafe { VIRTGPU.replace(virtgpu) };
+        });
+        Ok(())
+    }
+
+    pub fn get() -> &'static Self {
+        debug_assert!(VIRTGPU_ONCE.is_completed());
+        // SAFETY: no mut references exist at this point
+        unsafe { VIRTGPU.as_ref().unwrap() }
+    }
+
     pub fn new(drm_device: DrmDevice) -> Result<Self, VirtGpuError> {
         let capset = VirtGpuCapset::new(&drm_device)?;
         Ok(Self { drm_device, capset })

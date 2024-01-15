@@ -3,12 +3,16 @@
  * SPDX-License-Identifier: MIT
  */
 
+use crate::core::platform::Platform;
 use crate::dev::drm::*;
 use crate::protocol::ring::VirtGpuRing;
+
 use vcl_drm_gen::*;
+use vcl_opencl_gen::cl_platform_id;
 use vcl_virglrenderer_gen::*;
 
 use std::ffi::CStr;
+use std::pin::Pin;
 use std::rc::Rc;
 use std::sync::Once;
 
@@ -25,6 +29,7 @@ pub struct VirtGpu {
     pub params: VirtGpuParams,
     pub capset: VirtGpuCapset,
     pub ring: VirtGpuRing,
+    pub platforms: Vec<Pin<Box<Platform>>>,
 }
 
 static VIRTGPU_ONCE: Once = Once::new();
@@ -63,6 +68,20 @@ impl VirtGpu {
         &mut self.ring
     }
 
+    pub fn get_platforms(&self) -> &[Pin<Box<Platform>>] {
+        debug_assert!(VIRTGPU_ONCE.is_completed());
+        &self.platforms
+    }
+
+    pub fn contains_platform(&self, id: cl_platform_id) -> bool {
+        for platform in &self.platforms {
+            if platform.as_ptr() == id {
+                return true;
+            }
+        }
+        false
+    }
+
     pub fn new(drm_device: DrmDevice) -> Result<Self, VirtGpuError> {
         let drm_device = Rc::new(drm_device);
 
@@ -79,13 +98,16 @@ impl VirtGpu {
 
         let capset = VirtGpuCapset::new(&drm_device)?;
 
-        let ring = VirtGpuRing::new(drm_device.clone())?;
+        let mut ring = VirtGpuRing::new(drm_device.clone())?;
+
+        let platforms = Platform::all(&mut ring)?;
 
         let ret = Self {
             drm_device,
             params,
             capset,
             ring,
+            platforms,
         };
         Ok(ret)
     }

@@ -5,21 +5,24 @@
 
 #![allow(non_snake_case)]
 
-use crate::api::icd::CLResult;
+use crate::api::icd::*;
 use crate::api::util::*;
 use crate::core::platform::*;
 use crate::dev::virtgpu::VirtGpu;
 
+use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
-use vcl_proc_macros::*;
+use vcl_proc_macros::cl_entrypoint;
 
+use std::cmp::min;
+use std::ffi::c_void;
 use std::mem::MaybeUninit;
 
 #[cl_entrypoint(clGetPlatformIDs)]
 pub fn get_platform_ids(
-    _num_entries: cl_uint,
-    _platforms: *mut cl_platform_id,
-    _num_platforms: *mut cl_uint,
+    num_entries: cl_uint,
+    platforms: *mut cl_platform_id,
+    num_platforms: *mut cl_uint,
 ) -> CLResult<()> {
     // Run initialization code once
     if VirtGpu::init_once().is_err() {
@@ -27,27 +30,111 @@ pub fn get_platform_ids(
         return Err(CL_OUT_OF_HOST_MEMORY);
     }
 
+    if num_entries == 0 && !platforms.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    if num_platforms.is_null() && platforms.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let virtgpu = VirtGpu::get();
+    let virt_platforms = virtgpu.get_platforms();
+
+    num_platforms.write_checked(virt_platforms.len() as cl_uint);
+
+    if !platforms.is_null() {
+        let n = min(num_entries as usize, virt_platforms.len());
+
+        #[allow(clippy::needless_range_loop)]
+        for i in 0..n {
+            unsafe { *platforms.add(i) = virt_platforms[i].as_ptr() }
+        }
+    }
+
     Ok(())
 }
 
-#[cl_info_entrypoint(clGetPlatformInfo)]
 impl CLInfo<cl_platform_info> for cl_platform_id {
     fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        self.get_ref()?;
         Ok(match q {
             CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
             CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
-            CL_PLATFORM_NAME => cl_prop("vcl"),
-            CL_PLATFORM_PROFILE => cl_prop("FULL_PROFILE"),
-            CL_PLATFORM_VENDOR => cl_prop("Mesa/X.org"),
-            // OpenCL<space><major_version.minor_version><space><platform-specific information>
-            CL_PLATFORM_VERSION => cl_prop("OpenCL 1.0 "),
-            // CL_INVALID_VALUE if param_name is not one of the supported values
             _ => return Err(CL_INVALID_VALUE),
         })
     }
 }
 
-#[cfg(disabled_test)]
+#[cl_entrypoint(clGetPlatformInfo)]
+pub fn get_platform_info(
+    platform: cl_platform_id,
+    param_name: cl_uint,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    if !VirtGpu::get().contains_platform(platform) {
+        return Err(CL_INVALID_PLATFORM);
+    }
+
+    match param_name {
+        CL_PLATFORM_EXTENSIONS | CL_PLATFORM_ICD_SUFFIX_KHR => {
+            return platform.get_info(
+                param_name,
+                param_value_size,
+                param_value,
+                param_value_size_ret,
+            )
+        }
+        _ => forward_get_platform_info(
+            platform,
+            param_name,
+            param_value_size,
+            param_value,
+            param_value_size_ret,
+        ),
+    }
+}
+
+fn forward_get_platform_info(
+    platform: cl_platform_id,
+    param_name: cl_uint,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    let ring = VirtGpu::get_mut().get_ring();
+
+    let mut size = 0;
+    let ret = ring
+        .call_clGetPlatformInfo(
+            platform,
+            param_name,
+            param_value_size,
+            param_value,
+            &mut size,
+        )
+        .expect("VirtGpuError");
+
+    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+    // type as specified in the Context Attributes table and param_value is not a NULL value.
+    if param_value_size < size && !param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+    // If param_value_size_ret is NULL, it is ignored.
+    param_value_size_ret.write_checked(size);
+
+    if ret != CL_SUCCESS as _ {
+        Err(ret)
+    } else {
+        Ok(())
+    }
+}
+
+#[cfg(test)]
 mod test {
     use super::*;
 
@@ -63,13 +150,6 @@ mod test {
             get_platform_ids(1, ptr::null_mut(), ptr::null_mut()),
             Err(CL_INVALID_VALUE)
         );
-
-        let mut platform = ptr::null_mut();
-        assert_eq!(
-            get_platform_ids(0, &mut platform, ptr::null_mut()),
-            Err(CL_INVALID_VALUE)
-        );
-        assert_eq!(platform, ptr::null_mut());
     }
 
     #[test]
@@ -96,7 +176,13 @@ mod test {
         let pv_ptr = pv.as_mut_ptr() as _;
         let mut pv_size_ret = 0;
 
-        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, pv_ptr, &mut pv_size_ret);
+        let res = get_platform_info(
+            platform,
+            CL_PLATFORM_NAME,
+            PV_SIZE,
+            pv_ptr,
+            &mut pv_size_ret,
+        );
         assert_eq!(res, Ok(()));
 
         let res = clGetPlatformInfo(
@@ -119,16 +205,22 @@ mod test {
         assert_eq!(res, CL_INVALID_PLATFORM);
 
         const WRONG_PARAM: u32 = 42;
-        let res = platform.get_info(WRONG_PARAM, PV_SIZE, pv_ptr, &mut pv_size_ret);
+        let res = get_platform_info(platform, WRONG_PARAM, PV_SIZE, pv_ptr, &mut pv_size_ret);
         assert_eq!(res, Err(CL_INVALID_VALUE));
 
-        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, ptr::null_mut(), &mut pv_size_ret);
+        let res = get_platform_info(
+            platform,
+            CL_PLATFORM_NAME,
+            PV_SIZE,
+            ptr::null_mut(),
+            &mut pv_size_ret,
+        );
         assert_eq!(res, Ok(()));
 
-        let res = platform.get_info(CL_PLATFORM_NAME, 0, pv_ptr, &mut pv_size_ret);
+        let res = get_platform_info(platform, CL_PLATFORM_NAME, 0, pv_ptr, &mut pv_size_ret);
         assert_eq!(res, Err(CL_INVALID_VALUE));
 
-        let res = platform.get_info(CL_PLATFORM_NAME, PV_SIZE, pv_ptr, ptr::null_mut());
+        let res = get_platform_info(platform, CL_PLATFORM_NAME, PV_SIZE, pv_ptr, ptr::null_mut());
         assert_eq!(res, Ok(()));
     }
 }

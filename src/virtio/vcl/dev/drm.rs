@@ -5,6 +5,7 @@
 
 use vcl_drm_gen::*;
 
+use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::{ffi::CStr, fs::File, ptr};
 
@@ -93,7 +94,8 @@ impl DrmDevice {
             .to_str()
             .expect("Failed to read DRM node path");
 
-        match File::open(&node_path) {
+        let result = OpenOptions::new().read(true).write(true).open(&node_path);
+        match result {
             Ok(file) => file,
             Err(e) => panic!("Failed to open DRM node {}: {}", node_path, e),
         }

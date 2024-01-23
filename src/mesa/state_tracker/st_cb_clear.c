@@ -423,7 +423,7 @@ st_Clear(struct gl_context *ctx, GLbitfield mask)
             bool scissor = is_scissor_enabled(ctx, rb);
             if ((scissor && !st->can_scissor_clear) ||
                 is_window_rectangle_enabled(ctx) ||
-                ((colormask & surf_colormask) != surf_colormask))
+                (((colormask & surf_colormask) != surf_colormask) && !st->can_masked_clear))
                quad_buffers |= PIPE_CLEAR_COLOR0 << i;
             else
                clear_buffers |= PIPE_CLEAR_COLOR0 << i;
@@ -502,7 +502,8 @@ st_Clear(struct gl_context *ctx, GLbitfield mask)
       /* We can't translate the clear color to the colorbuffer format,
        * because different colorbuffers may have different formats.
        */
-      st->pipe->clear(st->pipe, clear_buffers, have_scissor_buffers ? &scissor_state : NULL,
+      st->pipe->clear(st->pipe, clear_buffers, ctx->Color.ColorMask,
+                      have_scissor_buffers ? &scissor_state : NULL,
                       (union pipe_color_union*)&ctx->Color.ClearColor,
                       ctx->Depth.Clear, ctx->Stencil.Clear);
    }

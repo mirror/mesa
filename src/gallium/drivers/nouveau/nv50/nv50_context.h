@@ -309,6 +309,7 @@ bool nv50_state_validate_3d(struct nv50_context *, uint32_t);
 
 /* nv50_surface.c */
 extern void nv50_clear(struct pipe_context *, unsigned buffers,
+                       unsigned clear_mask,
                        const struct pipe_scissor_state *scissor_state,
                        const union pipe_color_union *color,
                        double depth, unsigned stencil);

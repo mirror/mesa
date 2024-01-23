@@ -541,7 +541,8 @@ pack_rgba(enum pipe_format format, const float *rgba)
 }
 
 static void
-vc4_clear(struct pipe_context *pctx, unsigned buffers, const struct pipe_scissor_state *scissor_state,
+vc4_clear(struct pipe_context *pctx, unsigned buffers, unsigned clear_mask,
+          const struct pipe_scissor_state *scissor_state,
           const union pipe_color_union *color, double depth, unsigned stencil)
 {
         struct vc4_context *vc4 = vc4_context(pctx);

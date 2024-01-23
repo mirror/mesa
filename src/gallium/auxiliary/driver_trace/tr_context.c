@@ -1401,6 +1401,7 @@ trace_context_flush_resource(struct pipe_context *_pipe,
 static void
 trace_context_clear(struct pipe_context *_pipe,
                     unsigned buffers,
+                    unsigned clear_mask,
                     const struct pipe_scissor_state *scissor_state,
                     const union pipe_color_union *color,
                     double depth,
@@ -1413,6 +1414,7 @@ trace_context_clear(struct pipe_context *_pipe,
 
    trace_dump_arg(ptr, pipe);
    trace_dump_arg(uint, buffers);
+   trace_dump_arg(uint, clear_mask);
    trace_dump_arg_begin("scissor_state");
    trace_dump_scissor_state(scissor_state);
    trace_dump_arg_end();
@@ -1423,7 +1425,7 @@ trace_context_clear(struct pipe_context *_pipe,
    trace_dump_arg(float, depth);
    trace_dump_arg(uint, stencil);
 
-   pipe->clear(pipe, buffers, scissor_state, color, depth, stencil);
+   pipe->clear(pipe, buffers, clear_mask, scissor_state, color, depth, stencil);
 
    trace_dump_call_end();
 }

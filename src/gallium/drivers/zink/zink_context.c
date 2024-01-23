@@ -3114,7 +3114,7 @@ zink_batch_rp(struct zink_context *ctx)
       union pipe_color_union color;
       color.f[0] = color.f[1] = color.f[2] = 0;
       color.f[3] = 1.0;
-      ctx->base.clear(&ctx->base, ctx->void_clears, NULL, &color, 0, 0);
+      ctx->base.clear(&ctx->base, 0xf, ctx->void_clears, NULL, &color, 0, 0);
       ctx->void_clears = 0;
    }
    if (!ctx->blitting) {

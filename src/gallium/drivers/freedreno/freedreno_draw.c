@@ -461,6 +461,7 @@ batch_clear_tracking(struct fd_batch *batch, unsigned buffers) assert_dt
 
 static void
 fd_clear(struct pipe_context *pctx, unsigned buffers,
+         unsigned clear_mask,
          const struct pipe_scissor_state *scissor_state,
          const union pipe_color_union *color, double depth,
          unsigned stencil) in_dt

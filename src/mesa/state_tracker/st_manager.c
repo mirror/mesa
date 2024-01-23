@@ -1045,6 +1045,7 @@ st_api_create_context(struct pipe_frontend_screen *fscreen,
    }
 
    st->can_scissor_clear = !!st->screen->get_param(st->screen, PIPE_CAP_CLEAR_SCISSORED);
+   st->can_masked_clear = !!st->screen->get_param(st->screen, PIPE_CAP_CLEAR_MASKED);
 
    st->ctx->invalidate_on_gl_viewport =
       fscreen->get_param(fscreen, ST_MANAGER_BROKEN_INVALIDATE);

@@ -301,7 +301,7 @@ nvk_CmdDecodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoDecodeInfoKHR 
    nvh264->PicWidthInMbs = sps->pic_width_in_mbs_minus1 + 1;
    nvh264->FrameHeightInMbs = sps->pic_height_in_map_units_minus1 + 1;
 
-   nvh264->tileFormat = 0;
+   nvh264->tileFormat = 1;
    nvh264->gob_height = 3;
 
    nvh264->entropy_coding_mode_flag = pps->flags.entropy_coding_mode_flag;

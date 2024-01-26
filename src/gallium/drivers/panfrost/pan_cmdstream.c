@@ -2016,8 +2016,9 @@ panfrost_emit_image_attribs(struct panfrost_batch *batch, uint64_t *buffers,
       return 0;
    }
 
+   /* Gaps in the mask will be filled with empty descriptors */
+   unsigned attr_count = util_last_bit(ctx->image_mask[type]);
    /* Images always need a MALI_ATTRIBUTE_BUFFER_CONTINUATION_3D */
-   unsigned attr_count = shader->info.attribute_count;
    unsigned buf_count = (attr_count * 2) + (PAN_ARCH >= 6 ? 1 : 0);
 
    struct panfrost_ptr bufs =

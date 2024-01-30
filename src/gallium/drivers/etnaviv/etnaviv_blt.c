@@ -223,6 +223,22 @@ emit_blt_inplace(struct etna_cmd_stream *stream, const struct blt_inplace_op *op
    etna_set_state(stream, VIVS_BLT_ENABLE, 0x00000000);
 }
 
+static inline uint32_t
+etna_calculate_clear_bits(enum pipe_format format, unsigned clear_mask)
+{
+   const struct util_format_description *desc = util_format_description(format);
+   uint32_t clear_bits = 0;
+
+   for (unsigned i = 0; i < desc->nr_channels; i++) {
+      if (clear_mask & (1 << desc->swizzle[i])) {
+         const unsigned mask = (1 << desc->channel[i].size) - 1;
+         clear_bits |= mask << desc->channel[i].shift;
+      }
+   }
+
+   return clear_bits;
+}
+
 static void
 etna_blit_clear_color_blt(struct pipe_context *pctx, unsigned idx,
                       unsigned clear_mask,
@@ -260,8 +276,10 @@ etna_blit_clear_color_blt(struct pipe_context *pctx, unsigned idx,
 
    clr.clear_value[0] = new_clear_value;
    clr.clear_value[1] = new_clear_value >> 32;
-   clr.clear_bits[0] = 0xffffffff; /* TODO: Might want to clear only specific channels? */
-   clr.clear_bits[1] = 0xffffffff;
+
+   const uint32_t clear_bits = etna_calculate_clear_bits(surf->base.format, clear_mask);
+   clr.clear_bits[0] = clear_bits;
+   clr.clear_bits[1] = clear_bits;
 
    if (scissor_state) {
       clr.rect_x = scissor_state->minx * msaa_xscale;

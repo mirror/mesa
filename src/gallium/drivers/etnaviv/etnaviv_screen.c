@@ -179,6 +179,9 @@ etna_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 1;
    case PIPE_CAP_FS_POINT_IS_SYSVAL:
       return 0;
+   case PIPE_CAP_CLEAR_SCISSORED:
+   case PIPE_CAP_CLEAR_MASKED:
+      return screen->specs.use_blt;
 
    /* Memory */
    case PIPE_CAP_CONSTANT_BUFFER_OFFSET_ALIGNMENT:

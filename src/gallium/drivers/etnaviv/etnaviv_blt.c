@@ -225,6 +225,7 @@ emit_blt_inplace(struct etna_cmd_stream *stream, const struct blt_inplace_op *op
 
 static void
 etna_blit_clear_color_blt(struct pipe_context *pctx, unsigned idx,
+                      unsigned clear_mask,
                       const union pipe_color_union *color,
                       const struct pipe_scissor_state *scissor_state)
 {
@@ -390,6 +391,12 @@ etna_blit_clear_zs_blt(struct pipe_context *pctx, struct pipe_surface *dst,
    etna_resource_level_mark_changed(surf->level);
 }
 
+static inline unsigned
+get_color_mask_for_buffer(unsigned mask, unsigned buffer)
+{
+   return ((mask) >> (4 * (buffer))) & 0xf;
+}
+
 static void
 etna_clear_blt(struct pipe_context *pctx, unsigned buffers, unsigned clear_mask,
            const struct pipe_scissor_state *scissor_state,
@@ -410,7 +417,10 @@ etna_clear_blt(struct pipe_context *pctx, unsigned buffers, unsigned clear_mask,
          if (!surf)
             continue;
 
-         etna_blit_clear_color_blt(pctx, idx, color, scissor_state);
+         etna_blit_clear_color_blt(pctx, idx,
+                                  get_color_mask_for_buffer(clear_mask, idx),
+                                  color,
+                                  scissor_state);
 
          if (!etna_resource(surf->prsc)->explicit_flush)
             etna_context_add_flush_resource(ctx, surf->prsc);

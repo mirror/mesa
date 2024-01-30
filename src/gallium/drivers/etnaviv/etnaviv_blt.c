@@ -49,6 +49,18 @@
 
 #include <assert.h>
 
+static inline void
+blt_flush_ts(const struct etna_context *ctx)
+{
+   if (etna_core_has_feature(ctx->screen->info, ETNA_FEATURE_PE_TILE_CACHE_FLUSH_FIX)) {
+      etna_set_state(ctx->stream, VIVS_TS_FLUSH_CACHE, VIVS_TS_FLUSH_CACHE_FLUSH);
+   } else {
+      etna_set_state(ctx->stream, VIVS_BLT_ENABLE, 1);
+      etna_set_state(ctx->stream, VIVS_BLT_SET_COMMAND, 1);
+      etna_set_state(ctx->stream, VIVS_BLT_ENABLE, 0);
+   }
+}
+
 static uint32_t
 etna_compatible_blt_format(enum pipe_format fmt)
 {
@@ -371,7 +383,7 @@ etna_clear_blt(struct pipe_context *pctx, unsigned buffers, unsigned clear_mask,
       return;
 
    etna_set_state(ctx->stream, VIVS_GL_FLUSH_CACHE, 0x00000c23);
-   etna_set_state(ctx->stream, VIVS_TS_FLUSH_CACHE, VIVS_TS_FLUSH_CACHE_FLUSH);
+   blt_flush_ts(ctx);
 
    if (buffers & PIPE_CLEAR_COLOR) {
       for (int idx = 0; idx < ctx->framebuffer_s.nr_cbufs; ++idx) {
@@ -509,7 +521,7 @@ etna_try_blt_blit(struct pipe_context *pctx,
       op.bpp = util_format_get_blocksize(src->base.format);
 
       etna_set_state(ctx->stream, VIVS_GL_FLUSH_CACHE, 0x00000c23);
-      etna_set_state(ctx->stream, VIVS_TS_FLUSH_CACHE, 0x00000001);
+      blt_flush_ts(ctx);
       emit_blt_inplace(ctx->stream, &op);
    } else {
       /* Copy op */
@@ -574,7 +586,7 @@ etna_try_blt_blit(struct pipe_context *pctx,
       assert((op.src_y + op.rect_h) <= src_lev->padded_height);
 
       etna_set_state(ctx->stream, VIVS_GL_FLUSH_CACHE, 0x00000c23);
-      etna_set_state(ctx->stream, VIVS_TS_FLUSH_CACHE, 0x00000001);
+      blt_flush_ts(ctx);
       emit_blt_copyimage(ctx->stream, &op);
    }
 

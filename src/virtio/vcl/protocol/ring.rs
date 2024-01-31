@@ -9,6 +9,7 @@ use crate::dev::drm::DrmDevice;
 use crate::dev::resource::VirtGpuResource;
 use crate::dev::virtgpu::*;
 use crate::protocol::cs::*;
+use crate::protocol::ClCommandFlagBitsExt;
 
 use vcl_drm_gen::*;
 
@@ -37,17 +38,22 @@ impl VirglReplyBuffer {
 }
 
 pub struct VirtGpuRing {
-    _replybuf: VirglReplyBuffer,
+    replybuf: VirglReplyBuffer,
     drm_device: Rc<DrmDevice>,
 }
 
 impl VirtGpuRing {
     pub fn new(drm_device: Rc<DrmDevice>) -> Result<Self, VirtGpuError> {
         let replybuf = VirglReplyBuffer::new(drm_device.clone())?;
-        Ok(Self {
-            _replybuf: replybuf,
+        let mut ret = Self {
+            replybuf,
             drm_device,
-        })
+        };
+        ret.submit_clSetReplyBufferMESA(
+            ClCommandFlagBitsExt::GenerateReplyBit,
+            ret.replybuf.res.res_handle as i32,
+        )?;
+        Ok(ret)
     }
 }
 
@@ -95,13 +101,17 @@ impl VirtGpuRing {
     pub fn submit(
         &mut self,
         encoder: VclCsEncoder,
-        _reply_size: usize,
+        reply_size: usize,
     ) -> Result<Option<VclCsDecoder>, VirtGpuError> {
         if encoder.is_empty() {
             return Ok(None);
         }
 
         self.exec_buffer(encoder.get_slice())?;
-        Ok(None)
+
+        if reply_size == 0 {
+            return Ok(None);
+        }
+        Ok(Some(VclCsDecoder::new(self.replybuf.map(reply_size)?)))
     }
 }

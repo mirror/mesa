@@ -5,3 +5,4 @@
 
 pub mod drm;
 pub mod virtgpu;
+pub mod resource;

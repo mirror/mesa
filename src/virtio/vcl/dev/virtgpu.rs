@@ -8,6 +8,7 @@ use vcl_drm_gen::*;
 use vcl_virglrenderer_gen::*;
 
 use std::ffi::CStr;
+use std::rc::Rc;
 use std::sync::Once;
 
 #[derive(Debug)]
@@ -15,10 +16,11 @@ pub enum VirtGpuError {
     DrmDevice,
     Ioctl(i32),
     Param,
+    Map,
 }
 
 pub struct VirtGpu {
-    pub drm_device: DrmDevice,
+    pub drm_device: Rc<DrmDevice>,
     pub params: VirtGpuParams,
     pub capset: VirtGpuCapset,
 }
@@ -49,6 +51,8 @@ impl VirtGpu {
     }
 
     pub fn new(drm_device: DrmDevice) -> Result<Self, VirtGpuError> {
+        let drm_device = Rc::new(drm_device);
+
         let params = VirtGpuParams::new(&drm_device)?;
 
         // CONTEXT_INIT is needed to initialize a context for VCL.

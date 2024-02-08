@@ -3,7 +3,7 @@
 
 rust = import('rust')
 
-cl_c_args = ['-DCL_TARGET_OPENCL_VERSION=100']
+cl_c_args = ['-DCL_TARGET_OPENCL_VERSION=300']
 
 vcl_bindgen_args = [
   # needed because bindgen adds *mut void fields...

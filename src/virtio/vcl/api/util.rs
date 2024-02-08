@@ -198,10 +198,8 @@ pub fn to_maybeuninit_vec<T: Copy>(v: Vec<T>) -> Vec<MaybeUninit<T>> {
     v.into_iter().map(MaybeUninit::new).collect()
 }
 
-const CL_DEVICE_TYPES: u32 = CL_DEVICE_TYPE_ACCELERATOR
-    | CL_DEVICE_TYPE_CPU
-    | CL_DEVICE_TYPE_GPU
-    | CL_DEVICE_TYPE_DEFAULT;
+const CL_DEVICE_TYPES: u32 =
+    CL_DEVICE_TYPE_ACCELERATOR | CL_DEVICE_TYPE_CPU | CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_DEFAULT;
 
 pub fn check_cl_device_type(val: cl_device_type) -> CLResult<()> {
     let v: u32 = val.try_into().or(Err(CL_INVALID_DEVICE_TYPE))?;

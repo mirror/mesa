@@ -4,26 +4,87 @@
  */
 
 use crate::api::icd::CLObjectBase;
+use crate::core::platform::Platform;
+use crate::protocol::VirtGpuRing;
 use crate::{dev::virtgpu::*, impl_cl_type_trait};
 
 use vcl_opencl_gen::*;
+
+use std::mem::size_of_val;
+use std::pin::Pin;
+use std::ptr;
 
 impl_cl_type_trait!(cl_device_id, Device, CL_INVALID_DEVICE);
 
 pub struct Device {
     base: CLObjectBase<CL_INVALID_DEVICE>,
-    pub gpu: VirtGpu,
+    ty: cl_device_type,
 }
 
 impl Device {
-    pub fn new(gpu: VirtGpu) -> Self {
+    pub fn new() -> Self {
         Self {
             base: CLObjectBase::new(),
-            gpu: gpu,
+            ty: CL_DEVICE_TYPE_DEFAULT as u64,
         }
     }
 
-    pub fn all() -> Result<Vec<Device>, VirtGpuError> {
-        Ok(VirtGpu::all()?.into_iter().map(Self::new).collect())
+    pub fn is_type(&self, device_type: cl_device_type) -> bool {
+        self.ty & device_type != 0
+    }
+
+    pub fn all(
+        platform: &Platform,
+        ring: &mut VirtGpuRing,
+    ) -> Result<Vec<Pin<Box<Device>>>, VirtGpuError> {
+        let mut count = 0;
+        let ret = ring.call_clGetDeviceIDs(
+            platform.get_handle(),
+            CL_DEVICE_TYPE_ALL as _,
+            0,
+            ptr::null_mut(),
+            &mut count,
+        )?;
+        if ret != CL_SUCCESS as _ {
+            return Ok(Vec::default());
+        }
+
+        let mut devices = Vec::with_capacity(count as usize);
+        let mut handles = Vec::with_capacity(count as usize);
+
+        for _ in 0..count {
+            // Since we use the device address as cl_devicem_id, let us make
+            // sure devices do not move from their memory area once created
+            let device = Box::pin(Device::new());
+            handles.push(device.get_handle());
+            devices.push(device);
+        }
+
+        let ret = ring.call_clGetDeviceIDs(
+            platform.get_handle(),
+            CL_DEVICE_TYPE_ALL as _,
+            count,
+            handles.as_mut_ptr(),
+            ptr::null_mut(),
+        )?;
+        if ret != CL_SUCCESS as _ {
+            return Ok(Vec::default());
+        }
+
+        // Update device types
+        for device in &mut devices {
+            let ret = ring.call_clGetDeviceInfo(
+                device.get_handle(),
+                CL_DEVICE_TYPE,
+                size_of_val(&device.ty),
+                &mut device.ty as *mut cl_device_type as _,
+                ptr::null_mut(),
+            )?;
+            if ret != CL_SUCCESS as _ {
+                return Ok(Vec::default());
+            }
+        }
+
+        Ok(devices)
     }
 }

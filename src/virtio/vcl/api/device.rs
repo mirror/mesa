@@ -5,14 +5,15 @@
 
 use crate::api::icd::*;
 use crate::api::util::*;
+use crate::dev::virtgpu::VirtGpu;
 
 use vcl_opencl_gen::*;
-use vcl_proc_macros::*;
+use vcl_proc_macros::cl_entrypoint;
 
 use mesa_rust_util::ptr::CheckedPtr;
 
 use std::cmp::min;
-use std::mem::MaybeUninit;
+use std::ffi::c_void;
 
 #[cl_entrypoint(clGetDeviceIDs)]
 fn get_device_ids(
@@ -23,8 +24,9 @@ fn get_device_ids(
     num_devices: *mut cl_uint,
 ) -> CLResult<()> {
     // CL_INVALID_PLATFORM if platform is not a valid platform
-    let platform = platform.get_ref()?;
-
+    if !VirtGpu::get().contains_platform(platform) {
+        return Err(CL_INVALID_PLATFORM);
+    }
     // CL_INVALID_DEVICE_TYPE if device_type is not a valid value
     check_cl_device_type(device_type)?;
 
@@ -38,7 +40,7 @@ fn get_device_ids(
         return Err(CL_INVALID_VALUE);
     }
 
-    let devs = platform.get_devices(device_type);
+    let devs = platform.get_ref()?.get_devices(device_type);
     // CL_DEVICE_NOT_FOUND if no OpenCL devices that matched device_type were found
     if devs.is_empty() {
         return Err(CL_DEVICE_NOT_FOUND);
@@ -54,7 +56,7 @@ fn get_device_ids(
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
             unsafe {
-                *devices.add(i) = cl_device_id::from_ptr(devs[i]);
+                *devices.add(i) = devs[i].get_handle();
             }
         }
     }
@@ -62,20 +64,45 @@ fn get_device_ids(
     Ok(())
 }
 
-#[cl_info_entrypoint(clGetDeviceInfo)]
-impl CLInfo<cl_device_info> for cl_device_id {
-    fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
-        let dev = self.get_ref()?;
+#[cl_entrypoint(clGetDeviceInfo)]
+fn get_device_info(
+    device: cl_device_id,
+    param_name: cl_uint,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    device.get_ref()?;
+    let virtgpu = VirtGpu::get_mut();
+    let ring = virtgpu.get_ring();
+    let mut size = 0;
+    let ret = ring
+        .call_clGetDeviceInfo(device, param_name, param_value_size, param_value, &mut size)
+        .expect("VirtGpuError");
 
-        #[allow(non_upper_case_globals)]
-        Ok(match q {
-            CL_DEVICE_NAME => cl_prop::<&str>(&dev.gpu.drm_device.name.as_str()),
-            _ => return Err(CL_INVALID_VALUE),
-        })
+    // Return a valid error for this call
+    if ret == CL_INVALID_OPERATION {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+    // type as specified in the Context Attributes table and param_value is not a NULL value.
+    if param_value_size < size && !param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+    // If param_value_size_ret is NULL, it is ignored.
+    param_value_size_ret.write_checked(size);
+
+    if ret != CL_SUCCESS as _ {
+        return Err(ret);
+    } else {
+        Ok(())
     }
 }
 
-#[cfg(disabled_test)]
+#[cfg(test)]
 mod test {
     use super::*;
     use crate::api::platform::get_platform_ids;
@@ -107,7 +134,7 @@ mod test {
             Err(CL_INVALID_PLATFORM)
         );
 
-        let wrong_dev_ty: u64 = 1 << 5;
+        let wrong_dev_ty: u64 = 1 << 7;
         assert_eq!(
             get_device_ids(platform, wrong_dev_ty, 1, &mut device, &mut num_devices),
             Err(CL_INVALID_DEVICE_TYPE)

@@ -248,6 +248,13 @@ macro_rules! impl_cl_type_trait {
             }
         }
 
+        impl $t {
+            pub fn get_handle(&self) -> $cl {
+                use crate::api::icd::ReferenceCountedAPIPointer;
+                $cl::from_ptr(self)
+            }
+        }
+
         // there are two reason to implement those traits for all objects
         //   1. it speeds up operations
         //   2. we want to check for real equality more explicit to stay conformant with the API

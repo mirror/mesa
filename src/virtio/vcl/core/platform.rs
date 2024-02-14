@@ -18,7 +18,7 @@ impl_cl_type_trait!(cl_platform_id, Platform, CL_INVALID_PLATFORM);
 
 pub struct Platform {
     base: CLObjectBase<CL_INVALID_PLATFORM>,
-    devices: Vec<Device>,
+    pub devices: Vec<Pin<Box<Device>>>,
 }
 
 macro_rules! gen_cl_exts {
@@ -36,18 +36,11 @@ macro_rules! gen_cl_exts {
 gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
 impl Platform {
-    pub fn get_handle(&self) -> cl_platform_id {
-        cl_platform_id::from_ptr(self)
-    }
-
-    pub fn get_devices<'a>(&'a self, device_type: cl_device_type) -> Vec<&'a Device> {
-        // We only support GPUs
-        let v: u32 = device_type.try_into().unwrap_or(0);
-        if v & (CL_DEVICE_TYPE_GPU | CL_DEVICE_TYPE_DEFAULT) != 0 {
-            self.devices.iter().collect()
-        } else {
-            Vec::default()
-        }
+    pub fn get_devices<'a>(&'a self, device_type: cl_device_type) -> Vec<&Pin<Box<Device>>> {
+        self.devices
+            .iter()
+            .filter(|device| device.is_type(device_type))
+            .collect()
     }
 
     pub fn new() -> Self {
@@ -78,6 +71,10 @@ impl Platform {
         let ret = ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
         if ret != CL_SUCCESS as _ {
             return Ok(Vec::new());
+        }
+
+        for platform in &mut platforms {
+            platform.devices = Device::all(platform, ring)?;
         }
 
         Ok(platforms)

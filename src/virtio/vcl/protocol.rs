@@ -12,6 +12,8 @@ pub use ring::*;
 
 pub mod defines;
 pub use defines::*;
+pub mod device;
+pub use device::*;
 pub mod handles;
 pub use handles::*;
 pub mod info;

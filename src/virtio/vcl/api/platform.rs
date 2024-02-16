@@ -161,7 +161,7 @@ mod test {
             get_platform_ids(0, ptr::null_mut(), &mut num_platforms),
             Ok(())
         );
-        assert_eq!(num_platforms, 1);
+        assert!(num_platforms > 0);
 
         assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
     }

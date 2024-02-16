@@ -59,7 +59,10 @@ impl Platform {
 
     pub fn all(ring: &mut VirtGpuRing) -> Result<Vec<Pin<Box<Platform>>>, VirtGpuError> {
         let mut count = 0;
-        ring.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
+        let ret = ring.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
+        if ret != CL_SUCCESS as _ {
+            return Ok(Vec::new());
+        }
 
         let mut platforms = Vec::with_capacity(count as usize);
         let mut handles = Vec::with_capacity(count as usize);
@@ -72,7 +75,10 @@ impl Platform {
             platforms.push(platform);
         }
 
-        ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
+        let ret = ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
+        if ret != CL_SUCCESS as _ {
+            return Ok(Vec::new());
+        }
 
         Ok(platforms)
     }

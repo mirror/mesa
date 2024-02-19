@@ -126,6 +126,7 @@ vcl_files = files(
   'core/device.rs',
   'core/platform.rs',
   'dev.rs',
+  'dev/debug.rs',
   'dev/drm.rs',
   'dev/virtgpu.rs',
   'dev/resource.rs',

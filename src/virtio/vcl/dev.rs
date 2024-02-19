@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+pub mod debug;
 pub mod drm;
 pub mod virtgpu;
 pub mod resource;

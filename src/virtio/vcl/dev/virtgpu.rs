@@ -4,6 +4,7 @@
  */
 
 use crate::core::platform::Platform;
+use crate::dev::debug::*;
 use crate::dev::drm::*;
 use crate::protocol::ring::VirtGpuRing;
 
@@ -11,9 +12,11 @@ use vcl_drm_gen::*;
 use vcl_opencl_gen::cl_platform_id;
 use vcl_virglrenderer_gen::*;
 
+use std::env;
 use std::ffi::CStr;
 use std::pin::Pin;
 use std::rc::Rc;
+use std::str::FromStr;
 use std::sync::Once;
 
 #[derive(Debug)]
@@ -32,12 +35,33 @@ pub struct VirtGpu {
     pub platforms: Vec<Pin<Box<Platform>>>,
 }
 
+static VCL_ENV_ONCE: Once = Once::new();
 static VIRTGPU_ONCE: Once = Once::new();
 
+static mut VCL_DEBUG: VclDebug = VclDebug {
+    flags: VclDebugFlags::Empty,
+};
 static mut VIRTGPU: Option<VirtGpu> = None;
+
+fn load_env() {
+    // We can not use log!() yet as it requires VCL_ENV_ONCE to be completed
+    let debug = unsafe { &mut VCL_DEBUG };
+    if let Ok(debug_flags) = env::var("VCL_DEBUG") {
+        for flag in debug_flags.split(',') {
+            match VclDebugFlags::from_str(flag) {
+                Ok(debug_flag) => debug.flags |= debug_flag,
+                Err(e) => eprintln!("vcl: error: VCL_DEBUG: {}", e),
+            }
+        }
+        if debug.flags.contains(VclDebugFlags::Info) {
+            eprintln!("vcl: info: VCL_DEBUG enabled: {}", debug.flags);
+        }
+    }
+}
 
 impl VirtGpu {
     pub fn init_once() -> Result<(), VirtGpuError> {
+        VCL_ENV_ONCE.call_once(load_env);
         // SAFETY: no concurrent static mut access due to std::Once
         VIRTGPU_ONCE.call_once(|| {
             let drm_devices = DrmDevice::virtgpus().expect("Failed to find VirtIO-GPUs");
@@ -49,6 +73,11 @@ impl VirtGpu {
             unsafe { VIRTGPU.replace(virtgpu) };
         });
         Ok(())
+    }
+
+    pub fn debug() -> &'static VclDebug {
+        debug_assert!(VCL_ENV_ONCE.is_completed());
+        unsafe { &VCL_DEBUG }
     }
 
     pub fn get() -> &'static Self {

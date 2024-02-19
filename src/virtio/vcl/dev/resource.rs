@@ -5,8 +5,10 @@
 
 use std::{ffi::c_void, os::fd::AsRawFd, rc::Rc};
 
+use crate::dev::debug::VclDebugFlags;
 use crate::dev::drm::DrmDevice;
 use crate::dev::virtgpu::*;
+use crate::log;
 
 use vcl_drm_gen::*;
 use vcl_mman_gen::*;
@@ -102,7 +104,11 @@ impl VirtGpuResource {
             )
         };
         if ptr == map_result_FAILED as _ {
-            eprintln!("Failed to map: {}", std::io::Error::last_os_error());
+            log!(
+                VclDebugFlags::Error,
+                "Failed to map: {}",
+                std::io::Error::last_os_error()
+            );
             return Err(VirtGpuError::Map);
         }
 

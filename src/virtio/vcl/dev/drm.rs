@@ -6,9 +6,13 @@
 use vcl_drm_gen::*;
 use vcl_virglrenderer_gen::virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL;
 
+use std::backtrace::*;
 use std::fs::OpenOptions;
 use std::os::unix::io::AsRawFd;
 use std::{ffi::CStr, fs::File, ptr};
+
+use crate::dev::debug::VclDebugFlags;
+use crate::log;
 
 use super::virtgpu::{VirtGpuError, VirtGpuParamId};
 
@@ -40,9 +44,13 @@ impl DrmDevice {
             // When count is negative, it can be interpreted as an OS error code
             if count < 0 {
                 let ioerr = std::io::Error::from_raw_os_error(-count);
-                eprintln!("Failed to open DRM devices: {}", ioerr);
+                log!(
+                    VclDebugFlags::Error,
+                    "Failed to open DRM devices: {}",
+                    ioerr
+                );
             } else {
-                eprintln!("No DRM devices found");
+                log!(VclDebugFlags::Error, "No DRM devices found");
             }
             return Err(VirtGpuError::DrmDevice);
         }
@@ -114,12 +122,22 @@ impl DrmDevice {
         ret
     }
 
-    pub fn ioctl<T>(&self, request: u64, arg: &mut T) -> Result<(), VirtGpuError> {
+    pub fn ioctl<T: std::fmt::Debug>(&self, request: u64, arg: &mut T) -> Result<(), VirtGpuError> {
         let ret = unsafe { drmIoctl(self.file.as_raw_fd(), request, arg as *mut _ as _) };
         if ret != 0 {
-            eprintln!("Failed ioctl: {}", std::io::Error::last_os_error());
+            log!(
+                VclDebugFlags::Error,
+                "ioctl: {:?}: {}",
+                arg,
+                std::io::Error::last_os_error(),
+            );
+            let backtrace = Backtrace::capture();
+            if backtrace.status() == BacktraceStatus::Captured {
+                log!(VclDebugFlags::Error, "{}", backtrace);
+            }
             Err(VirtGpuError::Ioctl(ret))
         } else {
+            log!(VclDebugFlags::Ioctl, "{:?}: OK", arg);
             Ok(())
         }
     }

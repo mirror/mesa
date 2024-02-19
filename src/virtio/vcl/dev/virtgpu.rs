@@ -6,6 +6,7 @@
 use crate::core::platform::Platform;
 use crate::dev::debug::*;
 use crate::dev::drm::*;
+use crate::log;
 use crate::protocol::ring::VirtGpuRing;
 
 use vcl_drm_gen::*;
@@ -119,7 +120,10 @@ impl VirtGpu {
         // CONTEXT_INIT is needed to initialize a context for VCL.
         // Without this, it would go for a VIRGL context.
         if !params[VirtGpuParamId::ContextInit].is_set() {
-            eprintln!("VCL can not use VirtIO-GPU without CONTEXT_INIT kernel parameter");
+            log!(
+                VclDebugFlags::Error,
+                "VCL can not use VirtIO-GPU without CONTEXT_INIT kernel parameter"
+            );
             return Err(VirtGpuError::Param);
         }
 

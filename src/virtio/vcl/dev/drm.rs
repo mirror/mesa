@@ -123,6 +123,7 @@ impl DrmDevice {
     }
 
     pub fn ioctl<T: std::fmt::Debug>(&self, request: u64, arg: &mut T) -> Result<(), VirtGpuError> {
+        log!(VclDebugFlags::Ioctl, "{:?}: ...", arg);
         let ret = unsafe { drmIoctl(self.file.as_raw_fd(), request, arg as *mut _ as _) };
         if ret != 0 {
             log!(

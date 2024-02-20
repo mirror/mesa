@@ -5,6 +5,7 @@
 
 #![allow(non_snake_case)]
 
+use crate::api::context::*;
 use crate::api::device::*;
 use crate::api::platform;
 use crate::api::platform::*;
@@ -19,10 +20,10 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetPlatformInfo: Some(platform::clGetPlatformInfo),
     clGetDeviceIDs: Some(clGetDeviceIDs),
     clGetDeviceInfo: Some(clGetDeviceInfo),
-    clCreateContext: None,
-    clCreateContextFromType: None,
-    clRetainContext: None,
-    clReleaseContext: None,
+    clCreateContext: Some(clCreateContext),
+    clCreateContextFromType: Some(clCreateContextFromType),
+    clRetainContext: Some(clRetainContext),
+    clReleaseContext: Some(clReleaseContext),
     clGetContextInfo: None,
     clCreateCommandQueue: None,
     clRetainCommandQueue: None,
@@ -218,6 +219,27 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
 
     fn get_ref(&self) -> CLResult<&T> {
         unsafe { Ok(self.get_ptr()?.as_ref().unwrap()) }
+    }
+
+    fn from_arc(arc: std::sync::Arc<T>) -> Self
+    where
+        Self: Sized,
+    {
+        Self::from_ptr(std::sync::Arc::into_raw(arc))
+    }
+
+    fn retain(&self) -> CLResult<()> {
+        unsafe {
+            std::sync::Arc::increment_strong_count(self.get_ptr()?);
+            Ok(())
+        }
+    }
+
+    fn release(&self) -> CLResult<()> {
+        unsafe {
+            std::sync::Arc::from_raw(self.get_ptr()?);
+            Ok(())
+        }
     }
 }
 

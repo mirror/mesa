@@ -16,7 +16,7 @@ use std::cmp::min;
 use std::ffi::c_void;
 
 #[cl_entrypoint(clGetDeviceIDs)]
-fn get_device_ids(
+pub fn get_device_ids(
     platform: cl_platform_id,
     device_type: cl_device_type,
     num_entries: cl_uint,

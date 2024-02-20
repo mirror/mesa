@@ -3,5 +3,6 @@
  * SPDX-License-Identifier: MIT
  */
 
+pub mod context;
 pub mod device;
 pub mod platform;

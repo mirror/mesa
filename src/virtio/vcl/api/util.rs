@@ -211,3 +211,11 @@ pub fn check_cl_device_type(val: cl_device_type) -> CLResult<()> {
     }
     Err(CL_INVALID_DEVICE_TYPE)
 }
+
+pub fn check_cl_bool<T: PartialEq + TryInto<cl_uint>>(val: T) -> Option<bool> {
+    let c: u32 = val.try_into().ok()?;
+    if c != CL_TRUE && c != CL_FALSE {
+        return None;
+    }
+    Some(c == CL_TRUE)
+}

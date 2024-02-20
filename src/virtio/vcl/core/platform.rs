@@ -79,4 +79,13 @@ impl Platform {
 
         Ok(platforms)
     }
+
+    pub fn contains_device(&self, id: cl_device_id) -> bool {
+        for dev in &self.devices {
+            if dev.get_handle() == id {
+                return true;
+            }
+        }
+        false
+    }
 }

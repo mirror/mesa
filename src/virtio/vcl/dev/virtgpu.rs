@@ -105,7 +105,7 @@ impl VirtGpu {
 
     pub fn contains_platform(&self, id: cl_platform_id) -> bool {
         for platform in &self.platforms {
-            if platform.as_ptr() == id {
+            if platform.get_handle() == id {
                 return true;
             }
         }

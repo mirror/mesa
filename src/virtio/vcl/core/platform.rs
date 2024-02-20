@@ -36,8 +36,8 @@ macro_rules! gen_cl_exts {
 gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
 impl Platform {
-    pub fn as_ptr(&self) -> cl_platform_id {
-        (self as *const Self) as cl_platform_id
+    pub fn get_handle(&self) -> cl_platform_id {
+        cl_platform_id::from_ptr(self)
     }
 
     pub fn get_devices<'a>(&'a self, device_type: cl_device_type) -> Vec<&'a Device> {
@@ -71,7 +71,7 @@ impl Platform {
             // Since we use the platform address as cl_platform_id, let us make
             // sure platforms do not move from their memory area once created
             let platform = Box::pin(Platform::new());
-            handles.push(platform.as_ptr());
+            handles.push(platform.get_handle());
             platforms.push(platform);
         }
 

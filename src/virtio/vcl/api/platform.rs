@@ -48,7 +48,7 @@ pub fn get_platform_ids(
 
         #[allow(clippy::needless_range_loop)]
         for i in 0..n {
-            unsafe { *platforms.add(i) = virt_platforms[i].as_ptr() }
+            unsafe { *platforms.add(i) = virt_platforms[i].get_handle() }
         }
     }
 

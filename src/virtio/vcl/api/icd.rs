@@ -24,7 +24,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clCreateContextFromType: Some(clCreateContextFromType),
     clRetainContext: Some(clRetainContext),
     clReleaseContext: Some(clReleaseContext),
-    clGetContextInfo: None,
+    clGetContextInfo: Some(clGetContextInfo),
     clCreateCommandQueue: None,
     clRetainCommandQueue: None,
     clReleaseCommandQueue: None,

@@ -10,6 +10,7 @@ use crate::core::context::Context;
 use crate::dev::virtgpu::VirtGpu;
 
 use mesa_rust_util::properties::Properties;
+use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
@@ -154,6 +155,45 @@ fn release_context(context: cl_context) -> CLResult<()> {
         return Err(ret);
     }
     context.release()
+}
+
+#[cl_entrypoint(clGetContextInfo)]
+fn get_context_info(
+    context: cl_context,
+    param_name: cl_context_info,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    context.get_ref()?;
+
+    let mut size = 0;
+    let ret = VirtGpu::get_mut()
+        .get_ring()
+        .call_clGetContextInfo(
+            context,
+            param_name,
+            param_value_size,
+            param_value,
+            &mut size,
+        )
+        .expect("VirtGpuError");
+
+    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+    // type as specified in the Context Attributes table and param_value is not a NULL value.
+    if param_value_size < size && !param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+    // If param_value_size_ret is NULL, it is ignored.
+    param_value_size_ret.write_checked(size);
+
+    if ret != CL_SUCCESS as _ {
+        Err(ret)
+    } else {
+        Ok(())
+    }
 }
 
 #[cfg(test)]

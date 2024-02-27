@@ -69,8 +69,8 @@ libmesa_rust_util = static_library(
 vcl_drm_bindings_rs = rust.bindgen(
   input : 'vcl_drm_bindings.h',
   output : 'vcl_drm_bindings.rs',
-  dependencies: [dep_libdrm],
-  include_directories: [inc_include],
+  dependencies : [dep_libdrm],
+  include_directories : [inc_include],
 )
 
 vcl_drm_gen = static_library(
@@ -82,19 +82,47 @@ vcl_drm_gen = static_library(
   dependencies : [dep_libdrm],
 )
 
-vcl_mman_bindings_rs = rust.bindgen(
-  input : 'vcl_mman_bindings.h',
-  output : 'vcl_mman_bindings.rs',
+vcl_sys_bindings_c = meson.current_build_dir() / 'vcl_sys_bindings.c'
+
+vcl_sys_bindings_rs = rust.bindgen(
+  input : 'vcl_sys_bindings.h',
+  output : 'vcl_sys_bindings.rs',
   include_directories: [inc_include],
+  args : [
+    '--experimental',
+    '--wrap-static-fns',
+    '--wrap-static-fns-path',
+    vcl_sys_bindings_c,
+  ],
 )
 
-vcl_mman_gen = static_library(
-  'vcl_mman_gen',
-  vcl_mman_bindings_rs,
+# Fix include path
+vcl_sys_static_c = custom_target('vcl_sys_static_gen',
+  output: 'vcl_sys_bindings.c',
+  input: vcl_sys_bindings_rs,
+  command: [
+    'sed',
+    '-i',
+    's,../../src/virtio/vcl/,,g',
+    vcl_sys_bindings_c,
+  ]
+)
+
+vcl_sys_static_gen = static_library(
+  'vcl_sys_static_gen',
+  sources: vcl_sys_static_c,
+  c_args: ['-Wno-missing-prototypes']
+)
+
+vcl_sys_gen = static_library(
+  'vcl_sys_gen',
+  sources: vcl_sys_bindings_rs,
   gnu_symbol_visibility : 'hidden',
   rust_crate_type : 'rlib',
   rust_args : [vcl_gen_args],
+  link_with : vcl_sys_static_gen,
 )
+
 
 virglrenderer_c_args = ['-DVIRGL_RENDERER_UNSTABLE_APIS']
 
@@ -111,6 +139,21 @@ vcl_virglrenderer_gen = static_library(
   gnu_symbol_visibility : 'hidden',
   rust_crate_type : 'rlib',
   rust_args : [vcl_gen_args],
+)
+
+vcl_vtest_bindings_rs = rust.bindgen(
+  input : 'vcl_vtest_bindings.h',
+  output : 'vcl_vtest_bindings.rs',
+  include_directories : inc_virtio,
+  c_args : [virglrenderer_c_args],
+)
+
+vcl_vtest_gen = static_library(
+  'vcl_vtest_gen',
+  vcl_vtest_bindings_rs,
+  gnu_symbol_visibility : 'hidden',
+  rust_crate_type : 'rlib',
+  rust_args : [vcl_gen_args]
 )
 
 vcl_files = files(
@@ -130,6 +173,7 @@ vcl_files = files(
   'dev/drm.rs',
   'dev/renderer.rs',
   'dev/virtgpu.rs',
+  'dev/vtest.rs',
   'dev.rs',
   'protocol/context.rs',
   'protocol/cs_impl.rs',
@@ -156,8 +200,9 @@ libvcl = static_library(
     vcl_proc_macros,
     libmesa_rust_util,
     vcl_drm_gen,
-    vcl_mman_gen,
+    vcl_sys_gen,
     vcl_virglrenderer_gen,
+    vcl_vtest_gen,
   ]
 )
 

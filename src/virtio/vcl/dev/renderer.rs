@@ -8,6 +8,7 @@ use crate::core::platform::Platform;
 use crate::dev::debug::*;
 use crate::dev::drm::DrmDevice;
 use crate::dev::virtgpu::*;
+use crate::dev::vtest::*;
 use crate::protocol::VclCsEncoder;
 
 use vcl_opencl_gen::cl_platform_id;
@@ -65,7 +66,11 @@ impl Vcl {
         let mut ret = Ok(());
 
         VCL_ONCE.call_once(|| {
-            let renderer = Self::new_with_virtgpu();
+            let renderer = if Vcl::debug().flags.contains(VclDebugFlags::Vtest) {
+                Self::new_with_vtest()
+            } else {
+                Self::new_with_virtgpu()
+            };
 
             match renderer {
                 Err(e) => {
@@ -106,6 +111,15 @@ impl Vcl {
 
         let mut ret = Self {
             renderer: Box::new(virtgpu),
+            platforms: Vec::new(),
+        };
+        ret.platforms = Platform::all(&ret)?;
+        Ok(ret)
+    }
+
+    pub fn new_with_vtest() -> CLResult<Self> {
+        let mut ret = Self {
+            renderer: Box::new(Vtest::new().expect("Failed to create vtest")),
             platforms: Vec::new(),
         };
         ret.platforms = Platform::all(&ret)?;
@@ -180,6 +194,12 @@ impl VclReplyBuffer {
     pub fn new_for_virtgpu(virtgpu: &VirtGpu, size: usize) -> CLResult<Self> {
         Ok(Self {
             res: Box::new(VirtGpuResource::new(virtgpu, size)?),
+        })
+    }
+
+    pub fn new_for_vtest(vtest: &Vtest, size: usize) -> CLResult<Self> {
+        Ok(Self {
+            res: Box::new(VtestResource::new(vtest, size)?),
         })
     }
 

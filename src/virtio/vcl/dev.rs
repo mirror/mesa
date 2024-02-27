@@ -7,3 +7,4 @@ pub mod debug;
 pub mod drm;
 pub mod renderer;
 pub mod virtgpu;
+pub mod vtest;

@@ -4,7 +4,7 @@
  */
 
 use vcl_drm_gen::*;
-use vcl_mman_gen::*;
+use vcl_sys_gen::*;
 use vcl_virglrenderer_gen::*;
 
 use std::backtrace::*;

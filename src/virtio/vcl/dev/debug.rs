@@ -14,6 +14,7 @@ pub enum VclDebugFlags {
     Info = 1 << 0,
     Ioctl = 1 << 1,
     Error = 1 << 2,
+    Vtest = 1 << 4,
     All = 0b1111,
 }
 
@@ -39,6 +40,9 @@ impl Display for VclDebugFlags {
                 if self.contains(VclDebugFlags::Error) {
                     strings.push("error")
                 }
+                if self.contains(VclDebugFlags::Vtest) {
+                    strings.push("vtest")
+                }
                 f.write_str(&strings.join(","))
             }
         }
@@ -53,6 +57,7 @@ impl FromStr for VclDebugFlags {
             "info" => Ok(VclDebugFlags::Info),
             "ioctl" => Ok(VclDebugFlags::Ioctl),
             "error" => Ok(VclDebugFlags::Error),
+            "vtest" => Ok(VclDebugFlags::Vtest),
             "all" => Ok(VclDebugFlags::All),
             _ => Err(format!("Unknown debug flag: {}", flag)),
         }

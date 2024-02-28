@@ -5,6 +5,7 @@
 
 mod context;
 mod device;
+mod event;
 pub mod icd;
 mod memory;
 mod platform;

@@ -29,7 +29,7 @@ fn supported_command_queue_properties(properties: cl_command_queue_properties) -
 }
 
 #[cl_entrypoint(clCreateCommandQueue)]
-fn create_command_queue(
+pub fn create_command_queue(
     context: cl_context,
     device: cl_device_id,
     properties: cl_command_queue_properties,

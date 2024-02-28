@@ -6,5 +6,6 @@
 pub mod memory;
 pub mod context;
 pub mod device;
+pub mod event;
 pub mod platform;
 pub mod queue;

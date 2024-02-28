@@ -7,6 +7,7 @@
 
 use crate::api::context::*;
 use crate::api::device::*;
+use crate::api::event::*;
 use crate::api::memory::*;
 use crate::api::platform;
 use crate::api::platform::*;
@@ -59,11 +60,11 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetKernelArg: None,
     clGetKernelInfo: None,
     clGetKernelWorkGroupInfo: None,
-    clWaitForEvents: None,
-    clGetEventInfo: None,
-    clRetainEvent: None,
-    clReleaseEvent: None,
-    clGetEventProfilingInfo: None,
+    clWaitForEvents: Some(clWaitForEvents),
+    clGetEventInfo: Some(clGetEventInfo),
+    clRetainEvent: Some(clRetainEvent),
+    clReleaseEvent: Some(clReleaseEvent),
+    clGetEventProfilingInfo: Some(clGetEventProfilingInfo),
     clFlush: None,
     clFinish: None,
     clEnqueueReadBuffer: Some(clEnqueueReadBuffer),
@@ -102,8 +103,8 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetEventCallback: None,
     clCreateSubBuffer: None,
     clSetMemObjectDestructorCallback: None,
-    clCreateUserEvent: None,
-    clSetUserEventStatus: None,
+    clCreateUserEvent: Some(clCreateUserEvent),
+    clSetUserEventStatus: Some(clSetUserEventStatus),
     clEnqueueReadBufferRect: None,
     clEnqueueWriteBufferRect: None,
     clEnqueueCopyBufferRect: None,
@@ -123,8 +124,8 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueFillBuffer: None,
     clEnqueueFillImage: None,
     clEnqueueMigrateMemObjects: None,
-    clEnqueueMarkerWithWaitList: None,
-    clEnqueueBarrierWithWaitList: None,
+    clEnqueueMarkerWithWaitList: Some(clEnqueueMarkerWithWaitList),
+    clEnqueueBarrierWithWaitList: Some(clEnqueueBarrierWithWaitList),
     clGetExtensionFunctionAddressForPlatform: None,
     clCreateFromGLTexture: None,
     clGetDeviceIDsFromD3D11KHR: ptr::null_mut(),

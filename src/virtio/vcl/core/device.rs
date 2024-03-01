@@ -19,6 +19,8 @@ impl_cl_type_trait!(cl_device_id, Device, CL_INVALID_DEVICE);
 pub struct Device {
     base: CLObjectBase<CL_INVALID_DEVICE>,
     ty: cl_device_type,
+    /// Max size of memory object allocation in bytes
+    pub max_mem_alloc_size: cl_ulong,
 }
 
 impl Device {
@@ -26,6 +28,7 @@ impl Device {
         Self {
             base: CLObjectBase::new(),
             ty: CL_DEVICE_TYPE_DEFAULT as u64,
+            max_mem_alloc_size: 0,
         }
     }
 
@@ -74,6 +77,15 @@ impl Device {
                 CL_DEVICE_TYPE,
                 size_of_val(&device.ty),
                 &mut device.ty as *mut cl_device_type as _,
+                ptr::null_mut(),
+            )?;
+
+            // Update max mem alloc size
+            renderer.call_clGetDeviceInfo(
+                device.get_handle(),
+                CL_DEVICE_MAX_MEM_ALLOC_SIZE,
+                size_of_val(&device.max_mem_alloc_size),
+                &mut device.max_mem_alloc_size as *mut _ as _,
                 ptr::null_mut(),
             )?;
         }

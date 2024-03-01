@@ -6,6 +6,7 @@
 mod context;
 mod device;
 pub mod icd;
+mod memory;
 mod platform;
 mod queue;
 mod types;

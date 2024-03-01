@@ -10,6 +10,7 @@ use vcl_opencl_gen::*;
 
 use std::ffi::{CStr, CString};
 use std::mem::{size_of, MaybeUninit};
+use std::ops::BitAnd;
 use std::slice;
 
 pub trait CLInfo<I> {
@@ -218,4 +219,8 @@ pub fn check_cl_bool<T: PartialEq + TryInto<cl_uint>>(val: T) -> Option<bool> {
         return None;
     }
     Some(c == CL_TRUE)
+}
+
+pub fn bit_check<A: BitAnd<Output = A> + PartialEq + Default, B: Into<A>>(a: A, b: B) -> bool {
+    a & b.into() != A::default()
 }

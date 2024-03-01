@@ -7,6 +7,7 @@
 
 use crate::api::context::*;
 use crate::api::device::*;
+use crate::api::memory::*;
 use crate::api::platform;
 use crate::api::platform::*;
 use crate::api::queue::*;
@@ -31,11 +32,11 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clReleaseCommandQueue: Some(clReleaseCommandQueue),
     clGetCommandQueueInfo: Some(clGetCommandQueueInfo),
     clSetCommandQueueProperty: Some(clSetCommandQueueProperty),
-    clCreateBuffer: None,
+    clCreateBuffer: Some(clCreateBuffer),
     clCreateImage2D: None,
     clCreateImage3D: None,
-    clRetainMemObject: None,
-    clReleaseMemObject: None,
+    clRetainMemObject: Some(clRetainMemObject),
+    clReleaseMemObject: Some(clReleaseMemObject),
     clGetSupportedImageFormats: None,
     clGetMemObjectInfo: None,
     clGetImageInfo: None,
@@ -65,8 +66,8 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetEventProfilingInfo: None,
     clFlush: None,
     clFinish: None,
-    clEnqueueReadBuffer: None,
-    clEnqueueWriteBuffer: None,
+    clEnqueueReadBuffer: Some(clEnqueueReadBuffer),
+    clEnqueueWriteBuffer: Some(clEnqueueWriteBuffer),
     clEnqueueCopyBuffer: None,
     clEnqueueReadImage: None,
     clEnqueueWriteImage: None,

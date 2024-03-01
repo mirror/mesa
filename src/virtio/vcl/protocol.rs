@@ -20,6 +20,8 @@ pub mod handles;
 pub use handles::*;
 pub mod info;
 pub use info::*;
+pub mod memory;
+pub use memory::*;
 pub mod platform;
 pub use platform::*;
 pub mod transport;

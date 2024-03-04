@@ -85,7 +85,6 @@ vcl_drm_gen = static_library(
 vcl_mman_bindings_rs = rust.bindgen(
   input : 'vcl_mman_bindings.h',
   output : 'vcl_mman_bindings.rs',
-  #dependencies: [dep_libc],
   include_directories: [inc_include],
 )
 
@@ -95,7 +94,6 @@ vcl_mman_gen = static_library(
   gnu_symbol_visibility : 'hidden',
   rust_crate_type : 'rlib',
   rust_args : [vcl_gen_args],
-  #dependencies : [dep_libc],
 )
 
 virglrenderer_c_args = ['-DVIRGL_RENDERER_UNSTABLE_APIS']
@@ -117,26 +115,36 @@ vcl_virglrenderer_gen = static_library(
 
 vcl_files = files(
   'lib.rs',
-  'api.rs',
-  'api/icd.rs',
   'api/context.rs',
   'api/device.rs',
+  'api/icd.rs',
   'api/platform.rs',
   'api/types.rs',
   'api/util.rs',
-  'core.rs',
+  'api.rs',
   'core/context.rs',
   'core/device.rs',
   'core/platform.rs',
-  'dev.rs',
+  'core.rs',
   'dev/debug.rs',
   'dev/drm.rs',
   'dev/virtgpu.rs',
   'dev/resource.rs',
-  'protocol.rs',
+  'dev.rs',
+  'protocol/context.rs',
   'protocol/cs_impl.rs',
   'protocol/cs.rs',
+  'protocol/defines.rs',
+  'protocol/device.rs',
+  'protocol/handles.rs',
+  'protocol/info.rs',
+  'protocol/platform.rs',
   'protocol/ring.rs',
+  'protocol/structs.rs',
+  'protocol/transport.rs',
+  'protocol/types.rs',
+  'protocol/util.rs',
+  'protocol.rs',
 )
 
 libvcl = static_library(

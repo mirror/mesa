@@ -10,6 +10,8 @@ pub use cs_impl::*;
 
 pub mod context;
 pub use context::*;
+pub mod queue;
+pub use queue::*;
 pub mod defines;
 pub use defines::*;
 pub mod device;

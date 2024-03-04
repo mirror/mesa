@@ -21,7 +21,7 @@ use std::slice;
 use std::sync::Arc;
 
 #[cl_entrypoint(clCreateContext)]
-fn create_context(
+pub fn create_context(
     properties: *const cl_context_properties,
     num_devices: cl_uint,
     devices: *const cl_device_id,
@@ -147,7 +147,7 @@ fn retain_context(context: cl_context) -> CLResult<()> {
 }
 
 #[cl_entrypoint(clReleaseContext)]
-fn release_context(context: cl_context) -> CLResult<()> {
+pub fn release_context(context: cl_context) -> CLResult<()> {
     // Restore the arc from the pointer and let it go out of scope
     // to decrement the refcount
     let arc_context = context.from_raw()?;

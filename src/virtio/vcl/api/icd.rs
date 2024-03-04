@@ -9,6 +9,7 @@ use crate::api::context::*;
 use crate::api::device::*;
 use crate::api::platform;
 use crate::api::platform::*;
+use crate::api::queue::*;
 
 use vcl_opencl_gen::*;
 
@@ -25,11 +26,11 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clRetainContext: Some(clRetainContext),
     clReleaseContext: Some(clReleaseContext),
     clGetContextInfo: Some(clGetContextInfo),
-    clCreateCommandQueue: None,
-    clRetainCommandQueue: None,
-    clReleaseCommandQueue: None,
-    clGetCommandQueueInfo: None,
-    clSetCommandQueueProperty: None,
+    clCreateCommandQueue: Some(clCreateCommandQueue),
+    clRetainCommandQueue: Some(clRetainCommandQueue),
+    clReleaseCommandQueue: Some(clReleaseCommandQueue),
+    clGetCommandQueueInfo: Some(clGetCommandQueueInfo),
+    clSetCommandQueueProperty: Some(clSetCommandQueueProperty),
     clCreateBuffer: None,
     clCreateImage2D: None,
     clCreateImage3D: None,
@@ -139,7 +140,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueAcquireEGLObjectsKHR: None,
     clEnqueueReleaseEGLObjectsKHR: None,
     clCreateEventFromEGLSyncKHR: None,
-    clCreateCommandQueueWithProperties: None,
+    clCreateCommandQueueWithProperties: Some(clCreateCommandQueueWithProperties),
     clCreatePipe: None,
     clGetPipeInfo: None,
     clSVMAlloc: None,

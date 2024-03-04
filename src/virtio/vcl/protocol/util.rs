@@ -13,18 +13,26 @@ pub trait NullTerminated {
     fn as_slice_with_null(&self) -> &[Self::Output];
 }
 
-impl NullTerminated for *const cl_context_properties {
-    type Output = cl_context_properties;
+#[macro_export]
+macro_rules! impl_null_terminated_trait {
+    ($cl: ident) => {
+        impl NullTerminated for *const $cl {
+            type Output = $cl;
 
-    fn as_slice_with_null(&self) -> &[Self::Output] {
-        let mut size = 0;
-        let ptr = *self;
-        while unsafe { ptr.wrapping_offset(size).read() } != 0 {
-            size += 1;
+            fn as_slice_with_null(&self) -> &[Self::Output] {
+                let mut size = 0;
+                let ptr = *self;
+                while unsafe { ptr.wrapping_offset(size).read() } != 0 {
+                    size += 1;
+                }
+                unsafe { slice::from_raw_parts(ptr, size as usize + 1) }
+            }
         }
-        unsafe { slice::from_raw_parts(ptr, size as usize + 1) }
-    }
+    };
 }
+
+impl_null_terminated_trait!(cl_context_properties);
+impl_null_terminated_trait!(cl_properties);
 
 #[cfg(test)]
 mod test {

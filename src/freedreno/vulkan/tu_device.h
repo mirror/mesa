@@ -422,6 +422,7 @@ struct tu_device
 
    bool use_z24uint_s8uint;
    bool use_lrz;
+   bool use_fsdt;
 
    struct fd_rd_output rd_output;
 };

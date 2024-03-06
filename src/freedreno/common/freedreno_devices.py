@@ -819,6 +819,7 @@ a7xx_base = A6XXProps(
         has_isam_v = True,
         has_ssbo_imm_offsets = True,
         has_early_preamble = True,
+        has_fsdt = True,
     )
 
 a7xx_725 = A7XXProps(

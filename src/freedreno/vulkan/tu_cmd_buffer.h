@@ -19,8 +19,12 @@
 #include "tu_pass.h"
 #include "tu_pipeline.h"
 
+#define FSDT_TABLE_SIZE (4096 * 16)
+
 enum tu_draw_state_group_id
 {
+   TU_DRAW_STATE_INPUT_ATTACHMENTS_GMEM,
+   TU_DRAW_STATE_INPUT_ATTACHMENTS_SYSMEM,
    TU_DRAW_STATE_PROGRAM_CONFIG,
    TU_DRAW_STATE_VS,
    TU_DRAW_STATE_VS_BINNING,
@@ -36,8 +40,6 @@ enum tu_draw_state_group_id
    TU_DRAW_STATE_DESC_SETS_LOAD,
    TU_DRAW_STATE_VS_PARAMS,
    TU_DRAW_STATE_FS_PARAMS,
-   TU_DRAW_STATE_INPUT_ATTACHMENTS_GMEM,
-   TU_DRAW_STATE_INPUT_ATTACHMENTS_SYSMEM,
    TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE,
    TU_DRAW_STATE_PRIM_MODE_GMEM,
    TU_DRAW_STATE_MISC,
@@ -543,6 +545,12 @@ struct tu_cmd_state
    uint64_t descriptor_buffer_iova[MAX_SETS];
 };
 
+enum fsdt_draw_type
+{
+   FSDT_DRAW,
+   FSDT_DRAW_INDEXED,
+};
+
 struct tu_cmd_buffer
 {
    struct vk_command_buffer vk;
@@ -587,6 +595,17 @@ struct tu_cmd_buffer
    struct tu_cs tile_store_cs;
    struct tu_cs draw_epilogue_cs;
    struct tu_cs sub_cs;
+   /* Structs needed for CP_FIXED_STRIDE_DRAW_TABLE */
+   struct tu_cs fsdt_table_cs;
+   struct tu_cs fsdt_current_cs;
+   bool fsdt_pending;
+   size_t fsdt_table_stride;
+   size_t fsdt_max_draws_in_table;
+   /* number of draws since the last draw table emission. */
+   size_t fsdt_draw_count;
+   /* We only allow one draw type in FSDT to avoid padding. */
+   fsdt_draw_type fsdt_last_draw_type;
+   uint32_t *fsdt_draw_state_buf;
 
    /* If the first render pass in the command buffer is resuming, then it is
     * part of a suspend/resume chain that starts before the current command
@@ -714,6 +733,11 @@ typedef void (*tu_fdm_bin_apply_t)(struct tu_cmd_buffer *cmd,
                                    VkRect2D bin,
                                    unsigned views,
                                    VkExtent2D *frag_areas);
+void
+tu_fsdt_start_draw_table(struct tu_cmd_buffer *cmd);
+
+void
+tu_fsdt_end_draw_table(struct tu_cmd_buffer *cmd);
 
 struct tu_fdm_bin_patchpoint {
    uint64_t iova;

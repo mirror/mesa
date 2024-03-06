@@ -2554,6 +2554,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       (!border_color_without_format ||
        physical_device->instance->disable_d24s8_border_color_workaround);
    device->use_lrz = !TU_DEBUG(NOLRZ);
+   device->use_fsdt =
+      physical_device->info->a6xx.has_fsdt && !TU_DEBUG(NOFSDT);
 
    tu_gpu_tracepoint_config_variable();
 

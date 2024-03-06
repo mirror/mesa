@@ -3014,9 +3014,9 @@ tu6_rast_size(struct tu_device *dev,
               bool per_view_viewport)
 {
    if (CHIP == A6XX) {
-      return 15 + (dev->physical_device->info->a6xx.has_shading_rate ? 8 : 0) + 4;
+      return 19 + (dev->physical_device->info->a6xx.has_shading_rate ? 8 : 0);
    } else {
-      return 17 + 4;
+      return 21;
    }
 }
 

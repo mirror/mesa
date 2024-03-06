@@ -5,7 +5,6 @@
 
 use crate::api::icd::*;
 use crate::core::device::*;
-use crate::dev::virtgpu::VirtGpuError;
 use crate::impl_cl_type_trait;
 use crate::protocol::VirtGpuRing;
 
@@ -50,12 +49,9 @@ impl Platform {
         }
     }
 
-    pub fn all(ring: &mut VirtGpuRing) -> Result<Vec<Pin<Box<Platform>>>, VirtGpuError> {
+    pub fn all(ring: &mut VirtGpuRing) -> CLResult<Vec<Pin<Box<Platform>>>> {
         let mut count = 0;
-        let ret = ring.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
-        if ret != CL_SUCCESS as _ {
-            return Ok(Vec::new());
-        }
+        ring.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
 
         let mut platforms = Vec::with_capacity(count as usize);
         let mut handles = Vec::with_capacity(count as usize);
@@ -68,10 +64,7 @@ impl Platform {
             platforms.push(platform);
         }
 
-        let ret = ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
-        if ret != CL_SUCCESS as _ {
-            return Ok(Vec::new());
-        }
+        ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
 
         for platform in &mut platforms {
             platform.devices = Device::all(platform, ring)?;

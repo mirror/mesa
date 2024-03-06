@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+use crate::api::icd::CLResult;
 use crate::core::platform::Platform;
 use crate::dev::debug::*;
 use crate::dev::drm::*;
@@ -10,7 +11,7 @@ use crate::log;
 use crate::protocol::ring::VirtGpuRing;
 
 use vcl_drm_gen::*;
-use vcl_opencl_gen::cl_platform_id;
+use vcl_opencl_gen::*;
 use vcl_virglrenderer_gen::*;
 
 use std::env;
@@ -26,6 +27,17 @@ pub enum VirtGpuError {
     Ioctl(i32),
     Param,
     Map,
+}
+
+impl From<VirtGpuError> for cl_int {
+    fn from(e: VirtGpuError) -> Self {
+        match e {
+            VirtGpuError::DrmDevice => CL_DRM_DEVICE_FAILED_MESA,
+            VirtGpuError::Ioctl(_) => CL_VIRTGPU_IOCTL_FAILED_MESA,
+            VirtGpuError::Param => CL_VIRTGPU_PARAM_FAILED_MESA,
+            VirtGpuError::Map => CL_VIRTGPU_MAP_FAILED_MESA,
+        }
+    }
 }
 
 pub struct VirtGpu {
@@ -112,7 +124,7 @@ impl VirtGpu {
         false
     }
 
-    pub fn new(drm_device: DrmDevice) -> Result<Self, VirtGpuError> {
+    pub fn new(drm_device: DrmDevice) -> CLResult<Self> {
         let drm_device = Rc::new(drm_device);
 
         let params = VirtGpuParams::new(&drm_device)?;
@@ -124,7 +136,7 @@ impl VirtGpu {
                 VclDebugFlags::Error,
                 "VCL can not use VirtIO-GPU without CONTEXT_INIT kernel parameter"
             );
-            return Err(VirtGpuError::Param);
+            return Err(VirtGpuError::Param.into());
         }
 
         drm_device.init_context()?;
@@ -146,7 +158,7 @@ impl VirtGpu {
     }
 
     /// Returns all VirtIO-GPUs available in the system
-    pub fn all() -> Result<Vec<VirtGpu>, VirtGpuError> {
+    pub fn all() -> CLResult<Vec<VirtGpu>> {
         let gpus: Result<_, _> = DrmDevice::virtgpus()?
             .into_iter()
             .map(VirtGpu::new)

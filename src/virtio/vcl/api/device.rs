@@ -76,13 +76,15 @@ fn get_device_info(
     let virtgpu = VirtGpu::get_mut();
     let ring = virtgpu.get_ring();
     let mut size = 0;
-    let ret = ring
-        .call_clGetDeviceInfo(device, param_name, param_value_size, param_value, &mut size)
-        .expect("VirtGpuError");
+    let ret =
+        ring.call_clGetDeviceInfo(device, param_name, param_value_size, param_value, &mut size);
 
     // Return a valid error for this call
-    if ret == CL_INVALID_OPERATION {
+    if let Err(CL_INVALID_OPERATION) = ret {
         return Err(CL_INVALID_VALUE);
+    }
+    if ret.is_err() {
+        return ret;
     }
 
     // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
@@ -95,11 +97,7 @@ fn get_device_info(
     // If param_value_size_ret is NULL, it is ignored.
     param_value_size_ret.write_checked(size);
 
-    if ret != CL_SUCCESS as _ {
-        return Err(ret);
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
 
 #[cfg(test)]

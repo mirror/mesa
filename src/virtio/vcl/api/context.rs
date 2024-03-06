@@ -152,15 +152,11 @@ fn release_context(context: cl_context) -> CLResult<()> {
     // to decrement the refcount
     let arc_context = context.from_raw()?;
     if Arc::strong_count(&arc_context) == 1 {
-        let ring = VirtGpu::get_mut().get_ring();
-        let ret = ring
-            .call_clReleaseContext(context)
-            .expect("Failed to release context");
-        if ret != CL_SUCCESS as _ {
-            return Err(ret);
-        }
+        VirtGpu::get_mut()
+            .get_ring()
+            .call_clReleaseContext(context)?;
     }
-    return Ok(());
+    Ok(())
 }
 
 #[cl_info_entrypoint(clGetContextInfo)]

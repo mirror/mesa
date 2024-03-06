@@ -3,10 +3,10 @@
  * SPDX-License-Identifier: MIT
  */
 
-use crate::api::icd::CLObjectBase;
+use crate::api::icd::{CLObjectBase, CLResult};
 use crate::core::platform::Platform;
+use crate::impl_cl_type_trait;
 use crate::protocol::VirtGpuRing;
-use crate::{dev::virtgpu::*, impl_cl_type_trait};
 
 use vcl_opencl_gen::*;
 
@@ -33,10 +33,7 @@ impl Device {
         self.ty & device_type != 0
     }
 
-    pub fn all(
-        platform: &Platform,
-        ring: &mut VirtGpuRing,
-    ) -> Result<Vec<Pin<Box<Device>>>, VirtGpuError> {
+    pub fn all(platform: &Platform, ring: &mut VirtGpuRing) -> CLResult<Vec<Pin<Box<Device>>>> {
         let mut count = 0;
         let ret = ring.call_clGetDeviceIDs(
             platform.get_handle(),
@@ -44,9 +41,11 @@ impl Device {
             0,
             ptr::null_mut(),
             &mut count,
-        )?;
-        if ret != CL_SUCCESS as _ {
-            return Ok(Vec::default());
+        );
+        match ret {
+            Err(CL_DEVICE_NOT_FOUND) => return Ok(Vec::new()),
+            Err(e) => return Err(e),
+            _ => (),
         }
 
         let mut devices = Vec::with_capacity(count as usize);
@@ -60,29 +59,23 @@ impl Device {
             devices.push(device);
         }
 
-        let ret = ring.call_clGetDeviceIDs(
+        ring.call_clGetDeviceIDs(
             platform.get_handle(),
             CL_DEVICE_TYPE_ALL as _,
             count,
             handles.as_mut_ptr(),
             ptr::null_mut(),
         )?;
-        if ret != CL_SUCCESS as _ {
-            return Ok(Vec::default());
-        }
 
-        // Update device types
         for device in &mut devices {
-            let ret = ring.call_clGetDeviceInfo(
+            // Update device type
+            ring.call_clGetDeviceInfo(
                 device.get_handle(),
                 CL_DEVICE_TYPE,
                 size_of_val(&device.ty),
                 &mut device.ty as *mut cl_device_type as _,
                 ptr::null_mut(),
             )?;
-            if ret != CL_SUCCESS as _ {
-                return Ok(Vec::default());
-            }
         }
 
         Ok(devices)

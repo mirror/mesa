@@ -5,7 +5,7 @@
 
 use crate::api::icd::*;
 use crate::core::device::Device;
-use crate::dev::virtgpu::*;
+use crate::dev::virtgpu::VirtGpu;
 use crate::impl_cl_type_trait;
 
 use mesa_rust_util::properties::Properties;
@@ -26,7 +26,7 @@ impl Context {
     pub fn new(
         devices: Vec<&'static Device>,
         properties: Properties<cl_context_properties>,
-    ) -> Result<Arc<Context>, VirtGpuError> {
+    ) -> CLResult<Arc<Context>> {
         let context = Arc::new(Context {
             base: Default::default(),
             devices,

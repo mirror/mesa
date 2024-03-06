@@ -49,10 +49,13 @@ impl VirtGpuRing {
             replybuf,
             drm_device,
         };
-        ret.submit_clSetReplyBufferMESA(
+        let dec = ret.submit_clSetReplyBufferMESA(
             ClCommandFlagBitsExt::GenerateReplyBit,
             ret.replybuf.res.res_handle as i32,
         )?;
+        if let Some(mut dec) = dec {
+            dec.decode_clSetReplyBufferMESA_reply(ret.replybuf.res.res_handle as i32);
+        }
         Ok(ret)
     }
 }

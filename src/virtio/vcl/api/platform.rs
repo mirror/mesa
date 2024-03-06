@@ -107,15 +107,13 @@ fn forward_get_platform_info(
     let ring = VirtGpu::get_mut().get_ring();
 
     let mut size = 0;
-    let ret = ring
-        .call_clGetPlatformInfo(
-            platform,
-            param_name,
-            param_value_size,
-            param_value,
-            &mut size,
-        )
-        .expect("VirtGpuError");
+    ring.call_clGetPlatformInfo(
+        platform,
+        param_name,
+        param_value_size,
+        param_value,
+        &mut size,
+    )?;
 
     // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
     // type as specified in the Context Attributes table and param_value is not a NULL value.
@@ -127,11 +125,7 @@ fn forward_get_platform_info(
     // If param_value_size_ret is NULL, it is ignored.
     param_value_size_ret.write_checked(size);
 
-    if ret != CL_SUCCESS as _ {
-        Err(ret)
-    } else {
-        Ok(())
-    }
+    Ok(())
 }
 
 #[cfg(test)]

@@ -45,6 +45,17 @@ impl<T: Copy + PartialEq + Default> Properties<T> {
 
         Some(res)
     }
+
+    pub fn to_raw(&self) -> Vec<T> {
+        let mut ret = Vec::new();
+        for (k, v) in &self.props {
+            ret.push(*k);
+            ret.push(*v);
+        }
+        // End marker
+        ret.push(T::default());
+        ret
+    }
 }
 
 impl<T> Default for Properties<T> {

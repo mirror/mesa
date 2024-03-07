@@ -10,13 +10,15 @@ use crate::core::context::Context;
 use crate::dev::virtgpu::VirtGpu;
 
 use mesa_rust_util::properties::Properties;
-use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
+use vcl_proc_macros::cl_info_entrypoint;
 
 use std::collections::HashSet;
 use std::ffi::*;
+use std::mem::MaybeUninit;
 use std::slice;
+use std::sync::Arc;
 
 #[cl_entrypoint(clCreateContext)]
 fn create_context(
@@ -75,8 +77,7 @@ fn create_context(
     let dev_results: Result<_, _> = set.into_iter().map(cl_device_id::get_ref).collect();
     let devs = dev_results?;
 
-    let ring = VirtGpu::get_mut().get_ring();
-    let Ok(ctx) = Context::new(devs, ring) else {
+    let Ok(ctx) = Context::new(devs, props) else {
         return Err(CL_OUT_OF_RESOURCES);
     };
 
@@ -147,52 +148,38 @@ fn retain_context(context: cl_context) -> CLResult<()> {
 
 #[cl_entrypoint(clReleaseContext)]
 fn release_context(context: cl_context) -> CLResult<()> {
-    let ring = VirtGpu::get_mut().get_ring();
-    let ret = ring
-        .call_clReleaseContext(context)
-        .expect("Failed to release context");
-    if ret != CL_SUCCESS as _ {
-        return Err(ret);
+    // Restore the arc from the pointer and let it go out of scope
+    // to decrement the refcount
+    let arc_context = context.from_raw()?;
+    if Arc::strong_count(&arc_context) == 1 {
+        let ring = VirtGpu::get_mut().get_ring();
+        let ret = ring
+            .call_clReleaseContext(context)
+            .expect("Failed to release context");
+        if ret != CL_SUCCESS as _ {
+            return Err(ret);
+        }
     }
-    context.release()
+    return Ok(());
 }
 
-#[cl_entrypoint(clGetContextInfo)]
-fn get_context_info(
-    context: cl_context,
-    param_name: cl_context_info,
-    param_value_size: usize,
-    param_value: *mut c_void,
-    param_value_size_ret: *mut usize,
-) -> CLResult<()> {
-    context.get_ref()?;
-
-    let mut size = 0;
-    let ret = VirtGpu::get_mut()
-        .get_ring()
-        .call_clGetContextInfo(
-            context,
-            param_name,
-            param_value_size,
-            param_value,
-            &mut size,
-        )
-        .expect("VirtGpuError");
-
-    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
-    // type as specified in the Context Attributes table and param_value is not a NULL value.
-    if param_value_size < size && !param_value.is_null() {
-        return Err(CL_INVALID_VALUE);
-    }
-
-    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
-    // If param_value_size_ret is NULL, it is ignored.
-    param_value_size_ret.write_checked(size);
-
-    if ret != CL_SUCCESS as _ {
-        Err(ret)
-    } else {
-        Ok(())
+#[cl_info_entrypoint(clGetContextInfo)]
+impl CLInfo<cl_context_info> for cl_context {
+    fn query(&self, q: cl_context_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let ctx = self.get_ref()?;
+        Ok(match q {
+            CL_CONTEXT_DEVICES => cl_prop::<Vec<cl_device_id>>(
+                ctx.devices
+                    .iter()
+                    .map(|&d| cl_device_id::from_ptr(d))
+                    .collect(),
+            ),
+            CL_CONTEXT_NUM_DEVICES => cl_prop::<cl_uint>(ctx.devices.len() as u32),
+            CL_CONTEXT_PROPERTIES => cl_prop::<&Properties<cl_context_properties>>(&ctx.properties),
+            CL_CONTEXT_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
     }
 }
 
@@ -228,7 +215,7 @@ mod test {
         assert!(ret.is_ok());
 
         let context = ret.unwrap();
-        assert!(context.release().is_ok());
+        assert!(release_context(context).is_ok());
 
         let properties = [42isize, 0];
         assert_eq!(

@@ -221,6 +221,14 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
         unsafe { Ok(self.get_ptr()?.as_ref().unwrap()) }
     }
 
+    fn get_arc(&self) -> CLResult<std::sync::Arc<T>> {
+        unsafe {
+            let ptr = self.get_ptr()?;
+            std::sync::Arc::increment_strong_count(ptr);
+            Ok(std::sync::Arc::from_raw(ptr))
+        }
+    }
+
     fn from_arc(arc: std::sync::Arc<T>) -> Self
     where
         Self: Sized,
@@ -235,11 +243,12 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
         }
     }
 
-    fn release(&self) -> CLResult<()> {
-        unsafe {
-            std::sync::Arc::from_raw(self.get_ptr()?);
-            Ok(())
-        }
+    fn from_raw(&self) -> CLResult<std::sync::Arc<T>> {
+        Ok(unsafe { std::sync::Arc::from_raw(self.get_ptr()?) })
+    }
+
+    fn refcnt(&self) -> CLResult<u32> {
+        Ok((std::sync::Arc::strong_count(&self.get_arc()?) - 1) as u32)
     }
 }
 

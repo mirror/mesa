@@ -2754,28 +2754,6 @@ tu6_emit_sample_locations(struct tu_cs *cs, bool enable,
    tu_cs_emit(cs, sample_locations);
 }
 
-static const enum mesa_vk_dynamic_graphics_state tu_depth_bias_state[] = {
-   MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS,
-};
-
-template <chip CHIP>
-static unsigned
-tu6_depth_bias_size(struct tu_device *dev,
-                    const struct vk_rasterization_state *rs)
-{
-   return 4;
-}
-
-template <chip CHIP>
-void
-tu6_emit_depth_bias(struct tu_cs *cs, const struct vk_rasterization_state *rs)
-{
-   tu_cs_emit_pkt4(cs, REG_A6XX_GRAS_SU_POLY_OFFSET_SCALE, 3);
-   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_SCALE(rs->depth_bias.slope).value);
-   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_OFFSET(rs->depth_bias.constant).value);
-   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_OFFSET_CLAMP(rs->depth_bias.clamp).value);
-}
-
 static const enum mesa_vk_dynamic_graphics_state tu_bandwidth_state[] = {
    MESA_VK_DYNAMIC_CB_LOGIC_OP_ENABLE,
    MESA_VK_DYNAMIC_CB_LOGIC_OP,
@@ -3024,6 +3002,7 @@ static const enum mesa_vk_dynamic_graphics_state tu_rast_state[] = {
    MESA_VK_DYNAMIC_RS_RASTERIZATION_STREAM,
    MESA_VK_DYNAMIC_VP_DEPTH_CLIP_NEGATIVE_ONE_TO_ONE,
    MESA_VK_DYNAMIC_RS_LINE_WIDTH,
+   MESA_VK_DYNAMIC_RS_DEPTH_BIAS_FACTORS
 };
 
 template <chip CHIP>
@@ -3035,9 +3014,9 @@ tu6_rast_size(struct tu_device *dev,
               bool per_view_viewport)
 {
    if (CHIP == A6XX) {
-      return 15 + (dev->physical_device->info->a6xx.has_shading_rate ? 8 : 0);
+      return 15 + (dev->physical_device->info->a6xx.has_shading_rate ? 8 : 0) + 4;
    } else {
-      return 17;
+      return 17 + 4;
    }
 }
 
@@ -3111,6 +3090,12 @@ tu6_emit_rast(struct tu_cs *cs,
       tu_cs_emit_regs(cs, A6XX_RB_UNKNOWN_8A20());
       tu_cs_emit_regs(cs, A6XX_RB_UNKNOWN_8A30());
    }
+
+   /* Depth bias state */
+   tu_cs_emit_pkt4(cs, REG_A6XX_GRAS_SU_POLY_OFFSET_SCALE, 3);
+   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_SCALE(rs->depth_bias.slope).value);
+   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_OFFSET(rs->depth_bias.constant).value);
+   tu_cs_emit(cs, A6XX_GRAS_SU_POLY_OFFSET_OFFSET_CLAMP(rs->depth_bias.clamp).value);
 }
 
 static const enum mesa_vk_dynamic_graphics_state tu_ds_state[] = {
@@ -3364,8 +3349,6 @@ tu_pipeline_builder_emit_state(struct tu_pipeline_builder *builder,
               TU_DYNAMIC_STATE_SAMPLE_LOCATIONS,
               builder->graphics_state.ms->sample_locations_enable,
               builder->graphics_state.ms->sample_locations);
-   DRAW_STATE(depth_bias, TU_DYNAMIC_STATE_DEPTH_BIAS,
-              builder->graphics_state.rs);
    bool attachments_valid =
       builder->graphics_state.rp &&
       vk_render_pass_state_has_attachment_info(builder->graphics_state.rp);
@@ -3599,8 +3582,6 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
               TU_DYNAMIC_STATE_SAMPLE_LOCATIONS,
               cmd->vk.dynamic_graphics_state.ms.sample_locations_enable,
               cmd->vk.dynamic_graphics_state.ms.sample_locations);
-   DRAW_STATE(depth_bias, TU_DYNAMIC_STATE_DEPTH_BIAS,
-              &cmd->vk.dynamic_graphics_state.rs);
    DRAW_STATE(blend, TU_DYNAMIC_STATE_BLEND,
               &cmd->vk.dynamic_graphics_state.cb,
               cmd->vk.dynamic_graphics_state.ms.alpha_to_coverage_enable,
@@ -3623,9 +3604,7 @@ tu_emit_draw_state(struct tu_cmd_buffer *cmd)
                         &cmd->state.vk_rp);
    DRAW_STATE(blend_constants, VK_DYNAMIC_STATE_BLEND_CONSTANTS,
               &cmd->vk.dynamic_graphics_state.cb);
-   DRAW_STATE_COND(rast, TU_DYNAMIC_STATE_RAST,
-                   cmd->state.dirty & (TU_CMD_DIRTY_SUBPASS |
-                                       TU_CMD_DIRTY_PER_VIEW_VIEWPORT),
+   DRAW_STATE(rast, TU_DYNAMIC_STATE_RAST,
                    &cmd->vk.dynamic_graphics_state.rs,
                    &cmd->vk.dynamic_graphics_state.vp,
                    cmd->state.vk_rp.view_mask != 0,

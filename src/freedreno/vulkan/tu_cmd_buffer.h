@@ -40,6 +40,7 @@ enum tu_draw_state_group_id
    TU_DRAW_STATE_INPUT_ATTACHMENTS_SYSMEM,
    TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE,
    TU_DRAW_STATE_PRIM_MODE_GMEM,
+   TU_DRAW_STATE_MISC,
 
    /* dynamic state related draw states */
    TU_DRAW_STATE_DYNAMIC,
@@ -531,6 +532,8 @@ struct tu_cmd_state
    struct tu_lrz_state lrz;
 
    struct tu_draw_state lrz_and_depth_plane_state;
+
+   struct tu_draw_state misc_state;
 
    struct tu_vs_params last_vs_params;
    bool last_draw_indexed;

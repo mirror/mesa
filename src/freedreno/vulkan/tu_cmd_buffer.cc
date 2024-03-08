@@ -5377,11 +5377,19 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
    tu_emit_cache_flush_renderpass<CHIP>(cmd);
 
-  if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
+   bool dirty_misc = false;
+   if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
                   MESA_VK_DYNAMIC_IA_PRIMITIVE_RESTART_ENABLE) ||
       BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
                   MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX) ||
+      (cmd->state.dirty & TU_CMD_DIRTY_TESS_PARAMS) ||
+             BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
+                         MESA_VK_DYNAMIC_TS_DOMAIN_ORIGIN) ||
       (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
+      struct tu_cs cs;
+      uint32_t size = CHIP == A7XX ? 6 : 4;
+      tu_cs_begin_sub_stream(&cmd->sub_cs, size, &cs);
+
       bool primitive_restart_enabled =
          cmd->vk.dynamic_graphics_state.ia.primitive_restart_enable;
 
@@ -5393,26 +5401,24 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       uint32_t primitive_cntl_0 =
          A6XX_PC_PRIMITIVE_CNTL_0(.primitive_restart = primitive_restart,
                                   .provoking_vtx_last = provoking_vtx_last).value;
-      tu_cs_emit_regs(cs, A6XX_PC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
+      tu_cs_emit_regs(&cs, A6XX_PC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
       if (CHIP == A7XX) {
-         tu_cs_emit_regs(cs, A7XX_VPC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
+         tu_cs_emit_regs(&cs, A7XX_VPC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
       }
-   }
 
-   struct tu_tess_params *tess_params = &cmd->state.tess_params;
-   if ((cmd->state.dirty & TU_CMD_DIRTY_TESS_PARAMS) ||
-       BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                   MESA_VK_DYNAMIC_TS_DOMAIN_ORIGIN) ||
-       (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
+      struct tu_tess_params *tess_params = &cmd->state.tess_params;
       bool tess_upper_left_domain_origin =
          (VkTessellationDomainOrigin)cmd->vk.dynamic_graphics_state.ts.domain_origin ==
          VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT;
-      tu_cs_emit_regs(cs, A6XX_PC_TESS_CNTL(
+      tu_cs_emit_regs(&cs, A6XX_PC_TESS_CNTL(
             .spacing = tess_params->spacing,
             .output = tess_upper_left_domain_origin ?
                tess_params->output_upper_left :
                tess_params->output_lower_left));
+      cmd->state.misc_state = tu_cs_end_draw_state(&cmd->sub_cs, &cs);
+      dirty_misc = true;
    }
+
 
    /* Early exit if there is nothing to emit, saves CPU cycles */
    uint32_t dirty = cmd->state.dirty;
@@ -5534,6 +5540,7 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_VS_PARAMS, cmd->state.vs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
       tu_cs_emit_draw_state(cs, TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE, cmd->state.lrz_and_depth_plane_state);
+      tu_cs_emit_draw_state(cs, TU_DRAW_STATE_MISC, cmd->state.misc_state);
 
       for (uint32_t i = 0; i < ARRAY_SIZE(cmd->state.dynamic_state); i++) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_DYNAMIC + i,
@@ -5548,7 +5555,8 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          ((dirty & TU_CMD_DIRTY_VERTEX_BUFFERS) ? 1 : 0) +
          ((dirty & TU_CMD_DIRTY_VS_PARAMS) ? 1 : 0) +
          (dirty_fs_params ? 1 : 0) +
-         (dirty_lrz ? 1 : 0);
+         (dirty_lrz ? 1 : 0) +
+         (dirty_misc ? 1 : 0);
 
       if (draw_state_count > 0)
          tu_cs_emit_pkt7(cs, CP_SET_DRAW_STATE, 3 * draw_state_count);
@@ -5571,6 +5579,9 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_FS_PARAMS, cmd->state.fs_params);
       if (dirty_lrz) {
          tu_cs_emit_draw_state(cs, TU_DRAW_STATE_LRZ_AND_DEPTH_PLANE, cmd->state.lrz_and_depth_plane_state);
+      }
+      if (dirty_misc) {
+         tu_cs_emit_draw_state(cs, TU_DRAW_STATE_MISC, cmd->state.misc_state);
       }
    }
 

@@ -863,21 +863,38 @@ update_renames(ra_ctx& ctx, RegisterFile& reg_file, std::vector<parallelcopy>& p
          if (!other.def.isTemp())
             continue;
          if (it->op.getTemp() == other.def.getTemp()) {
-            other.def.setFixed(it->def.physReg());
-            ctx.assignments[other.def.tempId()].reg = other.def.physReg();
-            it = parallelcopies.erase(it);
-            is_def = true;
+            bool can_replace_copy = true;
+
             /* check if we moved an operand, again */
             bool fill = true;
             for (Operand& op : instr->operands) {
-               if (op.isTemp() && op.tempId() == other.def.tempId()) {
-                  // FIXME: ensure that the operand can use this reg
-                  op.setFixed(other.def.physReg());
-                  fill = !op.isKillBeforeDef();
-               }
+               if (!op.isTemp() || op.tempId() != other.def.tempId())
+                  continue;
+               fill = !op.isKillBeforeDef();
+
+               if (op.isPrecolored())
+                  can_replace_copy &= other.def.physReg() != op.physReg();
+               else
+                  op.setFixed(it->def.physReg());
+               break;
             }
+
+            Definition fill_def;
+
+            if (can_replace_copy) {
+               other.def.setFixed(it->def.physReg());
+               ctx.assignments[other.def.tempId()].reg = other.def.physReg();
+               it = parallelcopies.erase(it);
+               fill_def = other.def;
+            } else {
+               it->op = other.op;
+               ctx.assignments[other.op.tempId()].reg = it->def.physReg();
+               break;
+            }
+            is_def = true;
+
             if (fill)
-               reg_file.fill(other.def);
+               reg_file.fill(fill_def);
             break;
          }
       }

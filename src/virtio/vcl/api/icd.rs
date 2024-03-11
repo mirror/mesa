@@ -11,6 +11,7 @@ use crate::api::event::*;
 use crate::api::memory::*;
 use crate::api::platform;
 use crate::api::platform::*;
+use crate::api::program::*;
 use crate::api::queue::*;
 
 use vcl_opencl_gen::*;
@@ -45,7 +46,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clRetainSampler: None,
     clReleaseSampler: None,
     clGetSamplerInfo: None,
-    clCreateProgramWithSource: None,
+    clCreateProgramWithSource: Some(clCreateProgramWithSource),
     clCreateProgramWithBinary: None,
     clRetainProgram: None,
     clReleaseProgram: None,

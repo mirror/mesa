@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 
-use std::slice;
+use std::{ffi::c_char, slice};
 
 use vcl_opencl_gen::*;
 
@@ -33,7 +33,7 @@ macro_rules! impl_null_terminated_trait {
 
 impl_null_terminated_trait!(cl_context_properties);
 impl_null_terminated_trait!(cl_properties);
-
+impl_null_terminated_trait!(c_char);
 #[cfg(test)]
 mod test {
     use super::*;

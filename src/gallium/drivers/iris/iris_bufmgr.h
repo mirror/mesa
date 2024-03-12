@@ -667,6 +667,8 @@ struct intel_bind_timeline *iris_bufmgr_get_bind_timeline(struct iris_bufmgr *bu
 bool iris_bufmgr_compute_engine_supported(struct iris_bufmgr *bufmgr);
 uint64_t iris_bufmgr_get_dummy_aux_address(struct iris_bufmgr *bufmgr);
 struct iris_bo *iris_bufmgr_get_mem_fence_bo(struct iris_bufmgr *bufmgr);
+bool iris_bufmgr_get_low_memory_mode(struct iris_bufmgr *bufmgr);
+void iris_bufmgr_enable_low_memory_mode(struct iris_bufmgr *bufmgr);
 
 struct list_head *iris_bufmgr_get_context_list(struct iris_bufmgr *bufmgr);
 

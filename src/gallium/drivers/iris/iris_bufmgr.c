@@ -237,6 +237,7 @@ struct iris_bufmgr {
    struct intel_bind_timeline bind_timeline; /* Xe only */
    bool bo_reuse:1;
    bool use_global_vm:1;
+   bool low_memory_mode:1; /* Xe only */
 
    struct intel_aux_map_context *aux_map_ctx;
 
@@ -2705,4 +2706,16 @@ struct list_head *
 iris_bufmgr_get_context_list(struct iris_bufmgr *bufmgr)
 {
    return &bufmgr->context_list;
+}
+
+bool
+iris_bufmgr_get_low_memory_mode(struct iris_bufmgr *bufmgr)
+{
+   return bufmgr->low_memory_mode;
+}
+
+void
+iris_bufmgr_enable_low_memory_mode(struct iris_bufmgr *bufmgr)
+{
+   bufmgr->low_memory_mode = true;
 }

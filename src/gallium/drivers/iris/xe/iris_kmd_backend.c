@@ -168,12 +168,18 @@ xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
 static bool
 xe_gem_vm_bind(struct iris_bo *bo)
 {
+   if (iris_bufmgr_get_low_memory_mode(bo->bufmgr))
+      return true;
+
    return xe_gem_vm_bind_op(bo, DRM_XE_VM_BIND_OP_MAP) == 0;
 }
 
 static bool
 xe_gem_vm_unbind(struct iris_bo *bo)
 {
+   if (iris_bufmgr_get_low_memory_mode(bo->bufmgr))
+      return true;
+
    return xe_gem_vm_bind_op(bo, DRM_XE_VM_BIND_OP_UNMAP) == 0;
 }
 

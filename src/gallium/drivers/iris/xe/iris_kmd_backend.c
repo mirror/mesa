@@ -103,23 +103,14 @@ xe_gem_mmap(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
    return map != MAP_FAILED ? map : NULL;
 }
 
-static inline int
-xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
+static inline void
+bind_op_set(struct iris_bo *bo, uint32_t op, struct drm_xe_vm_bind_op *bind_op)
 {
    struct iris_bufmgr *bufmgr = bo->bufmgr;
-   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
    const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
    uint32_t handle = op == DRM_XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
-   struct drm_xe_sync xe_sync = {
-      .handle = intel_bind_timeline_get_syncobj(bind_timeline),
-      .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
-      .flags = DRM_XE_SYNC_FLAG_SIGNAL,
-   };
    uint64_t range, obj_offset = 0;
    uint32_t flags = 0;
-   int ret, fd;
-
-   fd = iris_bufmgr_get_fd(bufmgr);
 
    if (iris_bo_is_imported(bo))
       range = bo->size;
@@ -136,20 +127,34 @@ xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
    if (bo->real.capture)
       flags |= DRM_XE_VM_BIND_FLAG_DUMPABLE;
 
+   bind_op->obj = handle;
+   bind_op->obj_offset = obj_offset;
+   bind_op->range = range;
+   bind_op->addr = intel_48b_address(bo->address);
+   bind_op->op = op;
+   bind_op->pat_index = iris_heap_to_pat_entry(devinfo, bo->real.heap)->index;
+   bind_op->flags = flags;
+}
+
+static inline int
+xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
+{
+   struct iris_bufmgr *bufmgr = bo->bufmgr;
+   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
+   struct drm_xe_sync xe_sync = {
+      .handle = intel_bind_timeline_get_syncobj(bind_timeline),
+      .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
+      .flags = DRM_XE_SYNC_FLAG_SIGNAL,
+   };
+   int ret, fd = iris_bufmgr_get_fd(bufmgr);
    struct drm_xe_vm_bind args = {
       .vm_id = iris_bufmgr_get_global_vm_id(bufmgr),
       .num_syncs = 1,
       .syncs = (uintptr_t)&xe_sync,
       .num_binds = 1,
-      .bind.obj = handle,
-      .bind.obj_offset = obj_offset,
-      .bind.range = range,
-      .bind.addr = intel_48b_address(bo->address),
-      .bind.op = op,
-      .bind.pat_index = iris_heap_to_pat_entry(devinfo, bo->real.heap)->index,
-      .bind.flags = flags,
    };
 
+   bind_op_set(bo, op, &args.bind);
    xe_sync.timeline_value = intel_bind_timeline_bind_begin(bind_timeline);
    ret = intel_ioctl(fd, DRM_IOCTL_XE_VM_BIND, &args);
    intel_bind_timeline_bind_end(bind_timeline);

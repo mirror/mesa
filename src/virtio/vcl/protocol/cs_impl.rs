@@ -59,7 +59,7 @@ impl VclCsDecoderSys {
         Self { cur, end }
     }
 
-    fn peek_impl(&mut self, size: usize, val: *mut c_void, val_size: usize) -> bool {
+    fn peek_impl(&self, size: usize, val: *mut c_void, val_size: usize) -> bool {
         assert!(val_size <= size);
 
         if size > (self.end as usize - self.cur as usize) {
@@ -74,7 +74,7 @@ impl VclCsDecoderSys {
 }
 
 impl VclCsRead for VclCsDecoderSys {
-    fn peek(&mut self, size: usize, val: *mut c_void, val_size: usize) {
+    fn peek(&self, size: usize, val: *mut c_void, val_size: usize) {
         self.peek_impl(size, val, val_size);
     }
 

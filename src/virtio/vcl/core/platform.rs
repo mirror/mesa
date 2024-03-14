@@ -5,8 +5,8 @@
 
 use crate::api::icd::*;
 use crate::core::device::*;
+use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
-use crate::protocol::VirtGpuRing;
 
 use std::pin::Pin;
 use std::ptr;
@@ -49,9 +49,12 @@ impl Platform {
         }
     }
 
-    pub fn all(ring: &mut VirtGpuRing) -> CLResult<Vec<Pin<Box<Platform>>>> {
+    pub fn all(renderer: &Vcl) -> CLResult<Vec<Pin<Box<Platform>>>> {
         let mut count = 0;
-        ring.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
+        renderer.call_clGetPlatformIDs(0, ptr::null_mut(), &mut count)?;
+        if count == 0 {
+            return Ok(Vec::new());
+        }
 
         let mut platforms = Vec::with_capacity(count as usize);
         let mut handles = Vec::with_capacity(count as usize);
@@ -64,10 +67,10 @@ impl Platform {
             platforms.push(platform);
         }
 
-        ring.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
+        renderer.call_clGetPlatformIDs(count, handles.as_mut_ptr(), ptr::null_mut())?;
 
         for platform in &mut platforms {
-            platform.devices = Device::all(platform, ring)?;
+            platform.devices = Device::all(platform, renderer)?;
         }
 
         Ok(platforms)

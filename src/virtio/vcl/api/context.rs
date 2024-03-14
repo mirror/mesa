@@ -7,7 +7,7 @@ use crate::api::icd::*;
 use crate::api::types::*;
 use crate::api::util::*;
 use crate::core::context::Context;
-use crate::dev::virtgpu::VirtGpu;
+use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::properties::Properties;
 use vcl_opencl_gen::*;
@@ -41,7 +41,7 @@ fn create_context(
     }
 
     // CL_INVALID_PLATFORM if no platform could be selected
-    let platforms = VirtGpu::get().get_platforms();
+    let platforms = Vcl::get().get_platforms();
     if platforms.is_empty() {
         return Err(CL_INVALID_PLATFORM);
     }
@@ -95,7 +95,7 @@ fn create_context_from_type(
     check_cl_device_type(device_type)?;
 
     // CL_INVALID_PLATFORM if no platform could be selected
-    let platforms = VirtGpu::get().get_platforms();
+    let platforms = Vcl::get().get_platforms();
     if platforms.is_empty() {
         return Err(CL_INVALID_PLATFORM);
     }
@@ -130,7 +130,7 @@ fn find_platform_in_properties(properties: &Properties<isize>) -> CLResult<cl_pl
     for p in &properties.props {
         if p.0 as u32 == CL_CONTEXT_PLATFORM {
             let platform_id = p.1 as cl_platform_id;
-            if !VirtGpu::get().contains_platform(platform_id) {
+            if !Vcl::get().contains_platform(platform_id) {
                 // Platform value specified in properties is not a valid platform
                 return Err(CL_INVALID_PLATFORM);
             }
@@ -138,7 +138,7 @@ fn find_platform_in_properties(properties: &Properties<isize>) -> CLResult<cl_pl
         }
     }
     // Implementation-defined: get the first one
-    Ok(VirtGpu::get().get_platforms()[0].get_handle())
+    Ok(Vcl::get().get_platforms()[0].get_handle())
 }
 
 #[cl_entrypoint(clRetainContext)]
@@ -152,9 +152,7 @@ fn release_context(context: cl_context) -> CLResult<()> {
     // to decrement the refcount
     let arc_context = context.from_raw()?;
     if Arc::strong_count(&arc_context) == 1 {
-        VirtGpu::get_mut()
-            .get_ring()
-            .call_clReleaseContext(context)?;
+        Vcl::get().call_clReleaseContext(context)?;
     }
     Ok(())
 }

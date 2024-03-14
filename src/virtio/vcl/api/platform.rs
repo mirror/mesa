@@ -8,7 +8,7 @@
 use crate::api::icd::*;
 use crate::api::util::*;
 use crate::core::platform::*;
-use crate::dev::virtgpu::VirtGpu;
+use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
@@ -25,7 +25,7 @@ pub fn get_platform_ids(
     num_platforms: *mut cl_uint,
 ) -> CLResult<()> {
     // Run initialization code once
-    if VirtGpu::init_once().is_err() {
+    if Vcl::init_once().is_err() {
         // Failure to allocate resources required by the implementation on the host
         return Err(CL_OUT_OF_HOST_MEMORY);
     }
@@ -38,7 +38,7 @@ pub fn get_platform_ids(
         return Err(CL_INVALID_VALUE);
     }
 
-    let virtgpu = VirtGpu::get();
+    let virtgpu = Vcl::get();
     let virt_platforms = virtgpu.get_platforms();
 
     num_platforms.write_checked(virt_platforms.len() as cl_uint);
@@ -74,7 +74,7 @@ pub fn get_platform_info(
     param_value: *mut c_void,
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
-    if !VirtGpu::get().contains_platform(platform) {
+    if !Vcl::get().contains_platform(platform) {
         return Err(CL_INVALID_PLATFORM);
     }
 
@@ -104,10 +104,8 @@ fn forward_get_platform_info(
     param_value: *mut c_void,
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
-    let ring = VirtGpu::get_mut().get_ring();
-
     let mut size = 0;
-    ring.call_clGetPlatformInfo(
+    Vcl::get().call_clGetPlatformInfo(
         platform,
         param_name,
         param_value_size,

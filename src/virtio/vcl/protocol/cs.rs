@@ -3,9 +3,11 @@
  * SPDX-License-Identifier: MIT
  */
 
+use crate::dev::renderer::*;
 use crate::protocol::cs_impl::*;
 
 use std::ffi::c_void;
+use std::pin::Pin;
 
 pub type VclObjectID = u64;
 
@@ -46,36 +48,42 @@ impl<'b> VclCsEncoder<'b> {
 }
 
 pub trait VclCsRead {
-    fn peek(&mut self, size: usize, val: *mut c_void, val_size: usize);
+    fn peek(&self, size: usize, val: *mut c_void, val_size: usize);
     /// Reads `val_size` bytes writing them to memory pointed to by `val`
     fn read(&mut self, size: usize, val: *mut c_void, val_size: usize);
 }
 
 pub struct VclCsDecoder {
+    _reply_buffer: Pin<Box<VclReplyBuffer>>,
     imp: Box<dyn VclCsRead>,
 }
 
 impl VclCsDecoder {
-    pub fn new(buffer: &[u8]) -> Self {
+    pub fn new(reply_buffer: VclReplyBuffer) -> Self {
+        // Make sure the reply buffer does not move its memory while the
+        // decoder uses it as a slice
+        let reply_buffer = Box::pin(reply_buffer);
+        let imp = Box::new(VclCsDecoderSys::new(reply_buffer.res.get_slice()));
         Self {
-            imp: Box::new(VclCsDecoderSys::new(buffer)),
+            _reply_buffer: reply_buffer,
+            imp,
         }
     }
 
     pub fn set_fatal(&mut self) {}
-    pub fn get_fatal(&mut self) -> bool {
+    pub fn get_fatal(&self) -> bool {
         false
     }
-    pub fn lookup_object(&mut self, _id: VclObjectID) {}
-    pub fn reset_temp_pool(&mut self) {}
-    pub fn alloc_temp(&mut self, _size: usize) {}
-    pub fn alloc_temp_array(&mut self, _size: usize, _count: usize) {}
-    pub fn peek(&mut self, size: usize, val: *mut c_void, val_size: usize) {
+    pub fn lookup_object(&self, _id: VclObjectID) {}
+    pub fn reset_temp_pool(&self) {}
+    pub fn alloc_temp(&self, _size: usize) {}
+    pub fn alloc_temp_array(&self, _size: usize, _count: usize) {}
+    pub fn peek(&self, size: usize, val: *mut c_void, val_size: usize) {
         self.imp.peek(size, val, val_size);
     }
 
-    pub fn decode(&mut self, size: usize, data: *mut c_void, data_size: usize) {
+    pub fn decode(&mut self, size: usize, val: *mut c_void, val_size: usize) {
         assert_eq!(size % 4, 0);
-        self.imp.read(size, data, data_size);
+        self.imp.read(size, val, val_size)
     }
 }

@@ -5,7 +5,7 @@
 
 use crate::api::icd::*;
 use crate::core::device::Device;
-use crate::dev::virtgpu::VirtGpu;
+use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
 
 use mesa_rust_util::properties::Properties;
@@ -44,7 +44,7 @@ impl Context {
         } else {
             ptr::null()
         };
-        VirtGpu::get_mut().get_ring().call_clCreateContextMESA(
+        Vcl::get().call_clCreateContextMESA(
             props_ptr,
             device_handles.len() as u32,
             device_handles.as_ptr(),

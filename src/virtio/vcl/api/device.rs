@@ -5,7 +5,7 @@
 
 use crate::api::icd::*;
 use crate::api::util::*;
-use crate::dev::virtgpu::VirtGpu;
+use crate::dev::renderer::Vcl;
 
 use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
@@ -24,7 +24,7 @@ pub fn get_device_ids(
     num_devices: *mut cl_uint,
 ) -> CLResult<()> {
     // CL_INVALID_PLATFORM if platform is not a valid platform
-    if !VirtGpu::get().contains_platform(platform) {
+    if !Vcl::get().contains_platform(platform) {
         return Err(CL_INVALID_PLATFORM);
     }
     // CL_INVALID_DEVICE_TYPE if device_type is not a valid value
@@ -73,11 +73,14 @@ fn get_device_info(
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
     device.get_ref()?;
-    let virtgpu = VirtGpu::get_mut();
-    let ring = virtgpu.get_ring();
     let mut size = 0;
-    let ret =
-        ring.call_clGetDeviceInfo(device, param_name, param_value_size, param_value, &mut size);
+    let ret = Vcl::get().call_clGetDeviceInfo(
+        device,
+        param_name,
+        param_value_size,
+        param_value,
+        &mut size,
+    );
 
     // Return a valid error for this call
     if let Err(CL_INVALID_OPERATION) = ret {

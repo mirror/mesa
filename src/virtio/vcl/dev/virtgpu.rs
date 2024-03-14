@@ -4,22 +4,20 @@
  */
 
 use crate::api::icd::CLResult;
-use crate::core::platform::Platform;
 use crate::dev::debug::*;
 use crate::dev::drm::*;
+use crate::dev::renderer::*;
 use crate::log;
-use crate::protocol::ring::VirtGpuRing;
+use crate::protocol::VclCsEncoder;
 
 use vcl_drm_gen::*;
 use vcl_opencl_gen::*;
 use vcl_virglrenderer_gen::*;
 
-use std::env;
-use std::ffi::CStr;
-use std::pin::Pin;
+use std::ffi::c_void;
+use std::ptr;
 use std::rc::Rc;
-use std::str::FromStr;
-use std::sync::Once;
+use std::slice;
 
 #[derive(Debug)]
 pub enum VirtGpuError {
@@ -43,87 +41,10 @@ impl From<VirtGpuError> for cl_int {
 pub struct VirtGpu {
     pub drm_device: Rc<DrmDevice>,
     pub params: VirtGpuParams,
-    pub capset: VirtGpuCapset,
-    pub ring: VirtGpuRing,
-    pub platforms: Vec<Pin<Box<Platform>>>,
-}
-
-static VCL_ENV_ONCE: Once = Once::new();
-static VIRTGPU_ONCE: Once = Once::new();
-
-static mut VCL_DEBUG: VclDebug = VclDebug {
-    flags: VclDebugFlags::Empty,
-};
-static mut VIRTGPU: Option<VirtGpu> = None;
-
-fn load_env() {
-    // We can not use log!() yet as it requires VCL_ENV_ONCE to be completed
-    let debug = unsafe { &mut VCL_DEBUG };
-    if let Ok(debug_flags) = env::var("VCL_DEBUG") {
-        for flag in debug_flags.split(',') {
-            match VclDebugFlags::from_str(flag) {
-                Ok(debug_flag) => debug.flags |= debug_flag,
-                Err(e) => eprintln!("vcl: error: VCL_DEBUG: {}", e),
-            }
-        }
-        if debug.flags.contains(VclDebugFlags::Info) {
-            eprintln!("vcl: info: VCL_DEBUG enabled: {}", debug.flags);
-        }
-    }
+    pub capset: VirglRendererCapset,
 }
 
 impl VirtGpu {
-    pub fn init_once() -> Result<(), VirtGpuError> {
-        VCL_ENV_ONCE.call_once(load_env);
-        // SAFETY: no concurrent static mut access due to std::Once
-        VIRTGPU_ONCE.call_once(|| {
-            let drm_devices = DrmDevice::virtgpus().expect("Failed to find VirtIO-GPUs");
-            assert!(!drm_devices.is_empty(), "Failed to find VirtIO-GPUs");
-
-            let first_drm_device = drm_devices.into_iter().nth(0).unwrap();
-            let virtgpu =
-                VirtGpu::new(first_drm_device).expect("Failed to create VirtGpu from DRM device");
-            unsafe { VIRTGPU.replace(virtgpu) };
-        });
-        Ok(())
-    }
-
-    pub fn debug() -> &'static VclDebug {
-        debug_assert!(VCL_ENV_ONCE.is_completed());
-        unsafe { &VCL_DEBUG }
-    }
-
-    pub fn get() -> &'static Self {
-        debug_assert!(VIRTGPU_ONCE.is_completed());
-        // SAFETY: no mut references exist at this point
-        unsafe { VIRTGPU.as_ref().unwrap() }
-    }
-
-    pub fn get_mut() -> &'static mut Self {
-        debug_assert!(VIRTGPU_ONCE.is_completed());
-        // This is NOT safe
-        unsafe { VIRTGPU.as_mut().unwrap() }
-    }
-
-    pub fn get_ring(&mut self) -> &mut VirtGpuRing {
-        debug_assert!(VIRTGPU_ONCE.is_completed());
-        &mut self.ring
-    }
-
-    pub fn get_platforms(&self) -> &[Pin<Box<Platform>>] {
-        debug_assert!(VIRTGPU_ONCE.is_completed());
-        &self.platforms
-    }
-
-    pub fn contains_platform(&self, id: cl_platform_id) -> bool {
-        for platform in &self.platforms {
-            if platform.get_handle() == id {
-                return true;
-            }
-        }
-        false
-    }
-
     pub fn new(drm_device: DrmDevice) -> CLResult<Self> {
         let drm_device = Rc::new(drm_device);
 
@@ -141,19 +62,14 @@ impl VirtGpu {
 
         drm_device.init_context()?;
 
-        let capset = VirtGpuCapset::new(&drm_device)?;
-
-        let mut ring = VirtGpuRing::new(drm_device.clone())?;
-
-        let platforms = Platform::all(&mut ring)?;
+        let capset = VirglRendererCapset::new(&drm_device)?;
 
         let ret = Self {
             drm_device,
             params,
             capset,
-            ring,
-            platforms,
         };
+
         Ok(ret)
     }
 
@@ -164,6 +80,28 @@ impl VirtGpu {
             .map(VirtGpu::new)
             .collect();
         Ok(gpus?)
+    }
+}
+
+impl VclRenderer for VirtGpu {
+    fn submit(&self, encoder: VclCsEncoder) -> CLResult<()> {
+        if encoder.is_empty() {
+            return Ok(());
+        }
+        self.drm_device.exec_buffer(encoder.get_slice())?;
+        Ok(())
+    }
+
+    fn create_reply_buffer(&self, size: usize) -> CLResult<VclReplyBuffer> {
+        Ok(VclReplyBuffer::new_for_virtgpu(self, size)?)
+    }
+
+    fn transfer_get(&self, resource: &mut dyn VclResource) -> CLResult<()> {
+        self.drm_device
+            .transfer_get(resource.get_bo_handle(), resource.len())?;
+        self.drm_device.wait(resource.get_bo_handle())?;
+        resource.map(0, resource.len())?;
+        Ok(())
     }
 }
 
@@ -240,16 +178,8 @@ impl std::ops::Index<VirtGpuParamId> for VirtGpuParams {
     }
 }
 
-#[repr(C)]
-#[derive(Default)]
-pub struct VirtGpuCapset {
-    id: virgl_renderer_capset,
-    version: u32,
-    data: VirglRendererCapsetVcl,
-}
-
-impl VirtGpuCapset {
-    pub fn new(drm_device: &DrmDevice) -> Result<VirtGpuCapset, VirtGpuError> {
+impl VirglRendererCapset {
+    pub fn new(drm_device: &DrmDevice) -> Result<Self, VirtGpuError> {
         let mut capset = Self {
             id: virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL,
             version: 0,
@@ -268,22 +198,58 @@ impl VirtGpuCapset {
 
         Ok(capset)
     }
+}
 
-    pub fn get_host_platform_name(&self) -> &CStr {
-        CStr::from_bytes_until_nul(&self.data.platform_name)
-            .expect("Failed to create CStr for host platform name")
+pub struct VirtGpuResource {
+    pub res_handle: u32,
+    bo_handle: u32,
+    buf: *mut c_void,
+    pub size: usize,
+
+    drm_device: Rc<DrmDevice>,
+}
+
+impl VirtGpuResource {
+    pub fn new(gpu: &VirtGpu, size: usize) -> Result<Self, VirtGpuError> {
+        let (res_handle, bo_handle) = gpu.drm_device.resource_create(size as u32)?;
+        Ok(VirtGpuResource {
+            res_handle,
+            bo_handle,
+            buf: std::ptr::null_mut(),
+            size,
+            drm_device: gpu.drm_device.clone(),
+        })
     }
 }
 
-#[repr(C)]
-#[derive(Default)]
-pub struct VirglRendererCapsetVcl {
-    platform_name: [u8; 32],
-}
+impl VclResource for VirtGpuResource {
+    fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
+        // We need to trigger a transfer to put the resource in a busy state
+        self.drm_device.transfer_get(self.bo_handle, self.size)?;
+        // The wait will make sure the transfer has finished before mapping
+        self.drm_device.wait(self.bo_handle)?;
 
-impl VirglRendererCapsetVcl {
-    pub fn as_mut_ptr(&mut self) -> *mut Self {
-        self as _
+        if self.buf == ptr::null_mut() {
+            self.buf = self.drm_device.map(self.bo_handle, self.size)?;
+        }
+        assert!(offset + size <= self.size);
+        Ok(unsafe { slice::from_raw_parts((self.buf as *mut u8).add(offset), size) })
+    }
+
+    fn len(&self) -> usize {
+        self.size
+    }
+
+    fn get_ptr(&self) -> *const c_void {
+        self.buf
+    }
+
+    fn get_handle(&self) -> i32 {
+        self.res_handle as _
+    }
+
+    fn get_bo_handle(&self) -> u32 {
+        self.bo_handle
     }
 }
 
@@ -303,5 +269,18 @@ mod test {
                 "virglrenderer vcomp"
             );
         }
+    }
+
+    #[test]
+    fn resource() -> CLResult<()> {
+        let drm_devices = DrmDevice::virtgpus()?;
+        assert!(!drm_devices.is_empty(), "Failed to find VirtIO-GPUs");
+
+        let first_drm_device = drm_devices.into_iter().nth(0).unwrap();
+        let virtgpu = VirtGpu::new(first_drm_device)?;
+
+        let mut resource = VirtGpuResource::new(&virtgpu, 1024)?;
+        resource.map(0, 1024)?;
+        Ok(())
     }
 }

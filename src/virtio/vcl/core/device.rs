@@ -5,8 +5,8 @@
 
 use crate::api::icd::{CLObjectBase, CLResult};
 use crate::core::platform::Platform;
+use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
-use crate::protocol::VirtGpuRing;
 
 use vcl_opencl_gen::*;
 
@@ -33,9 +33,9 @@ impl Device {
         self.ty & device_type != 0
     }
 
-    pub fn all(platform: &Platform, ring: &mut VirtGpuRing) -> CLResult<Vec<Pin<Box<Device>>>> {
+    pub fn all(platform: &Platform, renderer: &Vcl) -> CLResult<Vec<Pin<Box<Device>>>> {
         let mut count = 0;
-        let ret = ring.call_clGetDeviceIDs(
+        let ret = renderer.call_clGetDeviceIDs(
             platform.get_handle(),
             CL_DEVICE_TYPE_ALL as _,
             0,
@@ -59,7 +59,7 @@ impl Device {
             devices.push(device);
         }
 
-        ring.call_clGetDeviceIDs(
+        renderer.call_clGetDeviceIDs(
             platform.get_handle(),
             CL_DEVICE_TYPE_ALL as _,
             count,
@@ -69,7 +69,7 @@ impl Device {
 
         for device in &mut devices {
             // Update device type
-            ring.call_clGetDeviceInfo(
+            renderer.call_clGetDeviceInfo(
                 device.get_handle(),
                 CL_DEVICE_TYPE,
                 size_of_val(&device.ty),

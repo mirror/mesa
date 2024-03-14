@@ -7,8 +7,6 @@ pub mod cs;
 pub use cs::*;
 pub mod cs_impl;
 pub use cs_impl::*;
-pub mod ring;
-pub use ring::*;
 
 pub mod context;
 pub use context::*;
@@ -29,4 +27,5 @@ pub use types::*;
 pub mod util;
 pub use util::*;
 
-use crate::dev::virtgpu::*;
+use crate::api::icd::CLResult;
+use crate::dev::renderer::*;

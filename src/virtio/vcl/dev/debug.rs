@@ -11,10 +11,10 @@ use std::str::FromStr;
 #[repr(u8)]
 pub enum VclDebugFlags {
     Empty = 0,
-    Info = 0b001,
-    Ioctl = 0b010,
-    Error = 0b100,
-    All = 0b111,
+    Info = 1 << 0,
+    Ioctl = 1 << 1,
+    Error = 1 << 2,
+    All = 0b1111,
 }
 
 impl VclDebugFlags {
@@ -88,7 +88,7 @@ pub struct VclDebug {
 #[macro_export]
 macro_rules! log {
     ( $level:expr, $( $t:tt )* ) => {
-        let debug = crate::dev::virtgpu::VirtGpu::debug();
+        let debug = crate::dev::renderer::Vcl::debug();
         if debug.flags.contains($level) {
             eprintln!("vcl: {}: {}", $level, format_args!($( $t )*));
         }

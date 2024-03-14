@@ -1160,6 +1160,9 @@ struct iris_context {
 
       bool use_tbimr;
    } state;
+
+   /* Synchronized by iris_buffer::context_list_lock */
+   struct list_head list_node;
 };
 
 /**

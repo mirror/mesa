@@ -10,10 +10,12 @@ use crate::core::memory::*;
 use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::properties::*;
+use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 use vcl_proc_macros::*;
 
 use std::ffi::c_void;
+use std::mem::MaybeUninit;
 use std::ptr;
 use std::sync::Arc;
 
@@ -138,6 +140,57 @@ fn release_mem_object(mem: cl_mem) -> CLResult<()> {
     if Arc::strong_count(&arc_mem) == 1 {
         Vcl::get().call_clReleaseMemObject(mem)?;
     }
+    Ok(())
+}
+
+impl CLInfo<cl_mem_info> for cl_mem {
+    fn query(&self, q: cl_mem_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        Ok(match q {
+            CL_MEM_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
+#[cl_entrypoint(clGetMemObjectInfo)]
+fn get_mem_object_info(
+    mem: cl_mem,
+    param_name: cl_mem_info,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    mem.get_ref()?;
+
+    if param_name == CL_MEM_REFERENCE_COUNT {
+        return mem.get_info(
+            param_name,
+            param_value_size,
+            param_value,
+            param_value_size_ret,
+        );
+    }
+
+    let mut size = 0;
+    Vcl::get().call_clGetMemObjectInfo(
+        mem,
+        param_name,
+        param_value_size,
+        param_value,
+        &mut size,
+    )?;
+
+    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+    // type as specified in the Context Attributes table and param_value is not a NULL value.
+    if param_value_size < size && !param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+    // If param_value_size_ret is NULL, it is ignored.
+    param_value_size_ret.write_checked(size);
+
     Ok(())
 }
 

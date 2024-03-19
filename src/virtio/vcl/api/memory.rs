@@ -427,6 +427,27 @@ impl CLInfo<cl_sampler_info> for cl_sampler {
     }
 }
 
+#[cl_entrypoint(clCreateImage2D)]
+fn create_image_2d(
+    context: cl_context,
+    flags: cl_mem_flags,
+    image_format: *const cl_image_format,
+    image_width: usize,
+    image_height: usize,
+    image_row_pitch: usize,
+    host_ptr: *mut c_void,
+) -> CLResult<cl_mem> {
+    Mem::new_image(
+        &context.get_arc()?,
+        flags,
+        image_format,
+        image_width,
+        image_height,
+        image_row_pitch,
+        host_ptr,
+    )
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

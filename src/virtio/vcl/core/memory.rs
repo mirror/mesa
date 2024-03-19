@@ -47,6 +47,39 @@ impl Mem {
         )?;
         Ok(handle)
     }
+
+    pub fn new_image(
+        context: &Arc<Context>,
+        flags: cl_mem_flags,
+        image_format: *const cl_image_format,
+        image_width: usize,
+        image_height: usize,
+        image_row_pitch: usize,
+        host_ptr: *mut c_void,
+    ) -> CLResult<cl_mem> {
+        let size = image_height * image_row_pitch;
+
+        let image = Arc::new(Self {
+            base: CLObjectBase::new(),
+            context: context.clone(),
+            flags,
+            size,
+        });
+
+        let mut handle = cl_mem::from_arc(image);
+        Vcl::get().call_clCreateImage2DMESA(
+            context.get_handle(),
+            flags,
+            image_format,
+            image_width,
+            image_height,
+            image_row_pitch,
+            size,
+            host_ptr,
+            &mut handle,
+        )?;
+        Ok(handle)
+    }
 }
 
 pub struct Sampler {

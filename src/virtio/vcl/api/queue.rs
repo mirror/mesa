@@ -4,6 +4,7 @@
  */
 
 use crate::api::icd::*;
+use crate::api::util::*;
 use crate::core::queue::Queue;
 use crate::dev::renderer::Vcl;
 
@@ -13,6 +14,7 @@ use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
 use std::ffi::c_void;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 fn valid_command_queue_properties(properties: cl_command_queue_properties) -> bool {
@@ -101,6 +103,15 @@ fn release_command_queue(queue: cl_command_queue) -> CLResult<()> {
     Ok(())
 }
 
+impl CLInfo<cl_command_queue_info> for cl_command_queue {
+    fn query(&self, q: cl_command_queue_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        Ok(match q {
+            CL_QUEUE_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
 #[cl_entrypoint(clGetCommandQueueInfo)]
 fn get_command_queue_info(
     queue: cl_command_queue,
@@ -110,6 +121,15 @@ fn get_command_queue_info(
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
     queue.get_ref()?;
+
+    if param_name == CL_QUEUE_REFERENCE_COUNT {
+        return queue.get_info(
+            param_name,
+            param_value_size,
+            param_value,
+            param_value_size_ret,
+        );
+    }
 
     let mut size = 0;
     Vcl::get().call_clGetCommandQueueInfo(

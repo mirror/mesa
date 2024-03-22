@@ -1,10 +1,6 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 
-enum MapResult : long {
-   FAILED = (long)MAP_FAILED,
-};
-
 size_t cmsg_space(size_t size);
 
 struct cmsghdr *cmsg_firsthdr(struct msghdr *msgh);

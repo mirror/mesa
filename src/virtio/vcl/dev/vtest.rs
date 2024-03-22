@@ -80,7 +80,7 @@ impl Vtest {
     }
 
     fn init_params(&mut self) -> io::Result<()> {
-        let val = self.vcmd_get_param(vcmd_param_VCMD_PARAM_MAX_TIMELINE_COUNT)?;
+        let val = self.vcmd_get_param(vcmd_param::VCMD_PARAM_MAX_TIMELINE_COUNT)?;
         self.max_timeline_count = val;
         Ok(())
     }
@@ -168,7 +168,7 @@ impl Vtest {
         let mut vcmd_get_param = [0u32; VCMD_GET_PARAM_SIZE as usize];
         vtest_hdr[VTEST_CMD_LEN as usize] = VCMD_GET_PARAM_SIZE;
         vtest_hdr[VTEST_CMD_ID as usize] = VCMD_GET_PARAM;
-        vcmd_get_param[VCMD_GET_PARAM_PARAM as usize] = param;
+        vcmd_get_param[VCMD_GET_PARAM_PARAM as usize] = param as _;
 
         self.write(&vtest_hdr)?;
         self.write(&vcmd_get_param)?;
@@ -193,7 +193,7 @@ impl Vtest {
         let mut vcmd_get_capset = [0u32; VCMD_GET_CAPSET_SIZE as usize];
         vtest_hdr[VTEST_CMD_LEN as usize] = VCMD_GET_CAPSET_SIZE;
         vtest_hdr[VTEST_CMD_ID as usize] = VCMD_GET_CAPSET;
-        vcmd_get_capset[VCMD_GET_CAPSET_ID as usize] = id;
+        vcmd_get_capset[VCMD_GET_CAPSET_ID as usize] = id as _;
         vcmd_get_capset[VCMD_GET_CAPSET_VERSION as usize] = version;
 
         self.write(&vtest_hdr)?;
@@ -234,7 +234,7 @@ impl Vtest {
         let mut vcmd_context_init = [0u32; VCMD_CONTEXT_INIT_SIZE as usize];
         vtest_hdr[VTEST_CMD_LEN as usize] = VCMD_CONTEXT_INIT_SIZE;
         vtest_hdr[VTEST_CMD_ID as usize] = VCMD_CONTEXT_INIT;
-        vcmd_context_init[VCMD_CONTEXT_INIT_CAPSET_ID as usize] = capset_id;
+        vcmd_context_init[VCMD_CONTEXT_INIT_CAPSET_ID as usize] = capset_id as _;
 
         self.write(&vtest_hdr)?;
         self.write(&vcmd_context_init)?;
@@ -459,7 +459,7 @@ impl VtestResource {
                 0,
             )
         };
-        if ptr == map_result_FAILED as _ {
+        if ptr == unsafe { mem::transmute(MapResult::FAILED) } {
             log!(VclDebugFlags::Vtest, "Failed to map vtest resource");
             return Err(CL_VIRTGPU_IOCTL_FAILED_MESA);
         }

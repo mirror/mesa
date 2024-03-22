@@ -12,9 +12,8 @@ use std::ffi::c_void;
 use std::ffi::CStr;
 use std::fs::File;
 use std::fs::OpenOptions;
-use std::io;
 use std::os::unix::io::AsRawFd;
-use std::ptr;
+use std::*;
 
 use crate::dev::debug::VclDebugFlags;
 use crate::log;
@@ -161,7 +160,7 @@ impl DrmDevice {
     pub fn init_context(&self) -> Result<(), VirtGpuError> {
         let mut ctx_set_param = drm_virtgpu_context_set_param {
             param: virtgpu_context_param_CAPSET_ID as u64,
-            value: virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL as u64,
+            value: virgl_renderer_capset::VIRGL_RENDERER_CAPSET_VCL as _,
         };
 
         let mut ctx_init = drm_virtgpu_context_init {
@@ -257,7 +256,7 @@ impl DrmDevice {
                 map_arg.offset as i64,
             )
         };
-        if ptr == map_result_FAILED as _ {
+        if ptr == unsafe { mem::transmute(MapResult::FAILED) } {
             log!(
                 VclDebugFlags::Error,
                 "Failed to map: {}",

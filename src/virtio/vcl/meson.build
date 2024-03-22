@@ -5,8 +5,21 @@ rust = import('rust')
 
 cl_c_args = ['-DCL_TARGET_OPENCL_VERSION=300']
 
+vcl_bindgen_c_args = [
+  '-fno-builtin-malloc',
+]
+
 vcl_bindgen_args = [
+  '--no-convert-floats',
+  '--use-array-pointers-in-arguments',
+  '--default-enum-style', 'rust',
+  '--with-derive-partialeq',
+  '--with-derive-eq',
+  '--with-derive-partialord',
+  '--with-derive-ord',
+  '--with-derive-hash',
   '--with-derive-default',
+  '--anon-fields-prefix', 'anon_',
 ]
 
 vcl_opencl_bindings_rs = rust.bindgen(
@@ -16,7 +29,10 @@ vcl_opencl_bindings_rs = rust.bindgen(
   ],
   output : 'vcl_opencl_bindings.rs',
   include_directories : [inc_include],
-  c_args : [cl_c_args],
+  c_args : [
+    cl_c_args,
+    vcl_bindgen_c_args
+  ],
   args : [
     vcl_bindgen_args,
       # needed because bindgen adds *mut void fields...
@@ -70,11 +86,25 @@ libmesa_rust_util = static_library(
   rust_crate_type : 'rlib',
 )
 
+vcl_drm_bindgen_args = [
+  # Brings in only stuff we need
+  '--allowlist-var', 'DRM_.*',
+  '--allowlist-var', 'EEXIST',
+  '--allowlist-function', 'drm.*',
+  '--allowlist-type', 'drm.*',
+  '--allowlist-type', 'virtgpu.*',
+]
+
 vcl_drm_bindings_rs = rust.bindgen(
   input : 'vcl_drm_bindings.h',
   output : 'vcl_drm_bindings.rs',
   dependencies : [dep_libdrm],
   include_directories : [inc_include],
+  c_args: vcl_bindgen_c_args,
+  args : [
+    #vcl_bindgen_args,
+    vcl_drm_bindgen_args
+  ],
 )
 
 vcl_drm_gen = static_library(
@@ -86,36 +116,30 @@ vcl_drm_gen = static_library(
   dependencies : [dep_libdrm],
 )
 
-vcl_sys_bindings_c = meson.current_build_dir() / 'vcl_sys_bindings.c'
+
+vcl_sys_bindings_inline_wrapper = static_library(
+  'vcl_sys_bindings_inline_wrapper',
+  [
+    'vcl_sys_inline_bindings_wrapper.c',
+    'vcl_sys_inline_bindings_wrapper.h',
+  ],
+  include_directories: [inc_include],
+)
 
 vcl_sys_bindings_rs = rust.bindgen(
   input : 'vcl_sys_bindings.h',
   output : 'vcl_sys_bindings.rs',
   include_directories: [inc_include],
+  c_args : vcl_bindgen_c_args,
   args : [
-    '--experimental',
-    '--wrap-static-fns',
-    '--wrap-static-fns-path',
-    vcl_sys_bindings_c,
+    vcl_bindgen_args,
+    '--allowlist-function', 'mmap',
+    '--allowlist-function', 'cmsg_.*',
+    '--allowlist-function', 'recvmsg',
+    '--allowlist-type',     'MapResult',
+    '--allowlist-var',      '(PROT_READ|PROT_WRITE|MAP_SHARED)',
+    '--allowlist-var',      '(SOL_SOCKET|SCM_RIGHTS)',
   ],
-)
-
-# Fix include path
-vcl_sys_static_c = custom_target('vcl_sys_static_gen',
-  output: 'vcl_sys_bindings.c',
-  input: vcl_sys_bindings_rs,
-  command: [
-    'sed',
-    '-i',
-    's,../../src/virtio/vcl/,,g',
-    vcl_sys_bindings_c,
-  ]
-)
-
-vcl_sys_static_gen = static_library(
-  'vcl_sys_static_gen',
-  sources: vcl_sys_static_c,
-  c_args: ['-Wno-missing-prototypes']
 )
 
 vcl_sys_gen = static_library(
@@ -124,9 +148,8 @@ vcl_sys_gen = static_library(
   gnu_symbol_visibility : 'hidden',
   rust_crate_type : 'rlib',
   rust_args : [vcl_gen_args],
-  link_with : vcl_sys_static_gen,
+  link_with : vcl_sys_bindings_inline_wrapper
 )
-
 
 virglrenderer_c_args = ['-DVIRGL_RENDERER_UNSTABLE_APIS']
 
@@ -134,7 +157,11 @@ vcl_virglrenderer_bindings_rs = rust.bindgen(
   input : 'vcl_virglrenderer_bindings.h',
   output : 'vcl_virglrenderer_bindings.rs',
   include_directories : inc_virtio,
-  c_args : [virglrenderer_c_args],
+  c_args : [
+    vcl_bindgen_c_args,
+    virglrenderer_c_args
+  ],
+  args: vcl_bindgen_args,
 )
 
 vcl_virglrenderer_gen = static_library(
@@ -149,7 +176,18 @@ vcl_vtest_bindings_rs = rust.bindgen(
   input : 'vcl_vtest_bindings.h',
   output : 'vcl_vtest_bindings.rs',
   include_directories : inc_virtio,
-  c_args : [virglrenderer_c_args],
+  c_args : [
+    vcl_bindgen_c_args,
+    virglrenderer_c_args
+  ],
+  args: [
+    vcl_bindgen_args,
+    '--allowlist-function', 'vcmd_.*',
+    '--allowlist-type', 'vcmd_.*',
+    '--allowlist-var', 'vcmd_.*',
+    '--allowlist-var', 'VCMD_.*',
+    '--allowlist-var', 'VTEST_.*',
+  ]
 )
 
 vcl_vtest_gen = static_library(

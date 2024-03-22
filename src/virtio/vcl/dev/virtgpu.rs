@@ -181,13 +181,13 @@ impl std::ops::Index<VirtGpuParamId> for VirtGpuParams {
 impl VirglRendererCapset {
     pub fn new(drm_device: &DrmDevice) -> Result<Self, VirtGpuError> {
         let mut capset = Self {
-            id: virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL,
+            id: virgl_renderer_capset::VIRGL_RENDERER_CAPSET_VCL,
             version: 0,
             data: Default::default(),
         };
 
         let mut args = drm_virtgpu_get_caps {
-            cap_set_id: capset.id,
+            cap_set_id: capset.id as _,
             cap_set_ver: capset.version,
             addr: capset.data.as_mut_ptr() as u64,
             size: std::mem::size_of_val(&capset.data) as u32,

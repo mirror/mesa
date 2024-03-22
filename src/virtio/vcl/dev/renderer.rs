@@ -141,7 +141,7 @@ pub struct VirglRendererCapset {
 impl Default for VirglRendererCapset {
     fn default() -> Self {
         Self {
-            id: virgl_renderer_capset_VIRGL_RENDERER_CAPSET_VCL,
+            id: virgl_renderer_capset::VIRGL_RENDERER_CAPSET_VCL,
             version: 0,
             data: VirglRendererCapsetVcl::default(),
         }

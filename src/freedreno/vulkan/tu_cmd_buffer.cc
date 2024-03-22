@@ -856,7 +856,7 @@ tu6_emit_msaa(struct tu_cs *cs, VkSampleCountFlagBits vk_samples,
 }
 
 static void
-tu6_update_msaa(struct tu_cmd_buffer *cmd)
+tu6_update_msaa(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
 {
    VkSampleCountFlagBits samples =
       cmd->vk.dynamic_graphics_state.ms.rasterization_samples;;
@@ -867,7 +867,7 @@ tu6_update_msaa(struct tu_cmd_buffer *cmd)
     */
    if (samples == 0)
       samples = VK_SAMPLE_COUNT_1_BIT;
-   tu6_emit_msaa(&cmd->draw_cs, samples, cmd->state.msaa_disable);
+   tu6_emit_msaa(cs, samples, cmd->state.msaa_disable);
 }
 
 static void
@@ -889,7 +889,6 @@ tu6_update_msaa_disable(struct tu_cmd_buffer *cmd)
 
    if (cmd->state.msaa_disable != msaa_disable) {
       cmd->state.msaa_disable = msaa_disable;
-      tu6_update_msaa(cmd);
    }
 }
 
@@ -5377,19 +5376,27 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
    tu_emit_cache_flush_renderpass<CHIP>(cmd);
 
-   bool dirty_misc = false;
-   if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                  MESA_VK_DYNAMIC_IA_PRIMITIVE_RESTART_ENABLE) ||
-      BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                  MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX) ||
-      (cmd->state.dirty & TU_CMD_DIRTY_TESS_PARAMS) ||
-             BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                         MESA_VK_DYNAMIC_TS_DOMAIN_ORIGIN) ||
-      (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
-      struct tu_cs cs;
-      uint32_t size = CHIP == A7XX ? 6 : 4;
-      tu_cs_begin_sub_stream(&cmd->sub_cs, size, &cs);
-
+   bool dirty_primitive_cntl =
+      (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_IA_PRIMITIVE_RESTART_ENABLE)
+      || BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_RS_PROVOKING_VERTEX)
+      || (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE));
+   bool dirty_tess_params = ((cmd->state.dirty & TU_CMD_DIRTY_TESS_PARAMS)
+      || BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_TS_DOMAIN_ORIGIN)
+      || (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE));
+   bool dirty_msaa = (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES)
+      || BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY)
+      || BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty, MESA_VK_DYNAMIC_RS_LINE_MODE)
+      || (cmd->state.dirty & TU_CMD_DIRTY_TES)
+      || (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE));
+   bool dirty_misc = dirty_primitive_cntl || dirty_tess_params || dirty_msaa;
+   size_t misc_size = (dirty_primitive_cntl ? (CHIP == A7XX ? 2 : 1) : 0)
+      + (dirty_tess_params ? 1 : 0)
+      + (dirty_msaa ? 3 : 0);
+   struct tu_cs misc_state;
+   if (dirty_misc) {
+      tu_cs_begin_sub_stream(&cmd->sub_cs, misc_size, &misc_state);
+   }
+   if (dirty_primitive_cntl) {
       bool primitive_restart_enabled =
          cmd->vk.dynamic_graphics_state.ia.primitive_restart_enable;
 
@@ -5401,22 +5408,28 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
       uint32_t primitive_cntl_0 =
          A6XX_PC_PRIMITIVE_CNTL_0(.primitive_restart = primitive_restart,
                                   .provoking_vtx_last = provoking_vtx_last).value;
-      tu_cs_emit_regs(&cs, A6XX_PC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
+      tu_cs_emit_regs(&misc_state, A6XX_PC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
       if (CHIP == A7XX) {
-         tu_cs_emit_regs(&cs, A7XX_VPC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
+         tu_cs_emit_regs(&misc_state, A7XX_VPC_PRIMITIVE_CNTL_0(.dword = primitive_cntl_0));
       }
-
+   }
+   if (dirty_tess_params) {
       struct tu_tess_params *tess_params = &cmd->state.tess_params;
       bool tess_upper_left_domain_origin =
          (VkTessellationDomainOrigin)cmd->vk.dynamic_graphics_state.ts.domain_origin ==
          VK_TESSELLATION_DOMAIN_ORIGIN_UPPER_LEFT;
-      tu_cs_emit_regs(&cs, A6XX_PC_TESS_CNTL(
+      tu_cs_emit_regs(&misc_state, A6XX_PC_TESS_CNTL(
             .spacing = tess_params->spacing,
             .output = tess_upper_left_domain_origin ?
                tess_params->output_upper_left :
                tess_params->output_lower_left));
-      cmd->state.misc_state = tu_cs_end_draw_state(&cmd->sub_cs, &cs);
-      dirty_misc = true;
+   }
+   if (dirty_msaa) {
+      tu6_update_msaa_disable(cmd);
+      tu6_update_msaa(cmd, &misc_state);
+   }
+   if (dirty_misc) {
+      cmd->state.misc_state = tu_cs_end_draw_state(&cmd->sub_cs, &misc_state);
    }
 
 
@@ -5482,23 +5495,6 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
 
    if (dirty & TU_CMD_DIRTY_DESC_SETS)
       tu6_emit_descriptor_sets<CHIP>(cmd, VK_PIPELINE_BIND_POINT_GRAPHICS);
-
-   if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                   MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
-       BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                   MESA_VK_DYNAMIC_IA_PRIMITIVE_TOPOLOGY) ||
-       BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                   MESA_VK_DYNAMIC_RS_LINE_MODE) ||
-       (cmd->state.dirty & TU_CMD_DIRTY_TES) ||
-       (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
-      tu6_update_msaa_disable(cmd);
-   }
-
-   if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,
-                   MESA_VK_DYNAMIC_MS_RASTERIZATION_SAMPLES) ||
-       (cmd->state.dirty & TU_CMD_DIRTY_DRAW_STATE)) {
-      tu6_update_msaa(cmd);
-   }
 
    bool dirty_fs_params = false;
    if (BITSET_TEST(cmd->vk.dynamic_graphics_state.dirty,

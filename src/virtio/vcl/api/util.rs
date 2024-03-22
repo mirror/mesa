@@ -5,10 +5,11 @@
 
 use crate::api::icd::CLResult;
 
+use crate::api::types::*;
 use mesa_rust_util::{properties::Properties, ptr::CheckedPtr};
 use vcl_opencl_gen::*;
 
-use std::ffi::{CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::mem::{size_of, MaybeUninit};
 use std::ops::BitAnd;
 use std::slice;
@@ -223,4 +224,23 @@ pub fn check_cl_bool<T: PartialEq + TryInto<cl_uint>>(val: T) -> Option<bool> {
 
 pub fn bit_check<A: BitAnd<Output = A> + PartialEq + Default, B: Into<A>>(a: A, b: B) -> bool {
     a & b.into() != A::default()
+}
+
+pub fn call_cb(
+    pfn_notify: Option<ProgramCB>,
+    program: cl_program,
+    user_data: *mut ::std::os::raw::c_void,
+) {
+    if let Some(cb) = pfn_notify {
+        unsafe { cb(program, user_data) };
+    }
+}
+
+pub fn check_cb<T>(cb: &Option<T>, user_data: *mut c_void) -> CLResult<()> {
+    // CL_INVALID_VALUE if pfn_notify is NULL but user_data is not NULL.
+    if cb.is_none() && !user_data.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    Ok(())
 }

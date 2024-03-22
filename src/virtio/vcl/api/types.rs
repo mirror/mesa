@@ -1,3 +1,5 @@
+use vcl_opencl_gen::*;
+
 macro_rules! cl_callback {
     ($cb:ident {
         $($p:ident : $ty:ty,)*
@@ -14,6 +16,13 @@ cl_callback!(
         errinfo: *const ::std::os::raw::c_char,
         private_info: *const ::std::ffi::c_void,
         cb: usize,
+        user_data: *mut ::std::ffi::c_void,
+    }
+);
+
+cl_callback!(
+    ProgramCB {
+        program: cl_program,
         user_data: *mut ::std::ffi::c_void,
     }
 );

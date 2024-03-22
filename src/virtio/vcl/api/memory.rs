@@ -6,6 +6,7 @@
 use crate::api::icd::*;
 use crate::api::util::*;
 use crate::core::context::*;
+use crate::core::event::Event;
 use crate::core::memory::*;
 use crate::dev::renderer::Vcl;
 
@@ -227,6 +228,12 @@ fn enqueue_read_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
+    let mut ev_handle = if !event.is_null() {
+        cl_event::from_arc(Arc::new(Event::default()))
+    } else {
+        ptr::null_mut()
+    };
+
     Vcl::get().call_clEnqueueReadBuffer(
         command_queue,
         buffer,
@@ -236,8 +243,11 @@ fn enqueue_read_buffer(
         ptr,
         num_events_in_wait_list,
         event_wait_list,
-        event,
-    )
+        &mut ev_handle,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
 }
 
 #[cl_entrypoint(clEnqueueWriteBuffer)]
@@ -273,6 +283,12 @@ fn enqueue_write_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
+    let mut ev_handle = if !event.is_null() {
+        cl_event::from_arc(Arc::new(Event::default()))
+    } else {
+        ptr::null_mut()
+    };
+
     Vcl::get().call_clEnqueueWriteBuffer(
         command_queue,
         buffer,
@@ -282,8 +298,11 @@ fn enqueue_write_buffer(
         ptr,
         num_events_in_wait_list,
         event_wait_list,
-        event,
-    )
+        &mut ev_handle,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
 }
 
 #[cfg(test)]

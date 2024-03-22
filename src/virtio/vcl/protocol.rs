@@ -18,6 +18,8 @@ pub mod device;
 pub use device::*;
 pub mod event;
 pub use event::*;
+pub mod kernel;
+pub use kernel::*;
 pub mod handles;
 pub use handles::*;
 pub mod info;

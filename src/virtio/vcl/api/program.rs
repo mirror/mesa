@@ -417,30 +417,12 @@ mod test {
     use std::ffi::CString;
     use std::ptr;
 
-    const SOURCE_STRING: &str = "__kernel void nop() { }";
-
-    fn setup_program() -> (cl_program, cl_context, cl_device_id, cl_platform_id) {
-        let (context, device, platform) = setup_context();
-
-        let source_strings = CString::new(SOURCE_STRING).expect("Failed to create CString");
-        let mut strings = [source_strings.as_c_str().as_ptr()];
-        let program = create_program_with_source(
-            context,
-            strings.len() as _,
-            strings.as_mut_ptr(),
-            ptr::null(),
-        );
-
-        assert!(program.is_ok());
-        (program.unwrap(), context, device, platform)
-    }
-
     #[test]
     fn test_create_program_with_source() {
         let (context, _, _) = setup_context();
 
-        let source_strings = CString::new(SOURCE_STRING).expect("Failed to create CString");
-        let mut strings = [source_strings.as_c_str().as_ptr()];
+        let source_strings = CString::new(TEST_KERNEL_SOURCE).expect("Failed to create CString");
+        let mut strings = [source_strings.as_ptr()];
         let program = create_program_with_source(
             context,
             strings.len() as _,

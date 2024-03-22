@@ -8,6 +8,7 @@
 use crate::api::context::*;
 use crate::api::device::*;
 use crate::api::event::*;
+use crate::api::kernel::*;
 use crate::api::memory::*;
 use crate::api::platform;
 use crate::api::platform::*;
@@ -54,13 +55,13 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clUnloadCompiler: None,
     clGetProgramInfo: Some(clGetProgramInfo),
     clGetProgramBuildInfo: Some(clGetProgramBuildInfo),
-    clCreateKernel: None,
-    clCreateKernelsInProgram: None,
-    clRetainKernel: None,
-    clReleaseKernel: None,
-    clSetKernelArg: None,
-    clGetKernelInfo: None,
-    clGetKernelWorkGroupInfo: None,
+    clCreateKernel: Some(clCreateKernel),
+    clCreateKernelsInProgram: Some(clCreateKernelsInProgram),
+    clRetainKernel: Some(clRetainKernel),
+    clReleaseKernel: Some(clReleaseKernel),
+    clSetKernelArg: Some(clSetKernelArg),
+    clGetKernelInfo: Some(clGetKernelInfo),
+    clGetKernelWorkGroupInfo: Some(clGetKernelWorkGroupInfo),
     clWaitForEvents: Some(clWaitForEvents),
     clGetEventInfo: Some(clGetEventInfo),
     clRetainEvent: Some(clRetainEvent),
@@ -121,7 +122,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clCompileProgram: Some(clCompileProgram),
     clLinkProgram: Some(clLinkProgram),
     clUnloadPlatformCompiler: None,
-    clGetKernelArgInfo: None,
+    clGetKernelArgInfo: Some(clGetKernelArgInfo),
     clEnqueueFillBuffer: None,
     clEnqueueFillImage: None,
     clEnqueueMigrateMemObjects: None,
@@ -154,15 +155,15 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueSVMMap: None,
     clEnqueueSVMUnmap: None,
     clCreateSamplerWithProperties: Some(clCreateSamplerWithProperties),
-    clSetKernelArgSVMPointer: None,
-    clSetKernelExecInfo: None,
+    clSetKernelArgSVMPointer: Some(clSetKernelArgSVMPointer),
+    clSetKernelExecInfo: Some(clSetKernelExecInfo),
     clGetKernelSubGroupInfoKHR: None,
-    clCloneKernel: None,
+    clCloneKernel: Some(clCloneKernel),
     clCreateProgramWithIL: Some(clCreateProgramWithIL),
     clEnqueueSVMMigrateMem: None,
     clGetDeviceAndHostTimer: None,
     clGetHostTimer: None,
-    clGetKernelSubGroupInfo: None,
+    clGetKernelSubGroupInfo: Some(clGetKernelSubGroupInfo),
     clSetDefaultDeviceCommandQueue: None,
     clSetProgramReleaseCallback: None,
     clSetProgramSpecializationConstant: None,

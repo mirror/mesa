@@ -35,18 +35,14 @@ impl Mem {
             flags,
             size,
         });
-
-        let handle = cl_mem::from_arc(buffer);
-        let mut guest_handle = handle;
-
+        let mut handle = cl_mem::from_arc(buffer);
         Vcl::get().call_clCreateBufferMESA(
             context.get_handle(),
             flags,
             size,
             host_ptr,
-            &mut guest_handle,
+            &mut handle,
         )?;
-
         Ok(handle)
     }
 }

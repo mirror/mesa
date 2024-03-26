@@ -913,7 +913,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
          mark_read_regs_exec(state, instr, ctx.sgprs_read_by_DS);
    } else if (instr->isSALU() || instr->isSMEM()) {
       wait_imm imm;
-      if (imm.unpack(state.program->gfx_level, instr.get())) {
+      if (imm.unpack(state.program->gfx_level, instr)) {
          if (imm.vm == 0)
             ctx.sgprs_read_by_VMEM.reset();
          if (imm.lgkm == 0)
@@ -996,7 +996,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
       }
    } else if (instr->isSALU()) {
       wait_imm imm;
-      if (imm.unpack(state.program->gfx_level, instr.get()) && imm.lgkm == 0) {
+      if (imm.unpack(state.program->gfx_level, instr) && imm.lgkm == 0) {
          /* Reducing lgkmcnt count to 0 always mitigates the hazard. */
          ctx.sgprs_read_by_SMEM.reset();
       } else if (instr->format != Format::SOPP && instr->definitions.size()) {
@@ -1033,7 +1033,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
     * Handles NSA MIMG (4 or more dwords) immediately followed by MUBUF/MTBUF (with offset[2:1] !=
     * 0).
     */
-   if (instr->isMIMG() && get_mimg_nsa_dwords(instr.get()) > 1) {
+   if (instr->isMIMG() && get_mimg_nsa_dwords(instr) > 1) {
       ctx.has_NSA_MIMG = true;
    } else if (ctx.has_NSA_MIMG) {
       ctx.has_NSA_MIMG = false;
@@ -1052,7 +1052,7 @@ handle_instruction_gfx10(State& state, NOP_ctx_gfx10& ctx, aco_ptr<Instruction>&
       ctx.has_writelane = true;
    } else if (ctx.has_writelane) {
       ctx.has_writelane = false;
-      if (instr->isMIMG() && get_mimg_nsa_dwords(instr.get()) > 0)
+      if (instr->isMIMG() && get_mimg_nsa_dwords(instr) > 0)
          bld.sopp(aco_opcode::s_nop, 0);
    }
 }
@@ -1178,7 +1178,7 @@ handle_lds_direct_valu_hazard_instr(LdsDirectVALUHazardGlobalState& global_state
       block_state.num_valu++;
    }
 
-   if (parse_depctr_wait(instr.get()).va_vdst == 0)
+   if (parse_depctr_wait(instr).va_vdst == 0)
       return true;
 
    block_state.num_instrs++;
@@ -1304,7 +1304,7 @@ handle_valu_partial_forwarding_hazard_instr(VALUPartialForwardingHazardGlobalSta
       }
 
       block_state.num_valu_since_read++;
-   } else if (parse_depctr_wait(instr.get()).va_vdst == 0) {
+   } else if (parse_depctr_wait(instr).va_vdst == 0) {
       return true;
    }
 
@@ -1407,7 +1407,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       ctx.has_Vcmpx = false;
    }
 
-   depctr_wait wait = parse_depctr_wait(instr.get());
+   depctr_wait wait = parse_depctr_wait(instr);
    unsigned va_vdst = wait.va_vdst;
    unsigned vm_vsrc = 7;
    unsigned sa_sdst = 1;
@@ -1606,7 +1606,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
             fill_vgpr_bitset(ctx.vgpr_used_by_vmem_store, op.physReg(), op.bytes());
       } else {
          uint8_t vmem_type = state.program->gfx_level >= GFX12
-                                ? get_vmem_type(state.program->gfx_level, instr.get())
+                                ? get_vmem_type(state.program->gfx_level, instr)
                                 : vmem_nosampler;
          std::bitset<256>* vgprs = &ctx.vgpr_used_by_vmem_load;
          if (vmem_type == vmem_sampler)
@@ -1633,7 +1633,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       ctx.vgpr_used_by_vmem_bvh.reset();
       ctx.vgpr_used_by_vmem_store.reset();
       ctx.vgpr_used_by_ds.reset();
-   } else if (imm.unpack(state.program->gfx_level, instr.get())) {
+   } else if (imm.unpack(state.program->gfx_level, instr)) {
       if (imm.vm == 0)
          ctx.vgpr_used_by_vmem_load.reset();
       if (imm.sample == 0)
@@ -1685,7 +1685,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
 bool
 has_vdst0_since_valu_instr(bool& global_state, unsigned& block_state, aco_ptr<Instruction>& pred)
 {
-   if (parse_depctr_wait(pred.get()).va_vdst == 0)
+   if (parse_depctr_wait(pred).va_vdst == 0)
       return true;
 
    if (--block_state == 0) {
@@ -1908,7 +1908,7 @@ required_export_priority(Program* program)
       }
 
       for (unsigned i = 0; i < block.instructions.size(); i++) {
-         Instruction* instr = block.instructions[i].get();
+         Instruction* instr = block.instructions[i];
          new_instructions.push_back(std::move(block.instructions[i]));
 
          if (instr->opcode == aco_opcode::s_setprio) {

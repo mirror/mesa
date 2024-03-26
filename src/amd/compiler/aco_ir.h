@@ -1799,14 +1799,7 @@ VALU_instruction::swapOperands(unsigned idx0, unsigned idx1)
    this->opsel_hi[idx0].swap(this->opsel_hi[idx1]);
 }
 
-struct instr_deleter_functor {
-   /* Don't yet free any instructions. They will be de-allocated
-    * all at once after compilation finished.
-    */
-   void operator()(void* p) { return; }
-};
-
-template <typename T> using aco_ptr = std::unique_ptr<T, instr_deleter_functor>;
+template <typename T> using aco_ptr = T*;
 
 size_t get_instr_data_size(Format format);
 
@@ -1832,15 +1825,9 @@ Instruction::usesModifiers() const noexcept
 }
 
 constexpr bool
-is_phi(Instruction* instr)
+is_phi(const Instruction* instr)
 {
    return instr->opcode == aco_opcode::p_phi || instr->opcode == aco_opcode::p_linear_phi;
-}
-
-static inline bool
-is_phi(aco_ptr<Instruction>& instr)
-{
-   return is_phi(instr.get());
 }
 
 bool is_wait_export_ready(amd_gfx_level gfx_level, const Instruction* instr);

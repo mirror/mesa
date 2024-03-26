@@ -845,7 +845,6 @@ emit_vopc_instruction(isel_context* ctx, nir_alu_instr* instr, aco_opcode op, Te
    Temp src1 = get_alu_src(ctx, instr->src[1]);
    assert(src0.size() == src1.size());
 
-   aco_ptr<Instruction> vopc;
    if (src1.type() == RegType::sgpr) {
       if (src0.type() == RegType::vgpr) {
          /* to swap the operands, we might also have to change the opcode */
@@ -946,7 +945,6 @@ emit_bcsel(isel_context* ctx, nir_alu_instr* instr, Temp dst)
    assert(cond.regClass() == bld.lm);
 
    if (dst.type() == RegType::vgpr) {
-      aco_ptr<Instruction> bcsel;
       if (dst.size() == 1) {
          then = as_vgpr(ctx, then);
          els = as_vgpr(ctx, els);
@@ -3623,7 +3621,6 @@ visit_alu_instr(isel_context* ctx, nir_alu_instr* instr)
          Temp bitmask = get_alu_src(ctx, instr->src[0]);
          Temp insert = get_alu_src(ctx, instr->src[1]);
          Temp base = get_alu_src(ctx, instr->src[2]);
-         aco_ptr<Instruction> sop2;
          nir_const_value* const_bitmask = nir_src_as_const_value(instr->src[0].src);
          nir_const_value* const_insert = nir_src_as_const_value(instr->src[1].src);
 
@@ -4145,7 +4142,7 @@ emit_readfirstlane(isel_context* ctx, Temp src, Temp dst)
             bld.def(RegClass::get(RegType::vgpr, MIN2(src.bytes() - i * 4, 4)));
       }
 
-      Instruction* split_raw = split.get();
+      Instruction* split_raw = split;
       ctx->block->instructions.emplace_back(std::move(split));
 
       aco_ptr<Instruction> vec{
@@ -7258,7 +7255,7 @@ visit_shared_atomic(isel_context* ctx, nir_intrinsic_instr* instr)
    }
 
    aco_ptr<Instruction> ds;
-   ds.reset(create_instruction(op, Format::DS, num_operands, return_previous ? 1 : 0));
+   ds = create_instruction(op, Format::DS, num_operands, return_previous ? 1 : 0);
    ds->operands[0] = Operand(address);
    ds->operands[1] = Operand(data);
    if (num_operands == 4) {
@@ -9145,9 +9142,7 @@ visit_tex(isel_context* ctx, nir_tex_instr* instr)
    if (has_offset) {
       assert(instr->op != nir_texop_txf);
 
-      aco_ptr<Instruction> tmp_instr;
       Temp acc, pack = Temp();
-
       uint32_t pack_const = 0;
       for (unsigned i = 0; i < offset.size(); i++) {
          if (!const_offset[i])
@@ -9995,7 +9990,7 @@ begin_divergent_if_then(isel_context* ctx, if_context* ic, Temp cond,
    /* branch to linear then block */
    assert(cond.regClass() == ctx->program->lane_mask);
    aco_ptr<Instruction> branch;
-   branch.reset(create_instruction(aco_opcode::p_cbranch_z, Format::PSEUDO_BRANCH, 1, 0));
+   branch = create_instruction(aco_opcode::p_cbranch_z, Format::PSEUDO_BRANCH, 1, 0);
    branch->operands[0] = Operand(cond);
    bool never_taken = sel_ctrl == nir_selection_control_divergent_always_taken;
    branch->branch().rarely_taken = sel_ctrl == nir_selection_control_flatten || never_taken;
@@ -10033,7 +10028,7 @@ begin_divergent_if_else(isel_context* ctx, if_context* ic,
    append_logical_end(BB_then_logical);
    /* branch from logical then block to invert block */
    aco_ptr<Instruction> branch;
-   branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+   branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
    BB_then_logical->instructions.emplace_back(std::move(branch));
    add_linear_edge(BB_then_logical->index, &ic->BB_invert);
    if (!ctx->cf_info.has_divergent_branch)
@@ -10048,7 +10043,7 @@ begin_divergent_if_else(isel_context* ctx, if_context* ic,
    BB_then_linear->kind |= block_kind_uniform;
    add_linear_edge(ic->BB_if_idx, BB_then_linear);
    /* branch from linear then block to invert block */
-   branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+   branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
    BB_then_linear->instructions.emplace_back(std::move(branch));
    add_linear_edge(BB_then_linear->index, &ic->BB_invert);
 
@@ -10057,7 +10052,7 @@ begin_divergent_if_else(isel_context* ctx, if_context* ic,
    ic->invert_idx = ctx->block->index;
 
    /* branch to linear else block (skip else) */
-   branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+   branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
    bool never_taken = sel_ctrl == nir_selection_control_divergent_always_taken;
    branch->branch().rarely_taken = sel_ctrl == nir_selection_control_flatten || never_taken;
    branch->branch().never_taken = never_taken;
@@ -10086,7 +10081,7 @@ end_divergent_if(isel_context* ctx, if_context* ic)
 
    /* branch from logical else block to endif block */
    aco_ptr<Instruction> branch;
-   branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+   branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
    BB_else_logical->instructions.emplace_back(std::move(branch));
    add_linear_edge(BB_else_logical->index, &ic->BB_endif);
    if (!ctx->cf_info.has_divergent_branch)
@@ -10103,7 +10098,7 @@ end_divergent_if(isel_context* ctx, if_context* ic)
    add_linear_edge(ic->invert_idx, BB_else_linear);
 
    /* branch from linear else block to endif block */
-   branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+   branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
    BB_else_linear->instructions.emplace_back(std::move(branch));
    add_linear_edge(BB_else_linear->index, &ic->BB_endif);
 
@@ -10135,7 +10130,7 @@ begin_uniform_if_then(isel_context* ctx, if_context* ic, Temp cond)
 
    aco_ptr<Instruction> branch;
    aco_opcode branch_opcode = aco_opcode::p_cbranch_z;
-   branch.reset(create_instruction(branch_opcode, Format::PSEUDO_BRANCH, 1, 0));
+   branch = create_instruction(branch_opcode, Format::PSEUDO_BRANCH, 1, 0);
    if (cond.id()) {
       /* Never enter an IF construct with empty exec mask. */
       assert(!ctx->cf_info.exec.empty());
@@ -10171,7 +10166,7 @@ begin_uniform_if_else(isel_context* ctx, if_context* ic, bool logical_else)
       append_logical_end(BB_then);
       /* branch from then block to endif block */
       aco_ptr<Instruction> branch;
-      branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+      branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0);
       BB_then->instructions.emplace_back(std::move(branch));
       add_linear_edge(BB_then->index, &ic->BB_endif);
       if (!ctx->cf_info.has_divergent_branch)
@@ -10204,7 +10199,7 @@ end_uniform_if(isel_context* ctx, if_context* ic, bool logical_else)
          append_logical_end(BB_else);
       /* branch from then block to endif block */
       aco_ptr<Instruction> branch;
-      branch.reset(create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 0));
+      branch = create_instruction(aco_opcode::p_branch, Format::PSEUDO_BRANCH, 0, 1);
       BB_else->instructions.emplace_back(std::move(branch));
       add_linear_edge(BB_else->index, &ic->BB_endif);
       if (logical_else && !ctx->cf_info.has_divergent_branch)
@@ -10299,7 +10294,6 @@ visit_if(isel_context* ctx, nir_if* if_stmt)
 {
    Temp cond = get_ssa_temp(ctx, if_stmt->condition.ssa);
    Builder bld(ctx->program, ctx->block);
-   aco_ptr<Instruction> branch;
    if_context ic;
 
    if (!nir_src_is_divergent(&if_stmt->condition)) { /* uniform condition */

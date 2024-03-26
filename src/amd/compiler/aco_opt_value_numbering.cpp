@@ -304,7 +304,7 @@ can_eliminate(aco_ptr<Instruction>& instr)
    case Format::MUBUF:
    case Format::MIMG:
    case Format::MTBUF:
-      if (!get_sync_info(instr.get()).can_reorder())
+      if (!get_sync_info(instr).can_reorder())
          return false;
       break;
    default: break;
@@ -357,7 +357,7 @@ process_block(vn_ctx& ctx, Block& block)
 
       /* simple copy-propagation through renaming */
       bool copy_instr =
-         is_trivial_phi(block, instr.get()) || instr->opcode == aco_opcode::p_parallelcopy ||
+         is_trivial_phi(block, instr) || instr->opcode == aco_opcode::p_parallelcopy ||
          (instr->opcode == aco_opcode::p_create_vector && instr->operands.size() == 1);
       if (copy_instr && !instr->definitions[0].isFixed() && instr->operands[0].isTemp() &&
           instr->operands[0].regClass() == instr->definitions[0].regClass()) {
@@ -371,7 +371,7 @@ process_block(vn_ctx& ctx, Block& block)
       }
 
       instr->pass_flags = ctx.exec_id;
-      std::pair<expr_set::iterator, bool> res = ctx.expr_values.emplace(instr.get(), block.index);
+      std::pair<expr_set::iterator, bool> res = ctx.expr_values.emplace(instr, block.index);
 
       /* if there was already an expression with the same value number */
       if (!res.second) {
@@ -401,7 +401,7 @@ process_block(vn_ctx& ctx, Block& block)
             }
          } else {
             ctx.expr_values.erase(res.first);
-            ctx.expr_values.emplace(instr.get(), block.index);
+            ctx.expr_values.emplace(instr, block.index);
             new_instructions.emplace_back(std::move(instr));
          }
       } else {

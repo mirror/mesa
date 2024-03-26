@@ -1711,7 +1711,6 @@ handle_operands(std::map<PhysReg, copy_operation>& copy_map, lower_context* ctx,
 {
    Builder bld(ctx->program, &ctx->instructions);
    unsigned num_instructions_before = ctx->instructions.size();
-   aco_ptr<Instruction> mov;
    bool writes_scc = false;
 
    /* count the number of uses for each dst reg */
@@ -2175,9 +2174,9 @@ lower_image_sample(lower_context* ctx, aco_ptr<Instruction>& instr)
       new_instr->operands[0] = instr->operands[0];
       new_instr->operands[1] = instr->operands[1];
       new_instr->operands[2] = instr->operands[2];
-      memcpy((uint8_t*)new_instr + sizeof(Instruction), (uint8_t*)instr.get() + sizeof(Instruction),
+      memcpy((uint8_t*)new_instr + sizeof(Instruction), (uint8_t*)instr + sizeof(Instruction),
              sizeof(MIMG_instruction) - sizeof(Instruction));
-      instr.reset(new_instr);
+      instr = new_instr;
    } else {
       while (instr->operands.size() > (3 + num_vaddr))
          instr->operands.pop_back();
@@ -2258,7 +2257,6 @@ lower_to_hw_instr(Program* program)
             bld.sopp(aco_opcode::s_sendmsg, sendmsg_ordered_ps_done);
          }
 
-         aco_ptr<Instruction> mov;
          if (instr->isPseudo() && instr->opcode != aco_opcode::p_unit_test &&
              instr->opcode != aco_opcode::p_debug_info) {
             Pseudo_instruction* pi = &instr->pseudo();

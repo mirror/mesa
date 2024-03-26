@@ -718,10 +718,10 @@ handle_block(Program* program, Block& block, wait_ctx& ctx)
    for (size_t i = 0; i < block.instructions.size(); i++) {
       aco_ptr<Instruction>& instr = block.instructions[i];
 
-      bool is_wait = queued_imm.unpack(ctx.gfx_level, instr.get());
+      bool is_wait = queued_imm.unpack(ctx.gfx_level, instr);
 
-      memory_sync_info sync_info = get_sync_info(instr.get());
-      kill(queued_imm, instr.get(), ctx, sync_info);
+      memory_sync_info sync_info = get_sync_info(instr);
+      kill(queued_imm, instr, ctx, sync_info);
 
       /* At the start of a possible clause, also emit waitcnts for each instruction to avoid
        * splitting the clause.
@@ -729,13 +729,13 @@ handle_block(Program* program, Block& block, wait_ctx& ctx)
       if (i >= clause_end || !queued_imm.empty()) {
          std::optional<std::bitset<512>> regs_written;
          for (clause_end = i + 1; clause_end < block.instructions.size(); clause_end++) {
-            Instruction* next = block.instructions[clause_end].get();
-            if (!should_form_clause(instr.get(), next))
+            Instruction* next = block.instructions[clause_end];
+            if (!should_form_clause(instr, next))
                break;
 
             if (!regs_written) {
                regs_written.emplace();
-               check_clause_raw(*regs_written, instr.get());
+               check_clause_raw(*regs_written, instr);
             }
 
             if (!check_clause_raw(*regs_written, next))
@@ -745,7 +745,7 @@ handle_block(Program* program, Block& block, wait_ctx& ctx)
          }
       }
 
-      gen(instr.get(), ctx);
+      gen(instr, ctx);
 
       if (instr->format != Format::PSEUDO_BARRIER && !is_wait) {
          if (instr->isVINTERP_INREG() && queued_imm.exp != wait_imm::unset_counter) {

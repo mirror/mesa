@@ -128,8 +128,8 @@ struct ra_ctx {
          renames(program->blocks.size(), aco::unordered_map<uint32_t, Temp>(memory)),
          orig_names(memory), vectors(memory), split_vectors(memory), policy(policy_)
    {
-      pseudo_dummy.reset(create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, 0, 0));
-      phi_dummy.reset(create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, 0, 0));
+      pseudo_dummy = create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, 0, 0);
+      phi_dummy = create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, 0, 0);
       limit = get_addr_regs_from_waves(program, program->min_waves);
 
       sgpr_bounds = program->max_reg_demand.sgpr;
@@ -1365,13 +1365,13 @@ get_reg_impl(ra_ctx& ctx, const RegisterFile& reg_file,
 
    /* p_create_vector: also re-place killed operands in the definition space */
    if (instr->opcode == aco_opcode::p_create_vector)
-      tmp_file.fill_killed_operands(instr.get());
+      tmp_file.fill_killed_operands(instr);
 
    std::vector<unsigned> vars = collect_vars(ctx, tmp_file, best_win);
 
    /* re-enable killed operands */
    if (!is_phi(instr) && instr->opcode != aco_opcode::p_create_vector)
-      tmp_file.fill_killed_operands(instr.get());
+      tmp_file.fill_killed_operands(instr);
 
    std::vector<std::pair<Operand, Definition>> pc;
    if (!get_regs_for_copies(ctx, tmp_file, pc, vars, instr, best_win))
@@ -1672,7 +1672,7 @@ alloc_linear_vgpr(ra_ctx& ctx, const RegisterFile& reg_file, aco_ptr<Instruction
    std::vector<unsigned> blocking_vars = collect_vars(ctx, tmp_file, new_win);
 
    /* Re-enable killed operands */
-   tmp_file.fill_killed_operands(instr.get());
+   tmp_file.fill_killed_operands(instr);
 
    /* Find new assignments for blocking vars. */
    std::vector<std::pair<Operand, Definition>> pc;
@@ -1974,7 +1974,7 @@ get_reg_create_vector(ra_ctx& ctx, const RegisterFile& reg_file, Temp temp,
 
    /* re-enable killed operands which are in the wrong position */
    RegisterFile tmp_file(reg_file);
-   tmp_file.fill_killed_operands(instr.get());
+   tmp_file.fill_killed_operands(instr);
 
    for (unsigned i = 0; i < instr->operands.size(); i++) {
       if ((correct_pos_mask >> i) & 1u && instr->operands[i].isKill())
@@ -2078,7 +2078,7 @@ operand_can_use_reg(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr, unsign
       FALLTHROUGH;
    case Format::SOP2:
    case Format::SOP1:
-      return get_op_fixed_to_def(instr.get()) != (int)idx ||
+      return get_op_fixed_to_def(instr) != (int)idx ||
              is_sgpr_writable_without_side_effects(gfx_level, reg);
    default:
       // TODO: there are more instructions with restrictions on registers
@@ -2183,7 +2183,7 @@ get_reg_phi(ra_ctx& ctx, IDSet& live_in, RegisterFile& register_file,
       Instruction* prev_phi = NULL;
       for (auto phi_it = instructions.begin(); phi_it != instructions.end(); ++phi_it) {
          if ((*phi_it)->definitions[0].tempId() == pc.first.tempId())
-            prev_phi = phi_it->get();
+            prev_phi = *phi_it;
       }
       if (prev_phi) {
          /* if so, just update that phi's register */
@@ -2716,15 +2716,15 @@ get_affinities(ra_ctx& ctx)
             for (const Operand& op : instr->operands) {
                if (op.isTemp() && op.isFirstKill() &&
                    op.getTemp().type() == instr->definitions[0].getTemp().type())
-                  ctx.vectors[op.tempId()] = vector_info(instr.get());
+                  ctx.vectors[op.tempId()] = vector_info(instr);
             }
          } else if (instr->format == Format::MIMG && instr->operands.size() > 4 &&
                     !instr->mimg().strict_wqm && ctx.program->gfx_level < GFX12) {
             for (unsigned i = 3; i < instr->operands.size(); i++)
-               ctx.vectors[instr->operands[i].tempId()] = vector_info(instr.get(), 3, true);
+               ctx.vectors[instr->operands[i].tempId()] = vector_info(instr, 3, true);
          } else if (instr->opcode == aco_opcode::p_split_vector &&
                     instr->operands[0].isFirstKillBeforeDef()) {
-            ctx.split_vectors[instr->operands[0].tempId()] = instr.get();
+            ctx.split_vectors[instr->operands[0].tempId()] = instr;
          } else if (instr->isVOPC() && !instr->isVOP3()) {
             if (!instr->isSDWA() || ctx.program->gfx_level == GFX8)
                ctx.assignments[instr->definitions[0].tempId()].vcc = true;
@@ -2746,7 +2746,7 @@ get_affinities(ra_ctx& ctx)
             ctx.assignments[instr->operands[0].tempId()].m0 = true;
          }
 
-         int op_fixed_to_def0 = get_op_fixed_to_def(instr.get());
+         int op_fixed_to_def0 = get_op_fixed_to_def(instr);
          for (unsigned i = 0; i < instr->definitions.size(); i++) {
             const Definition& def = instr->definitions[i];
             if (!def.isTemp())
@@ -2762,9 +2762,9 @@ get_affinities(ra_ctx& ctx)
                   op = instr->operands[i];
                } else if (i == 0 && op_fixed_to_def0 != -1) {
                   op = instr->operands[op_fixed_to_def0];
-               } else if (vop3_can_use_vop2acc(ctx, instr.get())) {
+               } else if (vop3_can_use_vop2acc(ctx, instr)) {
                   op = instr->operands[2];
-               } else if (i == 0 && sop2_can_use_sopk(ctx, instr.get())) {
+               } else if (i == 0 && sop2_can_use_sopk(ctx, instr)) {
                   op = instr->operands[instr->operands[0].isLiteral()];
                } else {
                   continue;
@@ -2854,7 +2854,7 @@ get_affinities(ra_ctx& ctx)
 void
 optimize_encoding_vop2(ra_ctx& ctx, RegisterFile& register_file, aco_ptr<Instruction>& instr)
 {
-   if (!vop3_can_use_vop2acc(ctx, instr.get()))
+   if (!vop3_can_use_vop2acc(ctx, instr))
       return;
 
    for (unsigned i = ctx.program->gfx_level < GFX11 ? 0 : 2; i < 3; i++) {
@@ -2902,7 +2902,7 @@ void
 optimize_encoding_sopk(ra_ctx& ctx, RegisterFile& register_file, aco_ptr<Instruction>& instr)
 {
    /* try to optimize sop2 with literal source to sopk */
-   if (!sop2_can_use_sopk(ctx, instr.get()))
+   if (!sop2_can_use_sopk(ctx, instr))
       return;
    unsigned literal_idx = instr->operands[1].isLiteral();
 
@@ -3001,8 +3001,8 @@ emit_parallel_copy_internal(ra_ctx& ctx, std::vector<std::pair<Operand, Definiti
       return;
 
    aco_ptr<Instruction> pc;
-   pc.reset(create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, parallelcopy.size(),
-                               parallelcopy.size()));
+   pc = create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, parallelcopy.size(),
+                           parallelcopy.size());
    bool linear_vgpr = false;
    bool may_swap_sgprs = false;
    std::bitset<256> sgpr_operands;
@@ -3043,7 +3043,7 @@ emit_parallel_copy_internal(ra_ctx& ctx, std::vector<std::pair<Operand, Definiti
             tmp_file.block(op.physReg(), op.regClass());
       }
 
-      handle_pseudo(ctx, tmp_file, pc.get());
+      handle_pseudo(ctx, tmp_file, pc);
    } else {
       pc->pseudo().needs_scratch_reg = may_swap_sgprs || linear_vgpr;
       pc->pseudo().scratch_sgpr = scc;
@@ -3182,7 +3182,7 @@ register_allocation(Program* program, ra_test_policy policy)
           * We can't read from the old location because it's corrupted, and we can't write the new
           * location because that's used by a live-through operand.
           */
-         int op_fixed_to_def = get_op_fixed_to_def(instr.get());
+         int op_fixed_to_def = get_op_fixed_to_def(instr);
          if (op_fixed_to_def != -1) {
             instr->definitions[0].setPrecolored(instr->operands[op_fixed_to_def].physReg());
             instr->operands[op_fixed_to_def].setPrecolored(
@@ -3205,7 +3205,7 @@ register_allocation(Program* program, ra_test_policy policy)
 
                RegisterFile tmp_file(register_file);
                /* re-enable the killed operands, so that we don't move the blocking vars there */
-               tmp_file.fill_killed_operands(instr.get());
+               tmp_file.fill_killed_operands(instr);
 
                ASSERTED bool success = false;
                success = get_regs_for_copies(ctx, tmp_file, parallelcopy, vars, instr, def_regs);
@@ -3305,7 +3305,7 @@ register_allocation(Program* program, ra_test_policy policy)
 
          undo_renames(ctx, parallelcopy, instr);
 
-         handle_pseudo(ctx, register_file, instr.get());
+         handle_pseudo(ctx, register_file, instr);
 
          /* kill definitions and late-kill operands and ensure that sub-dword operands can actually
           * be read */

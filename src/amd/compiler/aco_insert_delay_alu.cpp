@@ -297,8 +297,8 @@ handle_block(Program* program, Block& block, delay_ctx& ctx)
       aco_ptr<Instruction>& instr = block.instructions[i];
       assert(instr->opcode != aco_opcode::s_delay_alu);
 
-      kill_alu(queued_delay, instr.get(), ctx);
-      gen_alu(instr.get(), ctx);
+      kill_alu(queued_delay, instr, ctx);
+      gen_alu(instr, ctx);
 
       if (!queued_delay.empty())
          emit_delay_alu(ctx, new_instructions, queued_delay);

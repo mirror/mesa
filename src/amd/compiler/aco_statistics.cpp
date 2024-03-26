@@ -302,7 +302,7 @@ get_wait_counter_info(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr)
    } else if (instr->isVMEM() && instr->definitions.empty() && gfx_level >= GFX10) {
       info[wait_type_vs] = 320;
    } else if (instr->isVMEM()) {
-      uint8_t vm_type = get_vmem_type(gfx_level, instr.get());
+      uint8_t vm_type = get_vmem_type(gfx_level, instr);
       wait_type type = wait_type_vm;
       if (gfx_level >= GFX12 && vm_type == vmem_bvh)
          type = wait_type_bvh;
@@ -321,7 +321,7 @@ get_wait_imm(Program* program, aco_ptr<Instruction>& instr)
    if (instr->opcode == aco_opcode::s_endpgm) {
       for (unsigned i = 0; i < wait_type_num; i++)
          imm[i] = 0;
-   } else if (imm.unpack(program->gfx_level, instr.get())) {
+   } else if (imm.unpack(program->gfx_level, instr)) {
    } else if (instr->isVINTERP_INREG()) {
       imm.exp = instr->vinterp_inreg().wait_exp;
       if (imm.exp == 0x7)
@@ -502,10 +502,9 @@ collect_preasm_stats(Program* program)
          if ((instr->isVMEM() || instr->isScratch() || instr->isGlobal()) &&
              !instr->operands.empty()) {
             if (std::none_of(vmem_clause.begin(), vmem_clause.end(),
-                             [&](Instruction* other)
-                             { return should_form_clause(instr.get(), other); }))
+                             [&](Instruction* other) { return should_form_clause(instr, other); }))
                program->statistics[aco_statistic_vmem_clauses]++;
-            vmem_clause.insert(instr.get());
+            vmem_clause.insert(instr);
 
             program->statistics[aco_statistic_vmem]++;
          } else {
@@ -514,10 +513,9 @@ collect_preasm_stats(Program* program)
 
          if (instr->isSMEM() && !instr->operands.empty()) {
             if (std::none_of(smem_clause.begin(), smem_clause.end(),
-                             [&](Instruction* other)
-                             { return should_form_clause(instr.get(), other); }))
+                             [&](Instruction* other) { return should_form_clause(instr, other); }))
                program->statistics[aco_statistic_smem_clauses]++;
-            smem_clause.insert(instr.get());
+            smem_clause.insert(instr);
 
             program->statistics[aco_statistic_smem]++;
          } else {

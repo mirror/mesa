@@ -1406,7 +1406,7 @@ emit_block(asm_context& ctx, std::vector<uint32_t>& out, Block& block)
       aco_print_instr(&*instr, stderr);
       std::cerr << std::endl;
 #endif
-      emit_instruction(ctx, out, instr.get());
+      emit_instruction(ctx, out, instr);
 #if 0
       for (int i = start_idx; i < out.size(); i++)
          std::cerr << "encoding: " << "0x" << std::setfill('0') << std::setw(8) << std::hex << out[i] << std::endl;
@@ -1582,7 +1582,7 @@ chain_branches(asm_context& ctx, std::vector<uint32_t>& out, branch_info& branch
       if (insert_at < upper_start) {
          /* Ensure some forward progress by splitting the block if necessary. */
          while (skip-- > 0 || insert_at < upper_start) {
-            Instruction* instr = (it++)->get();
+            Instruction* instr = *(it++);
             if (instr->isSOPP()) {
                if (instr->opcode == aco_opcode::s_clause)
                   skip = instr->salu().imm + 1;

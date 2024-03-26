@@ -162,7 +162,7 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
    /* traverse the instructions backwards */
    int idx;
    for (idx = block->instructions.size() - 1; idx >= 0; idx--) {
-      Instruction* insn = block->instructions[idx].get();
+      Instruction* insn = block->instructions[idx];
       if (is_phi(insn))
          break;
 
@@ -302,7 +302,7 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
 
    /* handle phi definitions */
    for (int phi_idx = 0; phi_idx <= idx; phi_idx++) {
-      Instruction* insn = block->instructions[phi_idx].get();
+      Instruction* insn = block->instructions[phi_idx];
       insn->register_demand = new_demand;
 
       assert(is_phi(insn) && insn->definitions.size() == 1);
@@ -326,7 +326,7 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
 
    /* handle phi operands */
    for (int phi_idx = 0; phi_idx <= idx; phi_idx++) {
-      Instruction* insn = block->instructions[phi_idx].get();
+      Instruction* insn = block->instructions[phi_idx];
       assert(is_phi(insn));
       /* Ignore dead phis. */
       if (insn->definitions[0].isKill())

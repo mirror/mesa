@@ -238,9 +238,8 @@ do_reload(spill_ctx& ctx, Temp tmp, Temp new_name, uint32_t spill_id)
              "unsupported");
       assert(instr->definitions.size() == 1 && "unsupported");
 
-      aco_ptr<Instruction> res;
-      res.reset(create_instruction(instr->opcode, instr->format, instr->operands.size(),
-                                   instr->definitions.size()));
+      aco_ptr<Instruction> res = create_instruction(
+         instr->opcode, instr->format, instr->operands.size(), instr->definitions.size());
       if (instr->isSOPK())
          res->salu().imm = instr->salu().imm;
 
@@ -276,8 +275,8 @@ get_rematerialize_info(spill_ctx& ctx)
          if (logical && should_rematerialize(instr)) {
             for (const Definition& def : instr->definitions) {
                if (def.isTemp()) {
-                  ctx.remat[def.getTemp()] = remat_info{instr.get()};
-                  ctx.unused_remats.insert(instr.get());
+                  ctx.remat[def.getTemp()] = remat_info{instr};
+                  ctx.unused_remats.insert(instr);
                }
             }
          }
@@ -1588,7 +1587,7 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
                reload->definitions[0] = (*it)->definitions[0];
                instructions.emplace_back(aco_ptr<Instruction>(reload));
             }
-         } else if (!ctx.unused_remats.count(it->get())) {
+         } else if (!ctx.unused_remats.count(*it)) {
             instructions.emplace_back(std::move(*it));
          }
       }

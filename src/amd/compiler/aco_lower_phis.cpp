@@ -201,7 +201,7 @@ build_const_else_merge_code(Program* program, Block& invert_block, aco_ptr<Instr
 
    auto after_phis =
       std::find_if(invert_block.instructions.begin(), invert_block.instructions.end(),
-                   [](const aco_ptr<Instruction>& instr) -> bool { return !is_phi(instr.get()); });
+                   [](const aco_ptr<Instruction>& instr) -> bool { return !is_phi(instr); });
    bld.reset(&invert_block.instructions, after_phis);
 
    Temp tmp;
@@ -356,7 +356,7 @@ lower_phi_to_linear(Program* program, ssa_state* state, Block* block, aco_ptr<In
       Instruction* new_phi{
          create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, num_preds, 1)};
       new_phi->definitions[0] = phi->definitions[0];
-      phi.reset(new_phi);
+      phi = new_phi;
    } else {
       phi->opcode = aco_opcode::p_linear_phi;
    }

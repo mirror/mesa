@@ -212,7 +212,7 @@ get_type(Program* program, aco_ptr<Instruction>& instr)
       }
    } else {
       if (instr->isVMEM() && !instr->operands.empty()) {
-         if (program->gfx_level == GFX10 && instr->isMIMG() && get_mimg_nsa_dwords(instr.get()) > 0)
+         if (program->gfx_level == GFX10 && instr->isMIMG() && get_mimg_nsa_dwords(instr) > 0)
             return clause_other;
          else
             return clause_vmem;
@@ -248,7 +248,7 @@ form_hard_clauses(Program* program)
 
          clause_type type = get_type(program, instr);
          if (type != current_type || num_instrs == max_clause_length ||
-             (num_instrs && !should_form_clause(current_instrs[0].get(), instr.get()))) {
+             (num_instrs && !should_form_clause(current_instrs[0], instr))) {
             emit_clause(bld, num_instrs, current_instrs);
             num_instrs = 0;
             current_type = type;

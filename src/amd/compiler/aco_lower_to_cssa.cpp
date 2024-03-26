@@ -202,7 +202,7 @@ intersects(cssa_ctx& ctx, Temp var, Temp parent)
    const Block& block = ctx.program->blocks[block_idx];
    for (auto it = block.instructions.crbegin(); it != block.instructions.crend(); ++it) {
       /* if the parent was not encountered yet, it can only be used by a phi */
-      if (is_phi(it->get()))
+      if (is_phi(*it))
          break;
 
       for (const Definition& def : (*it)->definitions) {
@@ -373,8 +373,8 @@ void
 emit_copies_block(Builder& bld, std::map<uint32_t, ltg_node>& ltg, RegType type)
 {
    RegisterDemand live_changes;
-   RegisterDemand reg_demand = bld.it->get()->register_demand - get_temp_registers(bld.it->get()) -
-                               get_live_changes(bld.it->get());
+   RegisterDemand reg_demand =
+      (*bld.it)->register_demand - get_temp_registers(*bld.it) - get_live_changes(*bld.it);
    auto&& it = ltg.begin();
    while (it != ltg.end()) {
       copy& cp = *it->second.cp;
@@ -427,15 +427,15 @@ emit_copies_block(Builder& bld, std::map<uint32_t, ltg_node>& ltg, RegType type)
          copy->operands[i] = it->second.cp->op;
          it = ltg.erase(it);
       }
-      live_changes += get_live_changes(copy.get());
-      RegisterDemand temps = get_temp_registers(copy.get());
+      live_changes += get_live_changes(copy);
+      RegisterDemand temps = get_temp_registers(copy);
       copy->register_demand = reg_demand + live_changes + temps;
       bld.insert(std::move(copy));
    }
 
    /* Update RegisterDemand after inserted copies */
    for (auto instr_it = bld.it; instr_it != bld.instructions->end(); ++instr_it) {
-      instr_it->get()->register_demand += live_changes;
+      (*instr_it)->register_demand += live_changes;
    }
 }
 

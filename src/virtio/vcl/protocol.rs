@@ -26,6 +26,8 @@ pub mod memory;
 pub use memory::*;
 pub mod platform;
 pub use platform::*;
+pub mod structs;
+pub use structs::*;
 pub mod transport;
 pub use transport::*;
 pub mod types;

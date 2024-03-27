@@ -14,14 +14,12 @@ use crate::protocol::VclCsEncoder;
 use vcl_opencl_gen::cl_platform_id;
 use vcl_virglrenderer_gen::*;
 
-use std::env;
 use std::ffi::c_void;
 use std::ffi::CStr;
-use std::mem;
 use std::pin::Pin;
-use std::slice;
 use std::str::FromStr;
 use std::sync::Once;
+use std::*;
 
 pub trait VclRenderer {
     fn submit(&self, submit: VclCsEncoder) -> CLResult<()>;
@@ -39,7 +37,7 @@ static mut VCL: Option<Vcl> = None;
 
 fn load_env() {
     // We can not use log!() yet as it requires VCL_ENV_ONCE to be completed
-    let debug = unsafe { &mut VCL_DEBUG };
+    let debug = unsafe { &mut *ptr::addr_of_mut!(VCL_DEBUG) };
 
     if let Ok(debug_flags) = env::var("VCL_DEBUG") {
         for flag in debug_flags.split(',') {
@@ -86,7 +84,7 @@ impl Vcl {
 
     pub fn debug() -> &'static VclDebug {
         debug_assert!(VCL_ENV_ONCE.is_completed());
-        unsafe { &VCL_DEBUG }
+        unsafe { &*ptr::addr_of!(VCL_DEBUG) }
     }
 
     pub fn get_platforms(&self) -> &[Pin<Box<Platform>>] {

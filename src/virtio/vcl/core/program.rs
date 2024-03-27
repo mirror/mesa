@@ -10,9 +10,9 @@ use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
 use vcl_opencl_gen::*;
 
-use std::ffi::c_char;
-use std::ptr;
+use std::ffi::*;
 use std::sync::Arc;
+use std::*;
 
 impl_cl_type_trait!(cl_program, Program, CL_INVALID_PROGRAM);
 
@@ -33,10 +33,33 @@ impl Program {
             context: context.clone(),
         });
 
+        // Construct a list fo null-terminated strings
+        let mut c_strings = Vec::new();
+        let strings_slice = unsafe { slice::from_raw_parts(strings, count as _) };
+        if lengths.is_null() {
+            // Already null-terminated strings
+            for str_with_nul in strings_slice {
+                let cstr = unsafe { CStr::from_ptr(*str_with_nul) };
+                c_strings.push(CString::from(cstr));
+            }
+        } else {
+            // Those strings are not necessarily null-terminated, but we know their lengths
+            let lengths = unsafe { slice::from_raw_parts(lengths, count as _) };
+            for i in 0..count as _ {
+                let len = lengths[i];
+                let str: &[u8] = unsafe { slice::from_raw_parts(strings_slice[i] as _, len) };
+                let str = Vec::from(str);
+                let cstr = unsafe { CString::from_vec_unchecked(str) };
+                c_strings.push(CString::from(cstr));
+            }
+        }
+
+        let c_strings_ptrs: Vec<*const c_char> = c_strings.iter().map(|s| s.as_ptr()).collect();
+
         Vcl::get().call_clCreateProgramWithSourceMESA(
             context.get_handle(),
             count,
-            strings,
+            c_strings_ptrs.as_ptr(),
             lengths,
             &mut program.get_handle(),
         )?;
@@ -56,13 +79,13 @@ impl Program {
 
         let mut dev_handles = Vec::default();
         let mut lengths = Vec::default();
-        let mut total_length: usize = 0;
+        let mut binaries_size: usize = 0;
         let mut tot_bin = Vec::new();
 
         for (i, d) in devs.iter().enumerate() {
             dev_handles.push(d.get_handle());
             lengths.push(bins[i].len());
-            total_length += bins[i].len();
+            binaries_size += bins[i].len();
             tot_bin.extend_from_slice(bins[i]);
         }
 
@@ -71,7 +94,7 @@ impl Program {
             devs.len() as u32,
             dev_handles.as_ptr(),
             lengths.as_ptr(),
-            total_length,
+            binaries_size,
             tot_bin.as_ptr(),
             ptr::null_mut(),
             &mut program.get_handle(),

@@ -6,12 +6,7 @@ rust = import('rust')
 cl_c_args = ['-DCL_TARGET_OPENCL_VERSION=300']
 
 vcl_bindgen_args = [
-  # needed because bindgen adds *mut void fields...
-  '--raw-line', 'unsafe impl std::marker::Sync for _cl_icd_dispatch {}',
-  # avoids warning such as: `extern` block uses type `u128`, which is not FFI-safe
-  '--allowlist-type', 'cl_.*',
-  # brings in CL_SUCCESS, CL_INVALID_VALUE, and so on..
-  '--allowlist-var', 'CL_.*',
+  '--with-derive-default',
 ]
 
 vcl_opencl_bindings_rs = rust.bindgen(
@@ -22,7 +17,16 @@ vcl_opencl_bindings_rs = rust.bindgen(
   output : 'vcl_opencl_bindings.rs',
   include_directories : [inc_include],
   c_args : [cl_c_args],
-  args : [vcl_bindgen_args],
+  args : [
+    vcl_bindgen_args,
+      # needed because bindgen adds *mut void fields...
+      '--raw-line', 'unsafe impl std::marker::Sync for _cl_icd_dispatch {}',
+      # avoids warning such as: `extern` block uses type `u128`, which is not FFI-safe
+      '--allowlist-type', 'cl_.*',
+      '--allowlist-type', 'cl.*_fn',
+      # brings in CL_SUCCESS, CL_INVALID_VALUE, and so on..
+      '--allowlist-var', 'CL_.*',
+  ],
 )
 
 vcl_gen_args = [

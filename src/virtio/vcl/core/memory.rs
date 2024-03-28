@@ -50,14 +50,16 @@ impl Mem {
 
     pub fn new_image(
         context: &Arc<Context>,
+        desc: cl_image_desc,
         flags: cl_mem_flags,
         image_format: *const cl_image_format,
-        image_width: usize,
-        image_height: usize,
-        image_row_pitch: usize,
         host_ptr: *mut c_void,
     ) -> CLResult<cl_mem> {
-        let size = image_height * image_row_pitch;
+        let size = match desc.image_type {
+            CL_MEM_OBJECT_IMAGE2D => desc.image_height * desc.image_row_pitch,
+            CL_MEM_OBJECT_IMAGE3D => desc.image_depth * desc.image_slice_pitch,
+            _ => unimplemented!(),
+        };
 
         let image = Arc::new(Self {
             base: CLObjectBase::new(),
@@ -67,17 +69,35 @@ impl Mem {
         });
 
         let mut handle = cl_mem::from_arc(image);
-        Vcl::get().call_clCreateImage2DMESA(
-            context.get_handle(),
-            flags,
-            image_format,
-            image_width,
-            image_height,
-            image_row_pitch,
-            size,
-            host_ptr,
-            &mut handle,
-        )?;
+
+        match desc.image_type {
+            CL_MEM_OBJECT_IMAGE2D => Vcl::get().call_clCreateImage2DMESA(
+                context.get_handle(),
+                flags,
+                image_format,
+                desc.image_width,
+                desc.image_height,
+                desc.image_row_pitch,
+                size,
+                host_ptr,
+                &mut handle,
+            )?,
+            CL_MEM_OBJECT_IMAGE3D => Vcl::get().call_clCreateImage3DMESA(
+                context.get_handle(),
+                flags,
+                image_format,
+                desc.image_width,
+                desc.image_height,
+                desc.image_depth,
+                desc.image_row_pitch,
+                desc.image_slice_pitch,
+                size,
+                host_ptr,
+                &mut handle,
+            )?,
+            _ => unimplemented!(),
+        }
+
         Ok(handle)
     }
 }

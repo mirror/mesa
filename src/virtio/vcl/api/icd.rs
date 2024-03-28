@@ -37,7 +37,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetCommandQueueProperty: Some(clSetCommandQueueProperty),
     clCreateBuffer: Some(clCreateBuffer),
     clCreateImage2D: Some(clCreateImage2D),
-    clCreateImage3D: None,
+    clCreateImage3D: Some(clCreateImage3D),
     clRetainMemObject: Some(clRetainMemObject),
     clReleaseMemObject: Some(clReleaseMemObject),
     clGetSupportedImageFormats: None,

@@ -90,6 +90,20 @@ impl Device {
             )?;
         }
 
+        // Is there a default device?
+        let mut default_found = false;
+        for device in &devices {
+            if device.is_type(CL_DEVICE_TYPE_DEFAULT.into()) {
+                default_found = true;
+                break;
+            }
+        }
+
+        // No? Ok then first device is default
+        if !devices.is_empty() && !default_found {
+            devices[0].ty |= CL_DEVICE_TYPE_DEFAULT as u64;
+        }
+
         Ok(devices)
     }
 }

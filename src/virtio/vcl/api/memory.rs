@@ -57,6 +57,10 @@ fn validate_mem_flags(flags: cl_mem_flags, images: bool) -> CLResult<()> {
     Ok(())
 }
 
+fn image_type_valid(image_type: cl_mem_object_type) -> bool {
+    CL_IMAGE_TYPES.contains(&image_type)
+}
+
 fn validate_host_ptr(host_ptr: *mut c_void, flags: cl_mem_flags) -> CLResult<()> {
     // CL_INVALID_HOST_PTR if host_ptr is NULL and CL_MEM_USE_HOST_PTR or CL_MEM_COPY_HOST_PTR are
     // set in flags
@@ -480,6 +484,40 @@ fn create_image_3d(
         flags,
         image_format,
         host_ptr,
+    )
+}
+
+#[cl_entrypoint(clGetSupportedImageFormats)]
+fn get_supported_image_formats(
+    context: cl_context,
+    flags: cl_mem_flags,
+    image_type: cl_mem_object_type,
+    num_entries: cl_uint,
+    image_formats: *mut cl_image_format,
+    num_image_formats: *mut cl_uint,
+) -> CLResult<()> {
+    context.get_ref()?;
+
+    // CL_INVALID_VALUE if flags
+    validate_mem_flags(flags, true)?;
+
+    // or image_type are not valid
+    if !image_type_valid(image_type) {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_VALUE ... if num_entries is 0 and image_formats is not NULL.
+    if num_entries == 0 && !image_formats.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    Vcl::get().call_clGetSupportedImageFormats(
+        context,
+        flags,
+        image_type,
+        num_entries,
+        image_formats,
+        num_image_formats,
     )
 }
 

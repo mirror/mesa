@@ -214,6 +214,15 @@ pub fn check_cl_device_type(val: cl_device_type) -> CLResult<()> {
     Err(CL_INVALID_DEVICE_TYPE)
 }
 
+pub const CL_IMAGE_TYPES: [cl_mem_object_type; 6] = [
+    CL_MEM_OBJECT_IMAGE1D,
+    CL_MEM_OBJECT_IMAGE2D,
+    CL_MEM_OBJECT_IMAGE3D,
+    CL_MEM_OBJECT_IMAGE1D_ARRAY,
+    CL_MEM_OBJECT_IMAGE2D_ARRAY,
+    CL_MEM_OBJECT_IMAGE1D_BUFFER,
+];
+
 pub fn check_cl_bool<T: PartialEq + TryInto<cl_uint>>(val: T) -> Option<bool> {
     let c: u32 = val.try_into().ok()?;
     if c != CL_TRUE && c != CL_FALSE {

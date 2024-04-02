@@ -40,7 +40,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clCreateImage3D: Some(clCreateImage3D),
     clRetainMemObject: Some(clRetainMemObject),
     clReleaseMemObject: Some(clReleaseMemObject),
-    clGetSupportedImageFormats: None,
+    clGetSupportedImageFormats: Some(clGetSupportedImageFormats),
     clGetMemObjectInfo: Some(clGetMemObjectInfo),
     clGetImageInfo: None,
     clCreateSampler: Some(clCreateSampler),

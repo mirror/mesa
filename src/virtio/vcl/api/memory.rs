@@ -521,6 +521,32 @@ fn get_supported_image_formats(
     )
 }
 
+#[cl_entrypoint(clGetImageInfo)]
+fn get_image_info(
+    image: cl_mem,
+    param_name: cl_mem_info,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    image.get_ref()?;
+
+    let mut size = 0;
+    Vcl::get().call_clGetImageInfo(image, param_name, param_value_size, param_value, &mut size)?;
+
+    // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+    // type as specified in the Context Attributes table and param_value is not a NULL value.
+    if param_value_size < size && !param_value.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+    // If param_value_size_ret is NULL, it is ignored.
+    param_value_size_ret.write_checked(size);
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

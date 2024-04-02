@@ -344,3 +344,178 @@ pub fn link_program(
 
     Ok(program)
 }
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    use crate::api::test_util::*;
+
+    use std::ffi::CString;
+    use std::ptr;
+
+    const SOURCE_STRING: &str = "__kernel void nop() { }";
+
+    fn setup_program() -> (cl_program, cl_context, cl_device_id, cl_platform_id) {
+        let (context, device, platform) = setup_context();
+
+        let source_strings = CString::new(SOURCE_STRING).expect("Failed to create CString");
+        let mut strings = [source_strings.as_c_str().as_ptr()];
+        let program = create_program_with_source(
+            context,
+            strings.len() as _,
+            strings.as_mut_ptr(),
+            ptr::null(),
+        );
+
+        assert!(program.is_ok());
+        (program.unwrap(), context, device, platform)
+    }
+
+    #[test]
+    fn test_create_program_with_source() {
+        let (context, _, _) = setup_context();
+
+        let source_strings = CString::new(SOURCE_STRING).expect("Failed to create CString");
+        let mut strings = [source_strings.as_c_str().as_ptr()];
+        let program = create_program_with_source(
+            context,
+            strings.len() as _,
+            strings.as_mut_ptr(),
+            ptr::null(),
+        );
+
+        assert!(program.is_ok());
+    }
+
+    #[test]
+    fn test_retain_program() {
+        let (program, _, _, _) = setup_program();
+
+        assert!(retain_program(program).is_ok());
+        assert!(release_program(program).is_ok());
+        assert!(release_program(program).is_ok());
+    }
+
+    #[test]
+    fn test_release_program() {
+        let (program, _, _, _) = setup_program();
+
+        assert!(release_program(program).is_ok());
+    }
+
+    #[test]
+    fn test_get_program_info() {
+        let (program, _, _, _) = setup_program();
+
+        let mut param_value = 0;
+        let param_value_ptr: *mut c_void = &mut param_value as *mut _ as *mut c_void;
+        let mut param_value_size_ret = 0;
+
+        let ret = get_program_info(
+            program,
+            CL_PROGRAM_NUM_DEVICES,
+            std::mem::size_of::<cl_uint>(),
+            param_value_ptr,
+            &mut param_value_size_ret,
+        );
+
+        assert!(ret.is_ok());
+        assert_eq!(param_value, 1);
+        assert_eq!(param_value_size_ret, std::mem::size_of::<cl_uint>());
+    }
+
+    #[test]
+    fn test_get_program_build_info() {
+        let (program, _, device, _) = setup_program();
+
+        let mut param_value = CL_BUILD_ERROR;
+        let param_value_ptr: *mut c_void = &mut param_value as *mut _ as *mut c_void;
+        let mut param_value_size_ret = 0;
+
+        let ret = get_program_build_info(
+            program,
+            device,
+            CL_PROGRAM_BUILD_STATUS,
+            std::mem::size_of::<cl_build_status>(),
+            param_value_ptr,
+            &mut param_value_size_ret,
+        );
+
+        assert!(ret.is_ok());
+        assert_eq!(param_value, CL_BUILD_NONE);
+        assert_eq!(param_value_size_ret, std::mem::size_of::<cl_build_status>());
+    }
+
+    #[test]
+    fn test_build_program() {
+        let (program, _, device, _) = setup_program();
+        let devices = [device];
+
+        let ret = build_program(
+            program,
+            devices.len() as u32,
+            devices.as_ptr(),
+            ptr::null_mut(),
+            None,
+            ptr::null_mut(),
+        );
+
+        assert!(ret.is_ok());
+    }
+
+    #[test]
+    fn test_compile_program() {
+        let (program, _, device, _) = setup_program();
+        let devices = [device];
+
+        let ret = compile_program(
+            program,
+            devices.len() as u32,
+            devices.as_ptr(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            None,
+            ptr::null_mut(),
+        );
+
+        assert!(ret.is_ok());
+    }
+
+    #[ignore]
+    #[test]
+    fn test_link_program() {
+        let (program, context, device, _) = setup_program();
+        let devices = [device];
+        let programs = [program];
+
+        let ret = compile_program(
+            program,
+            devices.len() as u32,
+            devices.as_ptr(),
+            ptr::null_mut(),
+            0,
+            ptr::null_mut(),
+            ptr::null_mut(),
+            None,
+            ptr::null_mut(),
+        );
+
+        assert!(ret.is_ok());
+
+        let new_program = link_program(
+            context,
+            devices.len() as u32,
+            devices.as_ptr(),
+            ptr::null_mut(),
+            programs.len() as u32,
+            programs.as_ptr(),
+            None,
+            ptr::null_mut(),
+        );
+
+        assert!(new_program.is_ok());
+    }
+}

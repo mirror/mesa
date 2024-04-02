@@ -164,6 +164,18 @@ fn set_command_queue_property(
     Vcl::get().call_clSetCommandQueueProperty(queue, properties, enable, old_properties)
 }
 
+#[cl_entrypoint(clFlush)]
+fn flush(queue: cl_command_queue) -> CLResult<()> {
+    queue.get_ref()?;
+    Vcl::get().call_clFlush(queue)
+}
+
+#[cl_entrypoint(clFinish)]
+fn finish(queue: cl_command_queue) -> CLResult<()> {
+    queue.get_ref()?;
+    Vcl::get().call_clFinish(queue)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

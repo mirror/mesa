@@ -10,5 +10,7 @@ pub mod icd;
 mod memory;
 mod platform;
 mod queue;
+#[cfg(test)]
+mod test_util;
 mod types;
 pub mod util;

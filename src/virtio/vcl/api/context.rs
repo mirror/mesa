@@ -180,30 +180,14 @@ impl CLInfo<cl_context_info> for cl_context {
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::device::get_device_ids;
-    use crate::api::platform::get_platform_ids;
+
+    use crate::api::test_util::*;
 
     use std::ptr;
 
-    fn get_device() -> cl_device_id {
-        let mut platform = ptr::null_mut();
-        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
-
-        let dev_ty = CL_DEVICE_TYPE_ALL as u64;
-
-        let mut device = ptr::null_mut();
-        let mut num_devices = 0;
-        assert_eq!(
-            get_device_ids(platform, dev_ty, 1, &mut device, &mut num_devices),
-            Ok(())
-        );
-        assert_eq!(num_devices, 1);
-        device
-    }
-
     #[test]
     fn test_create_context() {
-        let device = get_device();
+        let (device, _) = setup_device();
 
         let ret = create_context(ptr::null(), 1, &device, None, ptr::null_mut());
         assert!(ret.is_ok());

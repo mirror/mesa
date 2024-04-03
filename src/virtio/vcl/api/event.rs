@@ -16,7 +16,7 @@ use std::ffi::c_void;
 use std::sync::Arc;
 
 #[cl_entrypoint(clCreateUserEvent)]
-fn create_user_event(context: cl_context) -> CLResult<cl_event> {
+pub fn create_user_event(context: cl_context) -> CLResult<cl_event> {
     context.get_ref()?;
 
     let Ok(event) = Event::new(context) else {
@@ -167,63 +167,23 @@ fn get_event_profiling_info(
 mod test {
     use super::*;
 
-    use crate::api::context::create_context;
-    use crate::api::device::get_device_ids;
-    use crate::api::platform::get_platform_ids;
-    use crate::api::queue::create_command_queue;
+    use crate::api::queue::*;
+    use crate::api::test_util::*;
 
     use std::ptr;
 
-    fn setup_platform() -> cl_platform_id {
-        let mut platform = ptr::null_mut();
-
-        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
-
-        platform
-    }
-
-    fn setup_device() -> cl_device_id {
-        let platform = setup_platform();
-        let mut device = ptr::null_mut();
-        let mut num_devices = 0;
-
-        assert_eq!(
-            get_device_ids(
-                platform,
-                CL_DEVICE_TYPE_ALL as u64,
-                1,
-                &mut device,
-                &mut num_devices
-            ),
-            Ok(())
-        );
-
-        assert_eq!(num_devices, 1);
-
-        device
-    }
-
-    fn setup_context() -> (cl_context, cl_device_id) {
-        let device = setup_device();
-
-        let context = create_context(ptr::null(), 1, &device, None, ptr::null_mut());
-        assert!(context.is_ok());
-
-        (context.unwrap(), device)
-    }
-
-    fn setup_event() -> (cl_event, cl_context, cl_device_id) {
-        let (context, device) = setup_context();
+    fn setup_event() -> (cl_event, cl_context, cl_device_id, cl_platform_id) {
+        let (context, device, platform) = setup_context();
 
         let event = create_user_event(context);
         assert!(event.is_ok());
 
-        (event.unwrap(), context, device)
+        (event.unwrap(), context, device, platform)
     }
 
     #[test]
     fn test_create_user_event() {
-        let (context, _) = setup_context();
+        let (context, _, _) = setup_context();
         let ret = create_user_event(context);
         assert!(ret.is_ok());
 
@@ -232,7 +192,7 @@ mod test {
 
     #[test]
     fn test_set_user_event_status() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         assert!(set_user_event_status(event, CL_COMPLETE as cl_int).is_ok());
     }
@@ -240,14 +200,14 @@ mod test {
     #[test]
     #[ignore]
     fn test_wait_for_user_events() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         assert!(wait_for_events(1, event as *const cl_event).is_ok());
     }
 
     #[test]
     fn test_get_event_info() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         let param_value_size = std::mem::size_of::<usize>();
         assert!(get_event_info(
@@ -262,7 +222,7 @@ mod test {
 
     #[test]
     fn test_retain_event() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         assert!(retain_event(event).is_ok());
         assert!(release_event(event).is_ok());
@@ -271,14 +231,14 @@ mod test {
 
     #[test]
     fn test_release_event() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         assert!(release_event(event).is_ok());
     }
 
     #[test]
     fn test_enqueue_marker_with_wait_list() {
-        let (event, context, device) = setup_event();
+        let (event, context, device, _) = setup_event();
 
         let ret = create_command_queue(context, device, 0);
         let queue = ret.unwrap();
@@ -288,7 +248,7 @@ mod test {
 
     #[test]
     fn test_enqueue_barrier_with_wait_list() {
-        let (event, context, device) = setup_event();
+        let (event, context, device, _) = setup_event();
 
         let ret = create_command_queue(context, device, 0);
         let queue = ret.unwrap();
@@ -298,7 +258,7 @@ mod test {
 
     #[test]
     fn test_get_event_profiling_info() {
-        let (event, _, _) = setup_event();
+        let (event, _, _, _) = setup_event();
 
         let param_value_size = std::mem::size_of::<cl_long>();
         assert_eq!(

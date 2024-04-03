@@ -163,6 +163,7 @@ vcl_files = files(
   'api/event.rs',
   'api/icd.rs',
   'api/platform.rs',
+  'api/test_util.rs',
   'api/types.rs',
   'api/util.rs',
   'api.rs',

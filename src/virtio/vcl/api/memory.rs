@@ -308,33 +308,15 @@ fn enqueue_write_buffer(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::context::*;
-    use crate::api::device::get_device_ids;
-    use crate::api::platform::get_platform_ids;
+
+    use crate::api::context::release_context;
+    use crate::api::test_util::*;
 
     use std::ptr;
 
-    fn get_context() -> cl_context {
-        let mut platform = ptr::null_mut();
-        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
-
-        let dev_ty = CL_DEVICE_TYPE_ALL as u64;
-
-        let mut device = ptr::null_mut();
-        let mut num_devices = 0;
-        assert_eq!(
-            get_device_ids(platform, dev_ty, 1, &mut device, &mut num_devices),
-            Ok(())
-        );
-        assert_eq!(num_devices, 1);
-
-        let ret = create_context(ptr::null(), 1, &device, None, ptr::null_mut());
-        ret.unwrap()
-    }
-
     #[test]
     fn test_create_buffer() {
-        let context = get_context();
+        let (context, _, _) = setup_context();
         let ret = create_buffer(context, 0, 1024, ptr::null_mut());
         let buffer = ret.unwrap();
         assert!(release_mem_object(buffer).is_ok());

@@ -106,14 +106,14 @@ fn get_device_info(
 #[cfg(test)]
 mod test {
     use super::*;
-    use crate::api::platform::get_platform_ids;
+
+    use crate::api::test_util::*;
 
     use std::ptr;
 
     #[test]
     fn test_get_device_ids() {
-        let mut platform = ptr::null_mut();
-        assert_eq!(get_platform_ids(1, &mut platform, ptr::null_mut()), Ok(()));
+        let platform = setup_platform();
 
         let dev_ty = CL_DEVICE_TYPE_ALL as u64;
 

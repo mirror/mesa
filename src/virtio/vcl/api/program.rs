@@ -11,12 +11,11 @@ use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
 use crate::dev::renderer::Vcl;
-use core::ptr;
 use mesa_rust_util::ptr::CheckedPtr;
 use std::collections::HashSet;
 use std::ffi::*;
-use std::slice;
 use std::sync::Arc;
+use std::*;
 
 #[cl_entrypoint(clCreateProgramWithSource)]
 pub fn create_program_with_source(
@@ -149,6 +148,56 @@ pub fn retain_program(program: cl_program) -> CLResult<()> {
     program.retain()
 }
 
+fn get_program_binaries(
+    program: cl_program,
+    param_value_size: usize,
+    param_value: *mut c_void,
+    param_value_size_ret: *mut usize,
+) -> CLResult<()> {
+    let mut size = 0;
+
+    // Get the size of the sizes array
+    Vcl::get().call_clGetProgramInfo(
+        program,
+        CL_PROGRAM_BINARY_SIZES,
+        0,
+        ptr::null_mut(),
+        &mut size,
+    )?;
+
+    let mut sizes = vec![0usize, size];
+    // Get the sizes of each binary
+    Vcl::get().call_clGetProgramInfo(
+        program,
+        CL_PROGRAM_BINARY_SIZES,
+        sizes.len() * mem::size_of::<usize>(),
+        sizes.as_mut_ptr().cast(),
+        ptr::null_mut(),
+    )?;
+
+    // Let us make sure the array of arrays is contiguous memory by creating a new array
+    // for all the binaries
+    let mut binaries = vec![0u8; sizes.iter().sum()];
+    // Fill the binaries array
+    Vcl::get().call_clGetProgramInfo(
+        program,
+        CL_PROGRAM_BINARIES,
+        binaries.len(),
+        binaries.as_mut_ptr().cast(),
+        param_value_size_ret,
+    )?;
+
+    // Copy the binaries back to the original argument
+    let ptrs: &[*mut u8] = unsafe { slice::from_raw_parts(param_value.cast(), param_value_size) };
+    let mut binary_ptr = binaries.as_ptr();
+    for (i, size) in sizes.into_iter().enumerate() {
+        unsafe { ptr::copy_nonoverlapping(binary_ptr, ptrs[i], size) };
+        binary_ptr = unsafe { binary_ptr.add(size) };
+    }
+
+    Ok(())
+}
+
 #[cl_entrypoint(clGetProgramInfo)]
 pub fn get_program_info(
     program: cl_program,
@@ -160,13 +209,19 @@ pub fn get_program_info(
     program.get_ref()?;
 
     let mut size = 0;
-    Vcl::get().call_clGetProgramInfo(
-        program,
-        param_name,
-        param_value_size,
-        param_value,
-        &mut size,
-    )?;
+
+    // This needs special handling, as the param_value is an array of arrays
+    if param_name == CL_PROGRAM_BINARIES && !param_value.is_null() {
+        get_program_binaries(program, param_value_size, param_value, &mut size)?;
+    } else {
+        Vcl::get().call_clGetProgramInfo(
+            program,
+            param_name,
+            param_value_size,
+            param_value,
+            &mut size,
+        )?;
+    }
 
     if param_value_size < size && !param_value.is_null() {
         return Err(CL_INVALID_VALUE);

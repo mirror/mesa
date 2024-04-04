@@ -305,6 +305,132 @@ fn enqueue_write_buffer(
     Ok(())
 }
 
+fn validate_addressing_mode(addressing_mode: cl_addressing_mode) -> CLResult<()> {
+    match addressing_mode {
+        CL_ADDRESS_NONE
+        | CL_ADDRESS_CLAMP_TO_EDGE
+        | CL_ADDRESS_CLAMP
+        | CL_ADDRESS_REPEAT
+        | CL_ADDRESS_MIRRORED_REPEAT => Ok(()),
+        _ => Err(CL_INVALID_VALUE),
+    }
+}
+
+fn validate_filter_mode(filter_mode: cl_filter_mode) -> CLResult<()> {
+    match filter_mode {
+        CL_FILTER_NEAREST | CL_FILTER_LINEAR => Ok(()),
+        _ => Err(CL_INVALID_VALUE),
+    }
+}
+
+fn create_sampler_impl(
+    context: cl_context,
+    normalized_coords: cl_bool,
+    addressing_mode: cl_addressing_mode,
+    filter_mode: cl_filter_mode,
+    props: Properties<cl_sampler_properties>,
+) -> CLResult<cl_sampler> {
+    let context = context.get_arc()?;
+
+    // CL_INVALID_VALUE if addressing_mode, filter_mode, normalized_coords or a combination of these
+    // arguements are not valid.
+    validate_addressing_mode(addressing_mode)?;
+    validate_filter_mode(filter_mode)?;
+
+    let sampler = Sampler::new(
+        context,
+        check_cl_bool(normalized_coords).ok_or(CL_INVALID_VALUE)?,
+        addressing_mode,
+        filter_mode,
+        props,
+    )?;
+
+    Ok(cl_sampler::from_arc(sampler))
+}
+
+#[cl_entrypoint(clCreateSampler)]
+fn create_sampler(
+    context: cl_context,
+    normalized_coords: cl_bool,
+    addressing_mode: cl_addressing_mode,
+    filter_mode: cl_filter_mode,
+) -> CLResult<cl_sampler> {
+    create_sampler_impl(
+        context,
+        normalized_coords,
+        addressing_mode,
+        filter_mode,
+        Properties::default(),
+    )
+}
+
+#[cl_entrypoint(clCreateSamplerWithProperties)]
+fn create_sampler_with_properties(
+    context: cl_context,
+    props: *const cl_sampler_properties,
+) -> CLResult<cl_sampler> {
+    let mut normalized_coords = CL_TRUE;
+    let mut addressing_mode = CL_ADDRESS_CLAMP;
+    let mut filter_mode = CL_FILTER_NEAREST;
+
+    // CL_INVALID_VALUE if the same property name is specified more than once.
+    let props = Properties::from_ptr(props).ok_or(CL_INVALID_VALUE)?;
+
+    for (key, val) in props.props.iter().copied() {
+        match key as u32 {
+            CL_SAMPLER_ADDRESSING_MODE => addressing_mode = val as u32,
+            CL_SAMPLER_FILTER_MODE => filter_mode = val as u32,
+            CL_SAMPLER_NORMALIZED_COORDS => normalized_coords = val as u32,
+            // CL_INVALID_VALUE if the property name in sampler_properties is not a supported
+            // property name
+            _ => return Err(CL_INVALID_VALUE),
+        }
+    }
+
+    create_sampler_impl(
+        context,
+        normalized_coords,
+        addressing_mode,
+        filter_mode,
+        props,
+    )
+}
+
+#[cl_entrypoint(clRetainSampler)]
+fn retain_sampler(sampler: cl_sampler) -> CLResult<()> {
+    sampler.retain()
+}
+
+#[cl_entrypoint(clReleaseSampler)]
+fn release_sampler(sampler: cl_sampler) -> CLResult<()> {
+    let arc_sampler = sampler.from_raw()?;
+    if Arc::strong_count(&arc_sampler) == 1 {
+        Vcl::get().call_clReleaseSampler(sampler)?;
+    }
+    Ok(())
+}
+
+#[cl_info_entrypoint(clGetSamplerInfo)]
+impl CLInfo<cl_sampler_info> for cl_sampler {
+    fn query(&self, q: cl_sampler_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let sampler = self.get_ref()?;
+        Ok(match q {
+            CL_SAMPLER_ADDRESSING_MODE => cl_prop::<cl_addressing_mode>(sampler.addressing_mode),
+            CL_SAMPLER_CONTEXT => {
+                // Note we use as_ptr here which doesn't increase the reference count.
+                let ptr = Arc::as_ptr(&sampler.context);
+                cl_prop::<cl_context>(cl_context::from_ptr(ptr))
+            }
+            CL_SAMPLER_FILTER_MODE => cl_prop::<cl_filter_mode>(sampler.filter_mode),
+            CL_SAMPLER_NORMALIZED_COORDS => cl_prop::<bool>(sampler.normalized_coords),
+            CL_SAMPLER_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            CL_SAMPLER_PROPERTIES => cl_prop::<&Properties<cl_sampler_properties>>(&sampler.props),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
@@ -321,5 +447,48 @@ mod test {
         let buffer = ret.unwrap();
         assert!(release_mem_object(buffer).is_ok());
         assert!(release_context(context).is_ok());
+    }
+
+    fn setup_sampler() -> (cl_sampler, cl_context, cl_device_id, cl_platform_id) {
+        let (context, device, platform) = setup_context();
+
+        // This line needs some kind of conditional compilation to choose
+        // between create_sampler() and create_sampler_with_properties() based
+        // on the OpenCL version used
+        let sampler = create_sampler_with_properties(context, ptr::null_mut());
+        assert!(sampler.is_ok());
+
+        (sampler.unwrap(), context, device, platform)
+    }
+
+    #[test]
+    fn test_retain_sampler() {
+        let (sampler, _, _, _) = setup_sampler();
+
+        assert!(retain_sampler(sampler).is_ok());
+        assert!(release_sampler(sampler).is_ok());
+        assert!(release_sampler(sampler).is_ok());
+    }
+
+    #[test]
+    fn test_release_sampler() {
+        let (sampler, _, _, _) = setup_sampler();
+
+        assert!(release_sampler(sampler).is_ok());
+    }
+
+    #[test]
+    fn test_get_sampler_info() {
+        let (sampler, _, _, _) = setup_sampler();
+
+        let param_value_size = std::mem::size_of::<cl_bool>();
+        assert!(sampler
+            .get_info(
+                CL_SAMPLER_NORMALIZED_COORDS,
+                param_value_size,
+                ptr::null_mut(),
+                ptr::null_mut()
+            )
+            .is_ok());
     }
 }

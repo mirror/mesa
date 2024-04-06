@@ -36,6 +36,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/Format.h>
 #include <llvm/IR/Module.h>
+#include <llvm/IR/Value.h>
 
 #if LLVM_VERSION_MAJOR >= 17
 #include <llvm/TargetParser/Host.h>
@@ -400,4 +401,30 @@ lp_function_add_debug_info(gallivm_state *gallivm, LLVMValueRef func, LLVMTypeRe
    lp_add_function_attr(func, -1, LP_FUNC_ATTR_OPTNONE);
 
    gallivm->di_function = di_function;
+}
+
+
+void
+lp_value_add_debug_info(struct gallivm_state *gallivm, LLVMValueRef _value, const char *name, uint32_t line, uint32_t column)
+{
+   llvm::Value *value = llvm::unwrap(_value);
+   if (!llvm::isa<llvm::Instruction>(value))
+      return;
+
+   llvm::BasicBlock *block = llvm::unwrap(LLVMGetInsertBlock(gallivm->builder));
+
+   LLVMMetadataRef di_type = lp_bld_debug_info_type(gallivm, LLVMTypeOf(_value));
+   LLVMMetadataRef di_var = LLVMDIBuilderCreateAutoVariable(
+      gallivm->di_builder, gallivm->di_function, name, strlen(name),
+      gallivm->file, line, di_type, true, LLVMDIFlagZero, 0);
+
+   LLVMMetadataRef di_expr = LLVMDIBuilderCreateExpression(gallivm->di_builder, NULL, 0);
+
+   LLVMMetadataRef di_loc = LLVMDIBuilderCreateDebugLocation(
+      gallivm->context, line, column, gallivm->di_function, NULL);
+
+   llvm::DbgVariableRecord *debug_variable = llvm::DbgVariableRecord::createDbgVariableRecord(
+      value, llvm::unwrap<llvm::DILocalVariable>(di_var), llvm::unwrap<llvm::DIExpression>(di_expr),
+      llvm::unwrap<llvm::DILocation>(di_loc));
+   block->insertDbgRecordAfter(debug_variable, (llvm::Instruction *)value);
 }

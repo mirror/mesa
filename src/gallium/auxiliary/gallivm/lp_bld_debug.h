@@ -103,6 +103,10 @@ void
 lp_function_add_debug_info(struct gallivm_state *gallivm, LLVMValueRef func, LLVMTypeRef func_type);
 
 
+void
+lp_value_add_debug_info(struct gallivm_state *gallivm, LLVMValueRef value, const char *name, uint32_t line, uint32_t column);
+
+
 #define LP_NIR_SHADER_DUMP_DIR "/tmp/nir_shaders"
 
 

@@ -56,6 +56,8 @@
 
 #include <llvm/BinaryFormat/Dwarf.h>
 
+#include <filesystem>
+
 
 /**
  * Check alignment.
@@ -376,6 +378,8 @@ lp_function_add_debug_info(gallivm_state *gallivm, LLVMValueRef func, LLVMTypeRe
       uint32_t shader_index = p_atomic_add_return(&global_shader_index, 1);
 
       asprintf(&gallivm->file_name, "%s/%u.nir", LP_NIR_SHADER_DUMP_DIR, shader_index);
+
+      std::filesystem::create_directory(LP_NIR_SHADER_DUMP_DIR);
 
       gallivm->file = LLVMDIBuilderCreateFile(gallivm->di_builder, gallivm->file_name, strlen(gallivm->file_name), ".", 1);
    

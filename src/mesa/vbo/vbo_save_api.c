@@ -606,7 +606,7 @@ compile_vertex_list(struct gl_context *ctx)
     * being compiled.
     */
    node = (struct vbo_save_vertex_list *)
-      _mesa_dlist_alloc_vertex_list(ctx, !save->dangling_attr_ref && !save->no_current_update);
+      _mesa_dlist_alloc_vertex_list(ctx, !save->dangling_attr_ref && save->restore_attrib_after_draw);
 
    if (!node)
       return;
@@ -629,7 +629,7 @@ compile_vertex_list(struct gl_context *ctx)
    memcpy(node->cold->prims, save->prim_store->prims, sizeof(struct _mesa_prim) * save->prim_store->used);
    node->cold->prim_count = save->prim_store->used;
 
-   if (!save->no_current_update) {
+   if (save->restore_attrib_after_draw) {
       GLuint current_size = save->vertex_size - save->attrsz[0];
 
       if (current_size) {
@@ -1673,7 +1673,7 @@ _save_CallLists(GLsizei n, GLenum type, const GLvoid * v)
  */
 void
 vbo_save_NotifyBegin(struct gl_context *ctx, GLenum mode,
-                     bool no_current_update)
+                     bool restore_attrib_after_draw)
 {
    struct vbo_save_context *save = &vbo_context(ctx)->save;
    const GLuint i = save->prim_store->used++;
@@ -1689,7 +1689,7 @@ vbo_save_NotifyBegin(struct gl_context *ctx, GLenum mode,
    save->prim_store->prims[i].start = get_vertex_count(save);
    save->prim_store->prims[i].count = 0;
 
-   save->no_current_update = no_current_update;
+   save->restore_attrib_after_draw = restore_attrib_after_draw;
 
    vbo_init_dispatch_save_begin_end(ctx);
 
@@ -1746,11 +1746,11 @@ _save_PrimitiveRestartNV(void)
    } else {
       /* get current primitive mode */
       GLenum curPrim = save->prim_store->prims[save->prim_store->used - 1].mode;
-      bool no_current_update = save->no_current_update;
+      bool restore_attrib_after_draw = save->restore_attrib_after_draw;
 
       /* restart primitive */
       CALL_End(ctx->Dispatch.Current, ());
-      vbo_save_NotifyBegin(ctx, curPrim, no_current_update);
+      vbo_save_NotifyBegin(ctx, curPrim, restore_attrib_after_draw);
    }
 }
 
@@ -1761,7 +1761,7 @@ save_Rectf(GLfloat x1, GLfloat y1, GLfloat x2, GLfloat y2)
    GET_CURRENT_CONTEXT(ctx);
    struct _glapi_table *dispatch = ctx->Dispatch.Current;
 
-   vbo_save_NotifyBegin(ctx, GL_QUADS, false);
+   vbo_save_NotifyBegin(ctx, GL_QUADS, true);
    CALL_Vertex2f(dispatch, (x1, y1));
    CALL_Vertex2f(dispatch, (x2, y1));
    CALL_Vertex2f(dispatch, (x2, y2));
@@ -1833,7 +1833,7 @@ save_DrawArrays(GLenum mode, GLint start, GLsizei count)
 
    _mesa_vao_map_arrays(ctx, vao, GL_MAP_READ_BIT);
 
-   vbo_save_NotifyBegin(ctx, mode, true);
+   vbo_save_NotifyBegin(ctx, mode, false);
 
    for (i = 0; i < count; i++)
       _mesa_array_element(ctx, start + i);
@@ -1946,7 +1946,7 @@ save_DrawElementsBaseVertex(GLenum mode, GLsizei count, GLenum type,
       indices =
          ADD_POINTERS(indexbuf->Mappings[MAP_INTERNAL].Pointer, indices);
 
-   vbo_save_NotifyBegin(ctx, mode, true);
+   vbo_save_NotifyBegin(ctx, mode, false);
 
    switch (type) {
    case GL_UNSIGNED_BYTE:

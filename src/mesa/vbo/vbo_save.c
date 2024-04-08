@@ -47,7 +47,7 @@ void vbo_save_init( struct gl_context *ctx )
    for (gl_vertex_processing_mode vpm = VP_MODE_FF; vpm < VP_MODE_MAX; ++vpm)
       save->VAO[vpm] = NULL;
 
-   save->no_current_update = false;
+   save->restore_attrib_after_draw = true;
 
    ctx->Driver.CurrentSavePrimitive = PRIM_OUTSIDE_BEGIN_END;
 }

@@ -5595,7 +5595,7 @@ save_Begin(GLenum mode)
    else {
       ctx->Driver.CurrentSavePrimitive = mode;
 
-      vbo_save_NotifyBegin(ctx, mode, false);
+      vbo_save_NotifyBegin(ctx, mode, true);
    }
 }
 

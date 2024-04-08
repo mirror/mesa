@@ -131,4 +131,12 @@ impl Device {
 
         Ok(devices)
     }
+
+    pub fn get_invalid_property(&self) -> cl_int {
+        if self.major > 1 || self.minor > 1 {
+            CL_INVALID_PROPERTY
+        } else {
+            CL_INVALID_VALUE
+        }
+    }
 }

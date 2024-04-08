@@ -46,8 +46,15 @@ pub fn create_context(
         return Err(CL_INVALID_PLATFORM);
     }
 
+    // Figure out the invalid property error to return
+    let device_handles = unsafe { slice::from_raw_parts(devices, num_devices as usize) };
+    let mut invalid_property = CL_INVALID_VALUE;
+    for device_handle in device_handles.iter().copied() {
+        invalid_property = device_handle.get_ref()?.get_invalid_property();
+    }
+
     // CL_INVALID_PROPERTY [...] if the same property name is specified more than once.
-    let props = Properties::from_ptr(properties).ok_or(CL_INVALID_PROPERTY)?;
+    let props = Properties::from_ptr(properties).ok_or(invalid_property)?;
     let platform_id = find_platform_in_properties(&props)?;
 
     for p in &props.props {
@@ -55,14 +62,12 @@ pub fn create_context(
             // Skip context platform as it's already been already handled
             CL_CONTEXT_PLATFORM => (),
             CL_CONTEXT_INTEROP_USER_SYNC => {
-                check_cl_bool(p.1).ok_or(CL_INVALID_PROPERTY)?;
+                check_cl_bool(p.1).ok_or(invalid_property)?;
             }
             // CL_INVALID_PROPERTY if context property name in properties is not a supported property name
-            _ => return Err(CL_INVALID_PROPERTY),
+            _ => return Err(invalid_property),
         }
     }
-
-    let device_handles = unsafe { slice::from_raw_parts(devices, num_devices as usize) };
 
     let platform = platform_id.get_ref()?;
     for dev in device_handles {

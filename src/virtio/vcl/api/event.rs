@@ -13,13 +13,14 @@ use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
 use std::ffi::c_void;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 
 #[cl_entrypoint(clCreateUserEvent)]
 pub fn create_user_event(context: cl_context) -> CLResult<cl_event> {
-    context.get_ref()?;
+    let ctx = context.get_arc()?;
 
-    let Ok(event) = Event::new(context) else {
+    let Ok(event) = Event::new(&ctx) else {
         return Err(CL_OUT_OF_RESOURCES);
     };
 
@@ -46,6 +47,21 @@ fn wait_for_events(num_events: cl_uint, event_list: *const cl_event) -> CLResult
     Vcl::get().call_clWaitForEvents(num_events, event_list)
 }
 
+impl CLInfo<cl_event_info> for cl_event {
+    fn query(&self, info: cl_event_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let event = self.get_ref()?;
+        Ok(match info {
+            CL_EVENT_CONTEXT => {
+                // Note we use as_ptr here which doesn't increase the reference count.
+                let ptr = Arc::as_ptr(&event.context);
+                cl_prop::<cl_context>(cl_context::from_ptr(ptr))
+            }
+            CL_EVENT_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
 #[cl_entrypoint(clGetEventInfo)]
 fn get_event_info(
     event: cl_event,
@@ -56,7 +72,7 @@ fn get_event_info(
 ) -> CLResult<()> {
     let mut size = 0;
 
-    if param_name == CL_EVENT_REFERENCE_COUNT {
+    if param_name == CL_EVENT_REFERENCE_COUNT || param_name == CL_EVENT_CONTEXT {
         return event.get_info(
             param_name,
             param_value_size,

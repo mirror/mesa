@@ -146,7 +146,13 @@ fn release_mem_object(mem: cl_mem) -> CLResult<()> {
 
 impl CLInfo<cl_mem_info> for cl_mem {
     fn query(&self, q: cl_mem_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let mem = self.get_ref()?;
         Ok(match q {
+            CL_MEM_CONTEXT => {
+                // Note we use as_ptr here which doesn't increase the reference count.
+                let ptr = Arc::as_ptr(&mem.context);
+                cl_prop::<cl_context>(cl_context::from_ptr(ptr))
+            }
             CL_MEM_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
             // CL_INVALID_VALUE if param_name is not one of the supported values
             _ => return Err(CL_INVALID_VALUE),
@@ -164,7 +170,7 @@ fn get_mem_object_info(
 ) -> CLResult<()> {
     mem.get_ref()?;
 
-    if param_name == CL_MEM_REFERENCE_COUNT {
+    if param_name == CL_MEM_REFERENCE_COUNT || param_name == CL_MEM_CONTEXT {
         return mem.get_info(
             param_name,
             param_value_size,
@@ -229,7 +235,7 @@ fn enqueue_read_buffer(
     }
 
     let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Arc::new(Event::default()))
+        cl_event::from_arc(Event::new(&queue.context)?)
     } else {
         ptr::null_mut()
     };
@@ -284,7 +290,7 @@ fn enqueue_write_buffer(
     }
 
     let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Arc::new(Event::default()))
+        cl_event::from_arc(Event::new(&queue.context)?)
     } else {
         ptr::null_mut()
     };

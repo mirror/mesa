@@ -66,6 +66,32 @@ impl Sampler {
         normalized_coords: bool,
         addressing_mode: cl_addressing_mode,
         filter_mode: cl_filter_mode,
+    ) -> CLResult<Arc<Sampler>> {
+        let sampler = Arc::new(Self {
+            base: CLObjectBase::new(),
+            context,
+            normalized_coords,
+            addressing_mode,
+            filter_mode,
+            props: Properties::default(),
+        });
+
+        Vcl::get().call_clCreateSamplerMESA(
+            sampler.context.get_handle(),
+            if normalized_coords { CL_TRUE } else { CL_FALSE },
+            addressing_mode,
+            filter_mode,
+            &mut sampler.get_handle(),
+        )?;
+
+        Ok(sampler)
+    }
+
+    pub fn new_with_properties(
+        context: Arc<Context>,
+        normalized_coords: bool,
+        addressing_mode: cl_addressing_mode,
+        filter_mode: cl_filter_mode,
         props: Properties<cl_sampler_properties>,
     ) -> CLResult<Arc<Sampler>> {
         let sampler = Arc::new(Self {

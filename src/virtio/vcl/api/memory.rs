@@ -323,31 +323,6 @@ fn validate_filter_mode(filter_mode: cl_filter_mode) -> CLResult<()> {
     }
 }
 
-fn create_sampler_impl(
-    context: cl_context,
-    normalized_coords: cl_bool,
-    addressing_mode: cl_addressing_mode,
-    filter_mode: cl_filter_mode,
-    props: Properties<cl_sampler_properties>,
-) -> CLResult<cl_sampler> {
-    let context = context.get_arc()?;
-
-    // CL_INVALID_VALUE if addressing_mode, filter_mode, normalized_coords or a combination of these
-    // arguements are not valid.
-    validate_addressing_mode(addressing_mode)?;
-    validate_filter_mode(filter_mode)?;
-
-    let sampler = Sampler::new(
-        context,
-        check_cl_bool(normalized_coords).ok_or(CL_INVALID_VALUE)?,
-        addressing_mode,
-        filter_mode,
-        props,
-    )?;
-
-    Ok(cl_sampler::from_arc(sampler))
-}
-
 #[cl_entrypoint(clCreateSampler)]
 fn create_sampler(
     context: cl_context,
@@ -355,13 +330,20 @@ fn create_sampler(
     addressing_mode: cl_addressing_mode,
     filter_mode: cl_filter_mode,
 ) -> CLResult<cl_sampler> {
-    create_sampler_impl(
-        context,
+    let normalized_coords = check_cl_bool(normalized_coords).ok_or(CL_INVALID_VALUE)?;
+    // CL_INVALID_VALUE if addressing_mode, filter_mode, normalized_coords or a combination of these
+    // arguements are not valid.
+    validate_addressing_mode(addressing_mode)?;
+    validate_filter_mode(filter_mode)?;
+
+    let sampler = Sampler::new(
+        context.get_arc()?,
         normalized_coords,
         addressing_mode,
         filter_mode,
-        Properties::default(),
-    )
+    )?;
+
+    Ok(cl_sampler::from_arc(sampler))
 }
 
 #[cl_entrypoint(clCreateSamplerWithProperties)]
@@ -387,13 +369,21 @@ fn create_sampler_with_properties(
         }
     }
 
-    create_sampler_impl(
-        context,
+    let normalized_coords = check_cl_bool(normalized_coords).ok_or(CL_INVALID_VALUE)?;
+    // CL_INVALID_VALUE if addressing_mode, filter_mode, normalized_coords or a combination of these
+    // arguements are not valid.
+    validate_addressing_mode(addressing_mode)?;
+    validate_filter_mode(filter_mode)?;
+
+    let sampler = Sampler::new_with_properties(
+        context.get_arc()?,
         normalized_coords,
         addressing_mode,
         filter_mode,
         props,
-    )
+    )?;
+
+    Ok(cl_sampler::from_arc(sampler))
 }
 
 #[cl_entrypoint(clRetainSampler)]

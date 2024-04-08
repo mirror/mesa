@@ -21,6 +21,8 @@ pub struct Device {
     ty: cl_device_type,
     /// Max size of memory object allocation in bytes
     pub max_mem_alloc_size: cl_ulong,
+    pub major: u8,
+    pub minor: u8,
 }
 
 impl Device {
@@ -29,6 +31,8 @@ impl Device {
             base: CLObjectBase::new(),
             ty: CL_DEVICE_TYPE_DEFAULT as u64,
             max_mem_alloc_size: 0,
+            major: 1,
+            minor: 0,
         }
     }
 
@@ -88,6 +92,27 @@ impl Device {
                 &mut device.max_mem_alloc_size as *mut _ as _,
                 ptr::null_mut(),
             )?;
+
+            // Update OpenCL version
+            let mut version_len = 0;
+            renderer.call_clGetDeviceInfo(
+                device.get_handle(),
+                CL_DEVICE_VERSION,
+                0,
+                ptr::null_mut(),
+                &mut version_len,
+            )?;
+            let mut version = vec![0u8; version_len];
+            renderer.call_clGetDeviceInfo(
+                device.get_handle(),
+                CL_DEVICE_VERSION,
+                version.len(),
+                version.as_mut_slice().as_mut_ptr() as _,
+                ptr::null_mut(),
+            )?;
+
+            device.major = version[7] - '0' as u8;
+            device.minor = version[9] - '0' as u8;
         }
 
         // Is there a default device?

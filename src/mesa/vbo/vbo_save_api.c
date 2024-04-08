@@ -612,6 +612,11 @@ compile_vertex_list(struct gl_context *ctx)
       return;
 
    node->cold = calloc(1, sizeof(*node->cold));
+   if (!node->cold) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "node->cold allocation failed");
+      save->out_of_memory = true;
+      return;
+   }
 
    /* Make sure the pointer is aligned to the size of a pointer */
    assert((GLintptr) node % sizeof(void *) == 0);
@@ -622,15 +627,10 @@ compile_vertex_list(struct gl_context *ctx)
    node->cold->wrap_count = save->copied.nr;
    node->cold->prims = malloc(sizeof(struct _mesa_prim) * save->prim_store->used);
    memcpy(node->cold->prims, save->prim_store->prims, sizeof(struct _mesa_prim) * save->prim_store->used);
-   node->cold->ib.obj = NULL;
    node->cold->prim_count = save->prim_store->used;
 
-   if (save->no_current_update) {
-      node->cold->current_data = NULL;
-   }
-   else {
+   if (!save->no_current_update) {
       GLuint current_size = save->vertex_size - save->attrsz[0];
-      node->cold->current_data = NULL;
 
       if (current_size) {
          node->cold->current_data = malloc(current_size * sizeof(GLfloat));
@@ -696,12 +696,30 @@ compile_vertex_list(struct gl_context *ctx)
    struct hash_table *vertex_to_index = NULL;
    fi_type *temp_vertices_buffer = NULL;
 
+   if (indices == NULL || (!all_prims_supported && tmp_indices == NULL)) {
+      _mesa_error(ctx, GL_OUT_OF_MEMORY, "indices allocation failed");
+      free(indices);
+      free(tmp_indices);
+      free(node->cold->prims);
+      save->out_of_memory = true;
+      return;
+   }
+
+
    /* The loopback replay code doesn't use the index buffer, so we can't
     * dedup vertices in this case.
     */
    if (!ctx->ListState.Current.UseLoopback) {
       vertex_to_index = _mesa_hash_table_create(NULL, _hash_vertex_key, _compare_vertex_key);
       temp_vertices_buffer = malloc(save->vertex_store->buffer_in_ram_size);
+      if (temp_vertices_buffer == NULL) {
+         _mesa_error(ctx, GL_OUT_OF_MEMORY, "indices allocation failed");
+         free(indices);
+         free(tmp_indices);
+         free(node->cold->prims);
+         save->out_of_memory = true;
+         return;
+      }
    }
 
    uint32_t max_index = 0;

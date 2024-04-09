@@ -6,14 +6,16 @@
 use crate::api::icd::*;
 use crate::api::types::*;
 use crate::api::util::*;
+use crate::core::device::Device;
 use crate::core::program::Program;
 use vcl_opencl_gen::*;
-use vcl_proc_macros::cl_entrypoint;
+use vcl_proc_macros::*;
 
 use crate::dev::renderer::Vcl;
 use mesa_rust_util::ptr::CheckedPtr;
 use std::collections::HashSet;
 use std::ffi::*;
+use std::mem::MaybeUninit;
 use std::sync::Arc;
 use std::*;
 
@@ -122,7 +124,7 @@ pub fn create_program_with_binary(
 #[cl_entrypoint(clCreateProgramWithIL)]
 pub fn create_program_with_il(
     context: cl_context,
-    il: *const ::std::os::raw::c_void,
+    il: *const c_void,
     length: usize,
 ) -> CLResult<cl_program> {
     let c = context.get_arc()?;
@@ -148,54 +150,31 @@ pub fn retain_program(program: cl_program) -> CLResult<()> {
     program.retain()
 }
 
-fn get_program_binaries(
-    program: cl_program,
-    param_value_size: usize,
-    param_value: *mut c_void,
-    param_value_size_ret: *mut usize,
-) -> CLResult<()> {
-    let mut size = 0;
-
-    // Get the size of the sizes array
-    Vcl::get().call_clGetProgramInfo(
-        program,
-        CL_PROGRAM_BINARY_SIZES,
-        0,
-        ptr::null_mut(),
-        &mut size,
-    )?;
-
-    let mut sizes = vec![0usize, size];
-    // Get the sizes of each binary
-    Vcl::get().call_clGetProgramInfo(
-        program,
-        CL_PROGRAM_BINARY_SIZES,
-        sizes.len() * mem::size_of::<usize>(),
-        sizes.as_mut_ptr().cast(),
-        ptr::null_mut(),
-    )?;
-
-    // Let us make sure the array of arrays is contiguous memory by creating a new array
-    // for all the binaries
-    let mut binaries = vec![0u8; sizes.iter().sum()];
-    // Fill the binaries array
-    Vcl::get().call_clGetProgramInfo(
-        program,
-        CL_PROGRAM_BINARIES,
-        binaries.len(),
-        binaries.as_mut_ptr().cast(),
-        param_value_size_ret,
-    )?;
-
-    // Copy the binaries back to the original argument
-    let ptrs: &[*mut u8] = unsafe { slice::from_raw_parts(param_value.cast(), param_value_size) };
-    let mut binary_ptr = binaries.as_ptr();
-    for (i, size) in sizes.into_iter().enumerate() {
-        unsafe { ptr::copy_nonoverlapping(binary_ptr, ptrs[i], size) };
-        binary_ptr = unsafe { binary_ptr.add(size) };
+impl CLInfo<cl_program_info> for cl_program {
+    fn query(&self, q: cl_program_info, vals: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let prog = self.get_ref()?;
+        Ok(match q {
+            CL_PROGRAM_BINARIES => cl_prop::<Vec<*mut u8>>(prog.binaries(vals)?),
+            CL_PROGRAM_BINARY_SIZES => cl_prop::<Vec<usize>>(prog.bin_sizes()?),
+            CL_PROGRAM_CONTEXT => {
+                // Note we use as_ptr here which doesn't increase the reference count.
+                let ptr = Arc::as_ptr(&prog.context);
+                cl_prop::<cl_context>(cl_context::from_ptr(ptr))
+            }
+            CL_PROGRAM_DEVICES => cl_prop::<Vec<cl_device_id>>(
+                prog.devs
+                    .iter()
+                    .map(|&d| cl_device_id::from_ptr(d))
+                    .collect(),
+            ),
+            CL_PROGRAM_NUM_DEVICES => cl_prop::<cl_uint>(prog.devs.len() as cl_uint),
+            CL_PROGRAM_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            CL_PROGRAM_SCOPE_GLOBAL_CTORS_PRESENT => cl_prop::<cl_bool>(CL_FALSE),
+            CL_PROGRAM_SCOPE_GLOBAL_DTORS_PRESENT => cl_prop::<cl_bool>(CL_FALSE),
+            // CL_INVALID_VALUE if param_name is not one of the supported values
+            _ => return Err(CL_INVALID_VALUE),
+        })
     }
-
-    Ok(())
 }
 
 #[cl_entrypoint(clGetProgramInfo)]
@@ -210,26 +189,39 @@ pub fn get_program_info(
 
     let mut size = 0;
 
-    // This needs special handling, as the param_value is an array of arrays
-    if param_name == CL_PROGRAM_BINARIES && !param_value.is_null() {
-        get_program_binaries(program, param_value_size, param_value, &mut size)?;
-    } else {
-        Vcl::get().call_clGetProgramInfo(
-            program,
+    match param_name {
+        CL_PROGRAM_BINARIES
+        | CL_PROGRAM_BINARY_SIZES
+        | CL_PROGRAM_CONTEXT
+        | CL_PROGRAM_DEVICES
+        | CL_PROGRAM_NUM_DEVICES
+        | CL_PROGRAM_REFERENCE_COUNT
+        | CL_PROGRAM_SCOPE_GLOBAL_CTORS_PRESENT
+        | CL_PROGRAM_SCOPE_GLOBAL_DTORS_PRESENT => program.get_info(
             param_name,
             param_value_size,
             param_value,
-            &mut size,
-        )?;
+            param_value_size_ret,
+        ),
+        CL_PROGRAM_IL | CL_PROGRAM_KERNEL_NAMES | CL_PROGRAM_NUM_KERNELS | CL_PROGRAM_SOURCE => {
+            Vcl::get().call_clGetProgramInfo(
+                program,
+                param_name,
+                param_value_size,
+                param_value,
+                &mut size,
+            )?;
+
+            if param_value_size < size && !param_value.is_null() {
+                return Err(CL_INVALID_VALUE);
+            }
+
+            param_value_size_ret.write_checked(size);
+            Ok(())
+        }
+        // CL_INVALID_VALUE if param_name is not one of the supported values
+        _ => Err(CL_INVALID_VALUE),
     }
-
-    if param_value_size < size && !param_value.is_null() {
-        return Err(CL_INVALID_VALUE);
-    }
-
-    param_value_size_ret.write_checked(size);
-
-    Ok(())
 }
 
 #[cl_entrypoint(clGetProgramBuildInfo)]
@@ -359,6 +351,22 @@ pub fn compile_program(
     Ok(())
 }
 
+fn validate_devices<'a>(
+    device_list: *const cl_device_id,
+    num_devices: cl_uint,
+    default: &[&'a Device],
+) -> CLResult<Vec<&'a Device>> {
+    let mut devs = cl_device_id::get_ref_vec_from_arr(device_list, num_devices)?;
+
+    // If device_list is a NULL value, the compile is performed for all devices associated with
+    // program.
+    if devs.is_empty() {
+        devs = default.to_vec();
+    }
+
+    Ok(devs)
+}
+
 #[cl_entrypoint(clLinkProgram)]
 pub fn link_program(
     context: cl_context,
@@ -371,6 +379,7 @@ pub fn link_program(
     user_data: *mut ::std::os::raw::c_void,
 ) -> CLResult<cl_program> {
     let c = context.get_arc()?;
+    let devs = validate_devices(device_list, num_devices, &c.devices)?;
 
     check_cb(&pfn_notify, user_data)?;
 
@@ -388,8 +397,7 @@ pub fn link_program(
 
     let program = cl_program::from_arc(Program::link(
         c,
-        num_devices,
-        device_list,
+        devs,
         options,
         num_input_programs,
         input_programs,

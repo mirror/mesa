@@ -19,6 +19,7 @@ impl_cl_type_trait!(cl_program, Program, CL_INVALID_PROGRAM);
 pub struct Program {
     base: CLObjectBase<CL_INVALID_PROGRAM>,
     pub context: Arc<Context>,
+    pub devs: Vec<&'static Device>,
 }
 
 impl Program {
@@ -31,6 +32,7 @@ impl Program {
         let program = Arc::new(Program {
             base: Default::default(),
             context: context.clone(),
+            devs: context.devices.clone(),
         });
 
         // Construct a list fo null-terminated strings
@@ -75,6 +77,7 @@ impl Program {
         let program = Arc::new(Program {
             base: Default::default(),
             context: context.clone(),
+            devs,
         });
 
         let mut dev_handles = Vec::default();
@@ -82,7 +85,7 @@ impl Program {
         let mut binaries_size: usize = 0;
         let mut tot_bin = Vec::new();
 
-        for (i, d) in devs.iter().enumerate() {
+        for (i, d) in program.devs.iter().enumerate() {
             dev_handles.push(d.get_handle());
             lengths.push(bins[i].len());
             binaries_size += bins[i].len();
@@ -91,7 +94,7 @@ impl Program {
 
         Vcl::get().call_clCreateProgramWithBinaryMESA(
             context.get_handle(),
-            devs.len() as u32,
+            dev_handles.len() as u32,
             dev_handles.as_ptr(),
             lengths.as_ptr(),
             binaries_size,
@@ -105,12 +108,13 @@ impl Program {
 
     pub fn new_with_il(
         context: Arc<Context>,
-        il: *const ::std::os::raw::c_void,
+        il: *const c_void,
         length: usize,
     ) -> CLResult<Arc<Program>> {
         let program = Arc::new(Program {
             base: Default::default(),
             context: context.clone(),
+            devs: context.devices.clone(),
         });
 
         Vcl::get().call_clCreateProgramWithILMESA(
@@ -125,8 +129,7 @@ impl Program {
 
     pub fn link(
         context: Arc<Context>,
-        num_devices: cl_uint,
-        device_list: *const cl_device_id,
+        devs: Vec<&'static Device>,
         options: *const c_char,
         num_input_programs: cl_uint,
         input_programs: *const cl_program,
@@ -134,12 +137,18 @@ impl Program {
         let program = Arc::new(Program {
             base: Default::default(),
             context: context.clone(),
+            devs,
         });
+
+        let mut device_handles = Vec::with_capacity(program.devs.len());
+        for dev in &program.devs {
+            device_handles.push(dev.get_handle());
+        }
 
         Vcl::get().call_clLinkProgramMESA(
             context.get_handle(),
-            num_devices,
-            device_list,
+            program.devs.len() as _,
+            device_handles.as_ptr(),
             options,
             num_input_programs,
             input_programs,
@@ -148,5 +157,69 @@ impl Program {
         )?;
 
         Ok(program)
+    }
+
+    pub fn bin_sizes(&self) -> CLResult<Vec<usize>> {
+        let mut size = 0;
+
+        // Get the size of the sizes array
+        Vcl::get().call_clGetProgramInfo(
+            self.get_handle(),
+            CL_PROGRAM_BINARY_SIZES,
+            0,
+            ptr::null_mut(),
+            &mut size,
+        )?;
+
+        let mut sizes = vec![0usize, size];
+        // Get the sizes of each binary
+        Vcl::get().call_clGetProgramInfo(
+            self.get_handle(),
+            CL_PROGRAM_BINARY_SIZES,
+            sizes.len() * mem::size_of::<usize>(),
+            sizes.as_mut_ptr().cast(),
+            ptr::null_mut(),
+        )?;
+
+        Ok(sizes)
+    }
+
+    pub fn binaries(&self, vals: &[u8]) -> CLResult<Vec<*mut u8>> {
+        // if the application didn't provide any pointers, just return the length of devices
+        if vals.is_empty() {
+            return Ok(vec![ptr::null_mut(); self.devs.len()]);
+        }
+
+        // vals is an array of pointers where we should write the device binaries into
+        if vals.len() != self.devs.len() * mem::size_of::<*const u8>() {
+            panic!("wrong size")
+        }
+
+        let ptrs: &[*mut u8] = unsafe {
+            slice::from_raw_parts(vals.as_ptr().cast(), vals.len() / mem::size_of::<*mut u8>())
+        };
+
+        let sizes = self.bin_sizes()?;
+
+        // Let us make sure the array of arrays is contiguous memory by creating a new array
+        // for all the binaries
+        let mut binaries = vec![0u8; sizes.iter().sum()];
+        // Fill the binaries array
+        Vcl::get().call_clGetProgramInfo(
+            self.get_handle(),
+            CL_PROGRAM_BINARIES,
+            binaries.len(),
+            binaries.as_mut_ptr().cast(),
+            ptr::null_mut(),
+        )?;
+
+        // Copy the binaries back to the original argument
+        let mut binary_ptr = binaries.as_ptr();
+        for (i, size) in sizes.into_iter().enumerate() {
+            unsafe { ptr::copy_nonoverlapping(binary_ptr, ptrs[i], size) };
+            binary_ptr = unsafe { binary_ptr.add(size) };
+        }
+
+        Ok(ptrs.to_vec())
     }
 }

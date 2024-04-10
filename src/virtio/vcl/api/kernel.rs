@@ -5,6 +5,7 @@
 
 use crate::api::icd::*;
 use crate::api::util::*;
+use crate::core::event::Event;
 use crate::core::kernel::Kernel;
 use crate::dev::renderer::Vcl;
 
@@ -16,6 +17,7 @@ use std::mem::MaybeUninit;
 use std::os::raw::c_char;
 use std::os::raw::c_void;
 use std::sync::Arc;
+use std::*;
 
 #[cl_entrypoint(clCreateKernel)]
 fn create_kernel(program: cl_program, kernel_name: *const c_char) -> CLResult<cl_kernel> {
@@ -245,6 +247,122 @@ fn get_kernel_sub_group_info(
 
     param_value_size_ret.write_checked(size);
 
+    Ok(())
+}
+
+const ZERO_ARR: [usize; 3] = [0; 3];
+
+/// # Safety
+///
+/// This function is only safe when called on an array of `work_dim` length
+unsafe fn kernel_work_arr_or_default<'a>(arr: *const usize, work_dim: cl_uint) -> &'a [usize] {
+    if !arr.is_null() {
+        unsafe { slice::from_raw_parts(arr, work_dim as usize) }
+    } else {
+        &ZERO_ARR
+    }
+}
+
+#[cl_entrypoint(clEnqueueNDRangeKernel)]
+fn enqueue_ndrange_kernel(
+    command_queue: cl_command_queue,
+    kernel: cl_kernel,
+    work_dim: cl_uint,
+    global_work_offset: *const usize,
+    global_work_size: *const usize,
+    local_work_size: *const usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let kernel = kernel.get_arc()?;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and kernel are not the same
+    if queue.context != kernel.program.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_PROGRAM_EXECUTABLE if there is no successfully built program executable available
+    // for device associated with command_queue.
+
+    // CL_INVALID_KERNEL_ARGS if the kernel argument values have not been specified.
+
+    // CL_INVALID_WORK_DIMENSION if work_dim is not a valid value (i.e. a value between 1 and
+    // CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS).
+
+    // we assume the application gets it right and doesn't pass shorter arrays then actually needed.
+    let global_work_size = unsafe { kernel_work_arr_or_default(global_work_size, work_dim) };
+    let local_work_size = unsafe { kernel_work_arr_or_default(local_work_size, work_dim) };
+    let global_work_offset = unsafe { kernel_work_arr_or_default(global_work_offset, work_dim) };
+
+    for i in 0..work_dim as usize {
+        let lws = local_work_size[i];
+        let gws = global_work_size[i];
+
+        // CL_INVALID_WORK_ITEM_SIZE if the number of work-items specified in any of
+        // local_work_size[0], … local_work_size[work_dim - 1] is greater than the corresponding
+        // values specified by
+        // CL_DEVICE_MAX_WORK_ITEM_SIZES[0], …, CL_DEVICE_MAX_WORK_ITEM_SIZES[work_dim - 1].
+
+        // CL_INVALID_WORK_GROUP_SIZE if the work-group size must be uniform and the
+        // local_work_size is not NULL, [...] if the global_work_size is not evenly divisible by
+        // the local_work_size.
+        if lws != 0 && gws % lws != 0 {
+            return Err(CL_INVALID_WORK_GROUP_SIZE);
+        }
+
+        // CL_INVALID_WORK_GROUP_SIZE if local_work_size is specified and does not match the
+        // required work-group size for kernel in the program source.
+
+        // CL_INVALID_GLOBAL_WORK_SIZE if any of the values specified in global_work_size[0], …
+        // global_work_size[work_dim - 1] exceed the maximum value representable by size_t on
+        // the device on which the kernel-instance will be enqueued.
+
+        // CL_INVALID_GLOBAL_OFFSET if the value specified in global_work_size + the
+        // corresponding values in global_work_offset for any dimensions is greater than the
+        // maximum value representable by size t on the device on which the kernel-instance
+        // will be enqueued
+    }
+
+    // If global_work_size is NULL, or the value in any passed dimension is 0 then the kernel
+    // command should trivially succeed after its event dependencies are satisfied and subsequently
+    // update its completion event.
+
+    let mut ev_handle = if !event.is_null() {
+        cl_event::from_arc(Event::new(&queue.context))
+    } else {
+        ptr::null_mut()
+    };
+
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
+    Vcl::get().call_clEnqueueNDRangeKernel(
+        queue.get_handle(),
+        kernel.get_handle(),
+        work_dim,
+        global_work_offset.as_ptr(),
+        global_work_size.as_ptr(),
+        local_work_size.as_ptr(),
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+
+    //• CL_INVALID_WORK_GROUP_SIZE if local_work_size is specified and is not consistent with the required number of sub-groups for kernel in the program source.
+    //• CL_INVALID_WORK_GROUP_SIZE if local_work_size is specified and the total number of work-items in the work-group computed as local_work_size[0] × … local_work_size[work_dim - 1] is greater than the value specified by CL_KERNEL_WORK_GROUP_SIZE in the Kernel Object Device Queries table.
+    //• CL_MISALIGNED_SUB_BUFFER_OFFSET if a sub-buffer object is specified as the value for an argument that is a buffer object and the offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for device associated with queue. This error code
+    //• CL_INVALID_IMAGE_SIZE if an image object is specified as an argument value and the image dimensions (image width, height, specified or compute row and/or slice pitch) are not supported by device associated with queue.
+    //• CL_IMAGE_FORMAT_NOT_SUPPORTED if an image object is specified as an argument value and the image format (image channel order and data type) is not supported by device associated with queue.
+    //• CL_OUT_OF_RESOURCES if there is a failure to queue the execution instance of kernel on the command-queue because of insufficient resources needed to execute the kernel. For example, the explicitly specified local_work_size causes a failure to execute the kernel because of insufficient resources such as registers or local memory. Another example would be the number of read-only image args used in kernel exceed the CL_DEVICE_MAX_READ_IMAGE_ARGS value for device or the number of write-only and read-write image args used in kernel exceed the CL_DEVICE_MAX_READ_WRITE_IMAGE_ARGS value for device or the number of samplers used in kernel exceed CL_DEVICE_MAX_SAMPLERS for device.
+    //• CL_MEM_OBJECT_ALLOCATION_FAILURE if there is a failure to allocate memory for data store associated with image or buffer objects specified as arguments to kernel.
+    //• CL_INVALID_OPERATION if SVM pointers are passed as arguments to a kernel and the device does not support SVM or if system pointers are passed as arguments to a kernel and/or stored inside SVM allocations passed as kernel arguments and the device does not support fine grain system SVM allocations.
     Ok(())
 }
 

@@ -81,7 +81,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueMapBuffer: None,
     clEnqueueMapImage: None,
     clEnqueueUnmapMemObject: None,
-    clEnqueueNDRangeKernel: None,
+    clEnqueueNDRangeKernel: Some(clEnqueueNDRangeKernel),
     clEnqueueTask: None,
     clEnqueueNativeKernel: None,
     clEnqueueMarker: None,

@@ -11,7 +11,7 @@ use crate::dev::virtgpu::*;
 use crate::dev::vtest::*;
 use crate::protocol::VclCsEncoder;
 
-use vcl_opencl_gen::cl_platform_id;
+use vcl_opencl_gen::*;
 use vcl_virglrenderer_gen::*;
 
 use std::ffi::c_void;
@@ -101,18 +101,24 @@ impl Vcl {
     }
 
     pub fn new_with_virtgpu() -> CLResult<Self> {
-        let drm_devices = DrmDevice::virtgpus()?;
-        assert!(!drm_devices.is_empty(), "Failed to find VirtIO-GPUs");
-
-        let first_drm_device = drm_devices.into_iter().nth(0).unwrap();
-        let virtgpu = VirtGpu::new(first_drm_device)?;
-
         let mut ret = Self {
-            renderer: Box::new(virtgpu),
+            renderer: Box::new(Self::find_vcl_virtgpu()?),
             platforms: Vec::new(),
         };
         ret.platforms = Platform::all(&ret)?;
         Ok(ret)
+    }
+
+    pub fn find_vcl_virtgpu() -> CLResult<VirtGpu> {
+        let drm_devices = DrmDevice::virtgpus()?;
+        assert!(!drm_devices.is_empty(), "Failed to find VirtIO-GPUs");
+
+        for device in drm_devices {
+            if let Ok(gpu) = VirtGpu::new(device) {
+                return Ok(gpu);
+            }
+        }
+        return Err(CL_VIRTGPU_NOT_FOUND_MESA);
     }
 
     pub fn new_with_vtest() -> CLResult<Self> {

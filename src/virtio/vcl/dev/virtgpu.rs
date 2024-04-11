@@ -75,11 +75,11 @@ impl VirtGpu {
 
     /// Returns all VirtIO-GPUs available in the system
     pub fn all() -> CLResult<Vec<VirtGpu>> {
-        let gpus: Result<_, _> = DrmDevice::virtgpus()?
+        let gpus: Vec<_> = DrmDevice::virtgpus()?
             .into_iter()
-            .map(VirtGpu::new)
+            .filter_map(|drm_device| VirtGpu::new(drm_device).ok())
             .collect();
-        Ok(gpus?)
+        Ok(gpus)
     }
 }
 
@@ -165,6 +165,12 @@ impl VirtGpuParams {
         ];
         for param in &mut params {
             param.set(drm_device.get_param(param.id).unwrap_or_default());
+            log!(
+                VclDebugFlags::Info,
+                "virtgpu {:?}: {}",
+                param.id,
+                param.is_set()
+            );
         }
         Ok(Self { params })
     }

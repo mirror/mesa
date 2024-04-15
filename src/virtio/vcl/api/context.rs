@@ -20,6 +20,29 @@ use std::mem::MaybeUninit;
 use std::slice;
 use std::sync::Arc;
 
+fn validate_device(device_handle: cl_device_id) -> CLResult<()> {
+    if device_handle.is_null() {
+        return Err(CL_INVALID_DEVICE);
+    }
+
+    let platforms = Vcl::get().get_platforms();
+    for platform in platforms.iter() {
+        for device in &platform.devices {
+            if device.get_handle() == device_handle {
+                return Ok(());
+            }
+        }
+    }
+    Err(CL_INVALID_DEVICE)
+}
+
+fn validate_devices(device_handles: &[cl_device_id]) -> CLResult<()> {
+    for device_handle in device_handles.iter().copied() {
+        validate_device(device_handle)?;
+    }
+    Ok(())
+}
+
 #[cl_entrypoint(clCreateContext)]
 pub fn create_context(
     properties: *const cl_context_properties,
@@ -46,8 +69,11 @@ pub fn create_context(
         return Err(CL_INVALID_PLATFORM);
     }
 
-    // Figure out the invalid property error to return
     let device_handles = unsafe { slice::from_raw_parts(devices, num_devices as usize) };
+
+    validate_devices(device_handles)?;
+
+    // Figure out the invalid property error to return
     let mut invalid_property = CL_INVALID_VALUE;
     for device_handle in device_handles.iter().copied() {
         invalid_property = device_handle.get_ref()?.get_invalid_property();

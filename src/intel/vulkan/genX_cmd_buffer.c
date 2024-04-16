@@ -4250,23 +4250,24 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       const VkDependencyInfo *dep_info = &dep_infos[d];
 
       for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
-         src_flags |= dep_info->pMemoryBarriers[i].srcAccessMask;
-         dst_flags |= dep_info->pMemoryBarriers[i].dstAccessMask;
+         const VkMemoryBarrier2 *mem_barrier = &dep_info->pMemoryBarriers[i];
+         src_flags |= mem_barrier->srcAccessMask;
+         dst_flags |= mem_barrier->dstAccessMask;
 
          src_stages |= dep_info->pMemoryBarriers[i].srcStageMask;
 
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
           */
-         if (stage_is_shader(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_shader_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
-             stage_is_transfer(dep_info->pMemoryBarriers[i].dstStageMask)) {
+         if (stage_is_shader(mem_barrier->srcStageMask) &&
+             mask_is_shader_write(mem_barrier->srcAccessMask) &&
+             stage_is_transfer(mem_barrier->dstStageMask)) {
             cmd_buffer->state.queries.buffer_write_bits |=
                ANV_QUERY_COMPUTE_WRITES_PENDING_BITS;
          }
 
-         if (stage_is_transfer(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_transfer_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
+         if (stage_is_transfer(mem_barrier->srcStageMask) &&
+             mask_is_transfer_write(mem_barrier->srcAccessMask) &&
              cmd_buffer_has_pending_copy_query(cmd_buffer))
             flush_query_copies = true;
 

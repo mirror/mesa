@@ -24,6 +24,7 @@ use std::alloc::Layout;
 use std::cmp;
 use std::cmp::Ordering;
 use std::mem::{self, MaybeUninit};
+use std::num::NonZeroU64;
 use std::os::raw::c_void;
 use std::ptr;
 use std::slice;
@@ -232,6 +233,21 @@ unsafe impl CLInfo<cl_mem_info> for cl_mem {
                 let ptr = Arc::as_ptr(&mem.context);
                 v.write::<cl_context>(cl_context::from_ptr(ptr))
             }
+            CL_MEM_DEVICE_ADDRESS_EXT => {
+                let buffer = Buffer::ref_from_raw(*self)?;
+                let addresses = buffer
+                    .get_address_of_res()
+                    // CL_INVALID_OPERATION is returned for the CL_MEM_DEVICE_ADDRESS_EXT query if
+                    // the cl_ext_buffer_device_address extension is not supported or if the buffer
+                    // was not allocated with CL_MEM_DEVICE_PRIVATE_ADDRESS_EXT.
+                    //
+                    // We don't have to explicitly check here, as we will get None returned if
+                    // either of those conditions are true.
+                    .ok_or(CL_INVALID_OPERATION)?
+                    .map(|(_, address)| address.map(NonZeroU64::get).unwrap_or_default());
+
+                v.write_iter::<cl_mem_device_address_ext>(addresses)
+            }
             CL_MEM_FLAGS => v.write::<cl_mem_flags>(mem.flags),
             // TODO debugging feature
             CL_MEM_MAP_COUNT => v.write::<cl_uint>(0),
@@ -301,9 +317,18 @@ fn create_buffer_with_properties(
     // CL_INVALID_PROPERTY if a property name in properties is not a supported property name, if
     // the value specified for a supported property name is not valid, or if the same property name
     // is specified more than once.
-    if !props.is_empty() {
-        // we don't support any properties
-        return Err(CL_INVALID_PROPERTY);
+    for (&key, _) in props.iter() {
+        match key as u32 {
+            CL_MEM_DEVICE_PRIVATE_ADDRESS_EXT => {
+                // CL_INVALID_OPERATION If properties includes CL_MEM_DEVICE_PRIVATE_ADDRESS_EXT and
+                // there are no devices in the context that support the cl_ext_buffer_device_address
+                // extension.
+                if c.devs.iter().all(|dev| !dev.bda_supported()) {
+                    return Err(CL_INVALID_OPERATION);
+                }
+            }
+            _ => return Err(CL_INVALID_PROPERTY),
+        }
     }
 
     Ok(MemBase::new_buffer(c, flags, size, host_ptr, props)?.into_cl())
@@ -365,7 +390,7 @@ fn create_sub_buffer(
         _ => return Err(CL_INVALID_VALUE),
     };
 
-    Ok(MemBase::new_sub_buffer(b, flags, offset, size).into_cl())
+    Ok(MemBase::new_sub_buffer(b, flags, offset, size)?.into_cl())
 
     // TODO
     // CL_MISALIGNED_SUB_BUFFER_OFFSET if there are no devices in context associated with buffer for which the origin field of the cl_buffer_region structure passed in buffer_create_info is aligned to the CL_DEVICE_MEM_BASE_ADDR_ALIGN value.

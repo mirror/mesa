@@ -713,6 +713,10 @@ impl Device {
             add_ext(1, 0, 0, "cl_arm_shared_virtual_memory");
         }
 
+        if self.bda_supported() {
+            add_ext(1, 0, 2, "cl_ext_buffer_device_address");
+        }
+
         self.extensions = exts;
         self.clc_features = feats;
         self.extension_string = format!("{} {}", PLATFORM_EXTENSION_STR, exts_str.join(" "));
@@ -849,6 +853,10 @@ impl Device {
         }
 
         self.screen.caps().doubles
+    }
+
+    pub fn bda_supported(&self) -> bool {
+        self.screen().is_fixed_address_supported()
     }
 
     pub fn is_gl_sharing_supported(&self) -> bool {

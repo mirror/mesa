@@ -18,6 +18,7 @@ impl_cl_type_trait!(cl_device_id, Device, CL_INVALID_DEVICE);
 
 pub struct Device {
     base: CLObjectBase<CL_INVALID_DEVICE>,
+    pub platform_handle: cl_platform_id,
     ty: cl_device_type,
     /// Max size of memory object allocation in bytes
     pub max_mem_alloc_size: cl_ulong,
@@ -26,9 +27,10 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn new() -> Self {
+    pub fn new(platform: &Platform) -> Self {
         Self {
             base: CLObjectBase::new(),
+            platform_handle: platform.get_handle(),
             ty: CL_DEVICE_TYPE_DEFAULT as u64,
             max_mem_alloc_size: 0,
             major: 1,
@@ -61,7 +63,7 @@ impl Device {
         for _ in 0..count {
             // Since we use the device address as cl_devicem_id, let us make
             // sure devices do not move from their memory area once created
-            let device = Box::pin(Device::new());
+            let device = Box::pin(Device::new(platform));
             handles.push(device.get_handle());
             devices.push(device);
         }

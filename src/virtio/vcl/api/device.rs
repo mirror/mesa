@@ -14,6 +14,7 @@ use mesa_rust_util::ptr::CheckedPtr;
 
 use std::cmp::min;
 use std::ffi::c_void;
+use std::mem::MaybeUninit;
 
 #[cl_entrypoint(clGetDeviceIDs)]
 pub fn get_device_ids(
@@ -64,6 +65,18 @@ pub fn get_device_ids(
     Ok(())
 }
 
+impl CLInfo<cl_device_info> for cl_device_id {
+    fn query(&self, q: cl_device_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let dev = self.get_ref()?;
+
+        Ok(match q {
+            CL_DEVICE_PLATFORM => cl_prop::<cl_platform_id>(dev.platform_handle),
+            CL_DEVICE_REFERENCE_COUNT => cl_prop::<cl_uint>(1),
+            _ => return Err(CL_INVALID_VALUE),
+        })
+    }
+}
+
 #[cl_entrypoint(clGetDeviceInfo)]
 fn get_device_info(
     device: cl_device_id,
@@ -73,6 +86,16 @@ fn get_device_info(
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
     device.get_ref()?;
+
+    if param_name == CL_DEVICE_REFERENCE_COUNT || param_name == CL_DEVICE_PLATFORM {
+        return device.get_info(
+            param_name,
+            param_value_size,
+            param_value,
+            param_value_size_ret,
+        );
+    }
+
     let mut size = 0;
     let ret = Vcl::get().call_clGetDeviceInfo(
         device,

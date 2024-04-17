@@ -244,6 +244,12 @@ fn enqueue_read_buffer(
         ptr::null_mut()
     };
 
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
     Vcl::get().call_clEnqueueReadBuffer(
         command_queue,
         buffer,
@@ -253,7 +259,7 @@ fn enqueue_read_buffer(
         ptr,
         num_events_in_wait_list,
         event_wait_list,
-        &mut ev_handle,
+        ev_ptr,
     )?;
 
     event.write_checked(ev_handle);
@@ -299,6 +305,12 @@ fn enqueue_write_buffer(
         ptr::null_mut()
     };
 
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
     Vcl::get().call_clEnqueueWriteBuffer(
         command_queue,
         buffer,
@@ -308,7 +320,7 @@ fn enqueue_write_buffer(
         ptr,
         num_events_in_wait_list,
         event_wait_list,
-        &mut ev_handle,
+        ev_ptr,
     )?;
 
     event.write_checked(ev_handle);

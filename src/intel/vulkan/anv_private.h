@@ -82,6 +82,7 @@
 #include "vk_debug_report.h"
 #include "vk_descriptor_update_template.h"
 #include "vk_device.h"
+#include "vk_device_generated_commands.h"
 #include "vk_device_memory.h"
 #include "vk_drm_syncobj.h"
 #include "vk_enum_defines.h"
@@ -6371,6 +6372,75 @@ uint32_t anv_vk_stages_to_generated_stages(VkShaderStageFlags vk_stages);
 void anv_indirect_descriptor_push_constants_write(struct anv_gen_gfx_indirect_descriptor *descriptor,
                                                   struct anv_graphics_pipeline *pipeline);
 
+struct anv_indirect_command_layout {
+   struct vk_indirect_command_layout vk;
+
+   VkPipelineBindPoint bind_point;
+
+   struct anv_gen_gfx_layout gfx_layout;
+   struct anv_gen_cs_layout cs_layout;
+
+   /** Layout is as follow :
+    *  --------------------
+    *  |   prolog cmds    |
+    *  |------------------|
+    *  |  sequence cmds   |
+    *  |------------------|
+    *  |   epilog cmds    |
+    *  |------------------|
+    *  |  sideband data   |
+    *  |------------------|
+    *  |   prolog data    |
+    *  |------------------|
+    *  |  sequence data   |
+    *  --------------------
+    */
+
+   /**
+    * Non sequence related commands at the beginning of the preprocess buffer
+    */
+   uint32_t cmd_prolog_size;
+   /**
+    * Non sequence related commands at the end of the preprocess buffer (jump
+    * back to main batch)
+    */
+   uint32_t cmd_epilog_size;
+   /** Amount of command memory required for each sequence */
+   uint32_t cmd_size;
+   /** Non sequence related data */
+   uint32_t data_prolog_size;
+   /** Amount of data memory required (per sequence) */
+   uint32_t data_size;
+   /** Amount of sideband data memory required (not per sequence) */
+   uint32_t sideband_size;
+
+   /** Track if push constants are emitted at all */
+   bool emits_push_constants;
+
+   struct anv_indirect_command_layout_item {
+      const char *name;
+      uint32_t size;
+   } items[10];
+   uint32_t n_items;
+};
+
+void anv_generated_commands_gfx_print_state(const struct anv_gen_gfx_layout *layout,
+                                            const struct anv_indirect_command_layout *layout_obj);
+void anv_generated_commands_print_layout(const struct anv_indirect_command_layout *layout);
+
+void anv_generated_gfx_fill_state(struct anv_gen_gfx_state *state,
+                                  struct anv_cmd_buffer *cmd_buffer,
+                                  const struct anv_indirect_command_layout *layout_obj,
+                                  const struct anv_graphics_pipeline *pipeline,
+                                  const struct anv_indirect_execution_set *indirect_set);
+
+uint32_t anv_generated_gfx_fill_layout(struct anv_gen_gfx_layout *layout,
+                                       const struct anv_device *device,
+                                       const struct anv_indirect_command_layout *layout_obj,
+                                       const struct anv_graphics_pipeline *pipeline,
+                                       const struct anv_indirect_execution_set *indirect_set);
+
+
 struct anv_vid_mem {
    struct anv_device_memory *mem;
    VkDeviceSize       offset;
@@ -6640,6 +6710,9 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session, vk.base,
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
                                VkVideoSessionParametersKHR,
                                VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_indirect_command_layout, vk.base,
+                               VkIndirectCommandsLayoutEXT,
+                               VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_indirect_execution_set, base,
                                VkIndirectExecutionSetEXT,
                                VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT)

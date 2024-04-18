@@ -65,15 +65,6 @@ fn create_command_queue_with_properties(
 ) -> CLResult<cl_command_queue> {
     let properties = Properties::from_ptr(properties).ok_or(CL_INVALID_PROPERTY)?;
 
-    for (key, _) in &properties.props {
-        match *key as cl_uint {
-            // CL_INVALID_QUEUE_PROPERTIES if values specified in properties are valid but are not
-            // supported by the device.
-            CL_QUEUE_SIZE => return Err(CL_INVALID_QUEUE_PROPERTIES),
-            _ => return Err(CL_INVALID_PROPERTY),
-        }
-    }
-
     let ctx = context.get_arc()?;
     let dev = device.get_ref()?;
 

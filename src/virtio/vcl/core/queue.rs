@@ -65,6 +65,7 @@ impl Queue {
         Vcl::get().call_clCreateCommandQueueWithPropertiesMESA(
             queue.context.get_handle(),
             device.get_handle(),
+            props.len(),
             props_ptr,
             &mut queue.get_handle(),
         )?;

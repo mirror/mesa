@@ -239,7 +239,7 @@ fn enqueue_read_buffer(
     }
 
     let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Event::new(&queue.context)?)
+        cl_event::from_arc(Event::new(&queue.context))
     } else {
         ptr::null_mut()
     };
@@ -300,7 +300,7 @@ fn enqueue_write_buffer(
     }
 
     let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Event::new(&queue.context)?)
+        cl_event::from_arc(Event::new(&queue.context))
     } else {
         ptr::null_mut()
     };

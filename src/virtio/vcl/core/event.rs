@@ -20,14 +20,16 @@ pub struct Event {
 }
 
 impl Event {
-    pub fn new(context: &Arc<Context>) -> CLResult<Arc<Event>> {
-        let event = Arc::new(Self {
+    pub fn new(context: &Arc<Context>) -> Arc<Event> {
+        Arc::new(Self {
             base: CLObjectBase::new(),
             context: context.clone(),
-        });
+        })
+    }
 
+    pub fn new_user(context: &Arc<Context>) -> CLResult<Arc<Event>> {
+        let event = Self::new(context);
         Vcl::get().call_clCreateUserEventMESA(context.get_handle(), &mut event.get_handle())?;
-
         Ok(event)
     }
 }

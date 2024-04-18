@@ -20,7 +20,7 @@ use std::sync::Arc;
 pub fn create_user_event(context: cl_context) -> CLResult<cl_event> {
     let ctx = context.get_arc()?;
 
-    let Ok(event) = Event::new(&ctx) else {
+    let Ok(event) = Event::new_user(&ctx) else {
         return Err(CL_OUT_OF_RESOURCES);
     };
 

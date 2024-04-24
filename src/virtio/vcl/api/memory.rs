@@ -238,6 +238,12 @@ fn enqueue_read_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
+    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
+        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
+    {
+        return Err(CL_INVALID_EVENT_WAIT_LIST);
+    }
+
     let mut ev_handle = if !event.is_null() {
         cl_event::from_arc(Event::new(&queue.context))
     } else {
@@ -297,6 +303,12 @@ fn enqueue_write_buffer(
     // CL_MEM_HOST_READ_ONLY or CL_MEM_HOST_NO_ACCESS.
     if bit_check(buf.flags, CL_MEM_HOST_READ_ONLY | CL_MEM_HOST_NO_ACCESS) {
         return Err(CL_INVALID_OPERATION);
+    }
+
+    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
+        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
+    {
+        return Err(CL_INVALID_EVENT_WAIT_LIST);
     }
 
     let mut ev_handle = if !event.is_null() {

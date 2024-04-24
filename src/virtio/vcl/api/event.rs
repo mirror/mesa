@@ -12,6 +12,7 @@ use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
+use std::collections::HashSet;
 use std::ffi::c_void;
 use std::mem::MaybeUninit;
 use std::sync::Arc;
@@ -40,8 +41,15 @@ fn set_user_event_status(event: cl_event, execution_status: cl_int) -> CLResult<
 
 #[cl_entrypoint(clWaitForEvents)]
 fn wait_for_events(num_events: cl_uint, event_list: *const cl_event) -> CLResult<()> {
-    if num_events == 0 || event_list.is_null() {
+    let evs = cl_event::get_arc_vec_from_arr(event_list, num_events)?;
+
+    if evs.is_empty() {
         return Err(CL_INVALID_VALUE);
+    }
+    // CL_INVALID_CONTEXT if events specified in event_list do not belong to the same context.
+    let contexts: HashSet<_> = evs.iter().map(|e| &e.context).collect();
+    if contexts.len() != 1 {
+        return Err(CL_INVALID_CONTEXT);
     }
 
     Vcl::get().call_clWaitForEvents(num_events, event_list)

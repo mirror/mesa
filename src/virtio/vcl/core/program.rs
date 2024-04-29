@@ -162,7 +162,7 @@ impl Program {
     pub fn bin_sizes(&self) -> CLResult<Vec<usize>> {
         let mut size = 0;
 
-        // Get the size of the sizes array
+        // Get the size in bytes of the sizes array
         Vcl::get().call_clGetProgramInfo(
             self.get_handle(),
             CL_PROGRAM_BINARY_SIZES,
@@ -171,7 +171,7 @@ impl Program {
             &mut size,
         )?;
 
-        let mut sizes = vec![0usize, size];
+        let mut sizes = vec![0usize; size / mem::size_of::<usize>()];
         // Get the sizes of each binary
         Vcl::get().call_clGetProgramInfo(
             self.get_handle(),

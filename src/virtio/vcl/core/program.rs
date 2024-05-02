@@ -10,8 +10,9 @@ use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
 use vcl_opencl_gen::*;
 
+use std::collections::HashMap;
 use std::ffi::*;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::*;
 
 impl_cl_type_trait!(cl_program, Program, CL_INVALID_PROGRAM);
@@ -20,20 +21,30 @@ pub struct Program {
     base: CLObjectBase<CL_INVALID_PROGRAM>,
     pub context: Arc<Context>,
     pub devs: Vec<&'static Device>,
+    build_status: Mutex<HashMap<cl_device_id, cl_build_status>>,
 }
 
 impl Program {
+    fn new(context: Arc<Context>, devs: Vec<&'static Device>) -> Arc<Self> {
+        let mut build_status = HashMap::new();
+        for dev in &devs {
+            build_status.insert(dev.get_handle(), CL_BUILD_NONE);
+        }
+
+        Arc::new(Program {
+            base: Default::default(),
+            context,
+            devs,
+            build_status: Mutex::new(build_status),
+        })
+    }
     pub fn new_with_source(
         context: Arc<Context>,
         count: cl_uint,
         strings: *mut *const c_char,
         lengths: *const usize,
     ) -> CLResult<Arc<Program>> {
-        let program = Arc::new(Program {
-            base: Default::default(),
-            context: context.clone(),
-            devs: context.devices.clone(),
-        });
+        let program = Self::new(context.clone(), context.devices.clone());
 
         // Construct a list fo null-terminated strings
         let mut c_strings = Vec::new();
@@ -74,11 +85,7 @@ impl Program {
         devs: Vec<&'static Device>,
         bins: &[&[u8]],
     ) -> CLResult<Arc<Program>> {
-        let program = Arc::new(Program {
-            base: Default::default(),
-            context: context.clone(),
-            devs,
-        });
+        let program = Self::new(context.clone(), devs);
 
         let mut dev_handles = Vec::default();
         let mut lengths = Vec::default();
@@ -111,11 +118,7 @@ impl Program {
         il: *const c_void,
         length: usize,
     ) -> CLResult<Arc<Program>> {
-        let program = Arc::new(Program {
-            base: Default::default(),
-            context: context.clone(),
-            devs: context.devices.clone(),
-        });
+        let program = Self::new(context.clone(), context.devices.clone());
 
         Vcl::get().call_clCreateProgramWithILMESA(
             context.get_handle(),
@@ -134,11 +137,7 @@ impl Program {
         num_input_programs: cl_uint,
         input_programs: *const cl_program,
     ) -> CLResult<Arc<Program>> {
-        let program = Arc::new(Program {
-            base: Default::default(),
-            context: context.clone(),
-            devs,
-        });
+        let program = Self::new(context.clone(), devs);
 
         let mut device_handles = Vec::with_capacity(program.devs.len());
         for dev in &program.devs {
@@ -221,5 +220,50 @@ impl Program {
         }
 
         Ok(ptrs.to_vec())
+    }
+
+    pub fn build(&self, devs: &[cl_device_id], options: *const c_char) -> CLResult<()> {
+        Vcl::get().call_clBuildProgram(
+            self.get_handle(),
+            devs.len() as u32,
+            devs.as_ptr(),
+            options,
+            ptr::null_mut(),
+        )?;
+
+        for dev in devs {
+            let mut param_value_size_ret = 0;
+            Vcl::get().call_clGetProgramBuildInfo(
+                self.get_handle(),
+                *dev,
+                CL_PROGRAM_BUILD_STATUS,
+                0,
+                ptr::null_mut(),
+                &mut param_value_size_ret,
+            )?;
+            let mut build_status = CL_BUILD_NONE as cl_build_status;
+            assert_eq!(param_value_size_ret, mem::size_of_val(&build_status));
+            Vcl::get().call_clGetProgramBuildInfo(
+                self.get_handle(),
+                *dev,
+                CL_PROGRAM_BUILD_STATUS,
+                param_value_size_ret,
+                &mut build_status as *mut _ as _,
+                ptr::null_mut(),
+            )?;
+
+            self.build_status.lock().unwrap().insert(*dev, build_status);
+        }
+
+        Ok(())
+    }
+
+    pub fn status(&self, device: &'static Device) -> cl_build_status {
+        *self
+            .build_status
+            .lock()
+            .unwrap()
+            .get(&device.get_handle())
+            .unwrap()
     }
 }

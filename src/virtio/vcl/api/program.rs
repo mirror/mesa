@@ -266,8 +266,8 @@ pub fn build_program(
     pfn_notify: Option<ProgramCB>,
     user_data: *mut ::std::os::raw::c_void,
 ) -> CLResult<()> {
-    let p = program.get_ref()?;
-    let c = &p.context;
+    let program = program.get_ref()?;
+    let c = &program.context;
 
     if device_list.is_null() && num_devices > 0 {
         return Err(CL_INVALID_VALUE);
@@ -285,15 +285,9 @@ pub fn build_program(
         }
     }
 
-    Vcl::get().call_clBuildProgram(
-        p.get_handle(),
-        devs.len() as u32,
-        devs.as_ptr(),
-        options,
-        ptr::null_mut(),
-    )?;
+    program.build(devs, options)?;
 
-    call_cb(pfn_notify, program, user_data);
+    call_cb(pfn_notify, program.get_handle(), user_data);
 
     Ok(())
 }

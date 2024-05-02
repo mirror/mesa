@@ -285,6 +285,9 @@ fn enqueue_ndrange_kernel(
 
     // CL_INVALID_PROGRAM_EXECUTABLE if there is no successfully built program executable available
     // for device associated with command_queue.
+    if kernel.program.status(queue.device) != CL_BUILD_SUCCESS as cl_build_status {
+        return Err(CL_INVALID_PROGRAM_EXECUTABLE);
+    }
 
     // CL_INVALID_KERNEL_ARGS if the kernel argument values have not been specified.
 

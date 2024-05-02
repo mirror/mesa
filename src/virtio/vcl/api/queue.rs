@@ -45,12 +45,8 @@ pub fn create_command_queue(
     }
 
     let ctx = context.get_arc()?;
-    let dev = device.get_ref()?;
-
     // CL_INVALID_DEVICE if device [...] is not associated with context.
-    if !ctx.devices.contains(&dev) {
-        return Err(CL_INVALID_DEVICE);
-    }
+    let dev = ctx.get_device_from_handle(device)?;
 
     Ok(cl_command_queue::from_arc(Queue::new(
         ctx, dev, properties,
@@ -66,12 +62,8 @@ fn create_command_queue_with_properties(
     let properties = Properties::from_ptr(properties).ok_or(CL_INVALID_PROPERTY)?;
 
     let ctx = context.get_arc()?;
-    let dev = device.get_ref()?;
-
     // CL_INVALID_DEVICE if device [...] is not associated with context.
-    if !ctx.devices.contains(&dev) {
-        return Err(CL_INVALID_DEVICE);
-    }
+    let dev = ctx.get_device_from_handle(device)?;
 
     Ok(cl_command_queue::from_arc(Queue::new_with_properties(
         ctx, dev, properties,

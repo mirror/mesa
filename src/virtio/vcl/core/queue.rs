@@ -20,18 +20,20 @@ impl_cl_type_trait!(cl_command_queue, Queue, CL_INVALID_COMMAND_QUEUE);
 pub struct Queue {
     base: CLObjectBase<CL_INVALID_COMMAND_QUEUE>,
     pub context: Arc<Context>,
+    pub device: &'static Device,
 }
 
 impl Queue {
     /// Deprecated API
     pub fn new(
         context: Arc<Context>,
-        device: &Device,
+        device: &'static Device,
         props: cl_command_queue_properties,
     ) -> CLResult<Arc<Queue>> {
         let queue = Arc::new(Queue {
             base: Default::default(),
             context: context.clone(),
+            device,
         });
 
         Vcl::get().call_clCreateCommandQueueMESA(
@@ -47,12 +49,13 @@ impl Queue {
     /// New API
     pub fn new_with_properties(
         context: Arc<Context>,
-        device: &Device,
+        device: &'static Device,
         properties: Properties<cl_queue_properties>,
     ) -> CLResult<Arc<Queue>> {
         let queue = Arc::new(Queue {
             base: Default::default(),
             context,
+            device,
         });
 
         let props = properties.to_raw();

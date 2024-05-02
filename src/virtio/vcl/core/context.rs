@@ -54,4 +54,16 @@ impl Context {
 
         Ok(context)
     }
+
+    pub fn get_device_from_handle(&self, device_handle: cl_device_id) -> CLResult<&'static Device> {
+        if device_handle.is_null() {
+            return Err(CL_INVALID_DEVICE);
+        }
+        for device in self.devices.iter().copied() {
+            if device.get_handle() == device_handle {
+                return Ok(device);
+            }
+        }
+        Err(CL_INVALID_DEVICE)
+    }
 }

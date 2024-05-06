@@ -8,6 +8,7 @@ use crate::api::util::*;
 use crate::core::context::*;
 use crate::core::event::Event;
 use crate::core::memory::*;
+use crate::core::queue::Queue;
 use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::properties::*;
@@ -95,6 +96,33 @@ fn validate_size(ctx: &Context, size: usize) -> CLResult<()> {
         }
     }
     Err(CL_INVALID_BUFFER_SIZE)
+}
+
+fn check_event_wait_list(
+    queue: Arc<Queue>,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<(cl_event, *mut cl_event)> {
+    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
+        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
+    {
+        return Err(CL_INVALID_EVENT_WAIT_LIST);
+    }
+
+    let mut ev_handle = if !event.is_null() {
+        cl_event::from_arc(Event::new(&queue.context))
+    } else {
+        ptr::null_mut()
+    };
+
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
+    Ok((ev_handle, ev_ptr))
 }
 
 #[cl_entrypoint(clCreateBufferWithProperties)]
@@ -254,23 +282,8 @@ fn enqueue_read_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
-    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
-        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
-    {
-        return Err(CL_INVALID_EVENT_WAIT_LIST);
-    }
-
-    let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Event::new(&queue.context))
-    } else {
-        ptr::null_mut()
-    };
-
-    let ev_ptr = if ev_handle.is_null() {
-        ptr::null_mut()
-    } else {
-        &mut ev_handle
-    };
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
 
     Vcl::get().call_clEnqueueReadBuffer(
         command_queue,
@@ -321,23 +334,8 @@ fn enqueue_write_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
-    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
-        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
-    {
-        return Err(CL_INVALID_EVENT_WAIT_LIST);
-    }
-
-    let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Event::new(&queue.context))
-    } else {
-        ptr::null_mut()
-    };
-
-    let ev_ptr = if ev_handle.is_null() {
-        ptr::null_mut()
-    } else {
-        &mut ev_handle
-    };
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
 
     Vcl::get().call_clEnqueueWriteBuffer(
         command_queue,
@@ -346,6 +344,208 @@ fn enqueue_write_buffer(
         offset,
         size,
         ptr,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueCopyBuffer)]
+fn enqueue_copy_buffer(
+    command_queue: cl_command_queue,
+    src_buffer: cl_mem,
+    dst_buffer: cl_mem,
+    src_offset: usize,
+    dst_offset: usize,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let src = src_buffer.get_arc()?;
+    let dst = dst_buffer.get_arc()?;
+
+    // CL_INVALID_CONTEXT if the context associated with command_queue, src_buffer and dst_buffer
+    // are not the same
+    if queue.context != src.context || queue.context != dst.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if src_offset, dst_offset, size, src_offset + size or dst_offset + size
+    // require accessing elements outside the src_buffer and dst_buffer buffer objects respectively.
+    if src_offset + size > src.size || dst_offset + size > dst.size {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+
+    Vcl::get().call_clEnqueueCopyBuffer(
+        command_queue,
+        src_buffer,
+        dst_buffer,
+        src_offset,
+        dst_offset,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueCopyBufferRect)]
+fn enqueue_copy_buffer_rect(
+    command_queue: cl_command_queue,
+    src_buffer: cl_mem,
+    dst_buffer: cl_mem,
+    src_origin: *const usize,
+    dst_origin: *const usize,
+    region: *const usize,
+    src_row_pitch: usize,
+    src_slice_pitch: usize,
+    dst_row_pitch: usize,
+    dst_slice_pitch: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    src_buffer.get_ref()?;
+    dst_buffer.get_ref()?;
+
+    // CL_INVALID_VALUE if src_origin, dst_origin, or region is NULL.
+    if src_origin.is_null() || dst_origin.is_null() || region.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+
+    Vcl::get().call_clEnqueueCopyBufferRect(
+        command_queue,
+        src_buffer,
+        dst_buffer,
+        src_origin,
+        dst_origin,
+        region,
+        src_row_pitch,
+        src_slice_pitch,
+        dst_row_pitch,
+        dst_slice_pitch,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueFillBuffer)]
+fn enqueue_fill_buffer(
+    command_queue: cl_command_queue,
+    buffer: cl_mem,
+    pattern: *const c_void,
+    pattern_size: usize,
+    offset: usize,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let buf = buffer.get_arc()?;
+
+    // CL_INVALID_VALUE if offset or offset + size require accessing elements outside the buffer
+    // buffer object respectively.
+    if offset + size > buf.size {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_VALUE if pattern is NULL or if pattern_size is 0 or if pattern_size is not one of
+    // { 1, 2, 4, 8, 16, 32, 64, 128 }.
+    if pattern.is_null() || pattern_size.count_ones() != 1 || pattern_size > 128 {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_VALUE if offset and size are not a multiple of pattern_size.
+    if offset % pattern_size != 0 || size % pattern_size != 0 {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_CONTEXT if the context associated with command_queue and buffer are not the same
+    if buf.context != queue.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+
+    Vcl::get().call_clEnqueueFillBuffer(
+        command_queue,
+        buffer,
+        pattern_size,
+        pattern,
+        offset,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueMigrateMemObjects)]
+fn enqueue_migrate_mem_objects(
+    command_queue: cl_command_queue,
+    num_mem_objects: cl_uint,
+    mem_objects: *const cl_mem,
+    flags: cl_mem_migration_flags,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let bufs = cl_mem::get_arc_vec_from_arr(mem_objects, num_mem_objects)?;
+
+    // CL_INVALID_VALUE if num_mem_objects is zero or if mem_objects is NULL.
+    if bufs.is_empty() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_CONTEXT if the context associated with command_queue and memory objects in
+    // mem_objects are not the same
+    if bufs.iter().any(|b| b.context != queue.context) {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if flags is not 0 or is not any of the values described in the table above.
+    if flags != 0
+        && bit_check(
+            flags,
+            !(CL_MIGRATE_MEM_OBJECT_HOST | CL_MIGRATE_MEM_OBJECT_CONTENT_UNDEFINED),
+        )
+    {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let (ev_handle, ev_ptr) =
+        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+
+    Vcl::get().call_clEnqueueMigrateMemObjects(
+        command_queue,
+        num_mem_objects,
+        mem_objects,
+        flags,
         num_events_in_wait_list,
         event_wait_list,
         ev_ptr,

@@ -134,6 +134,22 @@ fn create_buffer(
     create_buffer_with_properties(context, ptr::null(), flags, size, host_ptr)
 }
 
+#[cl_entrypoint(clCreateSubBuffer)]
+fn create_sub_buffer(
+    buffer: cl_mem,
+    flags: cl_mem_flags,
+    buffer_create_type: cl_buffer_create_type,
+    buffer_create_info: *const c_void,
+) -> CLResult<cl_mem> {
+    buffer.get_ref()?;
+
+    if buffer_create_info.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    Mem::new_sub_buffer(buffer, flags, buffer_create_type, buffer_create_info)
+}
+
 #[cl_entrypoint(clRetainMemObject)]
 fn retain_mem_object(mem: cl_mem) -> CLResult<()> {
     mem.retain()

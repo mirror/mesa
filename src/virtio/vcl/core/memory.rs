@@ -48,6 +48,36 @@ impl Mem {
         Ok(handle)
     }
 
+    pub fn new_sub_buffer(
+        buffer: cl_mem,
+        flags: cl_mem_flags,
+        buffer_create_type: cl_buffer_create_type,
+        buffer_create_info: *const c_void,
+    ) -> CLResult<cl_mem> {
+        let buf = buffer.get_ref()?;
+        let buffer_region = unsafe { &mut *(buffer_create_info as *mut cl_buffer_region) };
+
+        // Get context from parent buffer
+        let sub_buffer = Arc::new(Self {
+            base: CLObjectBase::new(),
+            context: buf.context.clone(),
+            flags,
+            size: buffer_region.size,
+        });
+
+        let mut handle = cl_mem::from_arc(sub_buffer);
+        Vcl::get().call_clCreateSubBufferMESA(
+            buffer,
+            flags,
+            buffer_create_type,
+            std::mem::size_of::<cl_buffer_region>(),
+            buffer_create_info,
+            &mut handle,
+        )?;
+
+        Ok(handle)
+    }
+
     pub fn new_image(
         context: &Arc<Context>,
         desc: cl_image_desc,

@@ -104,7 +104,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueAcquireD3D10ObjectsKHR: ptr::null_mut(),
     clEnqueueReleaseD3D10ObjectsKHR: ptr::null_mut(),
     clSetEventCallback: None,
-    clCreateSubBuffer: None,
+    clCreateSubBuffer: Some(clCreateSubBuffer),
     clSetMemObjectDestructorCallback: None,
     clCreateUserEvent: Some(clCreateUserEvent),
     clSetUserEventStatus: Some(clSetUserEventStatus),

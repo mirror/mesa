@@ -56,6 +56,7 @@ struct wl_drm;
 struct wl_registry;
 struct wl_shm;
 struct wl_surface;
+struct wl_fixes;
 struct zwp_linux_dmabuf_v1;
 struct zwp_linux_dmabuf_feedback_v1;
 #endif
@@ -294,6 +295,7 @@ struct dri2_egl_display {
    uint32_t wl_drm_version, wl_drm_name;
    struct wl_shm *wl_shm;
    struct wl_event_queue *wl_queue;
+   struct wl_fixes *wl_fixes;
    struct zwp_linux_dmabuf_v1 *wl_dmabuf;
    struct dri2_wl_formats formats;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;

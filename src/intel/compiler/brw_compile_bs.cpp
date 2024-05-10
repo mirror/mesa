@@ -80,19 +80,20 @@ compile_single_bs(const struct brw_compiler *compiler,
    prog_data->max_stack_size = MAX2(prog_data->max_stack_size,
                                     shader->scratch_size);
 
-   const unsigned max_dispatch_width = 16;
-   brw_nir_apply_key(shader, compiler, &key->base, max_dispatch_width);
-   brw_postprocess_nir(shader, compiler, debug_enabled,
+   /* Since divergence is a lot more likely in RT than compute, it makes
+    * sense to limit ourselves to the smallest available SIMD for now.
+    */
+   const unsigned required_width = compiler->devinfo->ver >= 20 ? 16u : 8u;
+
+   brw_nir_apply_key(shader, compiler, &key->base, required_width);
+   brw_postprocess_nir(shader, compiler, required_width,
+                       params->base.archiver, debug_enabled,
                        key->base.robust_flags);
 
    brw_simd_selection_state simd_state{
       .devinfo = compiler->devinfo,
       .prog_data = prog_data,
-
-      /* Since divergence is a lot more likely in RT than compute, it makes
-       * sense to limit ourselves to the smallest available SIMD for now.
-       */
-      .required_width = compiler->devinfo->ver >= 20 ? 16u : 8u,
+      .required_width = required_width,
    };
 
    std::unique_ptr<brw_shader> v[2];

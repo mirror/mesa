@@ -25,6 +25,7 @@
 #include "brw_nir.h"
 #include "compiler/glsl_types.h"
 #include "compiler/nir/nir_builder.h"
+#include "brw_private.h"
 
 /*
  * Returns the minimum number of vec4 (as_vec4 == true) or dvec4 (as_vec4 ==
@@ -1755,6 +1756,8 @@ nir_shader_has_local_variables(const nir_shader *nir)
  */
 void
 brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
+                    unsigned dispatch_width,
+                    debug_archiver *archiver,
                     bool debug_enabled,
                     enum brw_robustness_flags robust_flags)
 {
@@ -1932,15 +1935,20 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    OPT(nir_lower_locals_to_regs, 32);
 
-   if (unlikely(debug_enabled)) {
+   if (unlikely(debug_enabled || archiver)) {
       /* Re-index SSA defs so we print more sensible numbers. */
       nir_foreach_function_impl(impl, nir) {
          nir_index_ssa_defs(impl);
       }
 
-      fprintf(stderr, "NIR (SSA form) for %s shader:\n",
-              _mesa_shader_stage_to_string(nir->info.stage));
-      nir_print_shader(nir, stderr);
+      if (debug_enabled) {
+         fprintf(stderr, "NIR (SSA form) for %s shader:\n",
+                 _mesa_shader_stage_to_string(nir->info.stage));
+         nir_print_shader(nir, stderr);
+      }
+
+      if (archiver)
+         brw_debug_archive_nir(archiver, nir, dispatch_width, "ssa");
    }
 
    nir_validate_ssa_dominance(nir, "before nir_convert_from_ssa");
@@ -1975,6 +1983,15 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       fprintf(stderr, "NIR (final form) for %s shader:\n",
               _mesa_shader_stage_to_string(nir->info.stage));
       nir_print_shader(nir, stderr);
+   }
+
+   if (unlikely(archiver)) {
+      /* It is convenient to have the last SSA representation easily
+       * accessible as an object of its own in the archive.  So use
+       * "NIR-..." prefix for that and for the out-of-ssa use "OUT-...".
+       */
+      brw_debug_archive_nir_with_prefix(archiver, nir, "OUT",
+                                        dispatch_width, "final");
    }
 }
 

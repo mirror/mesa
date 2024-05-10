@@ -149,6 +149,8 @@ brw_compile_gs(const struct brw_compiler *compiler,
 
    const bool debug_enabled = brw_should_print_shader(nir, DEBUG_GS);
 
+   brw_debug_archive_nir(params->base.archiver, nir, dispatch_width, "first");
+
    prog_data->base.base.stage = MESA_SHADER_GEOMETRY;
    prog_data->base.base.ray_queries = nir->info.ray_queries;
    prog_data->base.base.total_scratch = 0;
@@ -169,7 +171,8 @@ brw_compile_gs(const struct brw_compiler *compiler,
    brw_nir_apply_key(nir, compiler, &key->base, dispatch_width);
    brw_nir_lower_vue_inputs(nir, &input_vue_map);
    brw_nir_lower_vue_outputs(nir);
-   brw_postprocess_nir(nir, compiler, debug_enabled,
+   brw_postprocess_nir(nir, compiler, dispatch_width,
+                       params->base.archiver, debug_enabled,
                        key->base.robust_flags);
 
    prog_data->base.clip_distance_mask =

@@ -1195,6 +1195,28 @@ brw_allocate_registers(brw_shader &s, bool allow_spilling)
    s.debug_optimizer(nir, "scoreboard", 96, pass_num++);
 }
 
+#ifndef NDEBUG
+void
+brw_debug_archive_nir_with_prefix(debug_archiver *archiver, nir_shader *nir,
+                                  const char *prefix, unsigned dispatch_width,
+                                  const char *step)
+{
+   if (!archiver)
+      return;
+
+   const char *stage = _mesa_shader_stage_to_abbrev(nir->info.stage);
+   const char *filename = dispatch_width ?
+         ralloc_asprintf(archiver, "%s-%s%d-%s/%s", prefix, stage,
+                         dispatch_width, nir->info.name, step) :
+         ralloc_asprintf(archiver, "%s-%s-%s/%s", prefix, stage,
+                         nir->info.name, step);
+
+   FILE *f = debug_archiver_start_file(archiver, filename);
+   nir_print_shader(nir, f);
+   debug_archiver_finish_file(archiver);
+}
+#endif
+
 unsigned
 brw_cs_push_const_total_size(const struct brw_cs_prog_data *cs_prog_data,
                              unsigned threads)

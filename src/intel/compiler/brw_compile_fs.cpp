@@ -1548,6 +1548,8 @@ brw_compile_fs(const struct brw_compiler *compiler,
    const struct intel_device_info *devinfo = compiler->devinfo;
    const unsigned max_subgroup_size = 32;
 
+   brw_debug_archive_nir(params->base.archiver, nir, 0, "first");
+
    brw_nir_apply_key(nir, compiler, &key->base, max_subgroup_size);
    brw_nir_lower_fs_inputs(nir, devinfo, key);
    brw_nir_lower_fs_outputs(nir);
@@ -1566,7 +1568,8 @@ brw_compile_fs(const struct brw_compiler *compiler,
    }
 
    NIR_PASS(_, nir, brw_nir_move_interpolation_to_top);
-   brw_postprocess_nir(nir, compiler, debug_enabled,
+   brw_postprocess_nir(nir, compiler, 0,
+                       params->base.archiver, debug_enabled,
                        key->base.robust_flags);
 
    brw_nir_populate_wm_prog_data(nir, compiler->devinfo, key, prog_data,

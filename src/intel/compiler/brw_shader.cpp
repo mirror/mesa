@@ -390,7 +390,8 @@ brw_shader::brw_shader(const struct brw_compiler *compiler,
      needs_register_pressure(needs_register_pressure),
      dispatch_width(dispatch_width),
      max_polygons(0),
-     api_subgroup_size(brw_nir_api_subgroup_size(shader, dispatch_width))
+     api_subgroup_size(brw_nir_api_subgroup_size(shader, dispatch_width)),
+     archiver(params->archiver)
 {
    init();
 }
@@ -414,7 +415,8 @@ brw_shader::brw_shader(const struct brw_compiler *compiler,
      needs_register_pressure(needs_register_pressure),
      dispatch_width(dispatch_width),
      max_polygons(max_polygons),
-     api_subgroup_size(brw_nir_api_subgroup_size(shader, dispatch_width))
+     api_subgroup_size(brw_nir_api_subgroup_size(shader, dispatch_width)),
+     archiver(params->archiver)
 {
    init();
    assert(api_subgroup_size == 0 ||
@@ -942,30 +944,19 @@ brw_shader::debug_optimizer(const nir_shader *nir,
                             const char *pass_name,
                             int iteration, int pass_num) const
 {
-   if (!brw_should_print_shader(nir, DEBUG_OPTIMIZER))
+   if (!archiver)
       return;
 
-   char *filename;
-   int ret = asprintf(&filename, "%s/%s%d-%s-%02d-%02d-%s",
-                      debug_get_option("INTEL_SHADER_OPTIMIZER_PATH", "./"),
-                      _mesa_shader_stage_to_abbrev(stage), dispatch_width, nir->info.name,
+   /* TODO: Add replacement for INTEL_SHADER_OPTIMIZER_PATH. */
+   const char *filename =
+      ralloc_asprintf(mem_ctx, "BRW-%s%d-%s/%02d-%02d-%s",
+                      _mesa_shader_stage_to_abbrev(nir->info.stage),
+                      dispatch_width, nir->info.name,
                       iteration, pass_num, pass_name);
-   if (ret == -1)
-      return;
 
-   FILE *file = stderr;
-   if (__normal_user()) {
-      file = fopen(filename, "w");
-      if (!file)
-         file = stderr;
-   }
-
-   brw_print_instructions(*this, file);
-
-   if (file != stderr)
-      fclose(file);
-
-   free(filename);
+   FILE *f = debug_archiver_start_file(archiver, filename);
+   brw_print_instructions(*this, f);
+   debug_archiver_finish_file(archiver);
 }
 
 static uint32_t

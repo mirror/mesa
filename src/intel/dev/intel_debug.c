@@ -66,6 +66,7 @@ static const struct debug_control debug_control[] = {
    { "blorp",       DEBUG_BLORP },
    { "nodualobj",   DEBUG_NO_DUAL_OBJECT_GS },
    { "optimizer",   DEBUG_OPTIMIZER },
+   { "mda",         DEBUG_OPTIMIZER },
    { "ann",         DEBUG_ANNOTATION },
    { "no8",         DEBUG_NO8 },
    { "no-oaconfig", DEBUG_NO_OACONFIG },

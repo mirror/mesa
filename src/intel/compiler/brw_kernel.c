@@ -187,7 +187,7 @@ lower_kernel_intrinsics(nir_shader *nir)
             load->num_components = intrin->num_components;
             load->src[0] = nir_src_for_ssa(nir_u2u32(&b, intrin->src[0].ssa));
             nir_intrinsic_set_base(load, kernel_arg_start);
-            nir_intrinsic_set_range(load, nir->num_uniforms);
+            nir_intrinsic_set_range(load, nir->num_uniforms - kernel_arg_start);
             nir_def_init(&load->instr, &load->def,
                          intrin->def.num_components,
                          intrin->def.bit_size);

@@ -294,7 +294,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_extended_dynamic_state            = true,
       .EXT_extended_dynamic_state2           = true,
       .EXT_external_memory_dma_buf           = true,
-      .EXT_external_memory_host              = true,
+      .EXT_external_memory_host              = device->info.has_userptr_uapi,
       .EXT_global_priority                   = device->max_context_priority >=
                                                INTEL_CONTEXT_MEDIUM_PRIORITY,
       .EXT_global_priority_query             = device->max_context_priority >=

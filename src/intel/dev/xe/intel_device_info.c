@@ -353,6 +353,7 @@ intel_device_info_xe_get_info_from_fd(int fd, struct intel_device_info *devinfo)
    devinfo->has_mmap_offset = true;
    devinfo->has_caching_uapi = false;
    devinfo->has_set_pat_uapi = true;
+   devinfo->has_userptr_uapi = true;
 
    return true;
 }

@@ -501,6 +501,20 @@ has_get_tiling(int fd)
    return ret == 0;
 }
 
+static bool
+has_userptr(int fd)
+{
+   struct drm_i915_gem_userptr userptr = {
+      .user_ptr = 0,
+      .user_size = 0,
+      .flags = 0,
+   };
+
+   intel_ioctl(fd, DRM_IOCTL_I915_GEM_USERPTR, &userptr);
+
+   return errno == EINVAL;
+}
+
 static void
 fixup_chv_device_info(struct intel_device_info *devinfo)
 {
@@ -606,6 +620,7 @@ bool intel_device_info_i915_get_info_from_fd(int fd, struct intel_device_info *d
    intel_get_aperture_size(fd, &devinfo->aperture_bytes);
    get_context_param(fd, 0, I915_CONTEXT_PARAM_GTT_SIZE, &devinfo->gtt_size);
    devinfo->has_tiling_uapi = has_get_tiling(fd);
+   devinfo->has_userptr_uapi = has_userptr(fd);
    devinfo->has_caching_uapi =
       devinfo->platform < INTEL_PLATFORM_DG2_START && !devinfo->has_local_mem;
    if (devinfo->ver > 12 || intel_device_info_is_mtl_or_arl(devinfo))

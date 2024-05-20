@@ -476,7 +476,7 @@ crocus_init_screen_caps(struct crocus_screen *screen)
     * extensive checking in the driver for correctness, e.g. to prevent
     * illegal snoop <-> snoop transfers.
     */
-   caps->resource_from_user_memory = devinfo->has_llc;
+   caps->resource_from_user_memory = devinfo->has_llc && devinfo->has_userptr_uapi;
    caps->throttle = !screen->driconf.disable_throttling;
 
    caps->context_priority_mask =

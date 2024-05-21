@@ -13,6 +13,6 @@ mod platform;
 mod queue;
 #[cfg(test)]
 mod test_util;
-mod types;
+pub mod types;
 pub mod util;
 mod program;

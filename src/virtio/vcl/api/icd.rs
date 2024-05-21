@@ -73,9 +73,9 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueReadBuffer: Some(clEnqueueReadBuffer),
     clEnqueueWriteBuffer: Some(clEnqueueWriteBuffer),
     clEnqueueCopyBuffer: Some(clEnqueueCopyBuffer),
-    clEnqueueReadImage: None,
-    clEnqueueWriteImage: None,
-    clEnqueueCopyImage: None,
+    clEnqueueReadImage: Some(clEnqueueReadImage),
+    clEnqueueWriteImage: Some(clEnqueueWriteImage),
+    clEnqueueCopyImage: Some(clEnqueueCopyImage),
     clEnqueueCopyImageToBuffer: None,
     clEnqueueCopyBufferToImage: None,
     clEnqueueMapBuffer: None,
@@ -118,18 +118,18 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clCreateSubDevices: None,
     clRetainDevice: None,
     clReleaseDevice: None,
-    clCreateImage: None,
+    clCreateImage: Some(clCreateImage),
     clCreateProgramWithBuiltInKernels: None,
     clCompileProgram: Some(clCompileProgram),
     clLinkProgram: Some(clLinkProgram),
     clUnloadPlatformCompiler: None,
     clGetKernelArgInfo: Some(clGetKernelArgInfo),
     clEnqueueFillBuffer: Some(clEnqueueFillBuffer),
-    clEnqueueFillImage: None,
+    clEnqueueFillImage: Some(clEnqueueFillImage),
     clEnqueueMigrateMemObjects: Some(clEnqueueMigrateMemObjects),
     clEnqueueMarkerWithWaitList: Some(clEnqueueMarkerWithWaitList),
     clEnqueueBarrierWithWaitList: Some(clEnqueueBarrierWithWaitList),
-    clGetExtensionFunctionAddressForPlatform: None,
+    clGetExtensionFunctionAddressForPlatform: Some(clGetExtensionFunctionAddressForPlatform),
     clCreateFromGLTexture: None,
     clGetDeviceIDsFromD3D11KHR: ptr::null_mut(),
     clCreateFromD3D11BufferKHR: ptr::null_mut(),
@@ -169,7 +169,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetProgramReleaseCallback: None,
     clSetProgramSpecializationConstant: None,
     clCreateBufferWithProperties: None,
-    clCreateImageWithProperties: None,
+    clCreateImageWithProperties: Some(clCreateImageWithProperties),
     clSetContextDestructorCallback: None,
 };
 
@@ -373,7 +373,7 @@ macro_rules! cl_ext_func {
 
 #[rustfmt::skip]
 #[no_mangle]
-extern "C" fn clGetExtensionFunctionAddress(
+pub extern "C" fn clGetExtensionFunctionAddress(
     function_name: *const ::std::os::raw::c_char,
 ) -> *mut ::std::ffi::c_void {
     if function_name.is_null() {

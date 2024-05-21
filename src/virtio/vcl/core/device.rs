@@ -10,7 +10,7 @@ use crate::impl_cl_type_trait;
 
 use vcl_opencl_gen::*;
 
-use std::mem::size_of_val;
+use std::mem::{self, size_of_val};
 use std::pin::Pin;
 use std::ptr;
 
@@ -24,6 +24,7 @@ pub struct Device {
     pub max_mem_alloc_size: cl_ulong,
     pub major: u8,
     pub minor: u8,
+    image_support: cl_bool,
 }
 
 impl Device {
@@ -35,6 +36,7 @@ impl Device {
             max_mem_alloc_size: 0,
             major: 1,
             minor: 0,
+            image_support: CL_FALSE,
         }
     }
 
@@ -115,6 +117,15 @@ impl Device {
 
             device.major = version[7] - '0' as u8;
             device.minor = version[9] - '0' as u8;
+
+            // Whether image are supported
+            renderer.call_clGetDeviceInfo(
+                device.get_handle(),
+                CL_DEVICE_IMAGE_SUPPORT,
+                mem::size_of_val(&device.image_support),
+                &mut device.image_support as *mut _ as _,
+                ptr::null_mut(),
+            )?;
         }
 
         // Is there a default device?
@@ -140,5 +151,9 @@ impl Device {
         } else {
             CL_INVALID_VALUE
         }
+    }
+
+    pub fn image_supported(&self) -> bool {
+        self.image_support == CL_TRUE
     }
 }

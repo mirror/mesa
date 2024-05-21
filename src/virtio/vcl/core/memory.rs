@@ -4,6 +4,7 @@
  */
 
 use crate::api::icd::*;
+use crate::api::types::*;
 use crate::core::context::*;
 use crate::core::format::CLFormatInfo;
 use crate::dev::renderer::Vcl;
@@ -12,6 +13,7 @@ use crate::impl_cl_type_trait;
 use mesa_rust_util::properties::Properties;
 use vcl_opencl_gen::*;
 
+use std::cmp;
 use std::os::raw::c_void;
 use std::ptr;
 use std::sync::Arc;
@@ -34,6 +36,7 @@ pub trait CLImageDescInfo {
     fn slice_pitch(&self) -> usize;
     fn width(&self) -> CLResult<u32>;
     fn height(&self) -> CLResult<u32>;
+    fn size(&self) -> CLVec<usize>;
 
     fn dims(&self) -> u8 {
         self.type_info().0
@@ -82,6 +85,19 @@ impl CLImageDescInfo for cl_image_desc {
         }
 
         res
+    }
+
+    fn size(&self) -> CLVec<usize> {
+        let mut height = cmp::max(self.image_height, 1);
+        let mut depth = cmp::max(self.image_depth, 1);
+
+        match self.image_type {
+            CL_MEM_OBJECT_IMAGE1D_ARRAY => height = self.image_array_size,
+            CL_MEM_OBJECT_IMAGE2D_ARRAY => depth = self.image_array_size,
+            _ => {}
+        }
+
+        CLVec::new([self.image_width, height, depth])
     }
 
     fn row_pitch(&self) -> CLResult<u32> {
@@ -211,6 +227,60 @@ impl Mem {
             )?,
             _ => unimplemented!(),
         }
+
+        Ok(image)
+    }
+
+    pub fn new_image_with_properties(
+        context: Arc<Context>,
+        image_desc: cl_image_desc,
+        flags: cl_mem_flags,
+        image_format: cl_image_format,
+        host_ptr: *mut c_void,
+        props: Properties<cl_mem_properties>,
+    ) -> CLResult<Arc<Mem>> {
+        let pixel_size = image_format.pixel_size().unwrap() as usize;
+        let size = image_desc.pixels() * pixel_size;
+
+        let image = Arc::new(Self {
+            base: CLObjectBase::new(),
+            context,
+            flags,
+            size,
+            image_format,
+            image_desc,
+        });
+
+        let props = props.to_raw();
+        let props_ptr = if props.len() > 1 {
+            props.as_ptr()
+        } else {
+            ptr::null()
+        };
+
+        let image_desc = cl_image_desc_MESA {
+            image_type: image_desc.image_type,
+            image_width: image_desc.image_width,
+            image_height: image_desc.image_height,
+            image_depth: image_desc.image_depth,
+            image_array_size: image_desc.image_array_size,
+            image_row_pitch: image_desc.image_row_pitch,
+            image_slice_pitch: image_desc.image_slice_pitch,
+            num_mip_levels: image_desc.num_mip_levels,
+            num_samples: image_desc.num_samples,
+            mem_object: unsafe { image_desc.anon_1.mem_object },
+        };
+
+        Vcl::get().call_clCreateImageWithPropertiesMESA(
+            image.context.get_handle(),
+            props_ptr,
+            flags,
+            &image_format,
+            &image_desc,
+            size,
+            host_ptr,
+            &mut image.get_handle(),
+        )?;
 
         Ok(image)
     }

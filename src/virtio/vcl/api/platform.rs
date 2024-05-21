@@ -15,8 +15,9 @@ use vcl_opencl_gen::*;
 use vcl_proc_macros::cl_entrypoint;
 
 use std::cmp::min;
-use std::ffi::c_void;
+use std::ffi::*;
 use std::mem::MaybeUninit;
+use std::ptr;
 
 #[cl_entrypoint(clGetPlatformIDs)]
 pub fn get_platform_ids(
@@ -124,6 +125,18 @@ fn forward_get_platform_info(
     param_value_size_ret.write_checked(size);
 
     Ok(())
+}
+
+#[no_mangle]
+pub extern "C" fn clGetExtensionFunctionAddressForPlatform(
+    platform: cl_platform_id,
+    function_name: *const c_char,
+) -> *mut c_void {
+    if Vcl::get().contains_platform(platform) {
+        clGetExtensionFunctionAddress(function_name)
+    } else {
+        ptr::null_mut()
+    }
 }
 
 #[cfg(test)]

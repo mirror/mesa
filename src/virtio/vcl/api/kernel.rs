@@ -177,12 +177,22 @@ fn get_kernel_work_group_info(
     param_value: *mut c_void,
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
-    kernel.get_ref()?;
+    let kern = kernel.get_ref()?;
+    let dev = if device.is_null() {
+        if kern.program.devs.len() > 1 {
+            return Err(CL_INVALID_DEVICE);
+        } else {
+            kern.program.devs[0].get_handle()
+        }
+    } else {
+        device.get_ref()?;
+        device
+    };
 
     let mut size = 0;
     Vcl::get().call_clGetKernelWorkGroupInfo(
         kernel,
-        device,
+        dev,
         param_name,
         param_value_size,
         param_value,
@@ -231,12 +241,22 @@ fn get_kernel_sub_group_info(
     param_value: *mut c_void,
     param_value_size_ret: *mut usize,
 ) -> CLResult<()> {
-    kernel.get_ref()?;
+    let kern = kernel.get_ref()?;
+    let dev = if device.is_null() {
+        if kern.program.devs.len() > 1 {
+            return Err(CL_INVALID_DEVICE);
+        } else {
+            kern.program.devs[0].get_handle()
+        }
+    } else {
+        device.get_ref()?;
+        device
+    };
 
     let mut size = 0;
     Vcl::get().call_clGetKernelSubGroupInfo(
         kernel,
-        device,
+        dev,
         param_name,
         input_value_size,
         input_value,

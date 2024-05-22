@@ -6,6 +6,8 @@
 use crate::api::icd::CLResult;
 
 use crate::api::types::*;
+use crate::core::event::Event;
+use crate::core::queue::Queue;
 use mesa_rust_util::{properties::Properties, ptr::CheckedPtr};
 use vcl_opencl_gen::*;
 
@@ -13,6 +15,7 @@ use std::ffi::{c_void, CStr, CString};
 use std::mem::{size_of, MaybeUninit};
 use std::ops::BitAnd;
 use std::slice;
+use std::sync::Arc;
 
 pub trait CLInfo<I> {
     fn query(&self, q: I, vals: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>>;
@@ -229,6 +232,32 @@ pub fn check_cl_bool<T: PartialEq + TryInto<cl_uint>>(val: T) -> Option<bool> {
         return None;
     }
     Some(c == CL_TRUE)
+}
+
+pub fn event_list_from_cl(
+    q: &Arc<Queue>,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+) -> CLResult<Vec<Arc<Event>>> {
+    // CL_INVALID_EVENT_WAIT_LIST if event_wait_list is NULL and num_events_in_wait_list > 0, or
+    // event_wait_list is not NULL and num_events_in_wait_list is 0, or if event objects in
+    // event_wait_list are not valid events.
+    if event_wait_list.is_null() && num_events_in_wait_list > 0
+        || !event_wait_list.is_null() && num_events_in_wait_list == 0
+    {
+        return Err(CL_INVALID_EVENT_WAIT_LIST);
+    }
+
+    let res = Event::from_cl_arr(event_wait_list, num_events_in_wait_list)
+        .map_err(|_| CL_INVALID_EVENT_WAIT_LIST)?;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and events in event_list are not
+    // the same.
+    if res.iter().any(|e| e.context != q.context) {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    Ok(res)
 }
 
 pub fn bit_check<A: BitAnd<Output = A> + PartialEq + Default, B: Into<A>>(a: A, b: B) -> bool {

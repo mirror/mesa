@@ -8,7 +8,6 @@ use crate::api::util::*;
 use crate::core::context::*;
 use crate::core::event::Event;
 use crate::core::memory::*;
-use crate::core::queue::Queue;
 use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::properties::*;
@@ -18,8 +17,8 @@ use vcl_proc_macros::*;
 
 use std::ffi::c_void;
 use std::mem::MaybeUninit;
-use std::ptr;
 use std::sync::Arc;
+use std::*;
 
 fn validate_mem_flags(flags: cl_mem_flags, images: bool) -> CLResult<()> {
     let mut valid_flags = cl_bitfield::from(
@@ -98,31 +97,14 @@ fn validate_size(ctx: &Context, size: usize) -> CLResult<()> {
     Err(CL_INVALID_BUFFER_SIZE)
 }
 
-fn check_event_wait_list(
-    queue: Arc<Queue>,
-    num_events_in_wait_list: cl_uint,
-    event_wait_list: *const cl_event,
-    event: *mut cl_event,
-) -> CLResult<(cl_event, *mut cl_event)> {
-    if (event_wait_list.is_null() && num_events_in_wait_list != 0)
-        || (!event_wait_list.is_null() && num_events_in_wait_list <= 0)
-    {
-        return Err(CL_INVALID_EVENT_WAIT_LIST);
+/// If `event` is not null, this function is going to create a new event and return the
+/// corresponding handle
+fn maybe_new_event(ctx: &Arc<Context>, event: *mut cl_event) -> cl_event {
+    if event.is_null() {
+        ptr::null_mut()
+    } else {
+        cl_event::from_arc(Event::new(&ctx))
     }
-
-    let mut ev_handle = if !event.is_null() {
-        cl_event::from_arc(Event::new(&queue.context))
-    } else {
-        ptr::null_mut()
-    };
-
-    let ev_ptr = if ev_handle.is_null() {
-        ptr::null_mut()
-    } else {
-        &mut ev_handle
-    };
-
-    Ok((ev_handle, ev_ptr))
 }
 
 #[cl_entrypoint(clCreateBufferWithProperties)]
@@ -282,8 +264,13 @@ fn enqueue_read_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueReadBuffer(
         command_queue,
@@ -334,8 +321,13 @@ fn enqueue_write_buffer(
         return Err(CL_INVALID_OPERATION);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueWriteBuffer(
         command_queue,
@@ -381,8 +373,13 @@ fn enqueue_copy_buffer(
         return Err(CL_INVALID_VALUE);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueCopyBuffer(
         command_queue,
@@ -425,8 +422,13 @@ fn enqueue_copy_buffer_rect(
         return Err(CL_INVALID_VALUE);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueCopyBufferRect(
         command_queue,
@@ -485,8 +487,13 @@ fn enqueue_fill_buffer(
         return Err(CL_INVALID_CONTEXT);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueFillBuffer(
         command_queue,
@@ -538,8 +545,13 @@ fn enqueue_migrate_mem_objects(
         return Err(CL_INVALID_VALUE);
     }
 
-    let (ev_handle, ev_ptr) =
-        check_event_wait_list(queue, num_events_in_wait_list, event_wait_list, event)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
 
     Vcl::get().call_clEnqueueMigrateMemObjects(
         command_queue,
@@ -681,6 +693,9 @@ fn create_image_2d(
     image_row_pitch: usize,
     host_ptr: *mut c_void,
 ) -> CLResult<cl_mem> {
+    if image_format.is_null() {
+        return Err(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR);
+    }
     let image_desc = cl_image_desc {
         image_type: CL_MEM_OBJECT_IMAGE2D,
         image_width: image_width,
@@ -688,13 +703,13 @@ fn create_image_2d(
         image_row_pitch: image_row_pitch,
         ..Default::default()
     };
-    Mem::new_image(
-        &context.get_arc()?,
+    Ok(cl_mem::from_arc(Mem::new_image(
+        context.get_arc()?,
         image_desc,
         flags,
-        image_format,
+        unsafe { *image_format },
         host_ptr,
-    )
+    )?))
 }
 
 #[cl_entrypoint(clCreateImage3D)]
@@ -709,6 +724,9 @@ fn create_image_3d(
     image_slice_pitch: usize,
     host_ptr: *mut c_void,
 ) -> CLResult<cl_mem> {
+    if image_format.is_null() {
+        return Err(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR);
+    }
     let image_desc = cl_image_desc {
         image_type: CL_MEM_OBJECT_IMAGE3D,
         image_width: image_width,
@@ -718,13 +736,13 @@ fn create_image_3d(
         image_slice_pitch: image_slice_pitch,
         ..Default::default()
     };
-    Mem::new_image(
-        &context.get_arc()?,
+    Ok(cl_mem::from_arc(Mem::new_image(
+        context.get_arc()?,
         image_desc,
         flags,
-        image_format,
+        unsafe { *image_format },
         host_ptr,
-    )
+    )?))
 }
 
 #[cl_entrypoint(clGetSupportedImageFormats)]

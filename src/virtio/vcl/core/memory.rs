@@ -5,6 +5,7 @@
 
 use crate::api::icd::*;
 use crate::core::context::*;
+use crate::core::format::CLFormatInfo;
 use crate::dev::renderer::Vcl;
 use crate::impl_cl_type_trait;
 
@@ -20,9 +21,91 @@ pub struct Mem {
     pub context: Arc<Context>,
     pub flags: cl_mem_flags,
     pub size: usize,
+    pub image_format: cl_image_format,
+    pub image_desc: cl_image_desc,
 }
 
 impl_cl_type_trait!(cl_mem, Mem, CL_INVALID_MEM_OBJECT);
+
+pub trait CLImageDescInfo {
+    fn type_info(&self) -> (u8, bool);
+    fn pixels(&self) -> usize;
+    fn row_pitch(&self) -> CLResult<u32>;
+    fn slice_pitch(&self) -> usize;
+    fn width(&self) -> CLResult<u32>;
+    fn height(&self) -> CLResult<u32>;
+
+    fn dims(&self) -> u8 {
+        self.type_info().0
+    }
+
+    fn dims_with_array(&self) -> u8 {
+        let array: u8 = self.is_array().into();
+        self.dims() + array
+    }
+
+    fn has_slice(&self) -> bool {
+        self.dims() == 3 || self.is_array()
+    }
+
+    fn is_array(&self) -> bool {
+        self.type_info().1
+    }
+}
+
+impl CLImageDescInfo for cl_image_desc {
+    fn type_info(&self) -> (u8, bool) {
+        match self.image_type {
+            CL_MEM_OBJECT_IMAGE1D | CL_MEM_OBJECT_IMAGE1D_BUFFER => (1, false),
+            CL_MEM_OBJECT_IMAGE1D_ARRAY => (1, true),
+            CL_MEM_OBJECT_IMAGE2D => (2, false),
+            CL_MEM_OBJECT_IMAGE2D_ARRAY => (2, true),
+            CL_MEM_OBJECT_IMAGE3D => (3, false),
+            _ => panic!("unknown image_type {:x}", self.image_type),
+        }
+    }
+
+    fn pixels(&self) -> usize {
+        let mut res = self.image_width;
+        let dims = self.dims();
+
+        if dims > 1 {
+            res *= self.image_height;
+        }
+
+        if dims > 2 {
+            res *= self.image_depth;
+        }
+
+        if self.is_array() {
+            res *= self.image_array_size;
+        }
+
+        res
+    }
+
+    fn row_pitch(&self) -> CLResult<u32> {
+        self.image_row_pitch
+            .try_into()
+            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
+    }
+
+    fn slice_pitch(&self) -> usize {
+        self.image_slice_pitch
+    }
+
+    fn width(&self) -> CLResult<u32> {
+        self.image_width
+            .try_into()
+            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
+    }
+
+    fn height(&self) -> CLResult<u32> {
+        self.image_height
+            .try_into()
+            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
+    }
+}
 
 impl Mem {
     pub fn new_buffer(
@@ -36,6 +119,8 @@ impl Mem {
             context: context.clone(),
             flags,
             size,
+            image_format: cl_image_format::default(),
+            image_desc: cl_image_desc::default(),
         });
         let mut handle = cl_mem::from_arc(buffer);
         Vcl::get().call_clCreateBufferMESA(
@@ -63,6 +148,8 @@ impl Mem {
             context: buf.context.clone(),
             flags,
             size: buffer_region.size,
+            image_format: cl_image_format::default(),
+            image_desc: cl_image_desc::default(),
         });
 
         let mut handle = cl_mem::from_arc(sub_buffer);
@@ -79,56 +166,53 @@ impl Mem {
     }
 
     pub fn new_image(
-        context: &Arc<Context>,
-        desc: cl_image_desc,
+        context: Arc<Context>,
+        image_desc: cl_image_desc,
         flags: cl_mem_flags,
-        image_format: *const cl_image_format,
+        image_format: cl_image_format,
         host_ptr: *mut c_void,
-    ) -> CLResult<cl_mem> {
-        let size = match desc.image_type {
-            CL_MEM_OBJECT_IMAGE2D => desc.image_height * desc.image_row_pitch,
-            CL_MEM_OBJECT_IMAGE3D => desc.image_depth * desc.image_slice_pitch,
-            _ => unimplemented!(),
-        };
+    ) -> CLResult<Arc<Mem>> {
+        let pixel_size = image_format.pixel_size().unwrap() as usize;
+        let size = image_desc.pixels() * pixel_size;
 
         let image = Arc::new(Self {
             base: CLObjectBase::new(),
-            context: context.clone(),
+            context,
             flags,
             size,
+            image_format,
+            image_desc,
         });
 
-        let mut handle = cl_mem::from_arc(image);
-
-        match desc.image_type {
+        match image_desc.image_type {
             CL_MEM_OBJECT_IMAGE2D => Vcl::get().call_clCreateImage2DMESA(
-                context.get_handle(),
+                image.context.get_handle(),
                 flags,
-                image_format,
-                desc.image_width,
-                desc.image_height,
-                desc.image_row_pitch,
+                &image_format,
+                image_desc.image_width,
+                image_desc.image_height,
+                image_desc.image_row_pitch,
                 size,
                 host_ptr,
-                &mut handle,
+                &mut image.get_handle(),
             )?,
             CL_MEM_OBJECT_IMAGE3D => Vcl::get().call_clCreateImage3DMESA(
-                context.get_handle(),
+                image.context.get_handle(),
                 flags,
-                image_format,
-                desc.image_width,
-                desc.image_height,
-                desc.image_depth,
-                desc.image_row_pitch,
-                desc.image_slice_pitch,
+                &image_format,
+                image_desc.image_width,
+                image_desc.image_height,
+                image_desc.image_depth,
+                image_desc.image_row_pitch,
+                image_desc.image_slice_pitch,
                 size,
                 host_ptr,
-                &mut handle,
+                &mut image.get_handle(),
             )?,
             _ => unimplemented!(),
         }
 
-        Ok(handle)
+        Ok(image)
     }
 }
 

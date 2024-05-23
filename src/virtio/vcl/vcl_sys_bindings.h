@@ -5,7 +5,7 @@ enum MapResult : long {
    FAILED = (long)MAP_FAILED,
 };
 
-size_t cmsg_space(size_t size);
+size_t CMSG_SPACE_SIZEOF_INT = CMSG_SPACE(sizeof(int));
 
 struct cmsghdr *cmsg_firsthdr(struct msghdr *msgh);
 

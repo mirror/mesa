@@ -247,8 +247,7 @@ impl Vtest {
             iov_len: 0,
         };
 
-        let control_len = unsafe { cmsg_space(mem::size_of::<i32>()) };
-        let mut control = vec![0u8; control_len];
+        let mut control = [0u8; CMSG_SPACE_SIZEOF_INT];
 
         let mut message = msghdr {
             msg_name: ptr::null_mut(),

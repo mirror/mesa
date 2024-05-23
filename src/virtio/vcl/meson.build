@@ -139,6 +139,7 @@ vcl_sys_bindings_rs = rust.bindgen(
     '--allowlist-type',     'MapResult',
     '--allowlist-var',      '(PROT_READ|PROT_WRITE|MAP_SHARED)',
     '--allowlist-var',      '(SOL_SOCKET|SCM_RIGHTS)',
+    '--allowlist-var',      '(CMSG_SPACE_SIZEOF_INT)',
   ],
 )
 

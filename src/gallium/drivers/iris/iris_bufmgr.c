@@ -1111,8 +1111,11 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
     * than 64MB should hit the BO cache or slab allocations anyway, so this
     * shouldn't waste too much memory.  We do exclude small (< 1MB) sizes to
     * be defensive in case any of those bypass the caches and end up here.
+    *
+    * For VirtioGPU this optimization has a negative performance impact
+    * due to a slower memory allocation and mapping in a VM.
     */
-   if (bo_size >= 1024 * 1024)
+   if (bo_size >= 1024 * 1024 && !is_intel_virtio_fd(bufmgr->fd))
       bo_size = align64(bo_size, 2 * 1024 * 1024);
 
    bo->real.heap = flags_to_heap(bufmgr, flags);

@@ -97,6 +97,104 @@ genX(call_internal_shader)(nir_builder *b, enum anv_internal_kernel_name shader_
          nir_imul_imm(b, load_compute_index(b), 4));
       return sizeof(struct anv_memcpy_params);
 
+#if GFX_VER >= 11
+   case ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_COMPUTE:
+   case ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_FRAGMENT:
+      genX(libanv_preprocess_gfx_generate_step1)(
+         b,
+         load_param(b, 64, struct anv_generated_gfx_commands_params, cmd_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, cmd_stride),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, data_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, data_stride),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, seq_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, seq_stride),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, seq_count_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, max_seq_count),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, cmd_prolog_size),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, data_prolog_size),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, state_addr),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, indirect_set_addr),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, const_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, const_size),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, driver_const_addr),
+         load_param(b, 64, struct anv_generated_gfx_commands_params, return_addr),
+         load_param(b, 32, struct anv_generated_gfx_commands_params, flags),
+         shader_name == ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_COMPUTE ?
+         load_compute_index(b) : load_fragment_index(b));
+      return sizeof(struct anv_generated_gfx_commands_params);
+
+   case ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_COMPUTE:
+   case ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_FRAGMENT:
+      genX(libanv_preprocess_cs_generate_step1)(
+         b,
+         load_param(b, 64, struct anv_generated_cs_commands_params, cmd_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, cmd_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, data_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, data_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, seq_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, seq_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, seq_count_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, max_seq_count),
+         load_param(b, 32, struct anv_generated_cs_commands_params, cmd_prolog_size),
+         load_param(b, 32, struct anv_generated_cs_commands_params, data_prolog_size),
+         load_param(b, 64, struct anv_generated_cs_commands_params, layout_addr),
+         load_param(b, 64, struct anv_generated_cs_commands_params, indirect_set_addr),
+         load_param(b, 64, struct anv_generated_cs_commands_params, interface_descriptor_data_addr),
+         load_param(b, 64, struct anv_generated_cs_commands_params, const_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, const_size),
+         load_param(b, 64, struct anv_generated_cs_commands_params, driver_const_addr),
+         load_param(b, 64, struct anv_generated_cs_commands_params, return_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, flags),
+         shader_name == ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_COMPUTE ?
+         load_compute_index(b) : load_fragment_index(b));
+      return sizeof(struct anv_generated_cs_commands_params);
+
+   case ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP2_COMPUTE:
+      genX(libanv_postprocess_cs_generate)(
+         b,
+         load_param(b, 64, struct anv_generated_cs_commands_params, cmd_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, cmd_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, data_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, data_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, seq_count_addr),
+         load_param(b, 32, struct anv_generated_cs_commands_params, max_seq_count),
+         load_param(b, 32, struct anv_generated_cs_commands_params, cmd_prolog_size),
+         load_param(b, 32, struct anv_generated_cs_commands_params, data_prolog_size),
+         load_param(b, 32, struct anv_generated_cs_commands_params, data_stride),
+         load_param(b, 64, struct anv_generated_cs_commands_params, indirect_set_addr),
+         load_param(b, 64, struct anv_generated_cs_commands_params, return_addr),
+         load_compute_index(b));
+      return sizeof(struct anv_generated_cs_commands_params);
+#endif /* GFX_VER >= 11 */
+
+#if GFX_VERx10 >= 125
+   case ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_COMPUTE:
+   case ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_FRAGMENT:
+      genX(libanv_preprocess_rt_generate)(
+         b,
+         load_param(b, 64, struct anv_generated_rt_commands_params, cmd_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, cmd_stride),
+         load_param(b, 64, struct anv_generated_rt_commands_params, data_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, data_stride),
+         load_param(b, 64, struct anv_generated_rt_commands_params, seq_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, seq_stride),
+         load_param(b, 64, struct anv_generated_rt_commands_params, seq_count_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, max_seq_count),
+         load_param(b, 32, struct anv_generated_rt_commands_params, cmd_prolog_size),
+         load_param(b, 32, struct anv_generated_rt_commands_params, data_prolog_size),
+         load_param(b, 64, struct anv_generated_rt_commands_params, layout_addr),
+         load_param(b, 64, struct anv_generated_rt_commands_params, compute_walker_addr),
+         load_param(b, 64, struct anv_generated_rt_commands_params, rtdg_global_addr),
+         load_param(b, 64, struct anv_generated_rt_commands_params, const_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, const_size),
+         load_param(b, 64, struct anv_generated_rt_commands_params, driver_const_addr),
+         load_param(b, 64, struct anv_generated_rt_commands_params, return_addr),
+         load_param(b, 32, struct anv_generated_rt_commands_params, flags),
+         shader_name == ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_COMPUTE ?
+         load_compute_index(b) : load_fragment_index(b));
+      return sizeof(struct anv_generated_rt_commands_params);
+#endif /* GFX_VERx10 >= 125 */
+
    default:
       unreachable("Invalid shader name");
       break;

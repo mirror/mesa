@@ -148,7 +148,7 @@ compile_shader(struct anv_device *device,
 
    const unsigned *program;
    if (stage == MESA_SHADER_FRAGMENT) {
-      struct brw_compile_stats stats[3];
+      struct brw_compile_stats stats[3] = {};
       struct brw_compile_fs_params params = {
          .base = {
             .nir = nir,
@@ -186,6 +186,11 @@ compile_shader(struct anv_device *device,
                    sends_count_expectation *
                    (device->info->ver < 20 ? 2 : 1));
             stat_idx++;
+         }
+      } else {
+         for (uint32_t i = 0; i < ARRAY_SIZE(stats); i++) {
+            assert(stats[i].spills == 0);
+            assert(stats[i].fills == 0);
          }
       }
    } else {
@@ -300,6 +305,55 @@ anv_device_get_internal_shader(struct anv_device *device,
          .send_count = device->info->verx10 >= 125 ?
                        10 /* 5 loads (1 pull constants) + 4 stores + 1 EOT */ :
                        9 /* 4 loads + 4 stores + 1 EOT */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_COMPUTE] = {
+         .key        = {
+            .name    = "anv-generated-gfx-cmd1-compute",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .send_count = 0 /* too complex */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_FRAGMENT] = {
+         .key        = {
+            .name    = "anv-generated-gfx-cmd1-fragment",
+         },
+         .stage      = MESA_SHADER_FRAGMENT,
+         .send_count = 0 /* too complex */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_COMPUTE] = {
+         .key        = {
+            .name    = "anv-generated-cs-cmd1-compute",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .send_count = 0 /* too complex */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_FRAGMENT] = {
+         .key        = {
+            .name    = "anv-generated-cs-cmd1-fragment",
+         },
+         .stage      = MESA_SHADER_FRAGMENT,
+         .send_count = 0 /* too complex */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP2_COMPUTE] = {
+         .key        = {
+            .name    = "anv-generated-cs-cmd2-compute",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .send_count = device->info->verx10 >= 125 ? 10 : 8,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_COMPUTE] = {
+         .key        = {
+            .name    = "anv-generated-rt-cmd-compute",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .send_count = 0 /* too complex */,
+      },
+      [ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_FRAGMENT] = {
+         .key        = {
+            .name    = "anv-generated-rt-cmd-fragment",
+         },
+         .stage      = MESA_SHADER_COMPUTE,
+         .send_count = 0 /* too complex */,
       },
    };
 

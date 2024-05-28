@@ -97,6 +97,7 @@ anv_per_hw_ver_files = files(
   'genX_blorp_exec.c',
   'genX_cmd_buffer.c',
   'genX_cmd_compute.c',
+  'genX_cmd_dgc.c',
   'genX_cmd_draw.c',
   'genX_cmd_draw_generated_flush.h',
   'genX_cmd_draw_generated_indirect.h',

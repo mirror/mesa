@@ -3486,8 +3486,31 @@ emit_isp_disable(struct anv_cmd_buffer *cmd_buffer)
    }
 }
 
+static void
+reset_dgc_state(struct anv_cmd_buffer *cmd_buffer)
+{
+   if (!cmd_buffer->state.dgc_states)
+      return;
+
+#if GFX_VERx10 < 125
+   if (cmd_buffer->state.current_pipeline == GPGPU &&
+       (cmd_buffer->state.dgc_states & ANV_DGC_STATE_COMPUTE)) {
+      /* This works around the fact that indirect sets & preprocess buffer can
+       * be destroyed after then command buffer is executed and their state
+       * remain active in the HW context image. In that case, on context
+       * restore, the HW will try to reload some data and might run into a
+       * pagefault.
+       */
+      genX(cmd_buffer_flush_compute_state)(cmd_buffer);
+   }
+#endif
+
+   cmd_buffer->state.dgc_states = 0;
+}
+
 static VkResult
-end_command_buffer(struct anv_cmd_buffer *cmd_buffer)
+end_command_buffer(struct anv_cmd_buffer *cmd_buffer,
+                   bool is_companion)
 {
    if (anv_batch_has_error(&cmd_buffer->batch))
       return cmd_buffer->batch.status;
@@ -3502,19 +3525,25 @@ end_command_buffer(struct anv_cmd_buffer *cmd_buffer)
       return VK_SUCCESS;
    }
 
-   /* Flush query clears using blorp so that secondary query writes do not
-    * race with the clear.
-    */
-   if (cmd_buffer->state.queries.clear_bits) {
-      anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
-                                "query clear flush prior command buffer end");
-   }
-
    /* Flush any in-progress CCS/MCS operations in preparation for chaining. */
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
    genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
+
+   if (!is_companion) {
+      reset_dgc_state(cmd_buffer);
+
+      /* Flush query clears using blorp so that secondary query writes do not
+       * race with the clear.
+       */
+      if (cmd_buffer->state.queries.clear_bits) {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
+                                   "query clear flush prior command buffer end");
+      }
+
+      genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
+   }
 
    /* Turn on object level preemption if it is disabled to have it in known
     * state at the beginning of new command buffer.
@@ -3556,7 +3585,7 @@ genX(EndCommandBuffer)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   VkResult status = end_command_buffer(cmd_buffer);
+   VkResult status = end_command_buffer(cmd_buffer, false);
    if (status != VK_SUCCESS)
       return status;
 
@@ -3566,7 +3595,7 @@ genX(EndCommandBuffer)(
    if (cmd_buffer->companion_rcs_cmd_buffer) {
        assert(anv_cmd_buffer_is_compute_queue(cmd_buffer) ||
               anv_cmd_buffer_is_blitter_queue(cmd_buffer));
-       status = end_command_buffer(cmd_buffer->companion_rcs_cmd_buffer);
+       status = end_command_buffer(cmd_buffer->companion_rcs_cmd_buffer, true);
    }
 
    ANV_RMV(cmd_buffer_create, cmd_buffer->device, cmd_buffer);
@@ -4736,6 +4765,8 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
 
    if (cmd_buffer->state.current_pipeline == pipeline)
       return;
+
+   reset_dgc_state(cmd_buffer);
 
 #if GFX_VER >= 20
    /* While PIPELINE_SELECT is not needed on Xe2+, our current assumption

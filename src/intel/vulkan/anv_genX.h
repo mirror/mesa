@@ -346,6 +346,11 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline);
 #endif
 
 void
+genX(write_gfx_indirect_descriptor)(struct anv_gen_gfx_indirect_descriptor *descriptor,
+                                    struct anv_indirect_execution_set *indirect_set,
+                                    struct anv_graphics_pipeline *pipeline);
+
+void
 genX(batch_set_preemption)(struct anv_batch *batch,
                            struct anv_device *device,
                            uint32_t current_pipeline,

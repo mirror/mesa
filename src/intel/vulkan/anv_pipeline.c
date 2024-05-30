@@ -99,6 +99,40 @@ anv_shader_stage_to_nir(struct anv_device *device,
    return nir;
 }
 
+struct anv_pipeline_bind_map *
+anv_pipeline_bind_map_clone(struct anv_device *device,
+                            const VkAllocationCallbacks *alloc,
+                            const struct anv_pipeline_bind_map *src)
+{
+   /* This is only for GRL, which we should never be dealing with here. */
+   assert(src->kernel_args_size == 0);
+   assert(src->kernel_arg_count == 0);
+
+   VK_MULTIALLOC(ma);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_bind_map, bind_map, 1);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_binding, surfaces, src->surface_count);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_binding, samplers, src->sampler_count);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_embedded_sampler_binding, embedded_samplers, src->embedded_sampler_count);
+
+   if (!vk_multialloc_zalloc2(&ma, &device->vk.alloc, alloc,
+                              VK_SYSTEM_ALLOCATION_SCOPE_DEVICE))
+      return NULL;
+
+   memcpy(bind_map, src, sizeof(*src));
+
+   memcpy(surfaces, src->surface_to_descriptor,
+          sizeof(*surfaces) * src->surface_count);
+   bind_map->surface_to_descriptor = surfaces;
+   memcpy(samplers, src->sampler_to_descriptor,
+          sizeof(*samplers) * src->sampler_count);
+   bind_map->sampler_to_descriptor = samplers;
+   memcpy(embedded_samplers, src->embedded_sampler_to_binding,
+          sizeof(*embedded_samplers) * src->embedded_sampler_count);
+   bind_map->embedded_sampler_to_binding = embedded_samplers;
+
+   return bind_map;
+}
+
 static VkResult
 anv_pipeline_init(struct anv_pipeline *pipeline,
                   struct anv_device *device,

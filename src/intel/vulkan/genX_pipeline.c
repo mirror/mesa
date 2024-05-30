@@ -2196,6 +2196,173 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
    emit_3dstate_ps_extra(pipeline, state->rs, state);
 }
 
+void genX(write_gfx_indirect_descriptor)(struct anv_gen_gfx_indirect_descriptor *descriptor,
+                                         struct anv_indirect_execution_set *indirect_set,
+                                         struct anv_graphics_pipeline *pipeline)
+{
+   assert(pipeline->base.base.flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT);
+
+   struct anv_device *device = pipeline->base.base.device;
+   const struct intel_device_info *devinfo = device->info;
+
+   struct anv_batch final_cmds = {};
+   anv_batch_set_storage(&final_cmds, ANV_NULL_ADDRESS,
+                         descriptor->final_commands,
+                         sizeof(descriptor->final_commands));
+
+   genX(batch_emit_gfx_pipeline_push_alloc)(&final_cmds, device, pipeline);
+
+   if (!intel_needs_workaround(devinfo, 16014912113))
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.urb);
+
+#define COPY(name) do {                           \
+      assert(sizeof(descriptor->name) >=          \
+             pipeline->name.len * 4);             \
+      memcpy(descriptor->name,                    \
+             &pipeline->batch_data[               \
+                pipeline->name.offset],           \
+             pipeline->name.len * 4);             \
+   } while (0)
+
+   if (anv_pipeline_is_primitive(pipeline)) {
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.primitive_replication);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.vf_sgvs);
+#if GFX_VER >= 11
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.vf_sgvs_2);
+#endif
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.vf_component_packing);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.vs);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.hs);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.ds);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.so_decl_list);
+   } else {
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.primitive_replication);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.task_control);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.task_shader);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.task_redistrib);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.mesh_control);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.mesh_shader);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.mesh_distrib);
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.clip_mesh);
+   }
+
+   anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.sbe);
+   anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.sbe_swiz);
+   if (anv_pipeline_is_mesh(pipeline))
+      anv_batch_emit_pipeline_state(&final_cmds, pipeline, final.sbe_mesh);
+
+   descriptor->final_commands_size = final_cmds.next - final_cmds.start;
+
+   if (intel_needs_workaround(devinfo, 16014912113)) {
+      COPY(final.urb);
+      COPY(final.urb_wa_16014912113);
+   }
+
+   /* Partially pack instructions */
+   COPY(partial.vfg);
+   COPY(partial.gs);
+   COPY(partial.te);
+   COPY(partial.so);
+   COPY(partial.clip);
+   COPY(partial.sf);
+   COPY(partial.wm);
+   COPY(partial.ps_extra);
+
+#undef COPY_PARTIAL
+
+   descriptor->ds_urb_cfg = pipeline->ds_urb_cfg;
+   const struct brw_tes_prog_data *tes_prog_data = get_tes_prog_data(pipeline);
+   descriptor->tes_output_topology = tes_prog_data ?
+                                     tes_prog_data->output_topology : 0;
+   descriptor->color_writes = (1 << pipeline->num_color_outputs) - 1;
+   descriptor->last_preraster_topology = pipeline->last_preraster_topology;
+
+   const struct brw_wm_prog_data *wm_prog_data = get_wm_prog_data(pipeline);
+   const struct anv_shader_bin *fs_bin =
+      pipeline->base.shaders[MESA_SHADER_FRAGMENT];
+
+   if (wm_prog_data) {
+      for (uint32_t i = 0; i < 2; i++) {
+         struct anv_batch batch = {};
+         anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                               i == 0 ?
+                               descriptor->partial.ps :
+                               descriptor->partial.ps_msaa,
+                               i == 0 ?
+                               sizeof(descriptor->partial.ps) :
+                               sizeof(descriptor->partial.ps_msaa));
+
+         enum intel_msaa_flags fs_msaa_flags =
+            (wm_prog_data->coarse_pixel_dispatch == INTEL_SOMETIMES ||
+             wm_prog_data->persample_dispatch == INTEL_SOMETIMES ||
+             wm_prog_data->alpha_to_coverage == INTEL_SOMETIMES) ?
+            (INTEL_MSAA_FLAG_ENABLE_DYNAMIC |
+             (i == 0 ? 0 : (INTEL_MSAA_FLAG_MULTISAMPLE_FBO |
+                            INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH |
+                            INTEL_MSAA_FLAG_PERSAMPLE_INTERP))) :
+             0;
+
+         struct GENX(3DSTATE_PS) _ps = {};
+         intel_set_ps_dispatch_state(&_ps, device->info, wm_prog_data,
+                                     1, fs_msaa_flags);
+         anv_batch_emit_merge_protected(&batch, GENX(3DSTATE_PS),
+                                     pipeline, partial.ps, ps, false) {
+#if GFX_VER < 20
+            ps._8PixelDispatchEnable = _ps._8PixelDispatchEnable;
+            ps._16PixelDispatchEnable = _ps._16PixelDispatchEnable;
+            ps._32PixelDispatchEnable = _ps._32PixelDispatchEnable;
+#else
+            ps.Kernel0Enable = _ps.Kernel0Enable;
+            ps.Kernel1Enable = _ps.Kernel1Enable;
+            ps.Kernel0SIMDWidth = _ps.Kernel0SIMDWidth;
+            ps.Kernel1SIMDWidth = _ps.Kernel1SIMDWidth;
+            ps.Kernel0PolyPackingPolicy = _ps.Kernel0PolyPackingPolicy;
+#endif
+
+            ps.KernelStartPointer0 = fs_bin->kernel.offset +
+               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 0);
+            ps.KernelStartPointer1 = fs_bin->kernel.offset +
+               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 1);
+            ps.DispatchGRFStartRegisterForConstantSetupData0 =
+               brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 0);
+            ps.DispatchGRFStartRegisterForConstantSetupData1 =
+               brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 1);
+#if GFX_VER < 20
+            ps.KernelStartPointer2 = fs_bin->kernel.offset +
+               brw_wm_prog_data_prog_offset(wm_prog_data, ps, 2);
+            ps.DispatchGRFStartRegisterForConstantSetupData2 =
+               brw_wm_prog_data_dispatch_grf_start_reg(wm_prog_data, ps, 2);
+#endif
+
+            ps.PositionXYOffsetSelect =
+               !wm_prog_data->uses_pos_offset ? POSOFFSET_NONE :
+               brw_wm_prog_data_is_persample(wm_prog_data, fs_msaa_flags) ?
+               POSOFFSET_SAMPLE : POSOFFSET_CENTROID;
+         }
+      }
+
+      descriptor->barycentric_interp_modes =
+         wm_prog_data->barycentric_interp_modes;
+      descriptor->persample_dispatch = wm_prog_data->persample_dispatch;
+      descriptor->coarse_pixel_dispatch = wm_prog_data->coarse_pixel_dispatch;
+      descriptor->has_side_effects = wm_prog_data->has_side_effects;
+      descriptor->sample_shading = wm_prog_data->sample_shading;
+      descriptor->uses_kill = wm_prog_data->uses_kill;
+      descriptor->rp_has_ds_self_dep = pipeline->rp_has_ds_self_dep;
+      descriptor->min_sample_shading = pipeline->min_sample_shading;
+      descriptor->sample_shading_enable = pipeline->sample_shading_enable;
+   } else {
+      memcpy(descriptor->partial.ps,
+             &pipeline->batch_data[
+                pipeline->partial.ps.offset],
+             pipeline->partial.ps.len * 4);
+      memcpy(descriptor->partial.ps_msaa,
+             &pipeline->batch_data[
+                pipeline->partial.ps.offset],
+             pipeline->partial.ps.len * 4);
+   }
+}
+
 #if GFX_VERx10 >= 125
 
 void

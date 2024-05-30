@@ -55,6 +55,7 @@
 #include "compiler/brw_kernel.h"
 #include "compiler/brw_rt.h"
 #include "ds/intel_driver_ds.h"
+#include "shaders/libintel_shaders.h"
 #include "util/bitset.h"
 #include "util/bitscan.h"
 #include "util/detect_os.h"
@@ -145,6 +146,10 @@ struct intel_perf_query_result;
 #if !defined(CLOCK_MONOTONIC_RAW) && defined(CLOCK_MONOTONIC_FAST)
 #define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC_FAST
 #endif
+
+#define ANV_GRAPHICS_STAGE_BITS (VK_SHADER_STAGE_ALL_GRAPHICS | \
+                                 VK_SHADER_STAGE_MESH_BIT_EXT | \
+                                 VK_SHADER_STAGE_TASK_BIT_EXT)
 
 #define ANV_RT_STAGE_BITS (VK_SHADER_STAGE_RAYGEN_BIT_KHR |             \
                            VK_SHADER_STAGE_ANY_HIT_BIT_KHR |            \
@@ -4637,11 +4642,21 @@ struct anv_event {
 
 #define ANV_STAGE_MASK ((1 << MESA_VULKAN_SHADER_STAGES) - 1)
 
+#define ANV_VK_STAGE_MASK (ANV_GRAPHICS_STAGE_BITS |    \
+                           ANV_RT_STAGE_BITS |          \
+                           VK_SHADER_STAGE_COMPUTE_BIT)
+
 #define anv_foreach_stage(stage, stage_bits)                         \
    for (gl_shader_stage stage,                                       \
         __tmp = (gl_shader_stage)((stage_bits) & ANV_STAGE_MASK);    \
         stage = __builtin_ffs(__tmp) - 1, __tmp;                     \
         __tmp &= ~(1 << (stage)))
+
+#define anv_foreach_vk_stage(stage, stage_bits)                         \
+   for (VkShaderStageFlags stage,                                       \
+           __tmp = (stage_bits & ANV_VK_STAGE_MASK);                    \
+        stage = BITFIELD_BIT(__builtin_ffs(__tmp) - 1), __tmp;          \
+        __tmp &= ~(stage))
 
 struct anv_pipeline_bind_map {
    unsigned char                                surface_sha1[20];
@@ -4661,6 +4676,11 @@ struct anv_pipeline_bind_map {
 
    struct anv_push_range                        push_ranges[4];
 };
+
+struct anv_pipeline_bind_map *
+anv_pipeline_bind_map_clone(struct anv_device *device,
+                            const VkAllocationCallbacks *pAllocator,
+                            const struct anv_pipeline_bind_map *bind_map);
 
 struct anv_push_descriptor_info {
    /* A bitfield of descriptors used. */
@@ -6318,6 +6338,39 @@ static inline uint32_t khr_perf_query_preamble_offset(const struct anv_query_poo
           pool->khr_perf_preamble_stride * pass;
 }
 
+struct anv_indirect_execution_set {
+   struct vk_object_base base;
+
+   struct anv_pipeline *template_pipeline;
+
+   enum anv_descriptor_set_layout_type layout_type;
+
+   struct anv_pipeline_bind_map *bind_map;
+
+   /** List of all the scratch buffers on < Gfx12.5 */
+   struct anv_reloc_list relocs;
+
+   struct anv_bo *bo;
+
+   bool uses_xfb;
+
+   uint32_t stride;
+
+   uint32_t max_final_commands_size;
+
+   /** Maximum scratch space for shaders */
+   uint32_t max_scratch;
+   /** Maximum number of ray queries used by shaders */
+   uint32_t max_ray_queries;
+};
+
+enum anv_gen_command_stage anv_vk_stage_to_generated_stage(VkShaderStageFlags vk_stage);
+
+uint32_t anv_vk_stages_to_generated_stages(VkShaderStageFlags vk_stages);
+
+void anv_indirect_descriptor_push_constants_write(struct anv_gen_gfx_indirect_descriptor *descriptor,
+                                                  struct anv_graphics_pipeline *pipeline);
+
 struct anv_vid_mem {
    struct anv_device_memory *mem;
    VkDeviceSize       offset;
@@ -6587,6 +6640,9 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session, vk.base,
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
                                VkVideoSessionParametersKHR,
                                VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_indirect_execution_set, base,
+                               VkIndirectExecutionSetEXT,
+                               VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT)
 
 #define anv_genX(devinfo, thing) ({             \
    __typeof(&gfx9_##thing) genX_thing;          \

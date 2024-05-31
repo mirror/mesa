@@ -34,6 +34,7 @@
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_descriptor_set.h"
+#include "tu_device_generated_commands.h"
 #include "tu_dynamic_rendering.h"
 #include "tu_image.h"
 #include "tu_pass.h"
@@ -246,6 +247,8 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_descriptor_buffer = true,
       .EXT_descriptor_indexing = true,
       .EXT_device_address_binding_report = true,
+      .EXT_device_generated_commands =
+         device->info->a7xx.load_shader_consts_via_preamble,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
 #endif
@@ -559,6 +562,10 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_depth_clip_enable */
    features->depthClipEnable = true;
+
+   /* VK_EXT_device_generated_commands */
+   features->deviceGeneratedCommands =
+      pdevice->info->a7xx.load_shader_consts_via_preamble;
 
    /* VK_EXT_descriptor_buffer */
    features->descriptorBuffer = true;
@@ -1303,6 +1310,34 @@ tu_get_properties(struct tu_physical_device *pdevice,
 
       memcpy(props->optimalTilingLayoutUUID, sha1, VK_UUID_SIZE);
    }
+
+   /* VK_EXT_device_generated_commands */
+   props->maxIndirectPipelineCount = TU_DGC_MAX_PIPELINES;
+   props->maxIndirectShaderObjectCount = 0;
+   props->maxIndirectSequenceCount = UINT32_MAX;
+   props->maxIndirectCommandsTokenCount = UINT32_MAX;
+   props->maxIndirectCommandsIndirectStride = UINT32_MAX;
+   props->maxIndirectCommandsTokenOffset = UINT32_MAX;
+   props->supportedIndirectCommandsInputModes =
+      VK_INDIRECT_COMMANDS_INPUT_MODE_VULKAN_INDEX_BUFFER_EXT |
+      VK_INDIRECT_COMMANDS_INPUT_MODE_DXGI_INDEX_BUFFER_EXT;
+   props->supportedIndirectCommandsShaderStages =
+      VK_SHADER_STAGE_COMPUTE_BIT |
+      VK_SHADER_STAGE_VERTEX_BIT |
+      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+      VK_SHADER_STAGE_GEOMETRY_BIT |
+      VK_SHADER_STAGE_FRAGMENT_BIT;
+   props->supportedIndirectCommandsShaderStagesPipelineBinding =
+      VK_SHADER_STAGE_COMPUTE_BIT |
+      VK_SHADER_STAGE_VERTEX_BIT |
+      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+      VK_SHADER_STAGE_GEOMETRY_BIT |
+      VK_SHADER_STAGE_FRAGMENT_BIT;
+   props->supportedIndirectCommandsShaderStagesShaderBinding = 0;
+   props->deviceGeneratedCommandsTransformFeedback = true;
+   props->deviceGeneratedCommandsMultiDrawIndirectCount = true;
 }
 
 static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {

@@ -271,4 +271,22 @@ tu_fill_render_pass_state(struct vk_render_pass_state *rp,
                           const struct tu_render_pass *pass,
                           const struct tu_subpass *subpass);
 
+template <chip CHIP>
+unsigned
+tu6_patch_control_points_size(struct tu_device *dev,
+                              const struct tu_shader *vs,
+                              const struct tu_shader *tcs,
+                              const struct tu_shader *tes,
+                              const struct tu_program_state *program,
+                              uint32_t patch_control_points);
+
+template <chip CHIP>
+void
+tu6_emit_patch_control_points(struct tu_cs *cs,
+                              const struct tu_shader *vs,
+                              const struct tu_shader *tcs,
+                              const struct tu_shader *tes,
+                              const struct tu_program_state *program,
+                              uint32_t patch_control_points);
+
 #endif /* TU_PIPELINE_H */

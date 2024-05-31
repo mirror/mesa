@@ -594,6 +594,8 @@ tu_bo_init(struct tu_device *dev,
       .base = base,
    };
 
+   rb_tree_insert(&dev->bo_iova_map, &bo->node, tu_bo_insert_cmp);
+
    mtx_unlock(&dev->bo_mutex);
 
    return VK_SUCCESS;
@@ -1323,6 +1325,7 @@ static const struct tu_knl virtio_knl_funcs = {
       .bo_export_dmabuf = tu_drm_export_dmabuf,
       .bo_map = virtio_bo_map,
       .bo_allow_dump = virtio_bo_allow_dump,
+      .iova_allow_dump = tu_drm_iova_allow_dump,
       .bo_finish = tu_drm_bo_finish,
       .device_wait_u_trace = virtio_device_wait_u_trace,
       .queue_submit = virtio_queue_submit,

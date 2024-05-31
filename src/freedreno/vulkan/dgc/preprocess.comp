@@ -1,0 +1,234 @@
+/*
+ * Copyright © 2024 Valve Corporation
+ *
+ * SPDX-License-Identifier: MIT
+ */
+
+#version 460
+
+#extension GL_GOOGLE_include_directive : require
+
+#extension GL_EXT_shader_explicit_arithmetic_types_int16 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int32 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_scalar_block_layout : require
+#extension GL_EXT_buffer_reference : require
+#extension GL_EXT_buffer_reference2 : require
+
+#include "tu_dgc.h"
+
+layout(local_size_x = 128) in;
+
+layout(push_constant) uniform CONSTS {
+   tu_dgc_args args;
+};
+
+/* Put source buffers and patchpoints in UBOs to get fast access to them via ldc. */
+layout(set = 0, binding = 0, std430) uniform SRC_BUFFERS {
+   uvec4 data[TU_DGC_BUFFER_MAX_SIZE / 16];
+} src_buffers[TU_DGC_MAX_BUFFERS];
+
+layout(set = 0, binding = 1, std430) uniform SRC_PATCHPOINTS {
+   tu_dgc_patchpoint patchpoints[TU_DGC_MAX_PATCHPOINTS];
+} src_patchpoints[TU_DGC_MAX_BUFFERS];
+
+layout(set = 0, binding = 2, std430) readonly buffer SRC_PIPELINE {
+   uint32_t data[][TU_DGC_PIPELINE_SIZE];
+} pipeline;
+
+#define CP_TYPE7_PKT 0x70000000
+
+#define CP_NOP uint16_t(0x10)
+
+uint32_t
+pm4_odd_parity_bit(uint32_t val)
+{
+   /* See: http://graphics.stanford.edu/~seander/bithacks.html#ParityParallel
+    * note that we want odd parity so 0x6996 is inverted.
+    */
+   val ^= val >> 16;
+   val ^= val >> 8;
+   val ^= val >> 4;
+   val &= 0xf;
+   return (~0x6996 >> val) & 1;
+}
+
+uint32_t
+pm4_pkt7_hdr(uint16_t opcode, uint16_t cnt)
+{
+   return CP_TYPE7_PKT | cnt | (pm4_odd_parity_bit(cnt) << 15) |
+         ((opcode & 0x7f) << 16) |
+         ((pm4_odd_parity_bit(opcode) << 23));
+}
+
+struct index_buffer_command {
+   uint64_t address;
+   uint32_t size;
+   uint32_t index_type; /* may be DX or Vulkan type */
+};
+TYPE(index_buffer_command, 4);
+
+#define VK_INDEX_TYPE_UINT16 0
+#define VK_INDEX_TYPE_UINT32 1
+
+#define DXGI_FORMAT_R32_UINT 42
+#define DXGI_FORMAT_R16_UINT 57
+
+/* Return the shift to apply to the index size, which conveniently happens to
+ * be the HW format as well.
+ */
+uint parse_vulkan_index_type(index_buffer_command cmd)
+{
+   if (cmd.index_type == VK_INDEX_TYPE_UINT16)
+      return 1;
+   if (cmd.index_type == VK_INDEX_TYPE_UINT32)
+      return 2;
+   return 0;
+}
+
+uint parse_dx_index_type(index_buffer_command cmd)
+{
+   if (cmd.index_type == DXGI_FORMAT_R16_UINT)
+      return 1;
+   if (cmd.index_type == DXGI_FORMAT_R32_UINT)
+      return 2;
+   return 0;
+}
+
+void main()
+{
+   uint sequence_count = 
+      uint64_t(args.sequence_count_addr) != 0 ?
+      min(DEREF(args.sequence_count_addr), args.max_sequence_count) : args.max_sequence_count;
+
+   /* Setup IB trampoline with the actual size of the IB we're generating */
+   if (gl_GlobalInvocationID.x == 0) {
+      if (sequence_count == 0) {
+         /* CP_INDIRECT_BUFFER_CHAIN doesn't work with size 0, so overwrite it with a NOP */
+         DEREF(REF(uint32_t)(args.trampoline_addr)) = pm4_pkt7_hdr(CP_NOP, uint16_t(3));
+      } else if (sequence_count > args.ib_sequence_offset) {
+         uint32_t size = min(sequence_count - args.ib_sequence_offset, args.sequences_per_ib) * args.buffer_stride[args.main_buffer];
+         /* If the sequence count is large enough to need the next IB, add the next trampoline */
+         if (sequence_count - args.ib_sequence_offset > args.sequences_per_ib)
+            size += 4;
+         /* Fill in CP_INDIRECT_BUFFER_CHAIN size */
+         DEREF(REF(uint32_t)(args.trampoline_addr + 3 * 4)) = size;
+      }
+   }
+
+   uint32_t sequence_id = gl_GlobalInvocationID.x + args.ib_sequence_offset;
+
+   if (sequence_id >= sequence_count || gl_GlobalInvocationID.x >= args.sequences_per_ib)
+      return;
+
+   uint64_t src_indirect_addr = args.src_indirect_addr +
+      uint64_t(sequence_id) * uint64_t(args.src_indirect_stride);
+
+   uint pipeline_id = 0;
+   if (args.src_pipeline_offset != ~0)
+      pipeline_id = DEREF(REF(uint32_t)(src_indirect_addr + args.src_pipeline_offset * 4));
+
+   for (uint buf_idx = 0; buf_idx < args.buffer_count; buf_idx++) {
+      uint buffer_stride = args.buffer_stride[buf_idx];
+      uint64_t dst_addr_start = args.dst_buffer_addr[buf_idx] +
+         gl_GlobalInvocationID.x * buffer_stride * 4;
+      uint64_t dst_addr = dst_addr_start;
+      uint off;
+
+      /* Main vectorized loop, copy the template */
+      for (off = 0; off < buffer_stride / 4; off++, dst_addr += 16)
+         DEREF(REF(uvec4)(dst_addr)) = src_buffers[buf_idx].data[off];
+
+      /* Copy tail of 0-3 dwords */
+      for (uint i = 0; 4 * off + i < buffer_stride; i++, dst_addr += 4)
+         DEREF(REF(uint32_t)(dst_addr)) = src_buffers[buf_idx].data[off][i];
+
+      /* Apply patchpoints */
+      for (uint i = 0; i < args.patchpoint_count[buf_idx]; i++) {
+         tu_dgc_patchpoint patchpoint = src_patchpoints[buf_idx].patchpoints[i];
+         dst_addr = dst_addr_start + patchpoint.dst_offset * 4;
+
+         switch (uint(patchpoint.type)) {
+         case TU_DGC_PATCHPOINT_SRC_DIRECT: {
+            uint64_t src_addr = src_indirect_addr + patchpoint.src_offset * 4;
+            for (uint j = 0; j < patchpoint.size; j++, dst_addr += 4, src_addr += 4)
+               DEREF(REF(uint32_t)(dst_addr)) = DEREF(REF(uint32_t)(src_addr));
+            break;
+         }
+         case TU_DGC_PATCHPOINT_PIPELINE_DIRECT: {
+            for (uint j = 0; j < patchpoint.size; j++, dst_addr += 4)
+               DEREF(REF(uint32_t)(dst_addr)) = pipeline.data[pipeline_id][patchpoint.src_offset + j];
+            break;
+         }
+         case TU_DGC_PATCHPOINT_SRC_INDIRECT: {
+            uint64_t src_addr = src_indirect_addr + patchpoint.src_offset * 4;
+            DEREF(REF(uint64_t)(dst_addr)) = src_addr | (uint64_t(patchpoint.mask) << patchpoint.shift);
+            break;
+         }
+         case TU_DGC_PATCHPOINT_DST_INDIRECT: {
+            uint64_t src_addr = args.dst_buffer_addr[patchpoint.src_buffer] +
+               args.buffer_stride[patchpoint.src_buffer] * 4 * gl_GlobalInvocationID.x + patchpoint.src_offset * 4;
+            DEREF(REF(uint64_t)(dst_addr)) = src_addr | (uint64_t(patchpoint.mask) << patchpoint.shift);
+            break;
+         }
+         case TU_DGC_PATCHPOINT_PIPELINE_FIELD: {
+            uint32_t src = pipeline.data[pipeline_id][patchpoint.src_offset];
+            uint32_t orig = src_buffers[buf_idx].data[patchpoint.dst_offset / 4][patchpoint.dst_offset % 4];
+            DEREF(REF(uint32_t)(dst_addr)) = orig | (src << patchpoint.shift);
+            break;
+         }
+         case TU_DGC_PATCHPOINT_SEQUENCE_INDEX: {
+            DEREF(REF(uint32_t)(dst_addr)) = sequence_id;
+            break;
+         }
+         case TU_DGC_PATCHPOINT_INDEX_VULKAN: {
+            index_buffer_command cmd =
+               DEREF(REF(index_buffer_command)(src_indirect_addr + patchpoint.src_offset * 4));
+            uint index_type = parse_vulkan_index_type(cmd);
+            DEREF(REF(uvec3)(dst_addr)) = uvec3(
+               uint(cmd.address), uint(cmd.address >> 32), cmd.size >> index_type);
+            break;
+         }
+         case TU_DGC_PATCHPOINT_INDEX_DX: {
+            index_buffer_command cmd =
+               DEREF(REF(index_buffer_command)(src_indirect_addr + patchpoint.src_offset * 4));
+            uint index_type = parse_dx_index_type(cmd);
+            DEREF(REF(uvec3)(dst_addr)) = uvec3(
+               uint(cmd.address), uint(cmd.address >> 32), cmd.size >> index_type);
+            break;
+         }
+         case TU_DGC_PATCHPOINT_DRAW_INITIATOR_VULKAN: {
+            index_buffer_command cmd =
+               DEREF(REF(index_buffer_command)(src_indirect_addr + patchpoint.src_offset * 4));
+            uint index_type = parse_vulkan_index_type(cmd);
+            uint32_t draw_initiator = pipeline.data[pipeline_id][patchpoint.src_buffer];
+            draw_initiator |= parse_vulkan_index_type(cmd) << patchpoint.shift;
+            DEREF(REF(uint32_t)(dst_addr)) = draw_initiator;
+            break;
+         }
+         case TU_DGC_PATCHPOINT_DRAW_INITIATOR_DX: {
+            index_buffer_command cmd =
+               DEREF(REF(index_buffer_command)(src_indirect_addr + patchpoint.src_offset * 4));
+            uint index_type = parse_vulkan_index_type(cmd);
+            uint32_t draw_initiator = pipeline.data[pipeline_id][patchpoint.src_buffer];
+            draw_initiator |= parse_dx_index_type(cmd) << patchpoint.shift;
+            DEREF(REF(uint32_t)(dst_addr)) = draw_initiator;
+            break;
+         }
+         case TU_DGC_PATCHPOINT_MAX_DRAW_COUNT: {
+            DEREF(REF(uint32_t)(dst_addr)) = args.max_draw_count;
+            break;
+         }
+         case TU_DGC_PATCHPOINT_VBO: {
+            uint64_t src_addr = src_indirect_addr + patchpoint.src_offset * 4;
+            uint64_t vbo_addr = DEREF(REF(uint64_t)(src_addr));
+            uint32_t vbo_size = DEREF(REF(uint32_t)(src_addr + 8));
+            DEREF(REF(uint64_t)(dst_addr)) = vbo_addr;
+            DEREF(REF(uint32_t)(dst_addr + 8)) = vbo_addr != 0 ? vbo_size : 0;
+            break;
+         }
+         }
+      }
+   }
+}
+

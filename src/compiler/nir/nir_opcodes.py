@@ -742,7 +742,7 @@ binop("umul_32x16", tuint32, "", "src0 * (uint16_t) src1",
       description = "Multiply 32-bits with low 16-bits, with zero extension")
 
 binop("fdiv", tfloat, "", "src0 / src1")
-binop("idiv", tint, "", "src1 == 0 ? 0 : (src0 / src1)")
+binop("idiv", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ? 0 : (src0 / src1)")
 binop("udiv", tuint, "", "src1 == 0 ? 0 : (src0 / src1)")
 
 binop_convert("uadd_carry", tuint, tuint, _2src_commutative,
@@ -793,10 +793,10 @@ binop("umod", tuint, "", "src1 == 0 ? 0 : src0 % src1")
 #
 # http://mathforum.org/library/drmath/view/52343.html
 
-binop("irem", tint, "", "src1 == 0 ? 0 : src0 % src1")
-binop("imod", tint, "",
-      "src1 == 0 ? 0 : ((src0 % src1 == 0 || (src0 >= 0) == (src1 >= 0)) ?"
-      "                 src0 % src1 : src0 % src1 + src1)")
+binop("irem", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ? 0 : src0 % src1")
+binop("imod", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ?"
+                        " 0 : ((src0 % src1 == 0 || (src0 >= 0) == (src1 >= 0)) ?"
+                        " src0 % src1 : src0 % src1 + src1)")
 binop("fmod", tfloat, "", "src0 - src1 * floorf(src0 / src1)")
 binop("frem", tfloat, "", "src0 - src1 * truncf(src0 / src1)")
 

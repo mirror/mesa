@@ -22,8 +22,10 @@ use std::*;
 #[cl_entrypoint(clCreateKernel)]
 fn create_kernel(program: cl_program, kernel_name: *const c_char) -> CLResult<cl_kernel> {
     let arc_program = program.get_arc()?;
-
-    Ok(cl_kernel::from_arc(Kernel::new(&arc_program, kernel_name)?))
+    Ok(cl_kernel::from_arc(Kernel::create(
+        &arc_program,
+        kernel_name,
+    )?))
 }
 
 #[cl_entrypoint(clCreateKernelsInProgram)]
@@ -33,13 +35,46 @@ fn create_kernels_in_program(
     kernels: *mut cl_kernel,
     num_kernels_ret: *mut cl_uint,
 ) -> CLResult<()> {
-    program.get_ref()?;
+    let p = program.get_arc()?;
 
-    let mut num = 0;
+    // First, get the number of kernels that can be created
+    let mut kernel_count = 0;
+    Vcl::get().call_clCreateKernelsInProgram(program, 0, ptr::null_mut(), &mut kernel_count)?;
 
-    Vcl::get().call_clCreateKernelsInProgram(program, num_kernels, kernels, &mut num)?;
+    if kernels != ptr::null_mut() {
+        // CL_INVALID_VALUE if kernels is not NULL and num_kernels is less than the
+        // number of kernels in program.
+        if num_kernels < kernel_count {
+            return Err(CL_INVALID_VALUE);
+        }
 
-    num_kernels_ret.write_checked(num);
+        // Since we need to pass host handles to the guest for associating with vcomp kernel objects,
+        // we need to create vcl objects here and store their handles in the kernels array.
+        let kernels_slice = unsafe { slice::from_raw_parts_mut(kernels, num_kernels as usize) };
+        for kernel_handle in kernels_slice {
+            let host_kernel = Kernel::new(&p);
+            *kernel_handle = cl_kernel::from_arc(host_kernel);
+        }
+
+        let ret = Vcl::get().call_clCreateKernelsInProgram(
+            program,
+            num_kernels,
+            kernels,
+            ptr::null_mut(),
+        );
+
+        if ret.is_err() {
+            let kernels_slice = unsafe { slice::from_raw_parts_mut(kernels, num_kernels as usize) };
+            for kernel_handle in kernels_slice {
+                // Free kernels in case of error
+                kernel_handle.from_raw()?;
+            }
+
+            ret?;
+        }
+    }
+
+    num_kernels_ret.write_checked(kernel_count);
 
     Ok(())
 }

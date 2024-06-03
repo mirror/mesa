@@ -21,29 +21,26 @@ pub struct Kernel {
 }
 
 impl Kernel {
-    pub fn new(program: &Arc<Program>, kernel_name: *const c_char) -> CLResult<Arc<Kernel>> {
-        let kernel = Arc::new(Self {
+    pub fn new(program: &Arc<Program>) -> Arc<Kernel> {
+        Arc::new(Self {
             base: CLObjectBase::new(),
             program: program.clone(),
-        });
+        })
+    }
 
+    pub fn create(program: &Arc<Program>, kernel_name: *const c_char) -> CLResult<Arc<Kernel>> {
+        let kernel = Self::new(program);
         Vcl::get().call_clCreateKernelMESA(
             program.get_handle(),
             kernel_name,
             &mut kernel.get_handle(),
         )?;
-
         Ok(kernel)
     }
 
     pub fn clone(source_kernel: &Arc<Kernel>) -> CLResult<Arc<Kernel>> {
-        let kernel = Arc::new(Self {
-            base: CLObjectBase::new(),
-            program: source_kernel.program.clone(),
-        });
-
+        let kernel = Self::new(&source_kernel.program);
         Vcl::get().call_clCloneKernelMESA(source_kernel.get_handle(), &mut kernel.get_handle())?;
-
         Ok(kernel)
     }
 }

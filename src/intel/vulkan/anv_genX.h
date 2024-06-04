@@ -450,19 +450,27 @@ genX(cmd_buffer_emit_push_descriptor_surfaces)(struct anv_cmd_buffer *cmd_buffer
 static inline VkShaderStageFlags
 genX(cmd_buffer_flush_push_descriptors)(struct anv_cmd_buffer *cmd_buffer,
                                         struct anv_cmd_pipeline_state *state,
-                                        struct anv_pipeline *pipeline)
+                                        struct anv_pipeline *pipeline,
+                                        struct anv_pipeline_sets_layout *layout)
 {
-   if (!pipeline->use_push_descriptor && !pipeline->use_push_descriptor_buffer)
-      return 0;
+   if (pipeline != NULL) {
+      if (!pipeline->use_push_descriptor && !pipeline->use_push_descriptor_buffer)
+         return 0;
+   } else {
+      if (layout->push_descriptor_set_index == -1)
+         return 0;
+   }
 
-   assert(pipeline->layout.push_descriptor_set_index != -1);
+   assert(layout->push_descriptor_set_index != -1);
    struct anv_descriptor_set *set =
-      state->descriptors[pipeline->layout.push_descriptor_set_index];
+      state->descriptors[layout->push_descriptor_set_index];
    assert(set->is_push);
 
    const VkShaderStageFlags push_buffer_dirty =
       cmd_buffer->state.push_descriptors_dirty &
-      pipeline->use_push_descriptor_buffer;
+      (pipeline != NULL ?
+       pipeline->use_push_descriptor_buffer :
+       layout->set[layout->push_descriptor_set_index].layout->stages);
    if (push_buffer_dirty) {
       if (set->desc_surface_state.map == NULL)
          genX(cmd_buffer_emit_push_descriptor_buffer_surface)(cmd_buffer, set);
@@ -472,7 +480,10 @@ genX(cmd_buffer_flush_push_descriptors)(struct anv_cmd_buffer *cmd_buffer,
    }
 
    const VkShaderStageFlags push_descriptor_dirty =
-      cmd_buffer->state.push_descriptors_dirty & pipeline->use_push_descriptor;
+      cmd_buffer->state.push_descriptors_dirty &
+      (pipeline != NULL ?
+       pipeline->use_push_descriptor :
+       layout->set[layout->push_descriptor_set_index].layout->stages);
    if (push_descriptor_dirty) {
       genX(cmd_buffer_emit_push_descriptor_surfaces)(cmd_buffer, set);
 

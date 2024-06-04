@@ -112,7 +112,8 @@ cmd_buffer_flush_compute_state(struct anv_cmd_buffer *cmd_buffer)
 
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
-   genX(flush_descriptor_buffers)(cmd_buffer, &comp_state->base);
+   genX(flush_descriptor_buffers)(cmd_buffer, &comp_state->base,
+                                  pipeline->base.active_stages);
 
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
@@ -1190,7 +1191,8 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
-   genX(flush_descriptor_buffers)(cmd_buffer, &rt->base);
+   genX(flush_descriptor_buffers)(cmd_buffer, &rt->base,
+                                  pipeline->base.active_stages);
 
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 

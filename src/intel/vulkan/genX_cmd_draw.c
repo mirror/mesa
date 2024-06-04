@@ -765,7 +765,8 @@ cmd_buffer_flush_gfx_state(struct anv_cmd_buffer *cmd_buffer)
 
    genX(cmd_buffer_emit_hashing_mode)(cmd_buffer, UINT_MAX, UINT_MAX, 1);
 
-   genX(flush_descriptor_buffers)(cmd_buffer, &cmd_buffer->state.gfx.base);
+   genX(flush_descriptor_buffers)(cmd_buffer, &cmd_buffer->state.gfx.base,
+                                  pipeline->base.base.active_stages);
 
    genX(flush_pipeline_select_3d)(cmd_buffer);
 

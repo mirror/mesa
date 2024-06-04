@@ -2894,6 +2894,9 @@ struct anv_descriptor_set_layout {
 
    VkDescriptorSetLayoutCreateFlags flags;
 
+   /* Stages that can use this layout */
+   VkShaderStageFlags stages;
+
    /* Type of descriptor set layout */
    enum anv_descriptor_set_layout_type type;
 
@@ -3319,6 +3322,8 @@ struct anv_pipeline_sets_layout {
    } set[MAX_SETS];
 
    enum anv_descriptor_set_layout_type type;
+
+   VkShaderStageFlags stages;
 
    uint32_t num_sets;
    uint32_t num_dynamic_buffers;

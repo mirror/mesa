@@ -729,6 +729,7 @@ VkResult anv_CreateDescriptorSetLayout(
        */
       if (set_layout->binding[b].immutable_samplers == NULL)
          continue;
+
       const uint32_t info_idx =
          (uintptr_t)(void *)set_layout->binding[b].immutable_samplers - 1;
       set_layout->binding[b].immutable_samplers = NULL;
@@ -738,6 +739,8 @@ VkResult anv_CreateDescriptorSetLayout(
 
       if (binding->descriptorCount == 0)
          continue;
+
+      set_layout->stages |= binding->stageFlags;
 
       set_layout->binding[b].type = binding->descriptorType;
 
@@ -1145,7 +1148,11 @@ anv_pipeline_sets_layout_add(struct anv_pipeline_sets_layout *layout,
    layout->set[set_idx].dynamic_offset_start = layout->num_dynamic_buffers;
    layout->num_dynamic_buffers += set_layout->dynamic_offset_count;
 
+   layout->stages |= set_layout->stages;
+
    assert(layout->num_dynamic_buffers < MAX_DYNAMIC_BUFFERS);
+
+   set_layout->stages |= set_layout->stages;
 
    if (set_layout->flags &
        VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR) {

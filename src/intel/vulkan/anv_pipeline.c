@@ -630,6 +630,10 @@ anv_pipeline_hash_common(struct mesa_sha1 *ctx,
 
    const int spilling_rate = device->physical->compiler->spilling_rate;
    _mesa_sha1_update(ctx, &spilling_rate, sizeof(spilling_rate));
+
+   const bool device_bindable =
+      (pipeline->flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
+   _mesa_sha1_update(ctx, &device_bindable, sizeof(device_bindable));
 }
 
 static void
@@ -994,6 +998,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    NIR_PASS_V(nir, anv_nir_apply_pipeline_layout,
               pdevice, stage->key.base.robust_flags,
               layout->independent_sets,
+              (pipeline->flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0,
               layout, &stage->bind_map, &push_map, mem_ctx);
 
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo,

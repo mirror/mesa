@@ -60,6 +60,7 @@ struct apply_pipeline_layout_state {
    bool uses_constants;
    bool has_dynamic_buffers;
    bool has_independent_sets;
+   bool is_device_bindable;
    uint8_t constants_offset;
    struct {
       bool desc_buffer_used;
@@ -1439,11 +1440,13 @@ try_lower_direct_buffer_intrinsic(nir_builder *b,
           !descriptor_has_bti(desc, state))
          return false;
 
-      /* If this is an inline uniform and the shader stage is bindless, we
-       * can't switch to 32bit_index_offset.
+      /* If this is an inline uniform and either the shader stage is bindless
+       * or we're compiling a device bindable shader, we can't switch to
+       * 32bit_index_offset because we cannot access the binding table.
        */
-      if (bind_layout->type != VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK ||
-          !brw_shader_stage_requires_bindless_resources(b->shader->info.stage))
+      if (!(bind_layout->type == VK_DESCRIPTOR_TYPE_INLINE_UNIFORM_BLOCK &&
+            (brw_shader_stage_requires_bindless_resources(b->shader->info.stage) ||
+             state->is_device_bindable)))
          addr_format = nir_address_format_32bit_index_offset;
    }
 
@@ -2193,6 +2196,89 @@ binding_should_use_sampler_binding_table(const struct apply_pipeline_layout_stat
 }
 
 static void
+build_compatible_binding_table(struct apply_pipeline_layout_state *state,
+                               nir_shader *shader,
+                               struct anv_pipeline_bind_map *map)
+{
+   unsigned push_buffer_set = UINT_MAX;
+
+   if (state->pdevice->info.verx10 <= 120) {
+      for (unsigned s = 0; s < state->layout->num_sets; s++) {
+         const struct anv_descriptor_set_layout *set_layout =
+            state->layout->set[s].layout;
+         if (!set_layout)
+            continue;
+
+         if ((set_layout->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_DESCRIPTOR_BUFFER_BIT_EXT) &&
+             (set_layout->flags & VK_DESCRIPTOR_SET_LAYOUT_CREATE_PUSH_DESCRIPTOR_BIT_KHR)) {
+            push_buffer_set = s;
+            break;
+         }
+      }
+   }
+
+   for (unsigned s = 0; s < state->layout->num_sets; s++) {
+      const struct anv_descriptor_set_layout *set_layout =
+         state->layout->set[s].layout;
+
+      if (s == push_buffer_set) {
+         assert(state->layout->type ==
+                ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_BUFFER);
+
+         map->surface_to_descriptor[map->surface_count] =
+            (struct anv_pipeline_binding) {
+            .set = ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER,
+            .binding = UINT32_MAX,
+            .index = s,
+         };
+         state->set[s].desc_offset = map->surface_count++;
+
+         for (unsigned b = 0; b < set_layout->binding_count; b++) {
+            const struct anv_descriptor_set_binding_layout *binding =
+               &set_layout->binding[b];
+
+            if (binding_should_use_surface_binding_table(state, binding, s, b)) {
+               state->set[s].binding[b].surface_offset = map->surface_count;
+               if (binding->dynamic_offset_index < 0) {
+                  struct anv_sampler **samplers = binding->immutable_samplers;
+                  uint8_t max_planes = bti_multiplier(state, s, b);
+                  for (unsigned i = 0; i < binding->array_size; i++) {
+                     uint8_t planes = samplers ? samplers[i]->n_planes : 1;
+                     for (uint8_t p = 0; p < max_planes; p++) {
+                        if (p < planes) {
+                           add_bti_entry(map, s, b, i, p, binding);
+                        } else {
+                           add_null_bti_entry(map);
+                        }
+                     }
+                  }
+               } else {
+                  for (unsigned i = 0; i < binding->array_size; i++)
+                     add_dynamic_bti_entry(map, s, b, i, state->layout, binding);
+               }
+            }
+
+            if (binding_should_use_sampler_binding_table(state, binding)) {
+               state->set[s].binding[b].sampler_offset = map->sampler_count;
+               uint8_t max_planes = bti_multiplier(state, s, b);
+               for (unsigned i = 0; i < binding->array_size; i++) {
+                  for (uint8_t p = 0; p < max_planes; p++) {
+                     add_sampler_entry(map, s, b, i, p, state->layout, binding);
+                  }
+               }
+            }
+         }
+      } else {
+         state->set[s].desc_offset = BINDLESS_OFFSET;
+         for (unsigned b = 0; b < set_layout->binding_count; b++) {
+            state->set[s].binding[b].surface_offset = BINDLESS_OFFSET;
+            state->set[s].binding[b].sampler_offset = BINDLESS_OFFSET;
+         }
+      }
+   }
+}
+
+static void
 build_packed_binding_table(struct apply_pipeline_layout_state *state,
                            nir_shader *shader,
                            struct anv_pipeline_bind_map *map,
@@ -2414,6 +2500,7 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                               const struct anv_physical_device *pdevice,
                               enum brw_robustness_flags robust_flags,
                               bool independent_sets,
+                              bool device_bindable,
                               const struct anv_pipeline_sets_layout *layout,
                               struct anv_pipeline_bind_map *map,
                               struct anv_pipeline_push_map *push_map,
@@ -2427,17 +2514,19 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
 #endif
 
    const bool bindless_stage =
+      device_bindable ||
       brw_shader_stage_requires_bindless_resources(shader->info.stage);
    struct apply_pipeline_layout_state state = {
       .mem_ctx = ralloc_context(NULL),
       .pdevice = pdevice,
       .layout = layout,
-      .desc_addr_format = bindless_stage ?
+      .desc_addr_format = (bindless_stage || device_bindable) ?
                           nir_address_format_64bit_global_32bit_offset :
                           nir_address_format_32bit_index_offset,
       .ssbo_addr_format = anv_nir_ssbo_addr_format(pdevice, robust_flags),
       .ubo_addr_format = anv_nir_ubo_addr_format(pdevice, robust_flags),
       .has_independent_sets = independent_sets,
+      .is_device_bindable = device_bindable,
    };
    state.lowered_instrs = _mesa_pointer_set_create(state.mem_ctx);
 
@@ -2452,12 +2541,16 @@ anv_nir_apply_pipeline_layout(nir_shader *shader,
                                                 set_layout->binding_count);
    }
 
-   /* Find all use sets/bindings */
-   nir_shader_instructions_pass(shader, get_used_bindings,
-                                nir_metadata_all, &state);
-
    /* Build the binding table */
-   build_packed_binding_table(&state, shader, map, push_map, push_map_mem_ctx);
+   if (device_bindable) {
+      build_compatible_binding_table(&state, shader, map);
+   } else {
+      /* Find all use sets/bindings */
+      nir_shader_instructions_pass(shader, get_used_bindings,
+                                   nir_metadata_all, &state);
+
+      build_packed_binding_table(&state, shader, map, push_map, push_map_mem_ctx);
+   }
 
    /* Before we do the normal lowering, we look for any SSBO operations
     * that we can lower to the BTI model and lower them up-front.  The BTI

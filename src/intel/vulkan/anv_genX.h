@@ -208,6 +208,12 @@ genX(cmd_buffer_flush_shader_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
                                               struct anv_shader_bin **shaders,
                                               uint32_t num_shaders);
 
+uint32_t
+genX(cmd_buffer_flush_indirect_set_descriptors)(struct anv_cmd_buffer *cmd_buffer,
+                                                struct anv_cmd_pipeline_state *pipe_state,
+                                                struct anv_indirect_execution_set *indirect_set,
+                                                VkShaderStageFlags dirty);
+
 void genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer);

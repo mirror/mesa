@@ -2352,6 +2352,145 @@ genX(cmd_buffer_flush_shader_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
    return flushed;
 }
 
+static VkResult
+emit_device_bindable_binding_table(struct anv_cmd_buffer *cmd_buffer,
+                                   struct anv_cmd_pipeline_state *pipe_state,
+                                   const struct anv_pipeline_bind_map *bind_map,
+                                   struct anv_state *bt_state)
+{
+   uint32_t state_offset;
+
+   if (bind_map->surface_count == 0) {
+      *bt_state = (struct anv_state) { 0, };
+      return VK_SUCCESS;
+   }
+
+   *bt_state = anv_cmd_buffer_alloc_binding_table(
+      cmd_buffer, bind_map->surface_count, &state_offset);
+   uint32_t *bt_map = bt_state->map;
+
+   if (bt_state->map == NULL)
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+   for (uint32_t s = 0; s < bind_map->surface_count; s++) {
+      struct anv_pipeline_binding *binding = &bind_map->surface_to_descriptor[s];
+
+      if (binding->set == ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER) {
+         assert(pipe_state->descriptor_buffers[binding->index].state.alloc_size);
+         bt_map[s] = pipe_state->descriptor_buffers[binding->index].state.offset +
+                     state_offset;
+      } else {
+         assert(binding->set < MAX_SETS);
+         const struct anv_descriptor_set *set =
+            pipe_state->descriptors[binding->set];
+
+         const struct anv_descriptor *desc = &set->descriptors[binding->index];
+         if (desc->type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR ||
+             desc->type == VK_DESCRIPTOR_TYPE_SAMPLER) {
+            /* Nothing for us to do here */
+            continue;
+         }
+
+         uint32_t surface_state_offset;
+         surface_state_offset =
+            emit_direct_descriptor_binding_table_entry(cmd_buffer, pipe_state,
+                                                       set, binding, desc);
+         bt_map[s] = surface_state_offset + state_offset;
+      }
+   }
+
+   return VK_SUCCESS;
+}
+
+uint32_t
+genX(cmd_buffer_flush_indirect_set_descriptors)(struct anv_cmd_buffer *cmd_buffer,
+                                                struct anv_cmd_pipeline_state *pipe_state,
+                                                struct anv_indirect_execution_set *indirect_set,
+                                                VkShaderStageFlags dirty)
+{
+   /* In the IES case, we have 3 situations :
+    *
+    *    - on >= Gfx12.5, the binding table is never used, no need to flush it
+    *
+    *    - on < Gfx12.5 with legacy descriptors, all accesses are indirect and
+    *      the binding table is never used, no need to flush it
+    *
+    *    - on < Gfx12.5 with descriptor buffer, the only use of the binding
+    *      table is for the push descriptor set, we built a cross shader
+    *      compatible binding table layout (see
+    *      build_compatible_binding_table) we just need to flush that. We can
+    *      use the indirect set binding map.
+    */
+   if (cmd_buffer->device->info->verx10 >= 125)
+      return 0;
+   if (indirect_set->layout_type != ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_BUFFER)
+      return 0;
+
+   const struct anv_pipeline_bind_map *bind_map = indirect_set->bind_map;
+   VkShaderStageFlags flushed = 0;
+
+   VkResult result = VK_SUCCESS;
+   anv_foreach_vk_stage(vk_stage, dirty) {
+      if ((vk_stage & dirty) == 0)
+         continue;
+
+      gl_shader_stage stage = vk_to_mesa_shader_stage(vk_stage);
+
+      assert(stage < ARRAY_SIZE(cmd_buffer->state.samplers));
+      result = emit_samplers(cmd_buffer, pipe_state, bind_map,
+                             &cmd_buffer->state.samplers[stage]);
+      if (result != VK_SUCCESS)
+         break;
+
+      assert(stage < ARRAY_SIZE(cmd_buffer->state.binding_tables));
+      result = emit_device_bindable_binding_table(
+         cmd_buffer, pipe_state, bind_map,
+         &cmd_buffer->state.binding_tables[stage]);
+      if (result != VK_SUCCESS)
+         break;
+
+      flushed |= vk_stage;
+   }
+
+   if (result != VK_SUCCESS) {
+      assert(result == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+
+      result = anv_cmd_buffer_new_binding_table_block(cmd_buffer);
+      if (result != VK_SUCCESS)
+         return 0;
+
+      /* Re-emit the BT base address so we get the new surface state base
+       * address before we start emitting binding tables etc.
+       */
+      genX(cmd_buffer_emit_bt_pool_base_address)(cmd_buffer);
+
+      /* Re-emit all active binding tables */
+      flushed = 0;
+
+      anv_foreach_vk_stage(vk_stage, dirty) {
+         gl_shader_stage stage = vk_to_mesa_shader_stage(vk_stage);
+
+         result = emit_samplers(cmd_buffer, pipe_state, bind_map,
+                                &cmd_buffer->state.samplers[stage]);
+         if (result != VK_SUCCESS) {
+            anv_batch_set_error(&cmd_buffer->batch, result);
+            return 0;
+         }
+         result = emit_device_bindable_binding_table(
+            cmd_buffer, pipe_state, bind_map,
+            &cmd_buffer->state.binding_tables[stage]);
+         if (result != VK_SUCCESS) {
+            anv_batch_set_error(&cmd_buffer->batch, result);
+            return 0;
+         }
+
+         flushed |= vk_stage;
+      }
+   }
+
+   return flushed;
+}
+
 /* This function generates the surface state used to read the content of the
  * descriptor buffer.
  */

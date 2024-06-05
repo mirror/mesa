@@ -916,7 +916,7 @@ cmd_buffer_flush_gfx_state(struct anv_cmd_buffer *cmd_buffer)
     */
    uint32_t dirty = 0;
    if (descriptors_dirty) {
-      dirty = genX(cmd_buffer_flush_descriptor_sets)(
+      dirty = genX(cmd_buffer_flush_shader_descriptor_sets)(
          cmd_buffer,
          &cmd_buffer->state.gfx.base,
          descriptors_dirty,

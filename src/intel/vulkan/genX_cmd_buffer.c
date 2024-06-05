@@ -2276,11 +2276,11 @@ emit_samplers(struct anv_cmd_buffer *cmd_buffer,
 }
 
 uint32_t
-genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
-                                       struct anv_cmd_pipeline_state *pipe_state,
-                                       const VkShaderStageFlags dirty,
-                                       struct anv_shader_bin **shaders,
-                                       uint32_t num_shaders)
+genX(cmd_buffer_flush_shader_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
+                                              struct anv_cmd_pipeline_state *pipe_state,
+                                              const VkShaderStageFlags dirty,
+                                              struct anv_shader_bin **shaders,
+                                              uint32_t num_shaders)
 {
    VkShaderStageFlags flushed = 0;
 

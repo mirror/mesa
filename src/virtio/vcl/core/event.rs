@@ -35,7 +35,11 @@ impl Event {
     }
 
     pub fn from_cl_arr(events: *const cl_event, num_events: u32) -> CLResult<Vec<Arc<Event>>> {
-        let s = unsafe { slice::from_raw_parts(events, num_events as usize) };
-        s.iter().map(|e| e.get_arc()).collect()
+        if !events.is_null() && num_events > 0 {
+            let s = unsafe { slice::from_raw_parts(events, num_events as usize) };
+            s.iter().map(|e| e.get_arc()).collect()
+        } else {
+            Ok(Vec::default())
+        }
     }
 }

@@ -55,7 +55,7 @@ is_64b(void)
    return options->info->chip >= 5;
 }
 
-static int draws[4];
+static int draws[5];
 static struct {
    uint64_t base;
    uint32_t size; /* in dwords */
@@ -80,7 +80,7 @@ static struct {
     */
    bool triggered : 1;
    bool base_seen : 1;
-} ibs[4];
+} ibs[5];
 static int ib;
 
 static int draw_count;

@@ -31,6 +31,11 @@ aco_builder_h = custom_target(
 )
 
 libaco_files = files(
+  'disassembler/aco_disassembler_gfx8.cpp',
+  'disassembler/aco_disassembler_gfx10.cpp',
+  'disassembler/aco_disassembler_gfx11.cpp',
+  'disassembler/aco_disassembler_gfx12.cpp',
+  'disassembler/aco_disassembler.cpp',
   'aco_dead_code_analysis.cpp',
   'aco_dominance.cpp',
   'aco_instruction_selection.cpp',

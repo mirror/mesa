@@ -2284,6 +2284,8 @@ unsigned emit_program(Program* program, std::vector<uint32_t>& code,
  * configuration
  */
 bool check_print_asm_support(Program* program);
+bool disasm_program(Program* program, std::vector<uint32_t>& binary, unsigned exec_size,
+                    char** string);
 bool print_asm(Program* program, std::vector<uint32_t>& binary, unsigned exec_size, FILE* output);
 bool validate_ir(Program* program);
 bool validate_cfg(Program* program);

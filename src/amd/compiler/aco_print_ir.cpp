@@ -14,6 +14,52 @@
 
 namespace aco {
 
+void
+aco_print_physreg(PhysReg reg, FILE* output, unsigned bytes, unsigned flags)
+{
+   if (reg >= 128 && reg <= 192) {
+      fprintf(output, "%d", reg - 128);
+      return;
+   } else if (reg >= 192 && reg <= 208) {
+      fprintf(output, "%d", 192 - reg);
+      return;
+   }
+
+   switch (reg) {
+   case 106: fprintf(output, bytes > 4 ? "vcc" : "vcc_lo"); return;
+   case 107: fprintf(output, "vcc_hi"); return;
+   case 124: fprintf(output, "m0"); return;
+   case 125: fprintf(output, "null"); return;
+   case 126: fprintf(output, bytes > 4 ? "exec" : "exec_lo"); return;
+   case 127: fprintf(output, "exec_hi"); return;
+   case 240: fprintf(output, "0.5"); return;
+   case 241: fprintf(output, "-0.5"); return;
+   case 242: fprintf(output, "1.0"); return;
+   case 243: fprintf(output, "-1.0"); return;
+   case 244: fprintf(output, "2.0"); return;
+   case 245: fprintf(output, "-2.0"); return;
+   case 246: fprintf(output, "4.0"); return;
+   case 247: fprintf(output, "-4.0"); return;
+   case 248: fprintf(output, "1/(2*PI)"); return;
+   case 253: fprintf(output, "scc"); return;
+   }
+
+   bool is_vgpr = reg / 256;
+   unsigned r = reg % 256;
+   unsigned size = DIV_ROUND_UP(bytes, 4);
+   if (size == 1 && (flags & print_no_ssa)) {
+      fprintf(output, "%c%d", is_vgpr ? 'v' : 's', r);
+   } else {
+      fprintf(output, "%c[%d", is_vgpr ? 'v' : 's', r);
+      if (size > 1)
+         fprintf(output, "-%d]", r + size - 1);
+      else
+         fprintf(output, "]");
+   }
+   if (reg.byte() || bytes % 4)
+      fprintf(output, "[%d:%d]", reg.byte() * 8, (reg.byte() + bytes) * 8);
+}
+
 namespace {
 
 const std::array<const char*, num_reduce_ops> reduce_ops = []()
@@ -84,65 +130,6 @@ print_reg_class(const RegClass rc, FILE* output)
    }
 }
 
-void
-print_physReg(PhysReg reg, unsigned bytes, FILE* output, unsigned flags)
-{
-   if (reg == 106) {
-      fprintf(output, bytes > 4 ? "vcc" : "vcc_lo");
-   } else if (reg == 107) {
-      fprintf(output, "vcc_hi");
-   } else if (reg == 124) {
-      fprintf(output, "m0");
-   } else if (reg == 125) {
-      fprintf(output, "null");
-   } else if (reg == 126) {
-      fprintf(output, bytes > 4 ? "exec" : "exec_lo");
-   } else if (reg == 127) {
-      fprintf(output, "exec_hi");
-   } else if (reg == 253) {
-      fprintf(output, "scc");
-   } else {
-      bool is_vgpr = reg / 256;
-      unsigned r = reg % 256;
-      unsigned size = DIV_ROUND_UP(bytes, 4);
-      if (size == 1 && (flags & print_no_ssa)) {
-         fprintf(output, "%c%d", is_vgpr ? 'v' : 's', r);
-      } else {
-         fprintf(output, "%c[%d", is_vgpr ? 'v' : 's', r);
-         if (size > 1)
-            fprintf(output, "-%d]", r + size - 1);
-         else
-            fprintf(output, "]");
-      }
-      if (reg.byte() || bytes % 4)
-         fprintf(output, "[%d:%d]", reg.byte() * 8, (reg.byte() + bytes) * 8);
-   }
-}
-
-static void
-print_constant(uint8_t reg, FILE* output)
-{
-   if (reg >= 128 && reg <= 192) {
-      fprintf(output, "%d", reg - 128);
-      return;
-   } else if (reg >= 192 && reg <= 208) {
-      fprintf(output, "%d", 192 - reg);
-      return;
-   }
-
-   switch (reg) {
-   case 240: fprintf(output, "0.5"); break;
-   case 241: fprintf(output, "-0.5"); break;
-   case 242: fprintf(output, "1.0"); break;
-   case 243: fprintf(output, "-1.0"); break;
-   case 244: fprintf(output, "2.0"); break;
-   case 245: fprintf(output, "-2.0"); break;
-   case 246: fprintf(output, "4.0"); break;
-   case 247: fprintf(output, "-4.0"); break;
-   case 248: fprintf(output, "1/(2*PI)"); break;
-   }
-}
-
 static void
 print_definition(const Definition* definition, FILE* output, unsigned flags)
 {
@@ -170,7 +157,7 @@ print_definition(const Definition* definition, FILE* output, unsigned flags)
       fprintf(output, "%%%d%s", definition->tempId(), definition->isFixed() ? ":" : "");
 
    if (definition->isFixed())
-      print_physReg(definition->physReg(), definition->bytes(), output, flags);
+      aco_print_physreg(definition->physReg(), output, definition->bytes(), flags);
 }
 
 static void
@@ -976,7 +963,7 @@ aco_print_operand(const Operand* operand, FILE* output, unsigned flags)
       else
          fprintf(output, "0x%x", operand->constantValue());
    } else if (operand->isConstant()) {
-      print_constant(operand->physReg().reg(), output);
+      aco_print_physreg(operand->physReg(), output);
    } else if (operand->isUndefined()) {
       print_reg_class(operand->regClass(), output);
       fprintf(output, "undef");
@@ -994,7 +981,7 @@ aco_print_operand(const Operand* operand, FILE* output, unsigned flags)
          fprintf(output, "%%%d%s", operand->tempId(), operand->isFixed() ? ":" : "");
 
       if (operand->isFixed())
-         print_physReg(operand->physReg(), operand->bytes(), output, flags);
+         aco_print_physreg(operand->physReg(), output, operand->bytes(), flags);
    }
 }
 

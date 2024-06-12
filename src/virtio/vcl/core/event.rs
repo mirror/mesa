@@ -10,7 +10,6 @@ use crate::impl_cl_type_trait;
 
 use vcl_opencl_gen::*;
 
-use std::slice;
 use std::sync::Arc;
 
 impl_cl_type_trait!(cl_event, Event, CL_INVALID_EVENT);
@@ -36,7 +35,7 @@ impl Event {
 
     pub fn from_cl_arr(events: *const cl_event, num_events: u32) -> CLResult<Vec<Arc<Event>>> {
         if !events.is_null() && num_events > 0 {
-            let s = unsafe { slice::from_raw_parts(events, num_events as usize) };
+            let s = cl_event::get_slice_from_arr(events, num_events as usize)?;
             s.iter().map(|e| e.get_arc()).collect()
         } else {
             Ok(Vec::default())

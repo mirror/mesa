@@ -300,6 +300,41 @@ pub trait ReferenceCountedAPIPointer<T, const ERR: i32> {
     fn refcnt(&self) -> CLResult<u32> {
         Ok((std::sync::Arc::strong_count(&self.get_arc()?) - 1) as u32)
     }
+
+    fn check_array(objs: *const Self, len: usize) -> CLResult<()>
+    where
+        Self: Sized,
+    {
+        if objs.is_null() || len == 0 {
+            return Err(ERR);
+        }
+
+        let is_aligned = objs.align_offset(core::mem::align_of::<Self>()) == 0;
+        if !is_aligned {
+            return Err(ERR);
+        }
+
+        Ok(())
+    }
+
+    /// Helper method which is going to do some checks before getting a slice, and in
+    /// case of error can return a nice error instead of panicking. It returns a slice
+    /// with at least one element.
+    fn get_slice_from_arr<'a>(objs: *const Self, len: usize) -> CLResult<&'a [Self]>
+    where
+        Self: Sized,
+    {
+        Self::check_array(objs, len)?;
+        Ok(unsafe { std::slice::from_raw_parts(objs, len) })
+    }
+
+    fn get_slice_from_arr_mut<'a>(objs: *mut Self, len: usize) -> CLResult<&'a mut [Self]>
+    where
+        Self: Sized,
+    {
+        Self::check_array(objs, len)?;
+        Ok(unsafe { std::slice::from_raw_parts_mut(objs, len) })
+    }
 }
 
 #[macro_export]

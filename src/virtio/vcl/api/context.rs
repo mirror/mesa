@@ -17,7 +17,6 @@ use vcl_proc_macros::cl_info_entrypoint;
 use std::collections::HashSet;
 use std::ffi::*;
 use std::mem::MaybeUninit;
-use std::slice;
 use std::sync::Arc;
 
 fn validate_device(device_handle: cl_device_id) -> CLResult<()> {
@@ -69,7 +68,7 @@ pub fn create_context(
         return Err(CL_INVALID_PLATFORM);
     }
 
-    let device_handles = unsafe { slice::from_raw_parts(devices, num_devices as usize) };
+    let device_handles = cl_device_id::get_slice_from_arr(devices, num_devices as usize)?;
 
     validate_devices(device_handles)?;
 

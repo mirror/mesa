@@ -71,7 +71,7 @@ pub fn create_program_with_binary(
     }
 
     let c = context.get_arc()?;
-    let devs = unsafe { slice::from_raw_parts(device_list, num_devices as usize) };
+    let devs = cl_device_id::get_slice_from_arr(device_list, num_devices as _)?;
 
     // CL_INVALID_DEVICE if any device in device_list is not in the list of devices associated with
     // context.
@@ -277,7 +277,7 @@ pub fn build_program(
 
     check_cb(&pfn_notify, user_data)?;
 
-    let devs = unsafe { slice::from_raw_parts(device_list, num_devices as usize) };
+    let devs = cl_device_id::get_slice_from_arr(device_list, num_devices as usize)?;
     for d in devs.iter() {
         let d_ref = d.get_ref()?;
         if !c.devices.contains(&d_ref) {
@@ -315,7 +315,7 @@ pub fn compile_program(
         return Err(CL_INVALID_VALUE);
     }
 
-    let devs = unsafe { slice::from_raw_parts(device_list, num_devices as usize) };
+    let devs = cl_device_id::get_slice_from_arr(device_list, num_devices as usize)?;
     for d in devs.iter() {
         let d_ref = d.get_ref()?;
         if !c.devices.contains(&d_ref) {

@@ -50,7 +50,7 @@ fn create_kernels_in_program(
 
         // Since we need to pass host handles to the guest for associating with vcomp kernel objects,
         // we need to create vcl objects here and store their handles in the kernels array.
-        let kernels_slice = unsafe { slice::from_raw_parts_mut(kernels, num_kernels as usize) };
+        let kernels_slice = cl_kernel::get_slice_from_arr_mut(kernels, num_kernels as usize)?;
         for kernel_handle in kernels_slice {
             let host_kernel = Kernel::new(&p);
             *kernel_handle = cl_kernel::from_arc(host_kernel);
@@ -64,7 +64,7 @@ fn create_kernels_in_program(
         );
 
         if ret.is_err() {
-            let kernels_slice = unsafe { slice::from_raw_parts_mut(kernels, num_kernels as usize) };
+            let kernels_slice = cl_kernel::get_slice_from_arr(kernels, num_kernels as usize)?;
             for kernel_handle in kernels_slice {
                 // Free kernels in case of error
                 kernel_handle.from_raw()?;

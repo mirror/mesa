@@ -2304,8 +2304,10 @@ enum print_flags {
    print_live_vars = 0x8,
 };
 
-void aco_print_physreg(PhysReg reg, FILE* output, unsigned bytes = 0, unsigned flags = 0);
-void aco_print_operand(const Operand* operand, FILE* output, unsigned flags = 0);
+void aco_print_physreg(enum amd_gfx_level gfx_level, PhysReg reg, FILE* output, unsigned bytes = 4,
+                       unsigned flags = 0);
+void aco_print_operand(enum amd_gfx_level gfx_level, const Operand* operand, FILE* output,
+                       unsigned flags = 0);
 void aco_print_instr(enum amd_gfx_level gfx_level, const Instruction* instr, FILE* output,
                      unsigned flags = 0);
 void aco_print_program(const Program* program, FILE* output, unsigned flags = 0);

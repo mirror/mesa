@@ -474,9 +474,9 @@ BEGIN_TEST(optimize.clamp)
       fprintf(output, "cfg: %s ", instr_info.name[(int)cfg.min]);
       fprintf(output, "%s ", instr_info.name[(int)cfg.max]);
       fprintf(output, "%s ", instr_info.name[(int)cfg.med3]);
-      aco_print_operand(&cfg.lb, output);
+      aco_print_operand(GFX9, &cfg.lb, output);
       fprintf(output, " ");
-      aco_print_operand(&cfg.ub, output);
+      aco_print_operand(GFX9, &cfg.ub, output);
       fprintf(output, "\n");
 
       //>> v1: %a, v1: %b, v1: %c = p_startpgm

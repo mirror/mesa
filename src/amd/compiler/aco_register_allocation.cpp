@@ -14,6 +14,7 @@
 #include <bitset>
 #include <map>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 namespace aco {
@@ -2121,52 +2122,88 @@ handle_fixed_operands(ra_ctx& ctx, RegisterFile& register_file,
    assert(parallelcopy.empty());
 
    RegisterFile tmp_file(register_file);
+   std::unordered_map<unsigned, std::vector<Operand*>> precolored_temps;
+   std::vector<unsigned> blocking_vars;
 
-   BITSET_DECLARE(mask, 128) = {0};
-
-   for (unsigned i = 0; i < instr->operands.size(); i++) {
-      Operand& op = instr->operands[i];
-
-      if (!op.isPrecolored())
+   for (auto it = instr->operands.begin(); it != instr->operands.end(); ++it) {
+      if (!it->isPrecolored())
          continue;
+      assert(it->isTemp());
 
-      assert(op.isTemp());
-      PhysReg src = ctx.assignments[op.tempId()].reg;
-      adjust_max_used_regs(ctx, op.regClass(), op.physReg());
+      /* For each temporary, gather all operands referring to the same temp. */
+      Operand& op = *it;
+      precolored_temps[it->tempId()].push_back(&op);
 
-      if (op.physReg() == src) {
-         tmp_file.block(op.physReg(), op.regClass());
-         continue;
+      adjust_max_used_regs(ctx, it->regClass(), it->physReg());
+      PhysReg src = ctx.assignments[it->tempId()].reg;
+      if (src == it->physReg()) {
+         tmp_file.block(it->physReg(), it->regClass());
+      } else {
+         /* clear from register_file so fixed operands are not collected be collect_vars() */
+         if (!tmp_file.is_blocked(src))
+            tmp_file.clear(src, it->regClass()); // TODO: try to avoid moving block vars to src
       }
-
-      /* An instruction can have at most one operand precolored to the same register. */
-      assert(std::none_of(parallelcopy.begin(), parallelcopy.end(),
-                          [&](auto copy) { return copy.second.physReg() == op.physReg(); }));
-
-      /* clear from register_file so fixed operands are not collected be collect_vars() */
-      tmp_file.clear(src, op.regClass()); // TODO: try to avoid moving block vars to src
-
-      BITSET_SET(mask, i);
-
-      Operand pc_op(instr->operands[i].getTemp());
-      pc_op.setFixed(src);
-      Definition pc_def = Definition(op.physReg(), pc_op.regClass());
-      parallelcopy.emplace_back(pc_op, pc_def);
    }
 
-   if (BITSET_IS_EMPTY(mask))
-      return;
+   /* Now, for each precolored temp, figure out which register the temp will continue living in
+    * after the instruction.
+    */
+   for (auto& regs : precolored_temps) {
+      PhysReg src = ctx.assignments[regs.first].reg;
+      bool all_kill = std::all_of(regs.second.begin(), regs.second.end(),
+                                  [](const Operand* op) { return op->isKill(); });
 
-   unsigned i;
-   std::vector<unsigned> blocking_vars;
-   BITSET_FOREACH_SET (i, mask, instr->operands.size()) {
-      Operand& op = instr->operands[i];
-      PhysRegInterval target{op.physReg(), op.size()};
-      std::vector<unsigned> blocking_vars2 = collect_vars(ctx, tmp_file, target);
-      blocking_vars.insert(blocking_vars.end(), blocking_vars2.begin(), blocking_vars2.end());
+      /* If there is only one precolored operand using this temporary, the decision is trivial:
+       * The temp will reside in the register that operand is fixed to. If the temporary doesn't
+       * live past the instruction at all (because it is killed by all operands), then the decision
+       * doesn't matter and we can skip ahead, too.
+       */
+      PhysReg live_reg = (*regs.second.begin())->physReg();
+      if (regs.second.size() > 1 && !all_kill) {
+         /* If there are multiple precolored operands using the same temporary, we will have to
+          * decide on one register where the temporary will continue living in.
+          */
+         bool found = false;
+         for (auto op : regs.second) {
+            /* Don't consider registers interfering with definitions - we'd have to immediately copy
+             * the temporary somewhere else to make space for the interfering definition.
+             */
+            if (op->isClobbered())
+               continue;
 
-      /* prevent get_regs_for_copies() from using these registers */
-      tmp_file.block(op.physReg(), op.regClass());
+            /* Choose the first register that doesn't interfere with definitions. If the temp can
+             * continue residing in the same register it's currently in, just choose that.
+             */
+            if (!found || op->physReg() == src) {
+               live_reg = op->physReg();
+               found = true;
+               if (op->physReg() == src)
+                  break;
+            }
+         }
+      }
+
+      RegClass rc = ctx.program->temp_rc[regs.first];
+
+      for (auto op : regs.second) {
+         /* Fix up operand kill flags according to the live_reg choice we made. */
+         if (op->physReg() == live_reg)
+            op->setKill(all_kill);
+         else
+            op->setCopyKill(true);
+
+         if (op->physReg() == src)
+            continue;
+
+         Definition copy_def = Definition(op->physReg(), rc);
+         parallelcopy.emplace_back(Operand(Temp(regs.first, rc), src), copy_def,
+                                   op->physReg() != live_reg);
+
+         PhysRegInterval target{op->physReg(), rc.size()};
+         std::vector<unsigned> blocking_vars2 = collect_vars(ctx, tmp_file, target);
+         blocking_vars.insert(blocking_vars.end(), blocking_vars2.begin(), blocking_vars2.end());
+         tmp_file.block(op->physReg(), rc);
+      }
    }
 
    get_regs_for_copies(ctx, tmp_file, parallelcopy, blocking_vars, instr, PhysRegInterval());

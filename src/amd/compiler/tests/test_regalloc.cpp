@@ -150,7 +150,7 @@ BEGIN_TEST(regalloc.precolor.multiple_operands)
    if (!setup_cs("v1 v1 v1 v1", GFX10))
       return;
 
-   //! v1: %tmp3_2:v[0], v1: %tmp0_2:v[1], v1: %tmp1_2:v[2], v1: %tmp2_2:v[3] = p_parallelcopy %tmp3:v[3], %tmp0:v[0], %tmp1:v[1], %tmp2:v[2]
+   //! v1: %tmp2_2:v[3], v1: %tmp1_2:v[2], v1: %tmp0_2:v[1], v1: %tmp3_2:v[0] = p_parallelcopy %tmp2:v[2], %tmp1:v[1], %tmp0:v[0], %tmp3:v[3]
    //! p_unit_test %tmp3_2:v[0], %tmp0_2:v[1], %tmp1_2:v[2], %tmp2_2:v[3]
    bld.pseudo(aco_opcode::p_unit_test, Operand(inputs[3], PhysReg(256 + 0)),
               Operand(inputs[0], PhysReg(256 + 1)), Operand(inputs[1], PhysReg(256 + 2)),

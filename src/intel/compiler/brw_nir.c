@@ -1202,6 +1202,8 @@ brw_preprocess_nir(const struct brw_compiler *compiler, nir_shader *nir,
    };
    OPT(nir_lower_subgroups, &subgroups_options);
 
+   OPT(nir_opt_loop_unroll);
+
    nir_variable_mode indirect_mask =
       brw_nir_no_indirect_mask(compiler, nir->info.stage);
    OPT(nir_lower_indirect_derefs, indirect_mask, UINT32_MAX);
@@ -1424,12 +1426,12 @@ brw_nir_link_shaders(const struct brw_compiler *compiler,
        * temporaries so we need to lower indirects on any of the
        * varyings we have demoted here.
        */
-      NIR_PASS(_, producer, nir_lower_indirect_derefs,
-                  brw_nir_no_indirect_mask(compiler, producer->info.stage),
-                  UINT32_MAX);
-      NIR_PASS(_, consumer, nir_lower_indirect_derefs,
-                  brw_nir_no_indirect_mask(compiler, consumer->info.stage),
-                  UINT32_MAX);
+      /* NIR_PASS(_, producer, nir_lower_indirect_derefs, */
+      /*             brw_nir_no_indirect_mask(compiler, producer->info.stage), */
+      /*             UINT32_MAX); */
+      /* NIR_PASS(_, consumer, nir_lower_indirect_derefs, */
+      /*             brw_nir_no_indirect_mask(compiler, consumer->info.stage), */
+      /*             UINT32_MAX); */
 
       brw_nir_optimize(producer, devinfo);
       brw_nir_optimize(consumer, devinfo);

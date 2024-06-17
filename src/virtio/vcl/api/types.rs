@@ -2,6 +2,17 @@ use std::{borrow::Borrow, iter::Product};
 
 use vcl_opencl_gen::*;
 
+#[macro_export]
+macro_rules! cl_closure {
+    (|$obj:ident| $cb:ident($($arg:ident$(,)?)*)) => {
+        Box::new(
+            unsafe {
+                move|$obj| $cb.unwrap()($($arg,)*)
+            }
+        )
+    }
+}
+
 macro_rules! cl_callback {
     ($cb:ident {
         $($p:ident : $ty:ty,)*
@@ -19,6 +30,13 @@ cl_callback!(
         private_info: *const ::std::ffi::c_void,
         cb: usize,
         user_data: *mut ::std::ffi::c_void,
+    }
+);
+
+cl_callback!(
+    MemCB {
+        memobj: cl_mem,
+        user_data: *mut ::std::os::raw::c_void,
     }
 );
 

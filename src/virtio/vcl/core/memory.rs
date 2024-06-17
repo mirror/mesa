@@ -16,7 +16,7 @@ use vcl_opencl_gen::*;
 use std::cmp;
 use std::os::raw::c_void;
 use std::ptr;
-use std::sync::Arc;
+use std::sync::*;
 
 pub struct Mem {
     pub base: CLObjectBase<CL_INVALID_MEM_OBJECT>,
@@ -25,6 +25,9 @@ pub struct Mem {
     pub size: usize,
     pub image_format: cl_image_format,
     pub image_desc: cl_image_desc,
+
+    /// List of callbacks called when this object gets destroyed
+    pub callbacks: Mutex<Vec<Box<dyn Fn(cl_mem)>>>,
 }
 
 impl_cl_type_trait!(cl_mem, Mem, CL_INVALID_MEM_OBJECT);
@@ -124,20 +127,25 @@ impl CLImageDescInfo for cl_image_desc {
 }
 
 impl Mem {
+    fn new_buffer_impl(context: &Arc<Context>, flags: cl_mem_flags, size: usize) -> Arc<Self> {
+        Arc::new(Self {
+            base: CLObjectBase::new(),
+            context: context.clone(),
+            flags,
+            size,
+            image_format: Default::default(),
+            image_desc: Default::default(),
+            callbacks: Default::default(),
+        })
+    }
+
     pub fn new_buffer(
         context: &Arc<Context>,
         flags: cl_mem_flags,
         size: usize,
         host_ptr: *mut c_void,
     ) -> CLResult<cl_mem> {
-        let buffer = Arc::new(Self {
-            base: CLObjectBase::new(),
-            context: context.clone(),
-            flags,
-            size,
-            image_format: cl_image_format::default(),
-            image_desc: cl_image_desc::default(),
-        });
+        let buffer = Self::new_buffer_impl(context, flags, size);
         let mut handle = cl_mem::from_arc(buffer);
         Vcl::get().call_clCreateBufferMESA(
             context.get_handle(),
@@ -159,14 +167,7 @@ impl Mem {
         let buffer_region = unsafe { &mut *(buffer_create_info as *mut cl_buffer_region) };
 
         // Get context from parent buffer
-        let sub_buffer = Arc::new(Self {
-            base: CLObjectBase::new(),
-            context: buf.context.clone(),
-            flags,
-            size: buffer_region.size,
-            image_format: cl_image_format::default(),
-            image_desc: cl_image_desc::default(),
-        });
+        let sub_buffer = Self::new_buffer_impl(&buf.context, flags, buffer_region.size);
 
         let mut handle = cl_mem::from_arc(sub_buffer);
         Vcl::get().call_clCreateSubBufferMESA(
@@ -181,6 +182,24 @@ impl Mem {
         Ok(handle)
     }
 
+    fn new_image_impl(
+        context: &Arc<Context>,
+        flags: cl_mem_flags,
+        size: usize,
+        image_format: cl_image_format,
+        image_desc: cl_image_desc,
+    ) -> Arc<Self> {
+        Arc::new(Self {
+            base: CLObjectBase::new(),
+            context: context.clone(),
+            flags,
+            size,
+            image_format,
+            image_desc,
+            callbacks: Default::default(),
+        })
+    }
+
     pub fn new_image(
         context: Arc<Context>,
         image_desc: cl_image_desc,
@@ -191,14 +210,7 @@ impl Mem {
         let pixel_size = image_format.pixel_size().unwrap() as usize;
         let size = image_desc.pixels() * pixel_size;
 
-        let image = Arc::new(Self {
-            base: CLObjectBase::new(),
-            context,
-            flags,
-            size,
-            image_format,
-            image_desc,
-        });
+        let image = Self::new_image_impl(&context, flags, size, image_format, image_desc);
 
         match image_desc.image_type {
             CL_MEM_OBJECT_IMAGE2D => Vcl::get().call_clCreateImage2DMESA(
@@ -242,14 +254,7 @@ impl Mem {
         let pixel_size = image_format.pixel_size().unwrap() as usize;
         let size = image_desc.pixels() * pixel_size;
 
-        let image = Arc::new(Self {
-            base: CLObjectBase::new(),
-            context,
-            flags,
-            size,
-            image_format,
-            image_desc,
-        });
+        let image = Self::new_image_impl(&context, flags, size, image_format, image_desc);
 
         let props = props.to_raw();
         let props_ptr = if props.len() > 1 {
@@ -283,6 +288,18 @@ impl Mem {
         )?;
 
         Ok(image)
+    }
+}
+
+impl Drop for Mem {
+    fn drop(&mut self) {
+        let mem = cl_mem::from_ptr(self);
+        self.callbacks
+            .get_mut()
+            .unwrap()
+            .iter()
+            .rev()
+            .for_each(|callback| callback(mem));
     }
 }
 

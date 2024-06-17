@@ -4,8 +4,9 @@
  */
 
 use crate::api::icd::*;
-use crate::api::types::CLVec;
+use crate::api::types::*;
 use crate::api::util::*;
+use crate::cl_closure;
 use crate::core::context::*;
 use crate::core::event::Event;
 use crate::core::format::CLFormatInfo;
@@ -566,6 +567,26 @@ fn enqueue_migrate_mem_objects(
     )?;
 
     event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clSetMemObjectDestructorCallback)]
+fn set_mem_object_destructor_callback(
+    memobj: cl_mem,
+    pfn_notify: Option<MemCB>,
+    user_data: *mut c_void,
+) -> CLResult<()> {
+    let mem = memobj.get_ref()?;
+
+    // CL_INVALID_VALUE if pfn_notify is NULL.
+    if pfn_notify.is_none() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    mem.callbacks
+        .lock()
+        .unwrap()
+        .push(cl_closure!(|mem| pfn_notify(mem, user_data)));
     Ok(())
 }
 

@@ -165,7 +165,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clGetDeviceAndHostTimer: None,
     clGetHostTimer: None,
     clGetKernelSubGroupInfo: Some(clGetKernelSubGroupInfo),
-    clSetDefaultDeviceCommandQueue: None,
+    clSetDefaultDeviceCommandQueue: Some(clSetDefaultDeviceCommandQueue),
     clSetProgramReleaseCallback: None,
     clSetProgramSpecializationConstant: None,
     clCreateBufferWithProperties: None,

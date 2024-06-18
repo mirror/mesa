@@ -126,6 +126,15 @@ fn get_device_info(
     Ok(())
 }
 
+#[cl_entrypoint(clSetDefaultDeviceCommandQueue)]
+fn set_default_device_command_queue(
+    _context: cl_context,
+    _device: cl_device_id,
+    _command_queue: cl_command_queue,
+) -> CLResult<()> {
+    Err(CL_INVALID_OPERATION)
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

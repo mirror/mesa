@@ -54,12 +54,12 @@ pub trait VclCsRead {
 }
 
 pub struct VclCsDecoder {
-    _reply_buffer: Pin<Box<VclReplyBuffer>>,
+    _reply_buffer: Pin<Box<VclBuffer>>,
     imp: Box<dyn VclCsRead>,
 }
 
 impl VclCsDecoder {
-    pub fn new(reply_buffer: VclReplyBuffer) -> Self {
+    pub fn new(reply_buffer: VclBuffer) -> Self {
         // Make sure the reply buffer does not move its memory while the
         // decoder uses it as a slice
         let reply_buffer = Box::pin(reply_buffer);

@@ -92,8 +92,8 @@ impl VclRenderer for VirtGpu {
         Ok(())
     }
 
-    fn create_reply_buffer(&self, size: usize) -> CLResult<VclReplyBuffer> {
-        Ok(VclReplyBuffer::new_for_virtgpu(self, size)?)
+    fn create_buffer(&self, size: usize) -> CLResult<VclBuffer> {
+        Ok(VclBuffer::new_for_virtgpu(self, size)?)
     }
 
     fn transfer_get(&self, resource: &mut dyn VclResource) -> CLResult<()> {
@@ -239,7 +239,15 @@ impl VclResource for VirtGpuResource {
             self.buf = self.drm_device.map(self.bo_handle, self.size)?;
         }
         assert!(offset + size <= self.size);
-        Ok(unsafe { slice::from_raw_parts((self.buf as *mut u8).add(offset), size) })
+        Ok(unsafe { slice::from_raw_parts((self.buf as *const u8).add(offset), size) })
+    }
+
+    fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]> {
+        if self.buf == ptr::null_mut() {
+            self.buf = self.drm_device.map(self.bo_handle, self.size)?;
+        }
+        assert!(offset + size <= self.size);
+        Ok(unsafe { slice::from_raw_parts_mut((self.buf as *mut u8).add(offset), size) })
     }
 
     fn len(&self) -> usize {

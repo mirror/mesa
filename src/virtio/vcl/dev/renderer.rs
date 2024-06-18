@@ -23,7 +23,7 @@ use std::*;
 
 pub trait VclRenderer {
     fn submit(&self, submit: VclCsEncoder) -> CLResult<()>;
-    fn create_reply_buffer(&self, size: usize) -> CLResult<VclReplyBuffer>;
+    fn create_buffer(&self, size: usize) -> CLResult<VclBuffer>;
     fn transfer_get(&self, resource: &mut dyn VclResource) -> CLResult<()>;
 }
 
@@ -199,14 +199,15 @@ pub trait VclResource {
     }
 
     fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]>;
+    fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]>;
 }
 
-pub struct VclReplyBuffer {
+pub struct VclBuffer {
     /// Resource for receiving the reply
     pub res: Box<dyn VclResource>,
 }
 
-impl VclReplyBuffer {
+impl VclBuffer {
     pub fn new_for_virtgpu(virtgpu: &VirtGpu, size: usize) -> CLResult<Self> {
         Ok(Self {
             res: Box::new(VirtGpuResource::new(virtgpu, size)?),
@@ -219,8 +220,12 @@ impl VclReplyBuffer {
         })
     }
 
-    pub fn map(&mut self, size: usize) -> CLResult<&[u8]> {
-        self.res.map(0, size)
+    pub fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
+        self.res.map(offset, size)
+    }
+
+    pub fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]> {
+        self.res.map_mut(offset, size)
     }
 
     pub fn len(&self) -> usize {

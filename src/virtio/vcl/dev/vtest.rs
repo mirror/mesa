@@ -420,8 +420,8 @@ impl VclRenderer for Vtest {
         Ok(())
     }
 
-    fn create_reply_buffer(&self, size: usize) -> CLResult<VclReplyBuffer> {
-        VclReplyBuffer::new_for_vtest(self, size)
+    fn create_buffer(&self, size: usize) -> CLResult<VclBuffer> {
+        VclBuffer::new_for_vtest(self, size)
     }
 
     fn transfer_get(&self, resource: &mut dyn VclResource) -> CLResult<()> {
@@ -487,5 +487,9 @@ impl VclResource for VtestResource {
 
     fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
         Ok(unsafe { std::slice::from_raw_parts(self.ptr.add(offset) as _, size) })
+    }
+
+    fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]> {
+        Ok(unsafe { std::slice::from_raw_parts_mut(self.ptr.add(offset) as _, size) })
     }
 }

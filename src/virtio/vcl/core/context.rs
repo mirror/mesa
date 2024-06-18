@@ -12,7 +12,7 @@ use mesa_rust_util::properties::Properties;
 use vcl_opencl_gen::*;
 
 use std::ptr;
-use std::sync::Arc;
+use std::sync::*;
 
 impl_cl_type_trait!(cl_context, Context, CL_INVALID_CONTEXT);
 
@@ -20,6 +20,7 @@ pub struct Context {
     base: CLObjectBase<CL_INVALID_CONTEXT>,
     pub devices: Vec<&'static Device>,
     pub properties: Properties<cl_context_properties>,
+    pub dtors: Mutex<Vec<Box<dyn Fn(cl_context)>>>,
 }
 
 impl Context {
@@ -31,6 +32,7 @@ impl Context {
             base: Default::default(),
             devices,
             properties,
+            dtors: Default::default(),
         });
 
         let mut device_handles = Vec::default();
@@ -65,5 +67,17 @@ impl Context {
             }
         }
         Err(CL_INVALID_DEVICE)
+    }
+}
+
+impl Drop for Context {
+    fn drop(&mut self) {
+        let cl = cl_context::from_ptr(self);
+        self.dtors
+            .lock()
+            .unwrap()
+            .iter()
+            .rev()
+            .for_each(|cb| cb(cl));
     }
 }

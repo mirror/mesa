@@ -6,6 +6,7 @@
 use crate::api::icd::*;
 use crate::api::types::*;
 use crate::api::util::*;
+use crate::cl_closure;
 use crate::core::context::Context;
 use crate::dev::renderer::Vcl;
 
@@ -205,6 +206,27 @@ impl CLInfo<cl_context_info> for cl_context {
             _ => return Err(CL_INVALID_VALUE),
         })
     }
+}
+
+#[cl_entrypoint(clSetContextDestructorCallback)]
+pub fn set_context_destructor_callback(
+    context: cl_context,
+    pfn_notify: Option<DeleteContextCB>,
+    user_data: *mut c_void,
+) -> CLResult<()> {
+    let context = context.get_ref()?;
+
+    // CL_INVALID_VALUE if pfn_notify is NULL.
+    if pfn_notify.is_none() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    context
+        .dtors
+        .lock()
+        .unwrap()
+        .push(cl_closure!(|c| pfn_notify(c, user_data)));
+    Ok(())
 }
 
 #[cfg(test)]

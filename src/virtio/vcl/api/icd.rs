@@ -170,7 +170,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clSetProgramSpecializationConstant: None,
     clCreateBufferWithProperties: None,
     clCreateImageWithProperties: Some(clCreateImageWithProperties),
-    clSetContextDestructorCallback: None,
+    clSetContextDestructorCallback: Some(clSetContextDestructorCallback),
 };
 
 pub type CLError = cl_int;

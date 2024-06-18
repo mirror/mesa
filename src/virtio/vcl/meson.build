@@ -42,6 +42,8 @@ vcl_opencl_bindings_rs = rust.bindgen(
       '--allowlist-type', 'cl.*_fn',
       # brings in CL_SUCCESS, CL_INVALID_VALUE, and so on..
       '--allowlist-var', 'CL_.*',
+      # some info types need to be strongly typed so we can implement various get_infos
+      '--new-type-alias-deref', 'cl_(mem|image|pipe)_info',
   ],
 )
 

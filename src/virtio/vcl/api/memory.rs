@@ -180,7 +180,7 @@ fn release_mem_object(mem: cl_mem) -> CLResult<()> {
 impl CLInfo<cl_mem_info> for cl_mem {
     fn query(&self, q: cl_mem_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
         let mem = self.get_ref()?;
-        Ok(match q {
+        Ok(match q.0 {
             CL_MEM_CONTEXT => {
                 // Note we use as_ptr here which doesn't increase the reference count.
                 let ptr = Arc::as_ptr(&mem.context);
@@ -203,7 +203,7 @@ fn get_mem_object_info(
 ) -> CLResult<()> {
     mem.get_ref()?;
 
-    if param_name == CL_MEM_REFERENCE_COUNT || param_name == CL_MEM_CONTEXT {
+    if param_name.0 == CL_MEM_REFERENCE_COUNT || param_name.0 == CL_MEM_CONTEXT {
         return mem.get_info(
             param_name,
             param_value_size,
@@ -945,7 +945,7 @@ fn get_supported_image_formats(
 #[cl_entrypoint(clGetImageInfo)]
 fn get_image_info(
     image: cl_mem,
-    param_name: cl_mem_info,
+    param_name: cl_image_info,
     param_value_size: usize,
     param_value: *mut c_void,
     param_value_size_ret: *mut usize,
@@ -1398,6 +1398,25 @@ fn enqueue_copy_buffer_to_image(
 
     event.write_checked(ev_handle);
     Ok(())
+}
+
+#[cl_entrypoint(clCreatePipe)]
+fn create_pipe(
+    _context: cl_context,
+    _flags: cl_mem_flags,
+    _pipe_packet_size: cl_uint,
+    _pipe_max_packets: cl_uint,
+    _properties: *const cl_pipe_properties,
+) -> CLResult<cl_mem> {
+    Err(CL_INVALID_OPERATION)
+}
+
+#[cl_info_entrypoint(clGetPipeInfo)]
+impl CLInfo<cl_pipe_info> for cl_mem {
+    fn query(&self, _q: cl_pipe_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        // CL_INVALID_MEM_OBJECT if pipe is a not a valid pipe object.
+        Err(CL_INVALID_MEM_OBJECT)
+    }
 }
 
 #[cfg(test)]

@@ -866,8 +866,8 @@ fn create_image_2d(
         image_row_pitch: image_row_pitch,
         ..Default::default()
     };
-    Ok(cl_mem::from_arc(Mem::new_image(
-        context.get_arc()?,
+    Ok(cl_mem::from_arc(Mem::new_image_2d(
+        &context.get_arc()?,
         image_desc,
         flags,
         unsafe { *image_format },
@@ -899,8 +899,8 @@ fn create_image_3d(
         image_slice_pitch: image_slice_pitch,
         ..Default::default()
     };
-    Ok(cl_mem::from_arc(Mem::new_image(
-        context.get_arc()?,
+    Ok(cl_mem::from_arc(Mem::new_image_3d(
+        &context.get_arc()?,
         image_desc,
         flags,
         unsafe { *image_format },

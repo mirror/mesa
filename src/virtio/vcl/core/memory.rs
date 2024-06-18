@@ -200,6 +200,64 @@ impl Mem {
         })
     }
 
+    pub fn new_image_2d(
+        context: &Arc<Context>,
+        image_desc: cl_image_desc,
+        flags: cl_mem_flags,
+        image_format: cl_image_format,
+        host_ptr: *mut c_void,
+    ) -> CLResult<Arc<Mem>> {
+        let pixel_size = image_format.pixel_size().unwrap() as usize;
+        let size = image_desc.pixels() * pixel_size;
+
+        let image = Self::new_image_impl(context, flags, size, image_format, image_desc);
+
+        assert_eq!(image_desc.image_type, CL_MEM_OBJECT_IMAGE2D);
+        Vcl::get().call_clCreateImage2DMESA(
+            image.context.get_handle(),
+            flags,
+            &image_format,
+            image_desc.image_width,
+            image_desc.image_height,
+            image_desc.image_row_pitch,
+            size,
+            host_ptr,
+            &mut image.get_handle(),
+        )?;
+
+        Ok(image)
+    }
+
+    pub fn new_image_3d(
+        context: &Arc<Context>,
+        image_desc: cl_image_desc,
+        flags: cl_mem_flags,
+        image_format: cl_image_format,
+        host_ptr: *mut c_void,
+    ) -> CLResult<Arc<Mem>> {
+        let pixel_size = image_format.pixel_size().unwrap() as usize;
+        let size = image_desc.pixels() * pixel_size;
+
+        let image = Self::new_image_impl(context, flags, size, image_format, image_desc);
+
+        assert_eq!(image_desc.image_type, CL_MEM_OBJECT_IMAGE3D);
+        Vcl::get().call_clCreateImage3DMESA(
+            image.context.get_handle(),
+            flags,
+            &image_format,
+            image_desc.image_width,
+            image_desc.image_height,
+            image_desc.image_depth,
+            image_desc.image_row_pitch,
+            image_desc.image_slice_pitch,
+            size,
+            host_ptr,
+            &mut image.get_handle(),
+        )?;
+
+        Ok(image)
+    }
+
     pub fn new_image(
         context: Arc<Context>,
         image_desc: cl_image_desc,
@@ -212,33 +270,27 @@ impl Mem {
 
         let image = Self::new_image_impl(&context, flags, size, image_format, image_desc);
 
-        match image_desc.image_type {
-            CL_MEM_OBJECT_IMAGE2D => Vcl::get().call_clCreateImage2DMESA(
-                image.context.get_handle(),
-                flags,
-                &image_format,
-                image_desc.image_width,
-                image_desc.image_height,
-                image_desc.image_row_pitch,
-                size,
-                host_ptr,
-                &mut image.get_handle(),
-            )?,
-            CL_MEM_OBJECT_IMAGE3D => Vcl::get().call_clCreateImage3DMESA(
-                image.context.get_handle(),
-                flags,
-                &image_format,
-                image_desc.image_width,
-                image_desc.image_height,
-                image_desc.image_depth,
-                image_desc.image_row_pitch,
-                image_desc.image_slice_pitch,
-                size,
-                host_ptr,
-                &mut image.get_handle(),
-            )?,
-            _ => unimplemented!(),
-        }
+        let image_desc = cl_image_desc_MESA {
+            image_type: image_desc.image_type,
+            image_width: image_desc.image_width,
+            image_height: image_desc.image_height,
+            image_depth: image_desc.image_depth,
+            image_array_size: image_desc.image_array_size,
+            image_row_pitch: image_desc.image_row_pitch,
+            image_slice_pitch: image_desc.image_slice_pitch,
+            num_mip_levels: image_desc.num_mip_levels,
+            num_samples: image_desc.num_samples,
+            mem_object: unsafe { image_desc.anon_1.mem_object },
+        };
+        Vcl::get().call_clCreateImageMESA(
+            image.context.get_handle(),
+            flags,
+            &image_format,
+            &image_desc,
+            size,
+            host_ptr,
+            &mut image.get_handle(),
+        )?;
 
         Ok(image)
     }

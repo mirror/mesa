@@ -238,6 +238,25 @@ impl DrmDevice {
         self.ioctl(drm_ioctl_virtgpu_TRANSFER_FROM_HOST, &mut get_cmd)
     }
 
+    pub fn transfer_put(&self, bo_handle: u32, size: usize) -> Result<(), VirtGpuError> {
+        let mut put_cmd = drm_virtgpu_3d_transfer_to_host {
+            bo_handle,
+            level: 0,
+            offset: 0,
+            box_: drm_virtgpu_3d_box {
+                x: 0,
+                y: 0,
+                z: 0,
+                w: size as u32,
+                h: 1,
+                d: 1,
+            },
+            stride: 0,
+            layer_stride: 0,
+        };
+        self.ioctl(drm_ioctl_virtgpu_TRANSFER_TO_HOST, &mut put_cmd)
+    }
+
     pub fn map(&self, bo_handle: u32, size: usize) -> Result<*mut c_void, VirtGpuError> {
         let mut map_arg = drm_virtgpu_map {
             offset: 0,

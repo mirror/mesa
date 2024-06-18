@@ -333,12 +333,16 @@ impl Vtest {
         Ok((handle, self.receive_fd()))
     }
 
-    fn vcmd_transfer_get(&self, resource: &dyn VclResource) -> io::Result<()> {
+    fn vcmd_transfer(&self, resource: &dyn VclResource, vcmd: u32) -> io::Result<()> {
         let size = resource.len();
 
         let mut vtest_hdr = [0u32; VTEST_HDR_SIZE as usize];
         vtest_hdr[VTEST_CMD_LEN as usize] = VCMD_TRANSFER2_HDR_SIZE;
-        vtest_hdr[VTEST_CMD_ID as usize] = VCMD_TRANSFER_GET2;
+        if vcmd == VCMD_TRANSFER_PUT2 {
+            // host expects size in dwords, so calculate rounded up value
+            vtest_hdr[VTEST_CMD_LEN as usize] += (size as u32 + 3) / 4;
+        }
+        vtest_hdr[VTEST_CMD_ID as usize] = vcmd;
 
         let mut vtest_get = [0u32; VCMD_TRANSFER2_HDR_SIZE as usize];
         vtest_get[VCMD_TRANSFER2_RES_HANDLE as usize] = resource.get_handle() as u32;
@@ -355,6 +359,14 @@ impl Vtest {
         self.write(&vtest_hdr)?;
         self.write(&vtest_get)?;
         Ok(())
+    }
+
+    fn vcmd_transfer_get(&self, resource: &dyn VclResource) -> io::Result<()> {
+        self.vcmd_transfer(resource, VCMD_TRANSFER_GET2)
+    }
+
+    fn vcmd_transfer_put(&self, resource: &dyn VclResource) -> io::Result<()> {
+        self.vcmd_transfer(resource, VCMD_TRANSFER_PUT2)
     }
 
     fn vcmd_busy_wait(&self, resource: &dyn VclResource) -> io::Result<u32> {
@@ -431,6 +443,13 @@ impl VclRenderer for Vtest {
         // Resource has been mapped at creation
         Ok(())
     }
+
+    fn transfer_put(&self, resource: &mut dyn VclResource) -> CLResult<()> {
+        self.vcmd_transfer_put(resource)
+            .expect("Failed to transfer resource");
+        self.vcmd_busy_wait(resource).expect("Failed to wait");
+        Ok(())
+    }
 }
 
 pub struct VtestResource {
@@ -483,6 +502,18 @@ impl VclResource for VtestResource {
 
     fn len(&self) -> usize {
         self.size
+    }
+
+    fn transfer_get(&self) -> CLResult<()> {
+        Ok(())
+    }
+
+    fn transfer_put(&self) -> CLResult<()> {
+        Ok(())
+    }
+
+    fn wait(&self) -> CLResult<()> {
+        Ok(())
     }
 
     fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {

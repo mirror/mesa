@@ -11,6 +11,8 @@ use crate::dev::virtgpu::*;
 use crate::dev::vtest::*;
 use crate::protocol::VclCsEncoder;
 
+use ops::Deref;
+use ops::DerefMut;
 use vcl_opencl_gen::*;
 use vcl_virglrenderer_gen::*;
 
@@ -25,6 +27,7 @@ pub trait VclRenderer {
     fn submit(&self, submit: VclCsEncoder) -> CLResult<()>;
     fn create_buffer(&self, size: usize) -> CLResult<VclBuffer>;
     fn transfer_get(&self, resource: &mut dyn VclResource) -> CLResult<()>;
+    fn transfer_put(&self, resource: &mut dyn VclResource) -> CLResult<()>;
 }
 
 static VCL_ENV_ONCE: Once = Once::new();
@@ -198,12 +201,23 @@ pub trait VclResource {
         unsafe { slice::from_raw_parts(self.get_ptr() as _, self.len()) }
     }
 
+    /// Issues a transfer operation from host to guest
+    fn transfer_get(&self) -> CLResult<()>;
+
+    /// Issues a transfer operation from guest to host
+    fn transfer_put(&self) -> CLResult<()>;
+
+    /// Transfer get/put
+    fn wait(&self) -> CLResult<()>;
+
+    /// Maps resource memory into system memory for read
     fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]>;
+
+    /// Maps resource memory into system memory for read/write
     fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]>;
 }
 
 pub struct VclBuffer {
-    /// Resource for receiving the reply
     pub res: Box<dyn VclResource>,
 }
 
@@ -219,25 +233,19 @@ impl VclBuffer {
             res: Box::new(VtestResource::new(vtest, size)?),
         })
     }
+}
 
-    pub fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
-        self.res.map(offset, size)
+impl Deref for VclBuffer {
+    type Target = Box<dyn VclResource>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.res
     }
+}
 
-    pub fn map_mut(&mut self, offset: usize, size: usize) -> CLResult<&mut [u8]> {
-        self.res.map_mut(offset, size)
-    }
-
-    pub fn len(&self) -> usize {
-        self.res.len()
-    }
-
-    pub fn get_ptr(&self) -> *const c_void {
-        self.res.get_ptr()
-    }
-
-    pub fn get_handle(&self) -> i32 {
-        self.res.get_handle()
+impl DerefMut for VclBuffer {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.res
     }
 }
 
@@ -315,5 +323,17 @@ mod test {
             bytes_as_bytes_slice.as_bytes().len(),
             bytes_as_bytes_slice.len()
         );
+    }
+
+    #[test]
+    fn buffer() -> CLResult<()> {
+        let vcl = Vcl::get();
+        let a_hundred_mb = 100_000_000;
+        let mut buffer = vcl.renderer.create_buffer(a_hundred_mb)?;
+        let buffer_slice = buffer.map_mut(0, a_hundred_mb)?;
+        buffer_slice.fill(1);
+        buffer.transfer_put()?;
+        buffer.wait()?;
+        Ok(())
     }
 }

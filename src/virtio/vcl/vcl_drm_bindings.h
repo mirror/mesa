@@ -14,6 +14,7 @@ enum drm_ioctl_virtgpu : uint64_t {
     WAIT = DRM_IOCTL_VIRTGPU_WAIT,
     MAP = DRM_IOCTL_VIRTGPU_MAP,
     TRANSFER_FROM_HOST = DRM_IOCTL_VIRTGPU_TRANSFER_FROM_HOST,
+    TRANSFER_TO_HOST = DRM_IOCTL_VIRTGPU_TRANSFER_TO_HOST,
 };
 
 enum virtgpu_context_param {

@@ -103,6 +103,13 @@ impl VclRenderer for VirtGpu {
         resource.map(0, resource.len())?;
         Ok(())
     }
+
+    fn transfer_put(&self, resource: &mut dyn VclResource) -> CLResult<()> {
+        self.drm_device
+            .transfer_put(resource.get_bo_handle(), resource.len())?;
+        self.drm_device.wait(resource.get_bo_handle())?;
+        Ok(())
+    }
 }
 
 #[repr(u64)]
@@ -229,12 +236,24 @@ impl VirtGpuResource {
 }
 
 impl VclResource for VirtGpuResource {
-    fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
+    fn transfer_get(&self) -> CLResult<()> {
         // We need to trigger a transfer to put the resource in a busy state
         self.drm_device.transfer_get(self.bo_handle, self.size)?;
+        Ok(())
+    }
+
+    fn transfer_put(&self) -> CLResult<()> {
+        self.drm_device.transfer_put(self.bo_handle, self.size)?;
+        Ok(())
+    }
+
+    fn wait(&self) -> CLResult<()> {
         // The wait will make sure the transfer has finished before mapping
         self.drm_device.wait(self.bo_handle)?;
+        Ok(())
+    }
 
+    fn map(&mut self, offset: usize, size: usize) -> CLResult<&[u8]> {
         if self.buf == ptr::null_mut() {
             self.buf = self.drm_device.map(self.bo_handle, self.size)?;
         }

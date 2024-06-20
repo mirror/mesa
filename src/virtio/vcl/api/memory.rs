@@ -1347,7 +1347,7 @@ mod test {
         // This line needs some kind of conditional compilation to choose
         // between create_sampler() and create_sampler_with_properties() based
         // on the OpenCL version used
-        let sampler = create_sampler_with_properties(context, ptr::null_mut());
+        let sampler = create_sampler(context, CL_TRUE, CL_ADDRESS_CLAMP, CL_FILTER_NEAREST);
         assert!(sampler.is_ok());
 
         (sampler.unwrap(), context, device, platform)

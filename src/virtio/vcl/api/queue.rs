@@ -147,6 +147,12 @@ fn set_command_queue_property(
     Vcl::get().call_clSetCommandQueueProperty(queue, properties, enable, old_properties)
 }
 
+#[cl_entrypoint(clEnqueueBarrier)]
+fn enqueue_barrier(command_queue: cl_command_queue) -> CLResult<()> {
+    let queue = command_queue.get_ref()?;
+    Vcl::get().call_clEnqueueBarrier(queue.get_handle())
+}
+
 #[cl_entrypoint(clFlush)]
 fn flush(queue: cl_command_queue) -> CLResult<()> {
     queue.get_ref()?;

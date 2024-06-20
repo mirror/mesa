@@ -86,7 +86,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueNativeKernel: None,
     clEnqueueMarker: None,
     clEnqueueWaitForEvents: None,
-    clEnqueueBarrier: None,
+    clEnqueueBarrier: Some(clEnqueueBarrier),
     clGetExtensionFunctionAddress: Some(clGetExtensionFunctionAddress),
     clCreateFromGLBuffer: None,
     clCreateFromGLTexture2D: None,

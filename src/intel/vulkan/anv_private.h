@@ -4425,7 +4425,12 @@ static inline bool
 anv_cmd_buffer_is_compute_queue(const struct anv_cmd_buffer *cmd_buffer)
 {
    struct anv_queue_family *queue_family = cmd_buffer->queue_family;
-   return queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE;
+   /* Either it's a RCS engine masquerading as a compute queue, or it's an
+    * actual CCS.
+    */
+   return ((queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 &&
+           queue_family->engine_class == INTEL_ENGINE_CLASS_RENDER) ||
+          queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE;
 }
 
 static inline bool

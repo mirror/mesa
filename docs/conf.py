@@ -45,6 +45,7 @@ extensions = [
     'hawkmoth',
     'nir',
     'redirects',
+    'sphinx.ext.extlinks',
     'sphinx.ext.graphviz',
 ]
 
@@ -241,3 +242,10 @@ rst_prolog = '''
 .. |out| replace:: **[out]**
 .. |inout| replace:: **[inout]**
 '''
+
+# -- Options for ExtLinks -------------------------------------------------
+
+extlinks = {
+    'vk-feat': ('https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#features-%s',
+                '%s')
+}

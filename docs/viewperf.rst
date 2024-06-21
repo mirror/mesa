@@ -38,7 +38,7 @@ Catia-03 tests 3, 4, 8
 ~~~~~~~~~~~~~~~~~~~~~~
 
 These tests use features of the
-:ext:`GL_NV_fragment_program2` and :ext:`GL_NV_vertex_program3` extensions
+:gl-ext:`NV_fragment_program2` and :gl-ext:`NV_vertex_program3` extensions
 without checking if the driver supports them.
 
 When Mesa tries to compile the vertex/fragment programs it generates
@@ -48,7 +48,7 @@ and the rendering is incorrect.
 sw-02 tests 1, 2, 4, 6
 ~~~~~~~~~~~~~~~~~~~~~~
 
-These tests depend on the :ext:`GL_NV_primitive_restart` extension.
+These tests depend on the :gl-ext:`NV_primitive_restart` extension.
 
 If the Mesa driver doesn't support this extension the rendering will be
 incorrect and the test will fail.
@@ -208,8 +208,8 @@ catia-04
 ~~~~~~~~
 
 One of the catia tests calls wglGetProcAddress() to get some
-:ext:`GL_EXT_direct_state_access` functions (such as
-glBindMultiTextureEXT) and some :ext:`GL_NV_half_float` functions (such
+:gl-ext:`EXT_direct_state_access` functions (such as
+glBindMultiTextureEXT) and some :gl-ext:`NV_half_float` functions (such
 as glMultiTexCoord3hNV). If the extension/function is not supported,
 wglGetProcAddress() can return NULL. Unfortunately, Viewperf doesn't check
 for null pointers and crashes when it later tries to use the pointer.

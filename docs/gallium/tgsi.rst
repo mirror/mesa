@@ -929,7 +929,7 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TXF - Texel Fetch
 
-   As per :ext:`GL_NV_gpu_program4`, extract a single texel from a specified
+   As per :gl-ext:`NV_gpu_program4`, extract a single texel from a specified
    texture image or PIPE_BUFFER resource. The source sampler may not be a
    CUBE or SHADOW.  *src0* is a
    four-component signed integer vector used to identify the single texel
@@ -945,7 +945,7 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TXQ - Texture Size Query
 
-   As per :ext:`GL_NV_gpu_program4`, retrieve the dimensions of the texture
+   As per :gl-ext:`NV_gpu_program4`, retrieve the dimensions of the texture
    depending on   the target. For 1D (width), 2D/RECT/CUBE (width, height),
    3D (width, height, depth), 1D array (width, layers), 2D array (width,
    height, layers).  Also return the number of accessible levels
@@ -981,7 +981,7 @@ XXX doesn't look like most of the opcodes really belong here.
 
 .. opcode:: TG4 - Texture Gather
 
-   As per :ext:`GL_ARB_texture_gather`, gathers the four texels to be used in a
+   As per :gl-ext:`ARB_texture_gather`, gathers the four texels to be used in a
    bi-linear   filtering operation and packs them into a single register.
    Only works with 2D, 2D array, cubemaps, and cubemaps arrays.  For 2D
    textures, only the addressing modes of the sampler and the top level of any
@@ -3560,7 +3560,7 @@ TGSI_SEMANTIC_VIEWPORT_MASK
 """""""""""""""""""""""""""
 
 A bit mask of viewports to broadcast the current primitive to. See
-:ext:`GL_NV_viewport_array2` for more details.
+:gl-ext:`NV_viewport_array2` for more details.
 
 
 TGSI_SEMANTIC_TESS_DEFAULT_OUTER_LEVEL
@@ -3689,7 +3689,7 @@ If LOWER_LEFT, the position will be (0,0) at the lower left corner and
 increase upward and rightward.
 
 OpenGL defaults to LOWER_LEFT, and is configurable with the
-:ext:`GL_ARB_fragment_coord_conventions` extension.
+:gl-ext:`ARB_fragment_coord_conventions` extension.
 
 DirectX 9/10 use UPPER_LEFT.
 
@@ -3707,7 +3707,7 @@ rasterization, which is instead controlled by half_pixel_center in the
 rasterizer.
 
 OpenGL defaults to HALF_INTEGER, and is configurable with the
-:ext:`GL_ARB_fragment_coord_conventions` extension.
+:gl-ext:`ARB_fragment_coord_conventions` extension.
 
 DirectX 9 uses INTEGER.
 DirectX 10 uses HALF_INTEGER.

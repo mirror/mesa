@@ -71,9 +71,9 @@ language.
 
 Several GLSL extensions are also supported:
 
--  :ext:`GL_ARB_draw_buffers`
--  :ext:`GL_ARB_fragment_coord_conventions`
--  :ext:`GL_ARB_shader_bit_encoding`
+-  :gl-ext:`ARB_draw_buffers`
+-  :gl-ext:`ARB_fragment_coord_conventions`
+-  :gl-ext:`ARB_shader_bit_encoding`
 
 Unsupported Features
 --------------------
@@ -95,8 +95,8 @@ Implementation Notes
 --------------------
 
 -  Shading language programs are compiled into low-level programs very
-   similar to those of :ext:`GL_ARB_vertex_program` /
-   :ext:`GL_ARB_fragment_program`.
+   similar to those of :gl-ext:`ARB_vertex_program` /
+   :gl-ext:`ARB_fragment_program`.
 -  All vector types (vec2, vec3, vec4, bvec2, etc) currently occupy full
    float[4] registers.
 -  Float constants and variables are packed so that up to four floats
@@ -142,7 +142,7 @@ After building Mesa with the ``-Dtools=glsl`` meson option, the compiler will be
 installed as the binary ``glsl_compiler``.
 
 Here's an example of using the compiler to compile a vertex shader and
-emit :ext:`GL_ARB_vertex_program`-style instructions:
+emit :gl-ext:`ARB_vertex_program`-style instructions:
 
 .. code-block:: sh
 

@@ -247,5 +247,7 @@ rst_prolog = '''
 
 extlinks = {
     'vk-feat': ('https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#features-%s',
-                '%s')
+                '%s'),
+    'vk-ext': ('https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_%s.html',
+               'VK_%s'),
 }

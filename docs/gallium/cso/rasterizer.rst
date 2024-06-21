@@ -16,7 +16,7 @@ clamp_vertex_color
    shader or fragment shader.
 
    OpenGL: glClampColor(GL_CLAMP_VERTEX_COLOR) in GL 3.0 or
-   :ext:`GL_ARB_color_buffer_float`
+   :gl-ext:`ARB_color_buffer_float`
 
    D3D11: seems always disabled
 
@@ -30,7 +30,7 @@ clamp_fragment_color
    are clamped to [0, 1].
 
    OpenGL: glClampColor(GL_CLAMP_FRAGMENT_COLOR) in GL 3.0 or
-   :ext:`GL_ARB_color_buffer_float`
+   :gl-ext:`ARB_color_buffer_float`
 
    D3D11: seems always disabled
 

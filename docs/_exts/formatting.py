@@ -22,13 +22,8 @@ def ext_role(name, rawtext, text, lineno, inliner, options={}, content=[]):
     text = utils.unescape(text)
     has_explicit_title, title, ext = split_explicit_title(text)
 
-    parts = ext.split('_', 2)
-    if parts[0] == 'VK':
-        full_url = f'https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/{ext}.html'
-    elif parts[0] == 'GL':
-        full_url = f'https://registry.khronos.org/OpenGL/extensions/{parts[1]}/{parts[1]}_{parts[2]}.txt'
-    else:
-        raise Exception(f'Unexpected API: {parts[0]}')
+    parts = ext.split('_', 1)
+    full_url = f'https://registry.khronos.org/OpenGL/extensions/{parts[0]}/{parts[0]}_{parts[1]}.txt'
 
     pnode = nodes.reference(title, title, internal=False, refuri=full_url)
     return [pnode], []
@@ -36,4 +31,4 @@ def ext_role(name, rawtext, text, lineno, inliner, options={}, content=[]):
 def setup(app):
     app.add_object_type("opcode", "opcode", "%s (TGSI opcode)",
         parse_opcode)
-    app.add_role('ext', ext_role)
+    app.add_role('gl-ext', ext_role)

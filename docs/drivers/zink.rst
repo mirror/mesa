@@ -44,13 +44,13 @@ Here's a list of those requirements:
 
 * Device extensions:
 
-  * :ext:`VK_KHR_maintenance1`
-  * :ext:`VK_KHR_create_renderpass2`
-  * :ext:`VK_KHR_imageless_framebuffer`
-  * :ext:`VK_KHR_timeline_semaphore`
-  * :ext:`VK_EXT_custom_border_color` with ``customBorderColorWithoutFormat``
-  * :ext:`VK_EXT_provoking_vertex`
-  * :ext:`VK_EXT_line_rasterization`, with the following ``VkPhysicalDeviceLineRasterizationFeaturesEXT``:
+  * :vk-ext:`KHR_maintenance1`
+  * :vk-ext:`KHR_create_renderpass2`
+  * :vk-ext:`KHR_imageless_framebuffer`
+  * :vk-ext:`KHR_timeline_semaphore`
+  * :vk-ext:`EXT_custom_border_color` with ``customBorderColorWithoutFormat``
+  * :vk-ext:`EXT_provoking_vertex`
+  * :vk-ext:`EXT_line_rasterization`, with the following ``VkPhysicalDeviceLineRasterizationFeaturesEXT``:
 
     * :vk-feat:`rectangularLines`
     * :vk-feat:`bresenhamLines`
@@ -59,14 +59,14 @@ Here's a list of those requirements:
     * :vk-feat:`stippledBresenhamLines`
     * :vk-feat:`stippledSmoothLines`
 
-  * :ext:`VK_KHR_swapchain_mutable_format`
-  * :ext:`VK_EXT_border_color_swizzle`
-  * :ext:`VK_KHR_descriptor_update_template`
+  * :vk-ext:`KHR_swapchain_mutable_format`
+  * :vk-ext:`EXT_border_color_swizzle`
+  * :vk-ext:`KHR_descriptor_update_template`
 
-In addition to this, :ext:`VK_KHR_external_memory` is required to support the
+In addition to this, :vk-ext:`KHR_external_memory` is required to support the
 DRI code-path.
 
-We also require either the :ext:`VK_EXT_scalar_block_layout` extension or
+We also require either the :vk-ext:`EXT_scalar_block_layout` extension or
 Vulkan 1.2, with the :vk-feat:`scalarBlockLayout` feature.
 
 OpenGL 3.0
@@ -82,8 +82,8 @@ met:
 
 * Device extensions:
 
-  * :ext:`VK_EXT_transform_feedback`
-  * :ext:`VK_EXT_conditional_rendering`
+  * :vk-ext:`EXT_transform_feedback`
+  * :vk-ext:`EXT_conditional_rendering`
 
 OpenGL 3.1
 ^^^^^^^^^^
@@ -107,7 +107,7 @@ met, although some of these might not actually get verified:
 
 * Device extensions:
 
-  * :ext:`VK_EXT_depth_clip_enable`
+  * :vk-ext:`EXT_depth_clip_enable`
 
 OpenGL 3.3
 ^^^^^^^^^^
@@ -121,7 +121,7 @@ met, although some of these might not actually get verified:
 
 * Device extensions:
 
-  * :ext:`VK_EXT_vertex_attribute_divisor`
+  * :vk-ext:`EXT_vertex_attribute_divisor`
 
 OpenGL 4.0
 ^^^^^^^^^^
@@ -137,7 +137,7 @@ met:
 
 * Device extensions:
 
-  * :ext:`VK_KHR_maintenance2`
+  * :vk-ext:`KHR_maintenance2`
 
 * Formats requiring ``VK_FORMAT_FEATURE_UNIFORM_TEXEL_BUFFER_BIT``:
 
@@ -171,7 +171,7 @@ For OpenGL 4.2 support, the following additional requirements must be
 met:
 
 * Device extensions:
-    * :ext:`VK_EXT_image_2d_view_of_3d`
+    * :vk-ext:`EXT_image_2d_view_of_3d`
 
 * ``VkPhysicalDeviceLimits``:
 
@@ -190,7 +190,7 @@ met:
 
   * Device extensions:
 
-    * :ext:`VK_KHR_shader_draw_parameters`
+    * :vk-ext:`KHR_shader_draw_parameters`
 
 OpenGL 4.3
 ^^^^^^^^^^
@@ -232,7 +232,7 @@ met:
 
   * Device extensions:
 
-    * :ext:`VK_KHR_sampler_mirror_clamp_to_edge`
+    * :vk-ext:`KHR_sampler_mirror_clamp_to_edge`
 
 OpenGL 4.5
 ^^^^^^^^^^
@@ -255,7 +255,7 @@ met:
 
 * Device extensions:
 
-  * :ext:`VK_KHR_draw_indirect_count`
+  * :vk-ext:`KHR_draw_indirect_count`
 
 Performance
 -----------

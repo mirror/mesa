@@ -41,8 +41,16 @@ ir3_disk_cache_init(struct ir3_compiler *compiler)
    const uint8_t *id_sha1 = build_id_data(note);
    assert(id_sha1);
 
+   struct mesa_sha1 ctx;
+   uint8_t sha1[SHA1_DIGEST_LENGTH];
+   _mesa_sha1_init(&ctx);
+   _mesa_sha1_update(&ctx, id_sha1, strlen(id_sha1));
+   _mesa_sha1_update(&ctx, &compiler->options.uche_trap_base,
+                     sizeof(compiler->options.uche_trap_base));
+   _mesa_sha1_final(&ctx, sha1);
+
    char timestamp[41];
-   _mesa_sha1_format(timestamp, id_sha1);
+   _mesa_sha1_format(timestamp, sha1);
 
    uint64_t driver_flags = ir3_shader_debug_hash_key();
    compiler->disk_cache = disk_cache_create(renderer, timestamp, driver_flags);

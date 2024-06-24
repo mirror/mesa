@@ -609,6 +609,8 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 0;
    case PIPE_CAP_THROTTLE:
       return screen->driconf.enable_throttling;
+   case PIPE_CAP_SHADER_CLOCK:
+      return is_a6xx(screen);
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
    }

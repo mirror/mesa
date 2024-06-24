@@ -1323,6 +1323,108 @@ fn enqueue_fill_image(
     //image are not supported by device associated with queue.
 }
 
+#[cl_entrypoint(clEnqueueCopyImageToBuffer)]
+fn enqueue_copy_image_to_buffer(
+    command_queue: cl_command_queue,
+    src_image: cl_mem,
+    dst_buffer: cl_mem,
+    src_origin: *const usize,
+    region: *const usize,
+    dst_offset: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let src = src_image.get_arc()?;
+    let dst = dst_buffer.get_arc()?;
+
+    // CL_INVALID_CONTEXT if the context associated with command_queue, src_image and dst_buffer
+    // are not the same
+    if queue.context != src.context || queue.context != dst.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if src_origin or region is NULL.
+    if src_origin.is_null() || region.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
+    Vcl::get().call_clEnqueueCopyImageToBuffer(
+        command_queue,
+        src_image,
+        dst_buffer,
+        src_origin,
+        region,
+        dst_offset,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueCopyBufferToImage)]
+fn enqueue_copy_buffer_to_image(
+    command_queue: cl_command_queue,
+    src_buffer: cl_mem,
+    dst_image: cl_mem,
+    src_offset: usize,
+    dst_origin: *const usize,
+    region: *const usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+    let src = src_buffer.get_arc()?;
+    let dst = dst_image.get_arc()?;
+
+    // CL_INVALID_CONTEXT if the context associated with command_queue, src_image and dst_buffer
+    // are not the same
+    if queue.context != src.context || queue.context != dst.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if dst_origin or region is NULL.
+    if dst_origin.is_null() || region.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let ev_ptr = if ev_handle.is_null() {
+        ptr::null_mut()
+    } else {
+        &mut ev_handle
+    };
+
+    Vcl::get().call_clEnqueueCopyBufferToImage(
+        command_queue,
+        src_buffer,
+        dst_image,
+        src_offset,
+        dst_origin,
+        region,
+        num_events_in_wait_list,
+        event_wait_list,
+        ev_ptr,
+    )?;
+
+    event.write_checked(ev_handle);
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

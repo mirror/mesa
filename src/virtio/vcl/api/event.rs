@@ -187,6 +187,31 @@ fn get_event_profiling_info(
     Ok(())
 }
 
+#[cl_entrypoint(clEnqueueWaitForEvents)]
+fn enqueue_wait_for_events(
+    command_queue: cl_command_queue,
+    num_events: cl_uint,
+    event_list: *const cl_event,
+) -> CLResult<()> {
+    let queue = command_queue.get_arc()?;
+
+    if num_events == 0 || event_list.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let events = Event::from_cl_arr(event_list, num_events).map_err(|_| CL_INVALID_VALUE)?;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and events in event_list are not
+    // the same.
+    if events.iter().any(|event| event.context != queue.context) {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    Vcl::get().call_clEnqueueWaitForEvents(command_queue, num_events, event_list)?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

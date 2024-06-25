@@ -70,6 +70,12 @@ fn create_command_queue_with_properties(
     )?))
 }
 
+#[cl_entrypoint(clEnqueueMarker)]
+fn enqueue_marker(command_queue: cl_command_queue, event: *mut cl_event) -> CLResult<()> {
+    let queue = command_queue.get_ref()?;
+    Vcl::get().call_clEnqueueMarker(queue.get_handle(), event)
+}
+
 #[cl_entrypoint(clRetainCommandQueue)]
 fn retain_command_queue(queue: cl_command_queue) -> CLResult<()> {
     queue.retain()

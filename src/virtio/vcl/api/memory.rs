@@ -737,11 +737,6 @@ fn validate_image_format<'a>(
 
 pub trait CLImageDescInfo {
     fn type_info(&self) -> (u8, bool);
-    fn pixels(&self) -> usize;
-    fn row_pitch(&self) -> CLResult<u32>;
-    fn slice_pitch(&self) -> usize;
-    fn width(&self) -> CLResult<u32>;
-    fn height(&self) -> CLResult<u32>;
     fn size(&self) -> CLVec<usize>;
 
     fn dims(&self) -> u8 {
@@ -774,25 +769,6 @@ impl CLImageDescInfo for cl_image_desc {
         }
     }
 
-    fn pixels(&self) -> usize {
-        let mut res = self.image_width;
-        let dims = self.dims();
-
-        if dims > 1 {
-            res *= self.image_height;
-        }
-
-        if dims > 2 {
-            res *= self.image_depth;
-        }
-
-        if self.is_array() {
-            res *= self.image_array_size;
-        }
-
-        res
-    }
-
     fn size(&self) -> CLVec<usize> {
         let mut height = cmp::max(self.image_height, 1);
         let mut depth = cmp::max(self.image_depth, 1);
@@ -804,28 +780,6 @@ impl CLImageDescInfo for cl_image_desc {
         }
 
         CLVec::new([self.image_width, height, depth])
-    }
-
-    fn row_pitch(&self) -> CLResult<u32> {
-        self.image_row_pitch
-            .try_into()
-            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
-    }
-
-    fn slice_pitch(&self) -> usize {
-        self.image_slice_pitch
-    }
-
-    fn width(&self) -> CLResult<u32> {
-        self.image_width
-            .try_into()
-            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
-    }
-
-    fn height(&self) -> CLResult<u32> {
-        self.image_height
-            .try_into()
-            .map_err(|_| CL_OUT_OF_HOST_MEMORY)
     }
 }
 

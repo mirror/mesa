@@ -53,7 +53,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clRetainProgram: Some(clRetainProgram),
     clReleaseProgram: Some(clReleaseProgram),
     clBuildProgram: Some(clBuildProgram),
-    clUnloadCompiler: None,
+    clUnloadCompiler: Some(clUnloadCompiler),
     clGetProgramInfo: Some(clGetProgramInfo),
     clGetProgramBuildInfo: Some(clGetProgramBuildInfo),
     clCreateKernel: Some(clCreateKernel),
@@ -437,4 +437,8 @@ extern "C" fn clGetPlatformInfo(
         param_value,
         param_value_size_ret,
     )
+}
+
+pub extern "C" fn clUnloadCompiler() -> cl_int {
+    CL_SUCCESS as _
 }

@@ -424,6 +424,30 @@ fn enqueue_ndrange_kernel(
     Ok(())
 }
 
+#[cl_entrypoint(clEnqueueTask)]
+fn enqueue_task(
+    command_queue: cl_command_queue,
+    kernel: cl_kernel,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    // clEnqueueTask is equivalent to calling clEnqueueNDRangeKernel with work_dim set to 1,
+    // global_work_offset set to NULL, global_work_size[0] set to 1, and local_work_size[0] set to
+    // 1.
+    enqueue_ndrange_kernel(
+        command_queue,
+        kernel,
+        1,
+        ptr::null(),
+        [1, 1, 1].as_ptr(),
+        [1, 0, 0].as_ptr(),
+        num_events_in_wait_list,
+        event_wait_list,
+        event,
+    )
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

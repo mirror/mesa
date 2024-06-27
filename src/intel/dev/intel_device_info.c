@@ -1241,7 +1241,9 @@ static const struct intel_device_info intel_device_info_arl_h = {
       /* CPU: WC, GPU: PAT 0 => WB */                           \
       .writecombining = PAT_ENTRY(0, WC),                       \
       /* CPU: WC, GPU: PAT 11 => XD, compressed */              \
-      .compressed = PAT_ENTRY(11, WC)                           \
+      .compressed_scanout = PAT_ENTRY(11, WC),                  \
+      /* CPU: WC, GPU: PAT 9 => WB, compressed */               \
+      .compressed = PAT_ENTRY(9, WC)                            \
    },                                                           \
    .cooperative_matrix_configurations = {                       \
     { INTEL_CMAT_SCOPE_SUBGROUP, 8, 16, 16, INTEL_CMAT_FLOAT16, INTEL_CMAT_FLOAT16, INTEL_CMAT_FLOAT32, INTEL_CMAT_FLOAT32 }, \

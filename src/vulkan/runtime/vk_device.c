@@ -31,6 +31,7 @@
 #include "vk_sync.h"
 #include "vk_sync_timeline.h"
 #include "vk_util.h"
+#include "vk_alloc.h"
 #include "util/u_debug.h"
 #include "util/hash_table.h"
 #include "util/perf/cpu_trace.h"
@@ -200,6 +201,10 @@ vk_device_init(struct vk_device *device,
       }
    }
 
+   result = vk_device_memory_report_init(device, pCreateInfo);
+   if (result != VK_SUCCESS)
+      return result;
+
    return VK_SUCCESS;
 }
 
@@ -220,6 +225,8 @@ vk_device_finish(struct vk_device *device)
 #endif /* DETECT_OS_ANDROID */
 
    simple_mtx_destroy(&device->trace_mtx);
+
+   vk_device_memory_report_finish(device);
 
    vk_object_base_finish(&device->base);
 }
@@ -553,6 +560,76 @@ vk_common_DeviceWaitIdle(VkDevice _device)
    }
 
    return VK_SUCCESS;
+}
+
+void vk_device_memory_report_finish(struct vk_device *device)
+{
+   vk_free(&device->alloc, device->memory_reports);
+}
+
+VkResult vk_device_memory_report_init(struct vk_device *device,
+                                      const VkDeviceCreateInfo *create_info)
+{
+   if (!device->enabled_features.deviceMemoryReport)
+      return VK_SUCCESS;
+
+   uint32_t count = 0;
+   vk_foreach_struct_const(pnext, create_info->pNext) {
+      if (pnext->sType ==
+          VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT)
+         count++;
+   }
+
+   struct vk_device_memory_report *mem_reports = NULL;
+   if (count) {
+      mem_reports =
+         vk_alloc(&device->alloc, sizeof(*mem_reports) * count,
+                  8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (!mem_reports)
+         return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   count = 0;
+   vk_foreach_struct_const(pnext, create_info->pNext) {
+      if (pnext->sType ==
+          VK_STRUCTURE_TYPE_DEVICE_DEVICE_MEMORY_REPORT_CREATE_INFO_EXT) {
+         const struct VkDeviceDeviceMemoryReportCreateInfoEXT *report =
+            (void *)pnext;
+         mem_reports[count].callback = report->pfnUserCallback;
+         mem_reports[count].data = report->pUserData;
+         count++;
+      }
+   }
+
+   device->memory_report_count = count;
+   device->memory_reports = mem_reports;
+
+   return VK_SUCCESS;
+}
+
+void _vk_device_memory_report_emit(struct vk_device *device,
+                                   VkDeviceMemoryReportEventTypeEXT type,
+                                   uint64_t memory_object_id,
+                                   VkDeviceSize size,
+                                   VkObjectType object_type,
+                                   uint64_t object_handle,
+                                   uint32_t heap_index)
+{
+   if (likely(!device->memory_reports))
+      return;
+
+   const VkDeviceMemoryReportCallbackDataEXT report = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT,
+      .type = type,
+      .memoryObjectId = memory_object_id,
+      .size = size,
+      .objectType = object_type,
+      .objectHandle = object_handle,
+      .heapIndex = heap_index,
+   };
+
+   for (uint32_t i = 0; i < device->memory_report_count; i++)
+      device->memory_reports[i].callback(&report, device->memory_reports[i].data);
 }
 
 #ifndef _WIN32

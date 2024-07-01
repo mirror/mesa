@@ -1323,6 +1323,34 @@ anv_vma_free(struct anv_device *device,
    pthread_mutex_unlock(&device->vma_mutex);
 }
 
+/* Report device memory events including allocate/free, import/unimport and allocation_failed */
+static void
+anv_dmr_emit_device_memory_event(struct vk_device *device,
+                                 struct anv_device_memory *memory,
+                                 bool is_alloc,
+                                 VkResult result)
+{
+   const struct vk_device_memory *mem_vk = &memory->vk;
+   VkDeviceMemoryReportEventTypeEXT event_type;
+
+   if (result != VK_SUCCESS) {
+      event_type = VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT;
+   } else if (is_alloc) {
+      event_type = mem_vk->import_handle_type
+                ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_IMPORT_EXT
+                : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT;
+   } else {
+      event_type = mem_vk->import_handle_type
+                ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_UNIMPORT_EXT
+                : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT;
+   }
+
+   vk_device_memory_report_emit(device, event_type,
+                                memory->bo ? memory->bo->gem_handle : 0, mem_vk->size,
+                                VK_OBJECT_TYPE_DEVICE_MEMORY,
+                                (uint64_t)anv_device_memory_to_handle(memory), memory->type->heapIndex);
+}
+
 VkResult anv_AllocateMemory(
     VkDevice                                    _device,
     const VkMemoryAllocateInfo*                 pAllocateInfo,
@@ -1624,12 +1652,14 @@ VkResult anv_AllocateMemory(
    pthread_mutex_unlock(&device->mutex);
 
    ANV_RMV(heap_create, device, mem, false, 0);
+   anv_dmr_emit_device_memory_event(&device->vk, mem, true, VK_SUCCESS);
 
    *pMem = anv_device_memory_to_handle(mem);
 
    return VK_SUCCESS;
 
  fail:
+   anv_dmr_emit_device_memory_event(&device->vk, mem, true, VK_ERROR_OUT_OF_HOST_MEMORY);
    vk_device_memory_destroy(&device->vk, pAllocator, &mem->vk);
 
    return result;
@@ -1727,6 +1757,8 @@ void anv_FreeMemory(
 
    p_atomic_add(&device->physical->memory.heaps[mem->type->heapIndex].used,
                 -mem->bo->size);
+
+   anv_dmr_emit_device_memory_event(&device->vk, mem, false, VK_SUCCESS);
 
    anv_device_release_bo(device, mem->bo);
 

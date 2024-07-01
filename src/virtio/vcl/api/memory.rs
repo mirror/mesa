@@ -100,16 +100,6 @@ fn validate_size(ctx: &Context, size: usize) -> CLResult<()> {
     Err(CL_INVALID_BUFFER_SIZE)
 }
 
-/// If `event` is not null, this function is going to create a new event and return the
-/// corresponding handle
-fn maybe_new_event(ctx: &Arc<Context>, event: *mut cl_event) -> cl_event {
-    if event.is_null() {
-        ptr::null_mut()
-    } else {
-        cl_event::from_arc(Event::new(&ctx))
-    }
-}
-
 #[cl_entrypoint(clCreateBufferWithProperties)]
 fn create_buffer_with_properties(
     context: cl_context,
@@ -268,7 +258,7 @@ fn enqueue_read_buffer(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -325,7 +315,7 @@ fn enqueue_write_buffer(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -377,7 +367,7 @@ fn enqueue_copy_buffer(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -426,7 +416,7 @@ fn enqueue_copy_buffer_rect(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -491,7 +481,7 @@ fn enqueue_fill_buffer(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -549,7 +539,7 @@ fn enqueue_migrate_mem_objects(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1045,7 +1035,7 @@ fn enqueue_read_image(
     let size = r[0] * r[1] * r[2] * pixel_size;
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1129,7 +1119,7 @@ fn enqueue_write_image(
     let size = r[0] * r[1] * r[2] * pixel_size;
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1204,7 +1194,7 @@ fn enqueue_copy_image(
     validate_image_bounds(&dst_image, dst_origin, region)?;
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1271,7 +1261,7 @@ fn enqueue_fill_image(
     let fill_color_size = 4 * mem::size_of::<cl_uint>();
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1326,7 +1316,7 @@ fn enqueue_copy_image_to_buffer(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1377,7 +1367,7 @@ fn enqueue_copy_buffer_to_image(
     }
 
     event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
-    let mut ev_handle = maybe_new_event(&queue.context, event);
+    let mut ev_handle = Event::maybe_new(&queue.context, event);
     let ev_ptr = if ev_handle.is_null() {
         ptr::null_mut()
     } else {
@@ -1397,6 +1387,123 @@ fn enqueue_copy_buffer_to_image(
     )?;
 
     event.write_checked(ev_handle);
+    Ok(())
+}
+
+fn validate_map_flags_common(map_flags: cl_mem_flags) -> CLResult<()> {
+    // CL_INVALID_VALUE ... if values specified in map_flags are not valid.
+    let valid_flags =
+        cl_bitfield::from(CL_MAP_READ | CL_MAP_WRITE | CL_MAP_WRITE_INVALIDATE_REGION);
+    let read_write_group = cl_bitfield::from(CL_MAP_READ | CL_MAP_WRITE);
+    let invalidate_group = cl_bitfield::from(CL_MAP_WRITE_INVALIDATE_REGION);
+
+    if (map_flags & !valid_flags != 0)
+        || ((map_flags & read_write_group != 0) && (map_flags & invalidate_group != 0))
+    {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    Ok(())
+}
+
+fn validate_map_flags(m: &Mem, map_flags: cl_mem_flags) -> CLResult<()> {
+    validate_map_flags_common(map_flags)?;
+
+    // CL_INVALID_OPERATION if buffer has been created with CL_MEM_HOST_WRITE_ONLY or
+    // CL_MEM_HOST_NO_ACCESS and CL_MAP_READ is set in map_flags
+    if bit_check(m.flags, CL_MEM_HOST_WRITE_ONLY | CL_MEM_HOST_NO_ACCESS) &&
+      bit_check(map_flags, CL_MAP_READ) ||
+      // or if buffer has been created with CL_MEM_HOST_READ_ONLY or CL_MEM_HOST_NO_ACCESS and
+      // CL_MAP_WRITE or CL_MAP_WRITE_INVALIDATE_REGION is set in map_flags.
+      bit_check(m.flags, CL_MEM_HOST_READ_ONLY | CL_MEM_HOST_NO_ACCESS) &&
+      bit_check(map_flags, CL_MAP_WRITE | CL_MAP_WRITE_INVALIDATE_REGION)
+    {
+        return Err(CL_INVALID_OPERATION);
+    }
+
+    Ok(())
+}
+
+#[cl_entrypoint(clEnqueueMapBuffer)]
+fn enqueue_map_buffer(
+    command_queue: cl_command_queue,
+    buffer: cl_mem,
+    blocking_map: cl_bool,
+    map_flags: cl_map_flags,
+    offset: usize,
+    size: usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<*mut c_void> {
+    let q = command_queue.get_arc()?;
+    let b = buffer.get_arc()?;
+    check_cl_bool(blocking_map).ok_or(CL_INVALID_VALUE)?;
+    event_list_from_cl(&q, num_events_in_wait_list, event_wait_list)?;
+
+    validate_map_flags(&b, map_flags)?;
+
+    // CL_INVALID_VALUE if region being mapped given by (offset, size) is out of bounds or if size
+    // is 0
+    if offset + size > b.size || size == 0 {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and buffer are not the same
+    if b.context != q.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    let ptr = b.map_buffer(
+        &q,
+        map_flags,
+        offset,
+        size,
+        num_events_in_wait_list,
+        event_wait_list,
+        event,
+    )?;
+
+    Ok(ptr)
+
+    // TODO
+    // CL_MISALIGNED_SUB_BUFFER_OFFSET if buffer is a sub-buffer object and offset specified when the sub-buffer object is created is not aligned to CL_DEVICE_MEM_BASE_ADDR_ALIGN value for the device associated with queue. This error code is missing before version 1.1.
+    // CL_MAP_FAILURE if there is a failure to map the requested region into the host address space. This error cannot occur for buffer objects created with CL_MEM_USE_HOST_PTR or CL_MEM_ALLOC_HOST_PTR.
+    // CL_INVALID_OPERATION if mapping would lead to overlapping regions being mapped for writing.
+}
+
+#[cl_entrypoint(clEnqueueUnmapMemObject)]
+fn enqueue_unmap_mem_object(
+    command_queue: cl_command_queue,
+    memobj: cl_mem,
+    mapped_ptr: *mut c_void,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<()> {
+    let q = command_queue.get_arc()?;
+    let m = memobj.get_arc()?;
+    event_list_from_cl(&q, num_events_in_wait_list, event_wait_list)?;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and memobj are not the same
+    if q.context != m.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if mapped_ptr is not a valid pointer returned by clEnqueueMapBuffer or
+    // clEnqueueMapImage for memobj.
+    if !m.is_mapped_ptr(mapped_ptr) {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    m.unmap(
+        &q,
+        mapped_ptr,
+        num_events_in_wait_list,
+        event_wait_list,
+        event,
+    )?;
+
     Ok(())
 }
 

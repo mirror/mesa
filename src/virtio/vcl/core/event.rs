@@ -10,6 +10,7 @@ use crate::impl_cl_type_trait;
 
 use vcl_opencl_gen::*;
 
+use std::ptr;
 use std::sync::Arc;
 
 impl_cl_type_trait!(cl_event, Event, CL_INVALID_EVENT);
@@ -39,6 +40,16 @@ impl Event {
             s.iter().map(|e| e.get_arc()).collect()
         } else {
             Ok(Vec::default())
+        }
+    }
+
+    /// If `event` is not null, this function is going to create a new event and return the
+    /// corresponding handle
+    pub fn maybe_new(ctx: &Arc<Context>, event: *mut cl_event) -> cl_event {
+        if event.is_null() {
+            ptr::null_mut()
+        } else {
+            cl_event::from_arc(Event::new(&ctx))
         }
     }
 }

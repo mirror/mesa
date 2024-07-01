@@ -6,14 +6,18 @@
 use crate::api::icd::*;
 use crate::api::types::*;
 use crate::core::context::*;
+use crate::core::event::Event;
 use crate::core::format::CLFormatInfo;
+use crate::core::queue::Queue;
 use crate::dev::renderer::Vcl;
 use crate::impl_cl_type_trait;
 
 use mesa_rust_util::properties::Properties;
+use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 
 use std::cmp;
+use std::collections::HashMap;
 use std::os::raw::c_void;
 use std::ptr;
 use std::sync::*;
@@ -28,6 +32,8 @@ pub struct Mem {
 
     /// List of callbacks called when this object gets destroyed
     pub callbacks: Mutex<Vec<Box<dyn Fn(cl_mem)>>>,
+
+    pub mapped_data: Mutex<HashMap<*mut c_void, Vec<u8>>>,
 }
 
 impl_cl_type_trait!(cl_mem, Mem, CL_INVALID_MEM_OBJECT);
@@ -136,6 +142,7 @@ impl Mem {
             image_format: Default::default(),
             image_desc: Default::default(),
             callbacks: Default::default(),
+            mapped_data: Default::default(),
         })
     }
 
@@ -182,6 +189,95 @@ impl Mem {
         Ok(handle)
     }
 
+    pub fn map_buffer(
+        &self,
+        queue: &Arc<Queue>,
+        map_flags: cl_map_flags,
+        offset: usize,
+        size: usize,
+        num_events_in_wait_list: cl_uint,
+        event_wait_list: *const cl_event,
+        event: *mut cl_event,
+    ) -> CLResult<*mut c_void> {
+        let mut data = Vec::with_capacity(size);
+        data.resize_with(size, || 0u8);
+        let ptr = data.as_mut_ptr() as _;
+
+        let mut ev_handle = Event::maybe_new(&queue.context, event);
+        let ev_ptr = if ev_handle.is_null() {
+            ptr::null_mut()
+        } else {
+            &mut ev_handle
+        };
+
+        Vcl::get().call_clEnqueueMapBufferMESA(
+            queue.get_handle(),
+            self.get_handle(),
+            CL_TRUE,
+            map_flags,
+            offset,
+            size,
+            ptr,
+            num_events_in_wait_list,
+            event_wait_list,
+            ev_ptr,
+        )?;
+
+        event.write_checked(ev_handle);
+
+        self.mapped_data.lock().unwrap().insert(ptr, data);
+
+        Ok(ptr)
+    }
+
+    pub fn is_mapped_ptr(&self, mapped_ptr: *mut c_void) -> bool {
+        self.mapped_data.lock().unwrap().contains_key(&mapped_ptr)
+    }
+
+    pub fn unmap(
+        &self,
+        queue: &Arc<Queue>,
+        mapped_ptr: *mut c_void,
+        num_events_in_wait_list: cl_uint,
+        event_wait_list: *const cl_event,
+        event: *mut cl_event,
+    ) -> CLResult<()> {
+        let data_len = self
+            .mapped_data
+            .lock()
+            .unwrap()
+            .get(&mapped_ptr)
+            .ok_or(CL_MAP_FAILURE)?
+            .len();
+
+        let mut ev_handle = Event::maybe_new(&queue.context, event);
+        let ev_ptr = if ev_handle.is_null() {
+            ptr::null_mut()
+        } else {
+            &mut ev_handle
+        };
+
+        Vcl::get().call_clEnqueueUnmapMemObjectMESA(
+            queue.get_handle(),
+            self.get_handle(),
+            data_len,
+            mapped_ptr,
+            num_events_in_wait_list,
+            event_wait_list,
+            ev_ptr,
+        )?;
+
+        event.write_checked(ev_handle);
+
+        self.mapped_data
+            .lock()
+            .unwrap()
+            .remove_entry(&mapped_ptr)
+            .ok_or(CL_MAP_FAILURE)?;
+
+        Ok(())
+    }
+
     fn new_image_impl(
         context: &Arc<Context>,
         flags: cl_mem_flags,
@@ -197,6 +293,7 @@ impl Mem {
             image_format,
             image_desc,
             callbacks: Default::default(),
+            mapped_data: Default::default(),
         })
     }
 

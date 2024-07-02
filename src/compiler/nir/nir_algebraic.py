@@ -295,6 +295,12 @@ _var_name_re = re.compile(r"(?P<const>#)?(?P<name>\w+)"
                           r"(?P<swiz>\.[xyzwabcdefghijklmnop]+)?"
                           r"$")
 
+swizzles = {'x' : 0, 'y' : 1, 'z' : 2, 'w' : 3,
+            'a' : 0, 'b' : 1, 'c' : 2, 'd' : 3,
+            'e' : 4, 'f' : 5, 'g' : 6, 'h' : 7,
+            'i' : 8, 'j' : 9, 'k' : 10, 'l' : 11,
+            'm' : 12, 'n' : 13, 'o' : 14, 'p' : 15 }
+
 class Variable(Value):
    def __init__(self, val, name, varset, algebraic_pass):
       Value.__init__(self, val, name, "variable")
@@ -352,11 +358,6 @@ class Variable(Value):
 
    def swizzle(self):
       if self.swiz is not None:
-         swizzles = {'x' : 0, 'y' : 1, 'z' : 2, 'w' : 3,
-                     'a' : 0, 'b' : 1, 'c' : 2, 'd' : 3,
-                     'e' : 4, 'f' : 5, 'g' : 6, 'h' : 7,
-                     'i' : 8, 'j' : 9, 'k' : 10, 'l' : 11,
-                     'm' : 12, 'n' : 13, 'o' : 14, 'p' : 15 }
          return '{' + ', '.join([str(swizzles[c]) for c in self.swiz[1:]]) + '}'
       return '{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15}'
 
@@ -1201,10 +1202,199 @@ ${pass_name}(
 }
 """)
 
+_algebraic_pass_pattern_test_template = mako.template.Template("""
+#include <math.h>
+
+#include "tests/nir_algebraic_pattern_test.h"
+
+class ${pass_name}_pattern_test : public nir_algebraic_pattern_test {
+protected:
+   ${pass_name}_pattern_test()
+      : nir_algebraic_pattern_test("${pass_name}_pattern_test")
+   {
+   }
+};
+
+% for test_name, xform_defs, search_def, replace_def in tests:
+TEST_F(${pass_name}_pattern_test, ${test_name})
+{
+% for xform_def in xform_defs:
+   ${xform_def}
+% endfor
+   nir_assert_eq(b, ${search_def}, ${replace_def});
+   validate_pattern();
+}
+
+% endfor
+""")
+
+def expression_has_float(expr):
+   if isinstance(expr, (Variable, Constant)):
+      return False
+
+   if any(expression_has_float(src) for src in expr.sources):
+      return True
+
+   opcode = expr.opcode
+   if opcode in conv_opcode_types:
+      opcode += "32"
+
+   return "float" in opcodes[opcode].output_type or any("float" in src for src in opcodes[opcode].input_types)
+
+def expression_has_unsupported_cond(expr):
+   if isinstance(expr, Variable):
+      return expr.cond_index != -1
+   
+   if isinstance(expr, Constant):
+      return False
+
+   if any(expression_has_unsupported_cond(src) for src in expr.sources):
+      return True
+
+   if expr.cond_index == -1:
+      return False
+
+   trivial_conds = [
+      # These do not matter for correctness
+      "is_used_once", "is_not_const"
+   ]
+
+   return expr.cond not in trivial_conds
+
+def expression_has_broken_op(expr):
+   if isinstance(expr, (Variable, Constant)):
+      return False
+
+   if any(expression_has_broken_op(src) for src in expr.sources):
+      return True
+
+   broken_opcodes = [
+      # The pattern generating this instruction if incorrect for values outside the 24bit range.
+      "imad24_ir3",
+      # .*24_relaxed OPs assume the inputs to be inside the 24bit range.
+      "imul24_relaxed", "umad24_relaxed", "umul24_relaxed",
+      # medium precision means that the compiler can do whatever it wants which makes it unsuitable for testing.
+      "f2fmp", "i2imp", "f2imp", "f2ump", "i2fmp", "u2fmp",
+      # Do not test them since they are only designed to deal with 1.0/0.0.
+      "slt", "sge", "seq", "sne",
+      # _replicated OPs do not have nir_builder functions.
+      "fdot2_replicated", "fdot3_replicated", "fdot4_replicated", "fdph_replicated",
+   ]
+
+   return expr.opcode in broken_opcodes
+
+def expression_is_inexact(expr):
+   if isinstance(expr, (Variable, Constant)):
+      return False
+
+   if any(expression_is_inexact(src) for src in expr.sources):
+      return True
+
+   
+   return expr.inexact
+
+def get_expression_name(expr):
+   name = expr.opcode
+
+   for src in expr.sources:
+      if isinstance(src, Expression):
+         name += "_" + get_expression_name(src)
+
+   return name
+
+def get_value_comps(expr, value_comps, num_components=1):
+   if isinstance(expr, Variable):
+      value_comps[expr.index] = max(value_comps.get(expr.index, num_components), num_components)
+
+      if expr.swiz is not None:
+         for comp in [swizzles[c] for c in expr.swiz[1:]]:
+            value_comps[expr.index] = max(value_comps[expr.index], comp + 1)
+      return
+
+   if isinstance(expr, Constant):
+      value_comps[expr] = max(value_comps.get(expr, num_components), num_components)
+      return
+
+   opcode = expr.opcode
+   if opcode in conv_opcode_types:
+      opcode += "32"
+   
+   for src_num_components, src in zip(opcodes[opcode].input_sizes, expr.sources):
+       src_num_components = max(src_num_components, 1)
+       get_value_comps(src, value_comps, src_num_components)
+
+def get_expression_def(expr, name, value_comps, variable_map, defs, fp_fast_math):
+   bit_size = 32 if expr.c_bit_size <= 0 else expr.c_bit_size
+
+   if isinstance(expr, Variable):
+      if expr.index not in variable_map:
+         def_name = f"{name}{len(defs)}"
+         num_components = value_comps[expr.index]
+
+         if expr.required_type == "bool":
+            defs.append(f"nir_def *{def_name} = nir_b2b{bit_size}(b, nir_provide(b, {num_components}, 1, {expr.index}));")
+         else:
+            defs.append(f"nir_def *{def_name} = nir_provide(b, {num_components}, {bit_size}, {expr.index});")
+
+         variable_map[expr.index] = def_name
+      else:
+         def_name = variable_map[expr.index]
+      
+      if expr.swiz is not None:
+         swizzle_name = f"{name}{len(defs)}_swizzle"
+         defs.append(f"uint32_t {swizzle_name}[{len(expr.swiz) - 1}] = {expr.swizzle()};")
+         def_name = f"nir_swizzle(b, {def_name}, {swizzle_name}, {len(expr.swiz) - 1})"
+
+      return def_name
+
+   if isinstance(expr, Constant):
+      def_name = f"{name}{len(defs)}"
+
+      if isinstance(expr.value, bool):
+         defs.append(f"nir_def *{def_name} = nir_imm_{"true" if expr.value else "false"}(b);")
+      elif isinstance(expr.value, int):
+         defs.append(f"nir_def *{def_name} = nir_imm_intN_t(b, {expr.value}llu, {bit_size});")
+      elif isinstance(expr.value, float):
+         value = str(expr.value)
+         if value == "nan":
+            value = "NAN"
+         elif value == "-nan":
+            value = "-NAN"
+         elif value == "inf":
+            value = "INFINITY"
+         elif value == "-inf":
+            value = "-INFINITY"
+         defs.append(f"nir_def *{def_name} = nir_imm_floatN_t(b, {value}, {bit_size});")
+
+      if value_comps[expr] != 1:
+         comps = ", ".join(def_name for c in range(0, value_comps[expr]))
+         defs.append(f"nir_def *{def_name}_tmp[{value_comps[expr]}] = {{{comps}}}; {def_name} = nir_vec(b, {def_name}_tmp, {value_comps[expr]});")
+
+      return def_name
+
+   srcs = [get_expression_def(src, name, value_comps, variable_map, defs, fp_fast_math)
+           for src in expr.sources]
+
+   opcode = expr.opcode
+   if opcode in conv_opcode_types:
+      opcode += str(bit_size)
+
+   def_name = f"{name}{len(defs)}"
+
+   if expr.nsz:
+      fp_fast_math.add("FLOAT_CONTROLS_SIGNED_ZERO_PRESERVE")
+   if expr.nnan:
+      fp_fast_math.add("FLOAT_CONTROLS_NAN_PRESERVE")
+   if expr.ninf:
+      fp_fast_math.add("FLOAT_CONTROLS_INF_PRESERVE")
+
+   defs.append(f"nir_def *{def_name} = nir_{opcode}(b, {", ".join(srcs)});")
+
+   return def_name
 
 class AlgebraicPass(object):
    # params is a list of `("type", "name")` tuples
-   def __init__(self, pass_name, transforms, params=[]):
+   def __init__(self, pass_name, transforms, params=[], build_tests=False):
       self.xforms = []
       self.opcode_xforms = defaultdict(lambda : [])
       self.pass_name = pass_name
@@ -1213,6 +1403,11 @@ class AlgebraicPass(object):
       self.params = params
 
       error = False
+
+      self.tests = []
+      xform_name_set = set()
+
+      xform_index = 0
 
       for xform in transforms:
          if not isinstance(xform, SearchAndReplace):
@@ -1261,6 +1456,41 @@ class AlgebraicPass(object):
                print("{}".format(xform.search.cond), file=sys.stderr)
                error = True
 
+         if not build_tests:
+            continue
+
+         if expression_has_unsupported_cond(xform.search):
+            continue
+         if expression_has_broken_op(xform.search) or expression_has_broken_op(xform.replace):
+            continue
+
+         name = get_expression_name(xform.search)
+         if name in xform_name_set:
+            name = f"{name}_{xform_index}"
+
+         xform_name_set.add(name)
+
+         value_comps = defaultdict()
+         get_value_comps(xform.search, value_comps)
+         get_value_comps(xform.replace, value_comps)
+
+         variable_map = defaultdict()
+         xform_defs = []
+         fp_fast_math = set()
+         search_def = get_expression_def(xform.search, "search", value_comps, variable_map, xform_defs, fp_fast_math)
+         replace_def = get_expression_def(xform.replace, "replace", value_comps, variable_map, xform_defs, fp_fast_math)
+
+         # lowering patterns can lose precision
+         if expression_is_inexact(xform.search) or (xform.condition != "true" and expression_has_float(xform.search)):
+            xform_defs.append("exact = false;")
+
+         if len(fp_fast_math) != 0:
+            xform_defs.append(f"fp_fast_math &= ~({" | ".join(fp_fast_math)});")
+
+         self.tests.append((name, xform_defs, search_def, replace_def))
+
+         xform_index += 1
+
       self.automaton = TreeAutomaton(self.xforms)
 
       if error:
@@ -1278,6 +1508,12 @@ class AlgebraicPass(object):
                                              get_c_opcode=get_c_opcode,
                                              itertools=itertools,
                                              params=self.params)
+
+   def render_tests(self):
+      return _algebraic_pass_pattern_test_template.render(
+         pass_name=self.pass_name,
+         tests=self.tests,
+      )
 
 # The replacement expression isn't necessarily exact if the search expression is exact.
 def ignore_exact(*expr):

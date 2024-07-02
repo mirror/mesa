@@ -334,6 +334,10 @@ intrinsic("nop", flags=[CAN_ELIMINATE])
 # This is helpful when writing unit tests
 intrinsic("use", src_comp=[0], flags=[])
 
+intrinsic("provide", dest_comp=0, flags=[], indices=[BASE])
+
+intrinsic("assert_eq", src_comp=[0, 0], flags=[])
+
 intrinsic("convert_alu_types", dest_comp=0, src_comp=[0],
           indices=[SRC_TYPE, DEST_TYPE, ROUNDING_MODE, SATURATE],
           flags=[CAN_ELIMINATE, CAN_REORDER])

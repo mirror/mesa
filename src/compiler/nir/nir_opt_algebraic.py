@@ -3702,15 +3702,51 @@ for s in [8, 16, 32]:
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--out', required=True)
+parser.add_argument('--out-tests', required=True)
+parser.add_argument('--build-tests', action='store_true')
 args = parser.parse_args()
 
+nir_opt_algebraic = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic",
+    optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_before_ffma = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_before_ffma",
+    before_ffma_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_before_lower_int64 = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_before_lower_int64",
+    before_lower_int64_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_late = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_late",
+    late_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_distribute_src_mods = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_distribute_src_mods",
+    distribute_src_mods,
+    build_tests=args.build_tests
+)
+
+if args.build_tests:
+    with open(args.out_tests, "w", encoding='utf-8') as f:
+        f.write(nir_opt_algebraic.render_tests())
+        f.write(nir_opt_algebraic_before_ffma.render_tests())
+        f.write(nir_opt_algebraic_before_lower_int64.render_tests())
+        f.write(nir_opt_algebraic_late.render_tests())
+        f.write(nir_opt_algebraic_distribute_src_mods.render_tests())
+
 with open(args.out, "w", encoding='utf-8') as f:
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic", optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_before_ffma",
-                                        before_ffma_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_before_lower_int64",
-                                        before_lower_int64_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_late",
-                                        late_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_distribute_src_mods",
-                                        distribute_src_mods).render())
+    f.write(nir_opt_algebraic.render())
+    f.write(nir_opt_algebraic_before_ffma.render())
+    f.write(nir_opt_algebraic_before_lower_int64.render())
+    f.write(nir_opt_algebraic_late.render())
+    f.write(nir_opt_algebraic_distribute_src_mods.render())

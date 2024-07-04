@@ -249,15 +249,16 @@ impl Vtest {
 
         let mut control = [0u8; CMSG_SPACE_SIZEOF_INT];
 
-        let mut message = msghdr {
-            msg_name: ptr::null_mut(),
-            msg_namelen: 0,
-            msg_iov: &mut iovec,
-            msg_iovlen: 1,
-            msg_control: control.as_mut_ptr() as _,
-            msg_controllen: control.len(),
-            msg_flags: 0,
-        };
+        let mut message = msghdr::default();
+
+        message.msg_name = ptr::null_mut();
+        message.msg_namelen = 0;
+        message.msg_iov = &mut iovec;
+        message.msg_iovlen = 1;
+        message.msg_control = control.as_mut_ptr() as _;
+        message.msg_controllen = control.len() as _;
+        message.msg_flags = 0;
+
         let sock = self.sock.lock().unwrap();
         let size = unsafe { recvmsg(sock.as_raw_fd(), &mut message, 0) };
         if size < 0 {

@@ -54,6 +54,12 @@ cl_callback!(
     }
 );
 
+cl_callback!(
+    NativeKernelCB {
+        user_data: *mut ::std::ffi::c_void,
+    }
+);
+
 // a lot of APIs use 3 component vectors passed as C arrays
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CLVec<T> {

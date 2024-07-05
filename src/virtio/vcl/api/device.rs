@@ -105,6 +105,12 @@ fn get_device_info(
         &mut size,
     );
 
+    if param_name == CL_DEVICE_EXECUTION_CAPABILITIES && !param_value.is_null() {
+        unsafe {
+            *(param_value as *mut cl_device_exec_capabilities) &= !CL_EXEC_NATIVE_KERNEL as u64;
+        }
+    }
+
     // Return a valid error for this call
     if let Err(CL_INVALID_OPERATION) = ret {
         return Err(CL_INVALID_VALUE);

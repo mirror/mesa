@@ -4,6 +4,7 @@
  */
 
 use crate::api::icd::*;
+use crate::api::types::NativeKernelCB;
 use crate::api::util::*;
 use crate::core::event::Event;
 use crate::core::kernel::Kernel;
@@ -446,6 +447,22 @@ fn enqueue_task(
         event_wait_list,
         event,
     )
+}
+
+#[cl_entrypoint(clEnqueueNativeKernel)]
+fn enqueue_native_kernel(
+    _command_queue: cl_command_queue,
+    _user_func: Option<NativeKernelCB>,
+    _args: *mut c_void,
+    _cb_args: usize,
+    _num_mem_objects: cl_uint,
+    _mem_list: *const cl_mem,
+    _args_mem_loc: *mut *const c_void,
+    _num_events_in_wait_list: cl_uint,
+    _event_wait_list: *const cl_event,
+    _event: *mut cl_event,
+) -> CLResult<()> {
+    Err(CL_INVALID_OPERATION)
 }
 
 #[cfg(test)]

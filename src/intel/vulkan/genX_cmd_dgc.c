@@ -35,8 +35,7 @@ emit_push_constants(struct anv_cmd_buffer *cmd_buffer,
    if (state.alloc_size == 0)
       return state;
 
-   memcpy(state.map, data,
-          cmd_buffer->state.gfx.base.push_constants_client_size);
+   memcpy(state.map, data, pipe_state->push_constants_client_size);
    memcpy(state.map + MAX_PUSH_CONSTANTS_SIZE,
           data + MAX_PUSH_CONSTANTS_SIZE,
           sizeof(struct anv_push_constants) - MAX_PUSH_CONSTANTS_SIZE);
@@ -77,8 +76,6 @@ preprocess_gfx_sequences(struct anv_cmd_buffer *cmd_buffer,
    if (gfx_state_state.map == NULL)
       return NULL;
 
-   anv_generated_commands_print_layout(layout);
-
    uint32_t cmd_stride =
       anv_generated_gfx_fill_layout(&gfx_state.layout, device, layout,
                                     gfx_pipeline, indirect_set);
@@ -86,8 +83,6 @@ preprocess_gfx_sequences(struct anv_cmd_buffer *cmd_buffer,
                                 layout, gfx_pipeline, indirect_set);
    genX(emit_indirect_dynamic_state)(&gfx_state, cmd_buffer_state, indirect_set);
    memcpy(gfx_state_state.map, &gfx_state, sizeof(gfx_state));
-
-   anv_generated_commands_gfx_print_state(&gfx_state.layout, layout);
 
    /**/
    struct anv_shader_bin *generate_kernel;
@@ -275,7 +270,7 @@ preprocess_cs_sequences(struct anv_cmd_buffer *cmd_buffer,
                         bool emit_driver_values)
 {
    struct anv_device *device = cmd_buffer->device;
-   struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
+   struct anv_cmd_compute_state *comp_state = &cmd_buffer_state->state.compute;
    struct anv_cmd_pipeline_state *pipe_state = &comp_state->base;
 
    struct anv_state push_constants_state =

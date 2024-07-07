@@ -2279,11 +2279,11 @@ optimizations.extend([
    # Optimizations for ubitfield_extract(value, offset, umin(bits, 32-(offset&0x1f))) and such
    (('ult', a, ('umin', ('iand', a, b), c)), False),
    (('ult', 31, ('umin', '#bits(is_ult_32)', a)), False),
-   (('ubfe', 'value', 'offset', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
+   (('ubfe', 'value', 'offset', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
     ('ubfe', 'value', 'offset', 'width')),
-   (('ibfe', 'value', 'offset', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
+   (('ibfe', 'value', 'offset', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
     ('ibfe', 'value', 'offset', 'width')),
-   (('bfm', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset')))), 'offset'),
+   (('bfm', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset')))), 'offset'),
     ('bfm', 'width', 'offset')),
 
    # open-coded BFM
@@ -2299,14 +2299,14 @@ optimizations.extend([
    (('ubfe', a, b, 0), 0),
    (('ibfe', a, b, 0), 0),
 
-   (('ubfe', a, 0, '#b'), ('iand', a, ('ushr', 0xffffffff, ('ineg', b)))),
+   (('ubfe', a, 0, '#b'), ('bcsel', ('ine', ('iand', b, 31), 0), ('iand', a, ('ushr', 0xffffffff, ('ineg', b))), 0)),
 
    (('b2i32', ('ine', ('ubfe', a, b, 1), 0)), ('ubfe', a, b, 1)),
    (('b2i32', ('ine', ('ibfe', a, b, 1), 0)), ('ubfe', a, b, 1)), # ubfe in the replacement is correct
-   (('ine', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ieq', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ine', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ieq', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
+   (('ine', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ieq', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ine', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ieq', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
     ('bcsel', ('ieq', 0, 'bits'),

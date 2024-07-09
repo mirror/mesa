@@ -3681,7 +3681,7 @@ before_lower_int64_optimizations = [
     (('isub@64', ('ineg', a), ('ineg', b)), ('isub', b, a), '(options->lower_int64_options & nir_lower_ineg64) != 0'),
 
     (('imul@64', ('ineg', a), ('ineg', b)), ('imul', a, b)),
-    (('idiv@64', ('ineg', a), ('ineg', b)), ('idiv', a, b)),
+    (('idiv@64', ('ineg(no_signed_wrap)', a), ('ineg', b)), ('idiv', a, b)),
 
     # If the hardware can do int64, the shift is the same cost as the add. It
     # should be fine to do this transformation unconditionally.

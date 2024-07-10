@@ -769,7 +769,7 @@ init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
 
    if (screen->info.have_EXT_image_drm_format_modifier && modifiers_count)
       ici->tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
-   else if (bind & (PIPE_BIND_LINEAR | ZINK_BIND_DMABUF))
+   else if (bind & (PIPE_BIND_LINEAR | ZINK_BIND_DMABUF) || (!modifiers_count && bind & PIPE_BIND_SHARED))
       ici->tiling = VK_IMAGE_TILING_LINEAR;
    else
       ici->tiling = VK_IMAGE_TILING_OPTIMAL;

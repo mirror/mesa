@@ -781,6 +781,19 @@ intel_perf_load_configuration(struct intel_perf_config *perf_cfg, int fd, const 
 }
 
 uint64_t
+intel_perf_get_configuration_id(struct intel_perf_config *perf_cfg, const char *guid)
+{
+   char path[512];
+   uint64_t val;
+
+   snprintf(path, sizeof(path), "metrics/%s/id", guid);
+   if (read_sysfs_drm_device_file_uint64(perf_cfg, path, &val))
+      return val;
+
+   return 0;
+}
+
+uint64_t
 intel_perf_store_configuration(struct intel_perf_config *perf_cfg, int fd,
                                const struct intel_perf_registers *config,
                                const char *guid)

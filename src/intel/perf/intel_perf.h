@@ -457,6 +457,11 @@ bool intel_perf_load_metric_id(struct intel_perf_config *perf_cfg,
 struct intel_perf_registers *intel_perf_load_configuration(struct intel_perf_config *perf_cfg,
                                                            int fd, const char *guid);
 
+/** Load a configuration's id from KMD using a guid.
+ */
+uint64_t
+intel_perf_get_configuration_id(struct intel_perf_config *perf_cfg, const char *guid);
+
 /** Store a configuration into i915 using guid and return a new metric id.
  *
  * If guid is NULL, then a generated one will be provided by hashing the

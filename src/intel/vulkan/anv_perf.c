@@ -221,18 +221,8 @@ VkResult anv_AcquirePerformanceConfigurationINTEL(
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    if (!INTEL_DEBUG(DEBUG_NO_OACONFIG)) {
-      struct intel_perf_registers *metric_config =
-         intel_perf_load_configuration(device->physical->perf, device->fd,
-                                     INTEL_PERF_QUERY_GUID_MDAPI);
-      if (!metric_config) {
-         vk_object_free(&device->vk, NULL, config);
-         return VK_INCOMPLETE;
-      }
-
-      config->config_id =
-         intel_perf_store_configuration(device->physical->perf, device->fd,
-                                        metric_config, NULL /* guid */);
-      ralloc_free(metric_config);
+      config->config_id = intel_perf_get_configuration_id(device->physical->perf,
+                                                          INTEL_PERF_QUERY_GUID_MDAPI);
       if (config->config_id == 0) {
          vk_object_free(&device->vk, NULL, config);
          return VK_INCOMPLETE;

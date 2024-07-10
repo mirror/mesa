@@ -320,9 +320,7 @@ struct intel_perf_query_counter_info {
 enum intel_perf_features {
    INTEL_PERF_FEATURE_HOLD_PREEMPTION = (1 << 0),
    INTEL_PERF_FEATURE_GLOBAL_SSEU = (1 << 1),
-   /* Whether i915 has DRM_I915_QUERY_PERF_CONFIG support. */
-   INTEL_PERF_FEATURE_QUERY_PERF = (1 << 2),
-   INTEL_PERF_FEATURE_METRIC_SYNC = (1 << 3),
+   INTEL_PERF_FEATURE_METRIC_SYNC = (1 << 2),
 };
 
 struct intel_perf_config {
@@ -451,11 +449,6 @@ void intel_perf_init_metrics(struct intel_perf_config *perf_cfg,
 bool intel_perf_load_metric_id(struct intel_perf_config *perf_cfg,
                                const char *guid,
                                uint64_t *metric_id);
-
-/** Load a configuation's content from i915 using a guid.
- */
-struct intel_perf_registers *intel_perf_load_configuration(struct intel_perf_config *perf_cfg,
-                                                           int fd, const char *guid);
 
 /** Load a configuration's id from KMD using a guid.
  */

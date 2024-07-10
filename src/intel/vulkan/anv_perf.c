@@ -221,24 +221,22 @@ VkResult anv_AcquirePerformanceConfigurationINTEL(
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    if (!INTEL_DEBUG(DEBUG_NO_OACONFIG)) {
-      config->register_config =
+      struct intel_perf_registers *metric_config =
          intel_perf_load_configuration(device->physical->perf, device->fd,
                                      INTEL_PERF_QUERY_GUID_MDAPI);
-      if (!config->register_config) {
+      if (!metric_config) {
          vk_object_free(&device->vk, NULL, config);
          return VK_INCOMPLETE;
       }
 
-      uint64_t ret =
+      config->config_id =
          intel_perf_store_configuration(device->physical->perf, device->fd,
-                                      config->register_config, NULL /* guid */);
-      if (ret == 0) {
-         ralloc_free(config->register_config);
+                                        metric_config, NULL /* guid */);
+      ralloc_free(metric_config);
+      if (config->config_id == 0) {
          vk_object_free(&device->vk, NULL, config);
          return VK_INCOMPLETE;
       }
-
-      config->config_id = ret;
    }
 
    *pConfiguration = anv_performance_configuration_intel_to_handle(config);
@@ -255,8 +253,6 @@ VkResult anv_ReleasePerformanceConfigurationINTEL(
 
    if (!INTEL_DEBUG(DEBUG_NO_OACONFIG))
       intel_perf_remove_configuration(device->physical->perf, device->fd, config->config_id);
-
-   ralloc_free(config->register_config);
 
    vk_object_free(&device->vk, NULL, config);
 

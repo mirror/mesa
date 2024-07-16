@@ -41,4 +41,6 @@ foreach f : install_files
   )
 endforeach
 
+devenv.set('RNN_PATH', meson.current_source_dir())
+
 subdir('adreno')

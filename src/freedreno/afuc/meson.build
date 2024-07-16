@@ -56,10 +56,12 @@ if with_tests
   asm_fw = custom_target('afuc_test.fw',
     output: 'afuc_test.fw',
     command: [asm, files('../.gitlab-ci/traces/afuc_test.asm'), '@OUTPUT@'],
+    env: {'RNN_PATH': rnn_src_path},
   )
   asm_fw_a7xx = custom_target('afuc_test_a7xx.fw',
     output: 'afuc_test_a7xx.fw',
     command: [asm, files('../.gitlab-ci/traces/afuc_test_a7xx.asm'), '@OUTPUT@'],
+    env: {'RNN_PATH': rnn_src_path},
   )
   test('afuc-asm',
     diff,
@@ -120,11 +122,13 @@ if cc.sizeof('size_t') > 4
     disasm_fw = custom_target('afuc_test.asm',
       output: 'afuc_test.asm',
       command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test.fw')],
+      env: {'RNN_PATH': rnn_src_path},
       capture: true
     )
     disasm_fw_a7xx = custom_target('afuc_test_a7xx.asm',
       output: 'afuc_test_a7xx.asm',
       command: [disasm, '-u', files('../.gitlab-ci/reference/afuc_test_a7xx.fw')],
+      env: {'RNN_PATH': rnn_src_path},
       capture: true
     )
     test('afuc-disasm',

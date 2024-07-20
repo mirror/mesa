@@ -95,6 +95,7 @@ DRM_DRIVER_DESCRIPTOR_STUB(i915)
 
 #ifdef GALLIUM_IRIS
 #include "iris/drm/iris_drm_public.h"
+#include "virtio/virtio-gpu/virglrenderer_hw.h"
 
 static struct pipe_screen *
 pipe_iris_create_screen(int fd, const struct pipe_screen_config *config)
@@ -108,7 +109,8 @@ pipe_iris_create_screen(int fd, const struct pipe_screen_config *config)
 const driOptionDescription iris_driconf[] = {
       #include "iris/driinfo_iris.h"
 };
-DRM_DRIVER_DESCRIPTOR(iris, iris_driconf, ARRAY_SIZE(iris_driconf))
+DRM_DRIVER_DESCRIPTOR(iris, iris_driconf, ARRAY_SIZE(iris_driconf),
+                      .probe_nctx = iris_drm_probe_nctx)
 
 #else
 DRM_DRIVER_DESCRIPTOR_STUB(iris)

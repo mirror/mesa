@@ -590,6 +590,7 @@ iris_screen_destroy(struct iris_screen *screen)
    u_transfer_helper_destroy(screen->base.transfer_helper);
    iris_bufmgr_unref(screen->bufmgr);
    disk_cache_destroy(screen->disk_cache);
+   intel_virtio_unref_fd(screen->winsys_fd);
    close(screen->winsys_fd);
    ralloc_free(screen);
 }
@@ -735,6 +736,9 @@ iris_screen_create(int fd, const struct pipe_screen_config *config)
       bo_reuse = true;
       break;
    }
+
+   if (intel_virtio_init_fd(fd) < 0)
+      return NULL;
 
    process_intel_debug_variable();
 

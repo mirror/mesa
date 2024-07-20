@@ -2398,16 +2398,12 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    struct anv_instance *instance =
       container_of(vk_instance, struct anv_instance, vk);
 
-   if (!(drm_device->available_nodes & (1 << DRM_NODE_RENDER)) ||
-       drm_device->bustype != DRM_BUS_PCI ||
-       drm_device->deviceinfo.pci->vendor_id != 0x8086)
-      return VK_ERROR_INCOMPATIBLE_DRIVER;
-
    const char *primary_path = drm_device->nodes[DRM_NODE_PRIMARY];
    const char *path = drm_device->nodes[DRM_NODE_RENDER];
    VkResult result;
    int fd;
    int master_fd = -1;
+   int ret;
 
    process_intel_debug_variable();
 
@@ -2419,6 +2415,22 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       }
       return vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
                        "Unable to open device %s: %m", path);
+   }
+
+   ret = intel_virtio_init_fd(fd);
+   if (ret < 0) {
+      result = VK_ERROR_INCOMPATIBLE_DRIVER;
+      goto fail_fd;
+   }
+
+   bool is_virtio = ret > 0;
+   if (!is_virtio) {
+      if (!(drm_device->available_nodes & (1 << DRM_NODE_RENDER)) ||
+         drm_device->bustype != DRM_BUS_PCI ||
+         drm_device->deviceinfo.pci->vendor_id != 0x8086) {
+         result = VK_ERROR_INCOMPATIBLE_DRIVER;
+         goto fail_fd;
+      }
    }
 
    struct intel_device_info devinfo;
@@ -2701,6 +2713,7 @@ fail_base:
 fail_alloc:
    vk_free(&instance->vk.alloc, device);
 fail_fd:
+   intel_virtio_unref_fd(fd);
    close(fd);
    if (master_fd != -1)
       close(master_fd);
@@ -2719,6 +2732,7 @@ anv_physical_device_destroy(struct vk_physical_device *vk_device)
    anv_physical_device_free_disk_cache(device);
    ralloc_free(device->compiler);
    intel_perf_free(device->perf);
+   intel_virtio_unref_fd(device->local_fd);
    close(device->local_fd);
    if (device->master_fd >= 0)
       close(device->master_fd);

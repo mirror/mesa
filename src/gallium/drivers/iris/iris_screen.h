@@ -29,6 +29,7 @@
 #include "util/slab.h"
 #include "util/u_screen.h"
 #include "intel/dev/intel_device_info.h"
+#include "intel/dev/virtio/intel_virtio.h"
 #include "intel/isl/isl.h"
 #include "iris_bufmgr.h"
 #include "iris_binder.h"

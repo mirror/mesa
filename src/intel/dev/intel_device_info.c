@@ -35,6 +35,7 @@
 #include "intel_wa.h"
 #include "i915/intel_device_info.h"
 #include "xe/intel_device_info.h"
+#include "virtio/intel_virtio.h"
 
 #include "common/intel_gem.h"
 #include "util/u_debug.h"
@@ -1889,29 +1890,38 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo, int min
     * rely on an ioctl to get PCI device id for the next step when skipping
     * this drm query.
     */
-   drmDevicePtr drmdev = NULL;
-   if (drmGetDevice2(fd, DRM_DEVICE_GET_PCI_REVISION, &drmdev)) {
-      mesa_loge("Failed to query drm device.");
-      return false;
-   }
-   if (!intel_device_info_init_common(drmdev->deviceinfo.pci->device_id,
-                                      false, devinfo)) {
+   if (is_intel_virtio_fd(fd)) {
+      if (!intel_virtio_get_pci_device_info(fd, devinfo))
+         return false;
+
+      if (!intel_device_info_init_common(devinfo->pci_device_id,
+                                         false, devinfo)) {
+         return false;
+      }
+   } else {
+      drmDevicePtr drmdev = NULL;
+      if (drmGetDevice2(fd, DRM_DEVICE_GET_PCI_REVISION, &drmdev)) {
+         mesa_loge("Failed to query drm device.");
+         return false;
+      }
+         if (!intel_device_info_init_common(drmdev->deviceinfo.pci->device_id,
+                                            false, devinfo)) {
+         drmFreeDevice(&drmdev);
+         return false;
+      }
+
+      devinfo->pci_domain = drmdev->businfo.pci->domain;
+      devinfo->pci_bus = drmdev->businfo.pci->bus;
+      devinfo->pci_dev = drmdev->businfo.pci->dev;
+      devinfo->pci_func = drmdev->businfo.pci->func;
+      devinfo->pci_device_id = drmdev->deviceinfo.pci->device_id;
+      devinfo->pci_revision_id = drmdev->deviceinfo.pci->revision_id;
       drmFreeDevice(&drmdev);
-      return false;
-   }
-   
-   if ((min_ver > 0 && devinfo->ver < min_ver) || (max_ver > 0 && devinfo->ver > max_ver)) {
-      drmFreeDevice(&drmdev);
-      return false;
    }
 
-   devinfo->pci_domain = drmdev->businfo.pci->domain;
-   devinfo->pci_bus = drmdev->businfo.pci->bus;
-   devinfo->pci_dev = drmdev->businfo.pci->dev;
-   devinfo->pci_func = drmdev->businfo.pci->func;
-   devinfo->pci_device_id = drmdev->deviceinfo.pci->device_id;
-   devinfo->pci_revision_id = drmdev->deviceinfo.pci->revision_id;
-   drmFreeDevice(&drmdev);
+   if ((min_ver > 0 && devinfo->ver < min_ver) || (max_ver > 0 && devinfo->ver > max_ver))
+      return false;
+
    devinfo->no_hw = debug_get_bool_option("INTEL_NO_HW", false);
 
    devinfo->kmd_type = intel_get_kmd_type(fd);

@@ -45,6 +45,7 @@
 
 #include "dev/intel_debug.h"
 #include "dev/intel_device_info.h"
+#include "dev/virtio/intel_virtio.h"
 
 #include "perf/i915/intel_perf.h"
 #include "perf/xe/intel_perf.h"
@@ -685,6 +686,10 @@ oa_metrics_available(struct intel_perf_config *perf, int fd,
 {
    perf_register_oa_queries_t oa_register = get_register_queries_function(devinfo);
    bool oa_metrics_available = false;
+
+   /* TODO: Support performance metrics */
+   if (is_intel_virtio_fd(fd))
+      return false;
 
    perf->devinfo = devinfo;
 

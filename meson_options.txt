@@ -786,3 +786,10 @@ option(
   value : false,
   description : 'Install the drivers internal shader compilers (if needed for cross builds).'
 )
+
+option(
+  'intel-virtio-experimental',
+  type : 'boolean',
+  value : false,
+  description : 'use experimental virtio backend for intel driver',
+)

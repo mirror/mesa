@@ -337,6 +337,11 @@ with_any_intel = [
 ].contains(true)
 with_any_nouveau = with_gallium_nouveau or with_nouveau_vk
 
+with_intel_virtio = get_option('intel-virtio-experimental')
+if with_intel_virtio
+  pre_args += '-DHAVE_INTEL_VIRTIO'
+endif
+
 # needed in the loader
 if with_nouveau_vk
   pre_args += '-DHAVE_NVK'

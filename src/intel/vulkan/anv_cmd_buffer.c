@@ -830,8 +830,15 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
           * With direct descriptors, the shaders can use the
           * anv_push_constants::desc_offsets to build bindless offsets. So
           * it's we always need to update the push constant data.
+          *
+          * Finally with EXT_device_generated_commands, the indirectly bound
+          * shaders are using anv_driver_constants::desc_offsets. We have no
+          * way to tell whether a particular layout will be used with an
+          * indirectly bound shader. So if the feature is enabled, also update
+          * the driver constants.
           */
          bool update_desc_sets =
+            cmd_buffer->device->vk.enabled_features.deviceGeneratedCommands ||
             !cmd_buffer->device->physical->indirect_descriptors ||
             (stages & (VK_SHADER_STAGE_TASK_BIT_EXT |
                        VK_SHADER_STAGE_MESH_BIT_EXT |

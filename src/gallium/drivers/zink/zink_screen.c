@@ -36,6 +36,7 @@
 #include "zink_query.h"
 #include "zink_resource.h"
 #include "zink_state.h"
+#include "zink_video.h"
 #include "nir_to_spirv/nir_to_spirv.h" // for SPIRV_VERSION
 
 #include "util/u_debug.h"
@@ -50,6 +51,9 @@
 #include "util/xmlconfig.h"
 
 #include "util/u_cpu_detect.h"
+
+#include "vl/vl_video_buffer.h"
+#include "vl/vl_decoder.h"
 
 #ifdef HAVE_LIBDRM
 #include <xf86drm.h>
@@ -2838,6 +2842,19 @@ check_base_requirements(struct zink_screen *screen)
    }
 }
 
+static bool
+check_video_requirements(struct zink_screen *screen)
+{
+   if (!screen->info.have_KHR_video_queue ||
+       !screen->info.have_KHR_video_decode_queue)
+      return false;
+
+   if (!screen->info.have_KHR_video_decode_h264)
+      return false;
+
+   return true;
+}
+
 static void
 zink_get_sample_pixel_grid(struct pipe_screen *pscreen, unsigned sample_count,
                            unsigned *width, unsigned *height)
@@ -2847,6 +2864,114 @@ zink_get_sample_pixel_grid(struct pipe_screen *pscreen, unsigned sample_count,
    assert(idx < ARRAY_SIZE(screen->maxSampleLocationGridSize));
    *width = screen->maxSampleLocationGridSize[idx].width;
    *height = screen->maxSampleLocationGridSize[idx].height;
+}
+
+static int
+zink_get_video_param(struct pipe_screen *screen,
+                     enum pipe_video_profile profile,
+                     enum pipe_video_entrypoint entrypoint,
+                     enum pipe_video_cap param)
+{
+   struct zink_video_caps_info caps_info = { 0 };
+   bool is_supported = false;
+   if (entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
+      return 0;
+   }
+
+   switch (profile) {
+   case PIPE_VIDEO_PROFILE_MPEG4_AVC_MAIN:
+   case PIPE_VIDEO_PROFILE_MPEG4_AVC_HIGH:
+   case PIPE_VIDEO_PROFILE_MPEG4_AVC_BASELINE:
+   case PIPE_VIDEO_PROFILE_MPEG4_AVC_CONSTRAINED_BASELINE:
+      is_supported = true;
+      break;
+   default:
+      break;
+   }
+
+   switch (param) {
+   case PIPE_VIDEO_CAP_PREFERED_FORMAT:
+      return PIPE_FORMAT_NV12;
+   case PIPE_VIDEO_CAP_PREFERS_INTERLACED:
+      return false;
+   default:
+      if (!is_supported)
+         return 0;
+   };
+
+   if (!is_supported)
+      return 0;
+
+   if (!zink_video_fill_caps(zink_screen(screen), profile, entrypoint, false, &caps_info))
+      return 0;
+   switch (param) {
+   case PIPE_VIDEO_CAP_SUPPORTED:
+      return true;
+   case PIPE_VIDEO_CAP_NPOT_TEXTURES:
+      return 1;
+   case PIPE_VIDEO_CAP_MAX_WIDTH:
+      return caps_info.caps.maxCodedExtent.width;
+   case PIPE_VIDEO_CAP_MAX_HEIGHT:
+      return caps_info.caps.maxCodedExtent.height;
+   case PIPE_VIDEO_CAP_SUPPORTS_INTERLACED:
+      return false;
+   case PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE:
+      return true;
+   case PIPE_VIDEO_CAP_MAX_LEVEL:
+      return caps_info.h264_dec_caps.maxLevelIdc;
+   default:
+      break;
+   }
+   return 0;
+}
+
+static bool
+zink_is_video_format_supported(struct pipe_screen *pscreen,
+                               enum pipe_format format,
+                               enum pipe_video_profile profile,
+                               enum pipe_video_entrypoint entrypoint)
+{
+   struct zink_screen *screen = zink_screen(pscreen);
+
+   if (entrypoint == PIPE_VIDEO_ENTRYPOINT_ENCODE) {
+      return false;
+   }
+
+   uint32_t bit_depth = zink_video_get_format_bit_depth(format);
+   if (bit_depth == 0)
+      return false;
+
+   if (screen->video_output_usage == 0) {
+      /* first time through work out the dpb vs output */
+      struct zink_video_format_prop prop_dpb;
+      VkResult ret = zink_fill_video_format_props(screen,
+                                                  VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR,
+                                                  PIPE_VIDEO_PROFILE_UNKNOWN, 8,
+                                                  &prop_dpb);
+      if (ret == VK_ERROR_FORMAT_NOT_SUPPORTED || ret == VK_ERROR_IMAGE_USAGE_NOT_SUPPORTED_KHR)
+         screen->video_output_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+      else
+         screen->video_output_usage = VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR | VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+      free(prop_dpb.pVideoFormatProperties);
+   }
+
+   struct zink_video_format_prop prop_obj;
+   VkResult ret = zink_fill_video_format_props(screen,
+                                               screen->video_output_usage,
+                                               profile,
+                                               bit_depth, &prop_obj);
+
+   if (ret != VK_SUCCESS)
+      return false;
+
+   for (unsigned i = 0; i < prop_obj.videoFormatPropertyCount; i++) {
+      if (prop_obj.pVideoFormatProperties[i].format == zink_get_format(screen, format)) {
+         free(prop_obj.pVideoFormatProperties);
+         return true;
+      }
+   }
+   free(prop_obj.pVideoFormatProperties);
+   return false;
 }
 
 static void
@@ -3606,6 +3731,11 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
                         UTIL_QUEUE_INIT_RESIZE_IF_FULL, screen))
       goto fail;
    populate_format_props(screen);
+
+   if (check_video_requirements(screen)) {
+      screen->base.get_video_param = zink_get_video_param;
+   }
+   screen->base.is_video_format_supported = zink_is_video_format_supported;
 
    slab_create_parent(&screen->transfer_pool, sizeof(struct zink_transfer), 16);
 

@@ -830,3 +830,33 @@ zink_video_fill_caps(struct zink_screen *screen,
 
    return VKSCR(GetPhysicalDeviceVideoCapabilitiesKHR)(screen->pdev, &vk_profile.profile, &caps_info->caps) == VK_SUCCESS;
 }
+
+VkResult
+zink_fill_video_format_props(struct zink_screen *screen,
+                             VkImageUsageFlags usage,
+                             enum pipe_video_profile profile,
+                             uint32_t bit_depth,
+                             struct zink_video_format_prop *props)
+{
+   struct zink_video_profile_info profiles = {0};
+   zink_video_fill_profiles(screen, &profiles, profile, bit_depth);
+
+   VkPhysicalDeviceVideoFormatInfoKHR video_format_info = {};
+   video_format_info.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VIDEO_FORMAT_INFO_KHR;
+   video_format_info.pNext = &profiles.list;
+   video_format_info.imageUsage = usage;
+
+   props->pVideoFormatProperties = NULL;
+   VkResult ret = VKSCR(GetPhysicalDeviceVideoFormatPropertiesKHR)(screen->pdev, &video_format_info,
+                                                                   &props->videoFormatPropertyCount,
+                                                                   NULL);
+   if (ret != VK_SUCCESS)
+      return ret;
+   props->pVideoFormatProperties = calloc(props->videoFormatPropertyCount, sizeof(VkVideoFormatPropertiesKHR));
+   for (unsigned i = 0; i < props->videoFormatPropertyCount; i++)
+      props->pVideoFormatProperties[i].sType = VK_STRUCTURE_TYPE_VIDEO_FORMAT_PROPERTIES_KHR;
+   VKSCR(GetPhysicalDeviceVideoFormatPropertiesKHR)(screen->pdev, &video_format_info,
+                                                    &props->videoFormatPropertyCount,
+                                                    props->pVideoFormatProperties);
+   return VK_SUCCESS;
+}

@@ -77,7 +77,8 @@ if with_gallium_va or with_gallium_vdpau
               [with_gallium_radeonsi, 'radeonsi'],
               [with_gallium_nouveau, 'nouveau'],
               [with_gallium_virgl, 'virtio_gpu'],
-              [with_gallium_d3d12_video, 'd3d12']]
+              [with_gallium_d3d12_video, 'd3d12'],
+              [with_gallium_zink, 'zink']]
     if d[0]
       if with_gallium_va
         va_drivers += '@0@_drv_video.so'.format(d[1])

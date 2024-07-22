@@ -113,4 +113,11 @@ zink_video_get_format_bit_depth(enum pipe_format format)
    }
 }
 
+VkResult
+zink_fill_video_format_props(struct zink_screen *screen,
+                             VkImageUsageFlags usage,
+                             enum pipe_video_profile profile,
+                             uint32_t bit_depth,
+                             struct zink_video_format_prop *props);
+
 #endif

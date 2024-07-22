@@ -772,6 +772,8 @@ zink_clear_render_target(struct pipe_context *pctx, struct pipe_surface *dst,
    struct zink_context *ctx = zink_context(pctx);
    if (width == 0 || height == 0)
       return;
+   if (zink_resource(dst->texture)->plane > 0)
+      return;
    if (!zink_resource(dst->texture)->obj->render_target) {
       /* should only be hit by video */
       if (dst->texture->bind & PIPE_BIND_SHADER_IMAGE)

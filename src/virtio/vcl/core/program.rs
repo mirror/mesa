@@ -122,8 +122,8 @@ impl Program {
 
         Vcl::get().call_clCreateProgramWithILMESA(
             context.get_handle(),
-            il,
             length,
+            il,
             &mut program.get_handle(),
         )?;
 

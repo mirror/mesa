@@ -418,6 +418,8 @@ pub extern "C" fn clGetExtensionFunctionAddress(
         // cl_khr_icd: https://registry.khronos.org/OpenCL/sdk/3.0/docs/man/html/cl_khr_icd.html
         "clIcdGetPlatformIDsKHR" => cl_ext_func!(clIcdGetPlatformIDsKHR: clIcdGetPlatformIDsKHR_fn),
         "clGetPlatformInfo" => cl_ext_func!(clGetPlatformInfo: cl_api_clGetPlatformInfo),
+        // cl_khr_il_program
+        "clCreateProgramWithILKHR" => cl_ext_func!(clCreateProgramWithIL: clCreateProgramWithILKHR_fn),
         _ => ptr::null_mut(),
     }
 }

@@ -8,9 +8,11 @@ use crate::core::device::*;
 use crate::dev::renderer::*;
 use crate::impl_cl_type_trait;
 
+use std::ffi::*;
 use std::pin::Pin;
 use std::ptr;
 
+use mesa_rust_util::ptr::CheckedPtr;
 use vcl_opencl_gen::*;
 
 impl_cl_type_trait!(cl_platform_id, Platform, CL_INVALID_PLATFORM);
@@ -18,23 +20,16 @@ impl_cl_type_trait!(cl_platform_id, Platform, CL_INVALID_PLATFORM);
 pub struct Platform {
     base: CLObjectBase<CL_INVALID_PLATFORM>,
     pub devices: Vec<Pin<Box<Device>>>,
+
+    /// List of supported extensions
+    pub extensions: Vec<String>,
+    /// Prepared extensions string for user queries
+    pub extensions_str: String,
 }
-
-macro_rules! gen_cl_exts {
-    (@COUNT $e:expr) => { 1 };
-    (@COUNT $e:expr, $($es:expr),+) => { 1 + gen_cl_exts!(@COUNT $($es),*) };
-
-    (@CONCAT $e:tt) => { $e };
-    (@CONCAT $e:tt, $($es:tt),+) => { concat!($e, ' ', gen_cl_exts!(@CONCAT $($es),*)) };
-
-    ([$(($major:expr, $minor:expr, $patch:expr, $ext:tt)$(,)?)+]) => {
-        pub static PLATFORM_EXTENSION_STR: &str = concat!(gen_cl_exts!(@CONCAT $($ext),*));
-    }
-}
-
-gen_cl_exts!([(1, 0, 0, "cl_khr_icd"),]);
 
 impl Platform {
+    const SUPPORTED_EXTENSIONS: [&'static str; 1] = ["cl_khr_il_program"];
+
     pub fn get_devices<'a>(&'a self, device_type: cl_device_type) -> Vec<&Pin<Box<Device>>> {
         self.devices
             .iter()
@@ -46,6 +41,8 @@ impl Platform {
         Self {
             base: CLObjectBase::new(),
             devices: Vec::default(),
+            extensions: Default::default(),
+            extensions_str: Default::default(),
         }
     }
 
@@ -83,5 +80,79 @@ impl Platform {
             }
         }
         false
+    }
+
+    pub fn collect_extensions(&mut self) -> CLResult<()> {
+        // Get host platform extensions
+        let mut extensions_size = 0;
+        self.get_info(
+            CL_PLATFORM_EXTENSIONS,
+            0,
+            ptr::null_mut(),
+            &mut extensions_size,
+        )?;
+        let mut extensions_vec = Vec::<u8>::default();
+        extensions_vec.resize(extensions_size, 0);
+        self.get_info(
+            CL_PLATFORM_EXTENSIONS,
+            extensions_size,
+            extensions_vec.as_mut_ptr().cast(),
+            ptr::null_mut(),
+        )?;
+
+        // Convert host extensions to a vector of strings
+        let extensions_cstr =
+            CString::from_vec_with_nul(extensions_vec).expect("Failed to read host extensions");
+        let extensions_str = extensions_cstr
+            .into_string()
+            .expect("Failed to convert host extensions to String");
+        let host_extensions: Vec<String> = extensions_str.split(" ").map(String::from).collect();
+
+        // Always support cl_khr_icd
+        self.extensions.push("cl_khr_icd".to_string());
+
+        // Check whether VCL supported extensions are available in the host platform
+        for ext in Self::SUPPORTED_EXTENSIONS {
+            if host_extensions
+                .iter()
+                .find(|&host_ext| host_ext == ext)
+                .is_some()
+            {
+                self.extensions.push(ext.to_string());
+            }
+        }
+
+        self.extensions_str = self.extensions.join(" ");
+
+        Ok(())
+    }
+
+    pub fn get_info(
+        &self,
+        param_name: cl_uint,
+        param_value_size: usize,
+        param_value: *mut c_void,
+        param_value_size_ret: *mut usize,
+    ) -> CLResult<()> {
+        let mut size = 0;
+        Vcl::get_unchecked().call_clGetPlatformInfo(
+            self.get_handle(),
+            param_name,
+            param_value_size,
+            param_value,
+            &mut size,
+        )?;
+
+        // CL_INVALID_VALUE [...] if size in bytes specified by param_value_size is < size of return
+        // type as specified in the Context Attributes table and param_value is not a NULL value.
+        if param_value_size < size && !param_value.is_null() {
+            return Err(CL_INVALID_VALUE);
+        }
+
+        // param_value_size_ret returns the actual size in bytes of data being queried by param_name.
+        // If param_value_size_ret is NULL, it is ignored.
+        param_value_size_ret.write_checked(size);
+
+        Ok(())
     }
 }

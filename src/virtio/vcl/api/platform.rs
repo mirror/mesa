@@ -7,7 +7,6 @@
 
 use crate::api::icd::*;
 use crate::api::util::*;
-use crate::core::platform::*;
 use crate::dev::renderer::Vcl;
 
 use mesa_rust_util::ptr::CheckedPtr;
@@ -58,9 +57,9 @@ pub fn get_platform_ids(
 
 impl CLInfo<cl_platform_info> for cl_platform_id {
     fn query(&self, q: cl_platform_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
-        self.get_ref()?;
+        let platform = self.get_ref()?;
         Ok(match q {
-            CL_PLATFORM_EXTENSIONS => cl_prop(PLATFORM_EXTENSION_STR),
+            CL_PLATFORM_EXTENSIONS => cl_prop(platform.extensions_str.as_str()),
             CL_PLATFORM_ICD_SUFFIX_KHR => cl_prop("MESA"),
             _ => return Err(CL_INVALID_VALUE),
         })
@@ -80,14 +79,12 @@ pub fn get_platform_info(
     }
 
     match param_name {
-        CL_PLATFORM_EXTENSIONS | CL_PLATFORM_ICD_SUFFIX_KHR => {
-            return platform.get_info(
-                param_name,
-                param_value_size,
-                param_value,
-                param_value_size_ret,
-            )
-        }
+        CL_PLATFORM_EXTENSIONS | CL_PLATFORM_ICD_SUFFIX_KHR => platform.get_info(
+            param_name,
+            param_value_size,
+            param_value,
+            param_value_size_ret,
+        ),
         _ => forward_get_platform_info(
             platform,
             param_name,

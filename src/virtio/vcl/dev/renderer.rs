@@ -76,6 +76,13 @@ impl Vcl {
                 }
                 Ok(vcl) => unsafe {
                     VCL.replace(vcl);
+
+                    for platform in &mut VCL.as_mut().unwrap().platforms {
+                        ret = platform.collect_extensions();
+                        if ret.is_err() {
+                            break;
+                        }
+                    }
                 },
             }
         });
@@ -132,6 +139,11 @@ impl Vcl {
 
     pub fn get() -> &'static Self {
         debug_assert!(VCL_ONCE.is_completed());
+        unsafe { &VCL.as_ref().unwrap() }
+    }
+
+    /// Used only at initialization time. It is preferable not to use it after.
+    pub fn get_unchecked() -> &'static Self {
         unsafe { &VCL.as_ref().unwrap() }
     }
 }

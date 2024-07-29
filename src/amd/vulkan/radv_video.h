@@ -26,6 +26,9 @@ struct radv_image_create_info;
 
 #define RADV_ENC_MAX_RATE_LAYER 4
 
+#define RADV_BIND_SESSION_CTX 0
+#define RADV_BIND_DECODER_CTX 1
+
 struct radv_vid_mem {
    struct radv_device_memory *mem;
    VkDeviceSize offset;

@@ -1153,6 +1153,7 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
     * to sample it later with a linear filter, it will get garbage after the height it wants,
     * so we let the user specify the width/height unaligned, and align them preallocation.
     */
+   bool is_av1_enc = false;
    if (image->vk.usage & (VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR |
                           VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR |
                           VK_IMAGE_USAGE_VIDEO_ENCODE_DPB_BIT_KHR)) {
@@ -1160,6 +1161,12 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
          assert(profile_list);
       uint32_t width_align, height_align;
       radv_video_get_profile_alignments(pdev, profile_list, &width_align, &height_align);
+      for (unsigned i = 0; i < profile_list->profileCount; i++) {
+         if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+            is_av1_enc = true;
+            break;
+         }
+      }
       image_info.width = align(image_info.width, width_align);
       image_info.height = align(image_info.height, height_align);
 

@@ -28,6 +28,7 @@ struct radv_image_create_info;
 
 #define RADV_BIND_SESSION_CTX 0
 #define RADV_BIND_DECODER_CTX 1
+#define RADV_BIND_ENCODE_AV1_CDF_STORE RADV_BIND_DECODER_CTX
 
 struct radv_vid_mem {
    struct radv_device_memory *mem;

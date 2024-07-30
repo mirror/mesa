@@ -2237,10 +2237,9 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 static VkResult
 emit_samplers(struct anv_cmd_buffer *cmd_buffer,
               struct anv_cmd_pipeline_state *pipe_state,
-              struct anv_shader_bin *shader,
+              const struct anv_pipeline_bind_map *map,
               struct anv_state *state)
 {
-   struct anv_pipeline_bind_map *map = &shader->bind_map;
    if (map->sampler_count == 0) {
       *state = (struct anv_state) { 0, };
       return VK_SUCCESS;
@@ -2296,7 +2295,8 @@ genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
          continue;
 
       assert(stage < ARRAY_SIZE(cmd_buffer->state.samplers));
-      result = emit_samplers(cmd_buffer, pipe_state, shaders[i],
+      result = emit_samplers(cmd_buffer, pipe_state,
+                             &shaders[i]->bind_map,
                              &cmd_buffer->state.samplers[stage]);
       if (result != VK_SUCCESS)
          break;
@@ -2331,7 +2331,8 @@ genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
 
          gl_shader_stage stage = shaders[i]->stage;
 
-         result = emit_samplers(cmd_buffer, pipe_state, shaders[i],
+         result = emit_samplers(cmd_buffer, pipe_state,
+                                &shaders[i]->bind_map,
                                 &cmd_buffer->state.samplers[stage]);
          if (result != VK_SUCCESS) {
             anv_batch_set_error(&cmd_buffer->batch, result);

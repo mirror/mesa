@@ -465,19 +465,19 @@ optimizations.extend([
 
    (('fdph', a, b), ('fdot4', ('vec4', 'a.x', 'a.y', 'a.z', 1.0), b), 'options->lower_fdph'),
 
-   (('fdot4', a, 0.0), 0.0),
-   (('fdot3', a, 0.0), 0.0),
-   (('fdot2', a, 0.0), 0.0),
+   (('fdot4(nsz,nnan)', a, 0.0), 0.0),
+   (('fdot3(nsz,nnan)', a, 0.0), 0.0),
+   (('fdot2(nsz,nnan)', a, 0.0), 0.0),
 
    (('fdot4', ('vec4', a, b,   c,   1.0), d), ('fdph',  ('vec3', a, b, c), d), '!options->lower_fdph'),
-   (('fdot4', ('vec4', a, 0.0, 0.0, 0.0), b), ('fmul', a, b)),
-   (('fdot4', ('vec4', a, b,   0.0, 0.0), c), ('fdot2', ('vec2', a, b), c)),
-   (('fdot4', ('vec4', a, b,   c,   0.0), d), ('fdot3', ('vec3', a, b, c), d)),
+   (('fdot4(nsz,nnan)', ('vec4', a, 0.0, 0.0, 0.0), b), ('fmul', a, 'b.x')),
+   (('fdot4(nsz,nnan)', ('vec4', a, b,   0.0, 0.0), c), ('fdot2', ('vec2', a, b), c)),
+   (('fdot4(nsz,nnan)', ('vec4', a, b,   c,   0.0), d), ('fdot3', ('vec3', a, b, c), d)),
 
-   (('fdot3', ('vec3', a, 0.0, 0.0), b), ('fmul', a, b)),
-   (('fdot3', ('vec3', a, b,   0.0), c), ('fdot2', ('vec2', a, b), c)),
+   (('fdot3(nsz,nnan)', ('vec3', a, 0.0, 0.0), b), ('fmul', a, 'b.x')),
+   (('fdot3(nsz,nnan)', ('vec3', a, b,   0.0), c), ('fdot2', ('vec2', a, b), c)),
 
-   (('fdot2', ('vec2', a, 0.0), b), ('fmul', a, b)),
+   (('fdot2(nsz,nnan)', ('vec2', a, 0.0), b), ('fmul', a, 'b.x')),
    (('fdot2', a, 1.0), ('fadd', 'a.x', 'a.y')),
 
    # Lower fdot to fsum when it is available
@@ -954,7 +954,7 @@ optimizations.extend([
 
    # max(-min(b, a), b) -> max(abs(b), -a)
    # min(-max(b, a), b) -> min(-abs(b), -a)
-   (('fmax', ('fneg', ('fmin', b, a)), b), ('fmax', ('fabs', b), ('fneg', a))),
+   (('fmax(nsz)', ('fneg', ('fmin', b, a)), b), ('fmax', ('fabs', b), ('fneg', a))),
    (('fmin', ('fneg', ('fmax', b, a)), b), ('fmin', ('fneg', ('fabs', b)), ('fneg', a))),
 
    # If a in [0,b] then b-a is also in [0,b].  Since b in [0,1], max(b-a, 0) =
@@ -1598,7 +1598,7 @@ optimizations.extend([
    (('~flog2', ('frsq', a)), ('fmul', -0.5, ('flog2', a))),
    (('~flog2', ('fpow', a, b)), ('fmul', b, ('flog2', a))),
    (('~fmul', ('fexp2(is_used_once)', a), ('fexp2(is_used_once)', b)), ('fexp2', ('fadd', a, b))),
-   (('bcsel', ('flt', a, 0.0), 0.0, ('fsqrt', a)), ('fsqrt', ('fmax', a, 0.0))),
+   (('bcsel', ('flt(nnan)', a, 0.0), 0.0, ('fsqrt', a)), ('fsqrt', ('fmax', a, 0.0))),
    (('~fmul', ('fsqrt', a), ('fsqrt', a)), ('fabs',a)),
    (('~fmulz', ('fsqrt', a), ('fsqrt', a)), ('fabs', a)),
    # Division and reciprocal
@@ -3404,8 +3404,8 @@ late_optimizations.extend([
    (('~fmul@32', a, ('fadd', 2.0, ('fneg', a))),    ('flrp', a, 1.0, a), '!options->lower_flrp32'),
 
    # we do these late so that we don't get in the way of creating ffmas
-   (('fmin', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmin', a, b))),
-   (('fmax', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmax', a, b))),
+   (('fmin', ('fadd(is_used_once)', '#c(is_a_number)', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmin', a, b))),
+   (('fmax', ('fadd(is_used_once)', '#c(is_a_number)', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmax', a, b))),
 
    # Putting this in 'optimizations' interferes with the bcsel(a, op(b, c),
    # op(b, d)) => op(b, bcsel(a, c, d)) transformations.  I do not know why.
@@ -3632,9 +3632,9 @@ distribute_src_mods = [
    (('fneg', ('fmul(is_used_once)', a, b)), ('fmul', ('fneg', a), b)),
    (('fabs', ('fmul(is_used_once)', a, b)), ('fmul', ('fabs', a), ('fabs', b))),
 
-   (('fneg', ('ffma(is_used_once)', a, b, c)), ('ffma', ('fneg', a), b, ('fneg', c))),
-   (('fneg', ('flrp(is_used_once)', a, b, c)), ('flrp', ('fneg', a), ('fneg', b), c)),
-   (('fneg', ('~fadd(is_used_once)', a, b)), ('fadd', ('fneg', a), ('fneg', b))),
+   (('fneg(nsz)', ('ffma(is_used_once)', a, b, c)), ('ffma', ('fneg', a), b, ('fneg', c))),
+   (('fneg(nsz)', ('flrp(is_used_once)', a, b, c)), ('flrp', ('fneg', a), ('fneg', b), c)),
+   (('fneg(nsz)', ('fadd(is_used_once)', a, b)), ('fadd', ('fneg', a), ('fneg', b))),
 
    # Note that fmin <-> fmax.  I don't think there is a way to distribute
    # fabs() into fmin or fmax.
@@ -3649,7 +3649,7 @@ distribute_src_mods = [
    # must be applied to the second source.
    (('fneg', ('fdph_replicated(is_used_once)', a, b)), ('fdph_replicated', a, ('fneg', b))),
 
-   (('fneg', ('fsign(is_used_once)', a)), ('fsign', ('fneg', a))),
+   (('fneg(nsz)', ('fsign(is_used_once)', a)), ('fsign', ('fneg', a))),
    (('fabs', ('fsign(is_used_once)', a)), ('fsign', ('fabs', a))),
 ]
 

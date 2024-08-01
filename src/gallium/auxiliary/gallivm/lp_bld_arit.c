@@ -1011,8 +1011,8 @@ lp_build_sub(struct lp_build_context *bld,
  * @sa Michael Herf, The "double blend trick", May 2000,
  *     http://www.stereopsis.com/doubleblend.html
  */
-LLVMValueRef
-lp_build_mul_norm(struct gallivm_state *gallivm,
+static LLVMValueRef
+lp_build_mul_norm_generic(struct gallivm_state *gallivm,
                   struct lp_type wide_type,
                   LLVMValueRef a, LLVMValueRef b)
 {
@@ -1061,6 +1061,81 @@ lp_build_mul_norm(struct gallivm_state *gallivm,
    ab = lp_build_shr_imm(&bld, ab, n);
 
    return ab;
+}
+
+
+/*
+ * - geometric series plus rounding, using madd
+ *
+ *     when using a geometric series division instead of truncating the result
+ *     use roundoff in the approximation
+ *
+ *       a*b/255 == (a*b) * 257 / 255 * 257 = (a*b) * 257 / (256 x 256 - 1)
+ *
+ *               ~= (a*b + 0x0080) * 257 >> 16
+ *
+ *     achieving the exact results.
+ */
+static LLVMValueRef
+lp_build_mul_norm_lasx(struct gallivm_state *gallivm,
+                       struct lp_type wide_type,
+                       LLVMValueRef a,
+                       LLVMValueRef b)
+{
+   LLVMBuilderRef builder = gallivm->builder;
+   LLVMTypeRef ret_type = lp_build_vec_type(gallivm, wide_type);
+   LLVMValueRef half = lp_build_const_int_vec(gallivm, wide_type, 0x0080);
+   LLVMValueRef h_257 = lp_build_const_int_vec(gallivm, wide_type, 0x0101);
+
+   if (wide_type.width == 16 && wide_type.length == 16) {
+      LLVMValueRef tmp;
+
+      tmp = lp_build_intrinsic_triple(builder,
+                                      "llvm.loongarch.lasx.xvmadd.h",
+                                      ret_type,
+                                      half, a, b);
+
+      return lp_build_intrinsic_binary(builder,
+                                       "llvm.loongarch.lasx.xvmuh.hu",
+                                       ret_type, tmp, h_257);
+
+   }
+
+   if (wide_type.width == 16 && wide_type.length == 8) {
+      LLVMValueRef tmp;
+
+      tmp = lp_build_intrinsic_triple(builder,
+                                      "llvm.loongarch.lsx.vmadd.h",
+                                      ret_type,
+                                      half, a, b);
+
+      return lp_build_intrinsic_binary(builder,
+                                       "llvm.loongarch.lsx.vmuh.hu",
+                                       ret_type, tmp, h_257);
+   }
+
+   return lp_build_mul_norm_generic(gallivm, wide_type, a, b);
+}
+
+
+LLVMValueRef
+lp_build_mul_norm(struct gallivm_state *gallivm,
+                  struct lp_type wide_type,
+                  LLVMValueRef a,
+                  LLVMValueRef b)
+{
+   if (wide_type.sign)
+      return lp_build_mul_norm_generic(gallivm, wide_type, a, b);
+
+   if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+       (wide_type.width * wide_type.length == 256))
+      return lp_build_mul_norm_lasx(gallivm, wide_type, a, b);
+
+   if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+       (wide_type.width * wide_type.length == 128))
+      return lp_build_mul_norm_lasx(gallivm, wide_type, a, b);
+
+   return lp_build_mul_norm_generic(gallivm, wide_type, a, b);
 }
 
 
@@ -1122,7 +1197,6 @@ lp_build_mul(struct lp_build_context *bld,
 
    return res;
 }
-
 
 /*
  * Widening mul, valid for 32x32 bit -> 64bit only.
@@ -1316,8 +1390,132 @@ lp_build_mad(struct lp_build_context *bld,
 {
    const struct lp_type type = bld->type;
    if (type.floating) {
+      struct gallivm_state *gallivm = bld->gallivm;
+      LLVMBuilderRef builder = gallivm->builder;
+      LLVMTypeRef ret_type = lp_build_vec_type(gallivm, type);
+
+      if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+          (type.width * type.length == 256)) {
+         switch (type.width) {
+            case 64:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvfmadd.d",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 32:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvfmadd.s",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+         }
+      }
+
+      if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+          (type.width * type.length == 128)) {
+         switch (type.width) {
+            case 64:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vfmadd.d",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 32:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vfmadd.s",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+         }
+      }
+
       return lp_build_fmuladd(bld->gallivm->builder, a, b, c);
    } else {
+      struct gallivm_state *gallivm = bld->gallivm;
+      LLVMBuilderRef builder = gallivm->builder;
+      LLVMTypeRef ret_type = lp_build_vec_type(gallivm, type);
+
+      if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+          (type.width * type.length == 256)) {
+         switch (type.width) {
+            case 64:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvmadd.d",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 32:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvmadd.w",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 16:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvmadd.h",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 8:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lasx.xvmadd.b",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+         }
+      }
+
+      if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+          (type.width * type.length == 128)) {
+         switch (type.width) {
+            case 64:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vmadd.d",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 32:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vmadd.w",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 16:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vmadd.h",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+
+            case 8:
+               return lp_build_intrinsic_triple(builder,
+                                         "llvm.loongarch.lsx.vmadd.b",
+                                         ret_type,
+                                         a,
+                                         b,
+                                         c);
+         }
+      }
+
       return lp_build_add(bld, lp_build_mul(bld, a, b), c);
    }
 }

@@ -104,6 +104,15 @@ lp_build_intrinsic_binary(LLVMBuilderRef builder,
 
 
 LLVMValueRef
+lp_build_intrinsic_triple(LLVMBuilderRef builder,
+                          const char *name,
+                          LLVMTypeRef ret_type,
+                          LLVMValueRef a,
+                          LLVMValueRef b,
+                          LLVMValueRef c);
+
+
+LLVMValueRef
 lp_build_intrinsic_binary_anylength(struct gallivm_state *gallivm,
                                     const char *name,
                                     struct lp_type src_type,

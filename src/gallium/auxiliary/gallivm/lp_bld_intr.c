@@ -260,6 +260,24 @@ lp_build_intrinsic_binary(LLVMBuilderRef builder,
 }
 
 
+LLVMValueRef
+lp_build_intrinsic_triple(LLVMBuilderRef builder,
+                          const char *name,
+                          LLVMTypeRef ret_type,
+                          LLVMValueRef a,
+                          LLVMValueRef b,
+                          LLVMValueRef c)
+{
+   LLVMValueRef args[3];
+
+   args[0] = a;
+   args[1] = b;
+   args[2] = c;
+
+   return lp_build_intrinsic(builder, name, ret_type, args, 3, 0);
+}
+
+
 /**
  * Call intrinsic with arguments adapted to intrinsic vector length.
  *

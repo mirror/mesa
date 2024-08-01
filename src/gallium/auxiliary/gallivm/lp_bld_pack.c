@@ -585,12 +585,19 @@ lp_build_pack2(struct gallivm_state *gallivm,
    assert(src_type.length * 2 == dst_type.length);
 
    /* Check for special cases first */
-   if ((util_get_cpu_caps()->has_sse2 || util_get_cpu_caps()->has_altivec) &&
+   if ((util_get_cpu_caps()->has_sse2 || util_get_cpu_caps()->has_altivec ||
+        (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18)) &&
         src_type.width * src_type.length >= 128) {
       const char *intrinsic = NULL;
       bool swap_intrinsic_operands = false;
 
       switch(src_type.width) {
+      case 64:
+         if (util_get_cpu_caps()->has_lsx && src_type.length == 2) {
+            intrinsic = "llvm.loongarch.lsx.vpickev.w";
+            swap_intrinsic_operands = true;
+         }
+         break;
       case 32:
          if (util_get_cpu_caps()->has_sse2) {
            if (dst_type.sign) {
@@ -609,10 +616,19 @@ lp_build_pack2(struct gallivm_state *gallivm,
 #if UTIL_ARCH_LITTLE_ENDIAN
             swap_intrinsic_operands = true;
 #endif
+         } else if (util_get_cpu_caps()->has_lsx && src_type.length == 4) {
+            intrinsic = "llvm.loongarch.lsx.vpickev.h";
+            swap_intrinsic_operands = true;
          }
          break;
       case 16:
-         if (dst_type.sign) {
+         if (util_get_cpu_caps()->has_lasx && src_type.length == 16) {
+            intrinsic = "llvm.loongarch.lasx.xvpickev.b";
+            swap_intrinsic_operands = true;
+         } else if (util_get_cpu_caps()->has_lsx && src_type.length == 8) {
+            intrinsic = "llvm.loongarch.lsx.vpickev.b";
+            swap_intrinsic_operands = true;
+         } else if (dst_type.sign) {
             if (util_get_cpu_caps()->has_sse2) {
                intrinsic = "llvm.x86.sse2.packsswb.128";
             } else if (util_get_cpu_caps()->has_altivec) {
@@ -638,6 +654,10 @@ lp_build_pack2(struct gallivm_state *gallivm,
          if (src_type.width * src_type.length == 128) {
             LLVMTypeRef intr_vec_type = lp_build_vec_type(gallivm, intr_type);
             if (swap_intrinsic_operands) {
+               if (util_get_cpu_caps()->has_lsx) {
+                  lo = LLVMBuildBitCast(builder, lo, intr_vec_type, "");
+                  hi = LLVMBuildBitCast(builder, hi, intr_vec_type, "");
+               }
                res = lp_build_intrinsic_binary(builder, intrinsic, intr_vec_type, hi, lo);
             } else {
                res = lp_build_intrinsic_binary(builder, intrinsic, intr_vec_type, lo, hi);
@@ -757,7 +777,25 @@ lp_build_pack2_native(struct gallivm_state *gallivm,
          }
          break;
       }
+   } else if ((src_type.length * src_type.width) == 256 &&
+               util_get_cpu_caps()->has_lasx &&
+               LLVM_VERSION_MAJOR >= 18) {
+      switch(src_type.width) {
+      case 64:
+         intrinsic = "llvm.loongarch.lasx.xvpickev.d";
+         break;
+      case 32:
+         intrinsic = "llvm.loongarch.lasx.xvpickev.w";
+         break;
+      case 16:
+         intrinsic = "llvm.loongarch.lasx.xvpickev.h";
+         break;
+      case 8:
+         intrinsic = "llvm.loongarch.lasx.xvpickev.b";
+         break;
+      }
    }
+
    if (intrinsic) {
       LLVMTypeRef intr_vec_type = lp_build_vec_type(gallivm, intr_type);
       return lp_build_intrinsic_binary(builder, intrinsic, intr_vec_type,

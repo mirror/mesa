@@ -2302,6 +2302,41 @@ lp_build_iround_nearest_sse2(struct lp_build_context *bld,
 }
 
 
+static inline LLVMValueRef
+lp_build_iround_nearest_lasx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lasx.xvftintrne.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lasx.xvftintrne.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
+static inline LLVMValueRef
+lp_build_iround_nearest_lsx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lsx.vftintrne.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lsx.vftintrne.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
 /*
  */
 static inline LLVMValueRef
@@ -2795,6 +2830,55 @@ lp_build_fract_safe(struct lp_build_context *bld,
 }
 
 
+static inline LLVMValueRef
+lp_build_itrunc_lasx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (!type.sign) {
+      if (type.width == 32)
+         intrinsic = "llvm.loongarch.lasx.xvftintrz.wu.s";
+      else if (type.width == 64)
+         intrinsic = "llvm.loongarch.lasx.xvftintrz.lu.d";
+   } else {
+      if (type.width == 32)
+         intrinsic = "llvm.loongarch.lasx.xvftintrz.w.s";
+      else if (type.width == 64)
+         intrinsic = "llvm.loongarch.lasx.xvftintrz.l.d";
+   }
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
+static inline LLVMValueRef
+lp_build_itrunc_lsx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (!type.sign) {
+      if (type.width == 32)
+         intrinsic = "llvm.loongarch.lsx.vftintrz.wu.s";
+      else if (type.width == 64)
+         intrinsic = "llvm.loongarch.lsx.vftintrz.lu.d";
+   } else {
+      if (type.width == 32)
+         intrinsic = "llvm.loongarch.lsx.vftintrz.w.s";
+      else if (type.width == 64)
+         intrinsic = "llvm.loongarch.lsx.vftintrz.l.d";
+   }
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
+
 /**
  * Return the integer part of a float (vector) value (== round toward zero).
  * The returned value is an integer (vector).
@@ -2810,6 +2894,14 @@ lp_build_itrunc(struct lp_build_context *bld,
 
    assert(type.floating);
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_lasx && (type.width*type.length == 256) &&
+       LLVM_VERSION_MAJOR >= 18)
+      return lp_build_itrunc_lasx(bld, a);
+
+   if (util_get_cpu_caps()->has_lsx && (type.width*type.length == 128) &&
+       LLVM_VERSION_MAJOR >= 18)
+      return lp_build_itrunc_lsx(bld, a);
 
    return LLVMBuildFPToSI(builder, a, int_vec_type, "");
 }
@@ -2833,6 +2925,14 @@ lp_build_iround(struct lp_build_context *bld,
    assert(type.floating);
 
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 256))
+      return lp_build_iround_nearest_lasx(bld, a);
+
+   if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 128))
+      return lp_build_iround_nearest_lsx(bld, a);
 
    if ((util_get_cpu_caps()->has_sse2 &&
        ((type.width == 32) && (type.length == 1 || type.length == 4))) ||
@@ -2872,6 +2972,40 @@ lp_build_iround(struct lp_build_context *bld,
 }
 
 
+static inline LLVMValueRef
+lp_build_ifloor_lasx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lasx.xvftintrm.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lasx.xvftintrm.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
+static inline LLVMValueRef
+lp_build_ifloor_lsx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lsx.vftintrm.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lsx.vftintrm.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
 /**
  * Return floor of float (vector), result is an int (vector)
  * Ex: ifloor(1.1) = 1.0
@@ -2888,6 +3022,14 @@ lp_build_ifloor(struct lp_build_context *bld,
 
    assert(type.floating);
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 256))
+      return lp_build_ifloor_lasx(bld, a);
+
+   if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 128))
+      return lp_build_ifloor_lsx(bld, a);
 
    res = a;
    if (type.sign) {
@@ -2929,6 +3071,40 @@ lp_build_ifloor(struct lp_build_context *bld,
 }
 
 
+static inline LLVMValueRef
+lp_build_iceil_lasx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lasx.xvftintrp.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lasx.xvftintrp.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
+static inline LLVMValueRef
+lp_build_iceil_lsx(struct lp_build_context *bld, LLVMValueRef a)
+{
+   struct gallivm_state *gallivm = bld->gallivm;
+   const struct lp_type type = bld->type;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(gallivm, type);
+   const char *intrinsic = NULL;
+
+   if (type.width == 32)
+      intrinsic = "llvm.loongarch.lsx.vftintrp.w.s";
+   else if (type.width == 64)
+      intrinsic = "llvm.loongarch.lsx.vftintrp.l.d";
+
+   return lp_build_intrinsic_unary(gallivm->builder, intrinsic, ret_type, a);
+}
+
+
 /**
  * Return ceiling of float (vector), returning int (vector).
  * Ex: iceil( 1.1) = 2
@@ -2945,6 +3121,14 @@ lp_build_iceil(struct lp_build_context *bld,
 
    assert(type.floating);
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 256))
+      return lp_build_iceil_lasx(bld, a);
+
+   if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+       (type.width * type.length == 128))
+      return lp_build_iceil_lsx(bld, a);
 
    if (arch_rounding_available(type)) {
       res = lp_build_round_arch(bld, a, LP_BUILD_ROUND_CEIL);

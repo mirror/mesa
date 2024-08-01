@@ -164,6 +164,75 @@ lp_build_min_simple(struct lp_build_context *bld,
             intrinsic = "llvm.ppc.altivec.vminsw";
          }
       }
+   } else if (type.floating && util_get_cpu_caps()->has_lasx &&
+              LLVM_VERSION_MAJOR >= 18) {
+      if (type.width == 32) {
+         if (type.length == 8) {
+             intrinsic = "llvm.loongarch.lasx.xvfmin.s";
+             intr_size = 256;
+         } else if (type.length == 4) {
+            intrinsic = "llvm.loongarch.lsx.vfmin.s";
+            intr_size = 128;
+         }
+      } else if (type.width == 64) {
+         if (type.length == 4) {
+            intrinsic = "llvm.loongarch.lasx.xvfmin.d";
+            intr_size = 256;
+         } else if (type.length == 2) {
+            intrinsic = "llvm.loongarch.lsx.vfmin.d";
+            intr_size = 128;
+         }
+      }
+   } else if (type.floating && util_get_cpu_caps()->has_lsx &&
+              LLVM_VERSION_MAJOR >= 18) {
+      intr_size = 128;
+      if ((type.width == 32) && (type.length == 4)) {
+         intrinsic = "llvm.loongarch.lsx.vfmin.s";
+      } else if ((type.width == 64) && (type.length == 2)) {
+         intrinsic = "llvm.loongarch.lsx.vfmin.d";
+      } else if (util_get_cpu_caps()->has_lasx) {
+         intr_size = 256;
+         if (type.width == 8) {
+            if (!type.sign) {
+               intrinsic = "llvm.loongarch.lasx.xvmin.bu";
+            } else {
+               intrinsic = "llvm.loongarch.lasx.xvmin.b";
+            }
+         }
+      } else if (type.width == 16) {
+         if (!type.sign) {
+            intrinsic = "llvm.loongarch.lasx.xvmin.hu";
+         } else {
+            intrinsic = "llvm.loongarch.lasx.xvmin.h";
+         }
+      } else if (type.width == 32) {
+         if (!type.sign) {
+            intrinsic = "llvm.loongarch.lasx.xvmin.wu";
+         } else {
+            intrinsic = "llvm.loongarch.lasx.xvmin.w";
+         }
+      }
+   } else if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18) {
+      intr_size = 128;
+      if (type.width == 8) {
+         if (!type.sign) {
+            intrinsic = "llvm.loongarch.lsx.vmin.bu";
+         } else {
+            intrinsic = "llvm.loongarch.lsx.vmin.b";
+         }
+      } else if (type.width == 16) {
+         if (!type.sign) {
+            intrinsic = "llvm.loongarch.lsx.vmin.hu";
+         } else {
+            intrinsic = "llvm.loongarch.lsx.vmin.h";
+         }
+      } else if (type.width == 32) {
+         if (!type.sign) {
+            intrinsic = "llvm.loongarch.lsx.vmin.wu";
+         } else {
+            intrinsic = "llvm.loongarch.lsx.vmin.w";
+         }
+      }
    }
 
    if (intrinsic) {
@@ -298,26 +367,89 @@ lp_build_max_simple(struct lp_build_context *bld,
          intr_size = 128;
       }
    } else if (util_get_cpu_caps()->has_altivec) {
-     intr_size = 128;
-     if (type.width == 8) {
-       if (!type.sign) {
-         intrinsic = "llvm.ppc.altivec.vmaxub";
-       } else {
-         intrinsic = "llvm.ppc.altivec.vmaxsb";
-       }
-     } else if (type.width == 16) {
-       if (!type.sign) {
-         intrinsic = "llvm.ppc.altivec.vmaxuh";
-       } else {
-         intrinsic = "llvm.ppc.altivec.vmaxsh";
-       }
-     } else if (type.width == 32) {
-       if (!type.sign) {
-         intrinsic = "llvm.ppc.altivec.vmaxuw";
-       } else {
-         intrinsic = "llvm.ppc.altivec.vmaxsw";
-       }
-     }
+      intr_size = 128;
+      if (type.width == 8) {
+         if (!type.sign) {
+            intrinsic = "llvm.ppc.altivec.vmaxub";
+         } else {
+            intrinsic = "llvm.ppc.altivec.vmaxsb";
+         }
+      } else if (type.width == 16) {
+         if (!type.sign) {
+            intrinsic = "llvm.ppc.altivec.vmaxuh";
+         } else {
+            intrinsic = "llvm.ppc.altivec.vmaxsh";
+         }
+      } else if (type.width == 32) {
+         if (!type.sign) {
+            intrinsic = "llvm.ppc.altivec.vmaxuw";
+         } else {
+            intrinsic = "llvm.ppc.altivec.vmaxsw";
+         }
+      }
+   } else if (type.floating && util_get_cpu_caps()->has_lasx &&
+              LLVM_VERSION_MAJOR >= 18) {
+      if (type.width == 32) {
+         if (type.length == 8) {
+            intrinsic = "llvm.loongarch.lasx.xvfmax.s";
+            intr_size = 256;
+         } else if (type.length == 4) {
+            intrinsic = "llvm.loongarch.lsx.vfmax.s";
+            intr_size = 128;
+         }
+      } else if (type.width == 64) {
+         if (type.length == 4) {
+            intrinsic = "llvm.loongarch.lasx.xvfmax.d";
+            intr_size = 256;
+         } else if (type.length == 2) {
+            intrinsic = "llvm.loongarch.lsx.vfmax.d";
+            intr_size = 128;
+         }
+      }
+   } else if (type.floating && util_get_cpu_caps()->has_lsx &&
+              LLVM_VERSION_MAJOR >= 18) {
+      intr_size = 128;
+      if ((type.width == 32) && (type.length == 4))
+         intrinsic = "llvm.loongarch.lsx.vfmax.s";
+      else if ((type.width == 64) && (type.length == 2))
+         intrinsic = "llvm.loongarch.lsx.vfmax.d";
+   } else if (util_get_cpu_caps()->has_lasx &&
+              LLVM_VERSION_MAJOR >= 18) {
+      intr_size = 256;
+      if (type.width == 8) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lasx.xvmax.bu";
+         else
+            intrinsic = "llvm.loongarch.lasx.xvmax.b";
+      } else if (type.width == 16) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lasx.xvmax.hu";
+         else
+            intrinsic = "llvm.loongarch.lasx.xvmax.h";
+      } else if (type.width == 32) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lasx.xvmax.wu";
+         else
+            intrinsic = "llvm.loongarch.lasx.xvmax.w";
+      }
+   } else if (util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18) {
+      intr_size = 128;
+      if (type.width == 8) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lsx.vmax.bu";
+         else
+            intrinsic = "llvm.loongarch.lsx.vmax.b";
+      } else if (type.width == 16) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lsx.vmax.hu";
+         else
+            intrinsic = "llvm.loongarch.lsx.vmax.h";
+      } else if (type.width == 32) {
+         if (!type.sign)
+            intrinsic = "llvm.loongarch.lsx.vmax.wu";
+         else
+            intrinsic = "llvm.loongarch.lsx.vmax.w";
+      }
    }
 
    if (intrinsic) {

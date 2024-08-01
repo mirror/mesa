@@ -320,7 +320,42 @@ lp_build_interleave2(struct gallivm_state *gallivm,
                      LLVMValueRef b,
                      unsigned lo_hi)
 {
+   const char *intrinsic = NULL;
+   LLVMTypeRef intr_vec_type = lp_build_int_vec_type(gallivm, type);
+   LLVMBuilderRef builder = gallivm->builder;
    LLVMValueRef shuffle;
+
+   if (type.length * type.width == 128 && util_get_cpu_caps()->has_lsx &&
+       LLVM_VERSION_MAJOR >= 18) {
+      if (lo_hi) {
+         if (type.width == 64)
+            intrinsic = "llvm.loongarch.lsx.vilvh.d";
+         else if (type.width == 32)
+            intrinsic = "llvm.loongarch.lsx.vilvh.w";
+         else if (type.width == 16)
+            intrinsic = "llvm.loongarch.lsx.vilvh.h";
+         else if (type.width == 8)
+            intrinsic = "llvm.loongarch.lsx.vilvh.b";
+      } else {
+         if (type.width == 64)
+            intrinsic = "llvm.loongarch.lsx.vilvl.d";
+         else if (type.width == 32)
+            intrinsic = "llvm.loongarch.lsx.vilvl.w";
+         else if (type.width == 16)
+            intrinsic = "llvm.loongarch.lsx.vilvl.h";
+         else if (type.width == 8)
+            intrinsic = "llvm.loongarch.lsx.vilvl.b";
+      }
+   }
+
+   /* can't do interleave ops on floating-point values */
+   if (type.floating) {
+      a = LLVMBuildBitCast(builder, a, intr_vec_type, "");
+      b = LLVMBuildBitCast(builder, b, intr_vec_type, "");
+   }
+
+   if (intrinsic)
+      return lp_build_intrinsic_binary(gallivm->builder, intrinsic, intr_vec_type, b, a);
 
    if (type.length == 2 && type.width == 128 && util_get_cpu_caps()->has_avx) {
       /*
@@ -385,6 +420,44 @@ lp_build_interleave2_half(struct gallivm_state *gallivm,
                           unsigned lo_hi)
 {
    if (type.length * type.width == 256) {
+      LLVMBuilderRef builder = gallivm->builder;
+      LLVMTypeRef ret_vec_type = lp_build_int_vec_type(gallivm, type);
+      const char *intrinsic = NULL;
+      LLVMValueRef res;
+
+      if (util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18) {
+         if (lo_hi) {
+            if (type.width == 64)
+               intrinsic = "llvm.loongarch.lasx.xvilvh.d";
+            else if (type.width == 32)
+               intrinsic = "llvm.loongarch.lasx.xvilvh.w";
+            else if (type.width == 16)
+               intrinsic = "llvm.loongarch.lasx.xvilvh.h";
+            else if (type.width == 8)
+               intrinsic = "llvm.loongarch.lasx.xvilvh.b";
+         } else {
+            if (type.width == 64)
+               intrinsic = "llvm.loongarch.lasx.xvilvl.d";
+            else if (type.width == 32)
+               intrinsic = "llvm.loongarch.lasx.xvilvl.w";
+            else if (type.width == 16)
+               intrinsic = "llvm.loongarch.lasx.xvilvl.h";
+            else if (type.width == 8)
+               intrinsic = "llvm.loongarch.lasx.xvilvl.b";
+         }
+
+         /* can't do interleave ops on floating-point values */
+         if (type.floating) {
+            a = LLVMBuildBitCast(builder, a, ret_vec_type, "");
+            b = LLVMBuildBitCast(builder, b, ret_vec_type, "");
+         }
+
+         if (intrinsic)
+            res = lp_build_intrinsic_binary(builder, intrinsic, ret_vec_type, b, a);
+
+         if (type.floating)
+            return LLVMBuildBitCast(builder, res, lp_build_vec_type(gallivm, type), "");
+      }
       LLVMValueRef shuffle = lp_build_const_unpack_shuffle_half(gallivm, type.length, lo_hi);
       return LLVMBuildShuffleVector(gallivm->builder, a, b, shuffle, "");
    } else if ((type.length == 16) && (type.width == 32)) {
@@ -484,7 +557,8 @@ lp_build_unpack2_native(struct gallivm_state *gallivm,
 
    /* Interleave bits */
 #if UTIL_ARCH_LITTLE_ENDIAN
-   if (src_type.length * src_type.width == 256 && util_get_cpu_caps()->has_avx2) {
+   if (src_type.length * src_type.width == 256 &&
+       (util_get_cpu_caps()->has_avx2 || util_get_cpu_caps()->has_lasx)) {
       *dst_lo = lp_build_interleave2_half(gallivm, src_type, src, msb, 0);
       *dst_hi = lp_build_interleave2_half(gallivm, src_type, src, msb, 1);
    } else {

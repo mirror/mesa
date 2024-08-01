@@ -68,8 +68,15 @@ unsigned lp_native_vector_width;
 unsigned
 lp_build_init_native_width(void)
 {
+#if DETECT_ARCH_LOONGARCH64 == 1 && LLVM_VERSION_MAJOR >= 18
+   if (util_get_cpu_caps()->has_lasx)
+      lp_native_vector_width = 256;
+   else
+      lp_native_vector_width = 128;
+#else
    // Default to 256 until we're confident llvmpipe with 512 is as correct and not slower than 256
    lp_native_vector_width = MIN2(util_get_cpu_caps()->max_vector_bits, 256);
+#endif
    assert(lp_native_vector_width);
 
    lp_native_vector_width = debug_get_num_option("LP_NATIVE_VECTOR_WIDTH", lp_native_vector_width);

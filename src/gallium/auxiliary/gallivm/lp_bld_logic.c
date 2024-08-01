@@ -420,6 +420,64 @@ lp_build_select(struct lp_build_context *bld,
          res = LLVMBuildBitCast(builder, res, bld->vec_type, "");
       }
    }
+   else if ((util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18 &&
+            (type.width * type.length == 256)) &&
+            !LLVMIsConstant(a) && !LLVMIsConstant(b)) {
+      LLVMTypeRef arg_type = LLVMVectorType(LLVMInt8TypeInContext(lc), 32);
+      LLVMValueRef args[3];
+
+      /*
+       *  There's no float [x]vbitsel.v in LASX
+       *  but we can just cast the float to v32u8
+       */
+      if (arg_type != bld->vec_type) {
+         a = LLVMBuildBitCast(builder, a, arg_type, "");
+         b = LLVMBuildBitCast(builder, b, arg_type, "");
+         mask = LLVMBuildBitCast(builder, mask, arg_type, "");
+      }
+
+      args[0] = b;
+      args[1] = a;
+      args[2] = mask;
+
+      res = lp_build_intrinsic(builder,
+                               "llvm.loongarch.lasx.xvbitsel.v",
+                               arg_type, args, ARRAY_SIZE(args), 0);
+
+
+
+      if (arg_type != bld->vec_type) {
+         res = LLVMBuildBitCast(builder, res, bld->vec_type, "");
+      }
+   }
+   else if ((util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18 &&
+            (type.width * type.length == 128)) &&
+            !LLVMIsConstant(a) && !LLVMIsConstant(b)) {
+      LLVMTypeRef arg_type = LLVMVectorType(LLVMInt8TypeInContext(lc), 16);
+      LLVMValueRef args[3];
+
+      /*
+       *  There's no float [x]vbitsel.v in LASX
+       *  but we can just cast the float to v16u8
+       */
+      if (arg_type != bld->vec_type) {
+         a = LLVMBuildBitCast(builder, a, arg_type, "");
+         b = LLVMBuildBitCast(builder, b, arg_type, "");
+         mask = LLVMBuildBitCast(builder, mask, arg_type, "");
+      }
+
+      args[0] = b;
+      args[1] = a;
+      args[2] = mask;
+
+      res = lp_build_intrinsic(builder,
+                               "llvm.loongarch.lsx.vbitsel.v",
+                               arg_type, args, ARRAY_SIZE(args), 0);
+
+      if (arg_type != bld->vec_type) {
+         res = LLVMBuildBitCast(builder, res, bld->vec_type, "");
+      }
+   }
    else {
       res = lp_build_select_bitwise(bld, mask, a, b);
    }

@@ -2054,6 +2054,34 @@ lp_build_abs(struct lp_build_context *bld,
          return lp_build_intrinsic_unary(builder, "llvm.x86.avx2.pabs.d", vec_type, a);
       }
    }
+   else if (type.width*type.length == 256 && util_get_cpu_caps()->has_lasx && LLVM_VERSION_MAJOR >= 18) {
+      LLVMValueRef zeros = LLVMConstNull(vec_type);
+
+      switch (type.width) {
+      case 8:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lasx.xvabsd.b", vec_type, a, zeros);
+      case 16:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lasx.xvabsd.h", vec_type, a, zeros);
+      case 32:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lasx.xvabsd.w", vec_type, a, zeros);
+      case 64:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lasx.xvabsd.d", vec_type, a, zeros);
+      }
+   }
+   else if (type.width*type.length == 128 && util_get_cpu_caps()->has_lsx && LLVM_VERSION_MAJOR >= 18) {
+      LLVMValueRef zeros = LLVMConstNull(vec_type);
+
+      switch (type.width) {
+      case 8:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lsx.vabsd.b", vec_type, a, zeros);
+      case 16:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lsx.vabsd.h", vec_type, a, zeros);
+      case 32:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lsx.vabsd.w", vec_type, a, zeros);
+      case 64:
+         return lp_build_intrinsic_binary(builder, "llvm.loongarch.lsx.vabsd.d", vec_type, a, zeros);
+      }
+   }
 
    return lp_build_select(bld, lp_build_cmp(bld, PIPE_FUNC_GREATER, a, bld->zero),
                           a, LLVMBuildNeg(builder, a, ""));

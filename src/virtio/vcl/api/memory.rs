@@ -1472,6 +1472,81 @@ fn enqueue_map_buffer(
     // CL_INVALID_OPERATION if mapping would lead to overlapping regions being mapped for writing.
 }
 
+#[cl_entrypoint(clEnqueueMapImage)]
+fn enqueue_map_image(
+    command_queue: cl_command_queue,
+    image: cl_mem,
+    blocking_map: cl_bool,
+    map_flags: cl_map_flags,
+    origin: *const usize,
+    region: *const usize,
+    image_row_pitch: *mut usize,
+    image_slice_pitch: *mut usize,
+    num_events_in_wait_list: cl_uint,
+    event_wait_list: *const cl_event,
+    event: *mut cl_event,
+) -> CLResult<*mut c_void> {
+    let queue = command_queue.get_arc()?;
+    let image = image.get_arc()?;
+    check_cl_bool(blocking_map).ok_or(CL_INVALID_VALUE)?;
+    event_list_from_cl(&queue, num_events_in_wait_list, event_wait_list)?;
+
+    // CL_INVALID_VALUE ... or if values specified in map_flags are not valid.
+    validate_map_flags(&image, map_flags)?;
+
+    // CL_INVALID_CONTEXT if context associated with command_queue and image are not the same
+    if image.context != queue.context {
+        return Err(CL_INVALID_CONTEXT);
+    }
+
+    // CL_INVALID_VALUE if origin or region is NULL.
+    // CL_INVALID_VALUE if image_row_pitch is NULL.
+    if origin.is_null() || region.is_null() || image_row_pitch.is_null() {
+        return Err(CL_INVALID_VALUE);
+    }
+
+    let region = unsafe { CLVec::from_raw(region) };
+    let origin = unsafe { CLVec::from_raw(origin) };
+
+    // CL_INVALID_VALUE if region being mapped given by (origin, origin + region) is out of bounds
+    // CL_INVALID_VALUE if values in origin and region do not follow rules described in the argument
+    // description for origin and region.
+    validate_image_bounds(&image, origin, region)?;
+
+    let mut dummy_slice_pitch: usize = 0;
+    let image_slice_pitch = if image_slice_pitch.is_null() {
+        // CL_INVALID_VALUE if image is a 3D image, 1D or 2D image array object and
+        // image_slice_pitch is NULL.
+        if image.image_desc.is_array() || image.image_desc.image_type == CL_MEM_OBJECT_IMAGE3D {
+            return Err(CL_INVALID_VALUE);
+        }
+        &mut dummy_slice_pitch
+    } else {
+        unsafe { image_slice_pitch.as_mut().unwrap() }
+    };
+
+    let ptr = image.map_image(
+        &queue,
+        map_flags,
+        origin,
+        region,
+        image_row_pitch,
+        image_slice_pitch,
+        num_events_in_wait_list,
+        event_wait_list,
+        event,
+    )?;
+
+    Ok(ptr)
+
+    //• CL_INVALID_IMAGE_SIZE if image dimensions (image width, height, specified or compute row and/or slice pitch) for image are not supported by device associated with queue.
+    //• CL_IMAGE_FORMAT_NOT_SUPPORTED if image format (image channel order and data type) for image are not supported by device associated with queue.
+    //• CL_MAP_FAILURE if there is a failure to map the requested region into the host address space. This error cannot occur for image objects created with CL_MEM_USE_HOST_PTR or CL_MEM_ALLOC_HOST_PTR.
+    //• CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST if the map operation is blocking and the execution status of any of the events in event_wait_list is a negative integer value.
+    //• CL_INVALID_OPERATION if the device associated with command_queue does not support images (i.e. CL_DEVICE_IMAGE_SUPPORT specified in the Device Queries table is CL_FALSE).
+    //• CL_INVALID_OPERATION if mapping would lead to overlapping regions being mapped for writing.
+}
+
 #[cl_entrypoint(clEnqueueUnmapMemObject)]
 fn enqueue_unmap_mem_object(
     command_queue: cl_command_queue,

@@ -230,6 +230,55 @@ impl Mem {
         Ok(ptr)
     }
 
+    pub fn map_image(
+        &self,
+        queue: &Arc<Queue>,
+        map_flags: cl_map_flags,
+        origin: CLVec<usize>,
+        region: CLVec<usize>,
+        image_row_pitch: *mut usize,
+        image_slice_pitch: *mut usize,
+        num_events_in_wait_list: cl_uint,
+        event_wait_list: *const cl_event,
+        event: *mut cl_event,
+    ) -> CLResult<*mut c_void> {
+        let pixel_size = self.image_format.pixel_size().unwrap() as usize;
+        let size = region[0] * region[1] * region[2] * pixel_size;
+
+        let mut data = Vec::with_capacity(size);
+        data.resize_with(size, || 0u8);
+        let ptr = data.as_mut_ptr() as _;
+
+        let mut ev_handle = Event::maybe_new(&queue.context, event);
+        let ev_ptr = if ev_handle.is_null() {
+            ptr::null_mut()
+        } else {
+            &mut ev_handle
+        };
+
+        Vcl::get().call_clEnqueueMapImageMESA(
+            queue.get_handle(),
+            self.get_handle(),
+            CL_TRUE,
+            map_flags,
+            origin.as_ptr(),
+            region.as_ptr(),
+            image_row_pitch,
+            image_slice_pitch,
+            size,
+            ptr,
+            num_events_in_wait_list,
+            event_wait_list,
+            ev_ptr,
+        )?;
+
+        event.write_checked(ev_handle);
+
+        self.mapped_data.lock().unwrap().insert(ptr, data);
+
+        Ok(ptr)
+    }
+
     pub fn is_mapped_ptr(&self, mapped_ptr: *mut c_void) -> bool {
         self.mapped_data.lock().unwrap().contains_key(&mapped_ptr)
     }

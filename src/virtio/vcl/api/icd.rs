@@ -79,7 +79,7 @@ pub static DISPATCH: cl_icd_dispatch = cl_icd_dispatch {
     clEnqueueCopyImageToBuffer: Some(clEnqueueCopyImageToBuffer),
     clEnqueueCopyBufferToImage: Some(clEnqueueCopyBufferToImage),
     clEnqueueMapBuffer: Some(clEnqueueMapBuffer),
-    clEnqueueMapImage: None,
+    clEnqueueMapImage: Some(clEnqueueMapImage),
     clEnqueueUnmapMemObject: Some(clEnqueueUnmapMemObject),
     clEnqueueNDRangeKernel: Some(clEnqueueNDRangeKernel),
     clEnqueueTask: Some(clEnqueueTask),

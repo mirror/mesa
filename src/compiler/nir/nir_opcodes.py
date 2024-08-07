@@ -622,16 +622,28 @@ if (nir_is_rounding_mode_rtz(execution_mode, bit_size)) {
 """)
 binop("iadd", tint, _2src_commutative + associative, "(uint64_t)src0 + (uint64_t)src1")
 binop("iadd_sat", tint, _2src_commutative, """
-      src1 > 0 ?
-         (src0 + src1 < src0 ? u_intN_max(bit_size) : src0 + src1) :
-         (src0 < src0 + src1 ? u_intN_min(bit_size) : src0 + src1)
+if ((src0 < 0) != (src1 < 0)) {
+   dst = src0 + src1;
+} else {
+   uint64_t result = (uint64_t)src0 + (uint64_t)src1;
+   if (src0 < 0 && src1 < 0)
+      dst = result < (uint64_t)u_intN_min(bit_size) ? u_intN_min(bit_size) : src0 + src1;
+   else
+      dst = result > (uint64_t)u_intN_max(bit_size) ? u_intN_max(bit_size) : src0 + src1;
+}
 """)
 binop("uadd_sat", tuint, _2src_commutative,
-      "(src0 + src1) < src0 ? u_uintN_max(sizeof(src0) * 8) : (src0 + src1)")
+      "(u_uintN_max(sizeof(src0) * 8) - src0) < src1 ? u_uintN_max(sizeof(src0) * 8) : (src0 + src1)")
 binop("isub_sat", tint, "", """
-      src1 < 0 ?
-         (src0 - src1 < src0 ? u_intN_max(bit_size) : src0 - src1) :
-         (src0 < src0 - src1 ? u_intN_min(bit_size) : src0 - src1)
+if ((src0 < 0) == (src1 < 0)) {
+   dst = src0 - src1;
+} else {
+   uint64_t result = (uint64_t)src0 - (uint64_t)src1;
+   if (src0 < 0 && src1 >= 0)
+      dst = result < (uint64_t)u_intN_min(bit_size) ? u_intN_min(bit_size) : src0 - src1;
+   else
+      dst = result > (uint64_t)u_intN_max(bit_size) ? u_intN_max(bit_size) : src0 - src1;
+}
 """)
 binop("usub_sat", tuint, "", "src0 < src1 ? 0 : src0 - src1")
 
@@ -746,7 +758,7 @@ binop("idiv", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == 
 binop("udiv", tuint, "", "src1 == 0 ? 0 : (src0 / src1)")
 
 binop_convert("uadd_carry", tuint, tuint, _2src_commutative,
-              "src0 + src1 < src0",
+              "(u_uintN_max(sizeof(src0) * 8) - src0) < src1",
               description = """
 Return an integer (1 or 0) representing the carry resulting from the
 addition of the two unsigned arguments.

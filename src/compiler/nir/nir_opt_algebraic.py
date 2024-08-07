@@ -3455,7 +3455,9 @@ late_optimizations.extend([
    # result, it is very easy for 3-source instruction combined with either
    # loads of immediate values or copies from weird register strides to be
    # more expensive than the primitive instructions it represents.
-   (('ubfe', a, '#b', '#c'), ('iand', ('ushr', 0xffffffff, ('ineg', c)), ('ushr', a, b)), 'options->avoid_ternary_with_two_constants'),
+   (('ubfe', a, '#b', '#c'),
+    ('bcsel', ('ieq', ('iand', c, 31), 0), 0, ('iand', ('ushr', 0xffffffff, ('ineg', c)), ('ushr', a, b))),
+    'options->avoid_ternary_with_two_constants'),
 
    # b is the lowest order bit to be extracted and c is the number of bits to
    # extract.  The inner shift removes the bits above b + c by shifting left
@@ -3463,7 +3465,14 @@ late_optimizations.extend([
    # -(b + c).  The outer shift moves the bit that was at b to bit zero.
    # After the first shift, that bit is now at b + (32 - (b + c)) or 32 - c.
    # This means that it must be shifted right by 32 - c or -c bits.
-   (('ibfe', a, '#b', '#c'), ('ishr', ('ishl', a, ('ineg', ('iadd', b, c))), ('ineg', c)), 'options->avoid_ternary_with_two_constants'),
+   (('ibfe', a, '#b', '#c'),
+    ('bcsel', ('ieq', ('iand', c, 31), 0),
+     0,
+     ('bcsel', ('ilt', ('iadd', ('iand', b, 31), ('iand', c, 31)), 32),
+      ('ishr', ('ishl', a, ('ineg', ('iadd', ('iand', b, 31), ('iand', c, 31)))), ('ineg', ('iand', c, 31))),
+      ('ishr', a, b)
+     )
+    ), 'options->avoid_ternary_with_two_constants'),
 
    # Clean up no-op shifts that may result from the bfe lowerings.
    (('ishl', a, 0), a),

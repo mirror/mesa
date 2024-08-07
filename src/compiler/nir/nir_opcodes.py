@@ -1619,7 +1619,7 @@ opcode("sdot_4x8_iadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
 """)
 
 # Like udot_4x8_uadd, but the result is clampled to the range [0, 0xfffffffff].
-opcode("udot_4x8_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
+opcode("udot_4x8_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tuint32],
        False, _2src_commutative, """
    const uint64_t v0x = (uint8_t)(src0      );
    const uint64_t v0y = (uint8_t)(src0 >>  8);
@@ -1693,7 +1693,7 @@ opcode("sdot_2x16_iadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
 """)
 
 # Like udot_2x16_uadd, but the result is clampled to the range [0, 0xfffffffff].
-opcode("udot_2x16_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
+opcode("udot_2x16_uadd_sat", 0, tuint32, [0, 0, 0], [tuint32, tuint32, tuint32],
        False, _2src_commutative, """
    const uint64_t v0x = (uint16_t)(src0      );
    const uint64_t v0y = (uint16_t)(src0 >> 16);

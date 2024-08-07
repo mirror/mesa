@@ -843,7 +843,9 @@ if with_gallium_rusticl
   endif
 endif
 
-if with_gallium_rusticl or with_nouveau_vk or with_tools.contains('etnaviv')
+if with_gallium_rusticl or with_nouveau_vk \
+   or with_tools.contains('etnaviv') \
+   or with_tools.contains('panfrost')
   if with_gallium_rusticl
     # uses rust.bindgen.output_inline_wrapper needing 1.4.0
     if meson.version().version_compare('< 1.4.0')

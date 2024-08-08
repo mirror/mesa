@@ -224,7 +224,7 @@ public:
          if (f) {
             intel_disassemble(&context.devinfo,
                               (const uint8_t *) bo->map +
-                              (address - bo->offset), 0, f);
+                              (address - bo->offset), 0, NULL, f);
             fclose(f);
          }
 

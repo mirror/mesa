@@ -191,7 +191,7 @@ BEGIN_TEST(assembler.long_jump.constaddr)
    bld.reset(program->create_and_insert_block());
 
    //>> s_getpc_b64 s[0:1]                                          ; be801f00
-   //! s_add_u32 s0, s0, 32                                         ; 8000ff00 00000020
+   //! s_add_u32 s0, s0, 32                                        ; 8000ff00 00000020
    bld.sop1(aco_opcode::p_constaddr_getpc, Definition(PhysReg(0), s2), Operand::zero());
    bld.sop2(aco_opcode::p_constaddr_addlo, Definition(PhysReg(0), s1), bld.def(s1, scc),
             Operand(PhysReg(0), s1), Operand::zero(), Operand::zero());
@@ -258,8 +258,8 @@ BEGIN_TEST(assembler.v_add3_clamp)
       if (!setup_cs(NULL, (amd_gfx_level)i))
          continue;
 
-      //~gfx9>> integer addition + clamp ; d1ff8000 02010080
-      //~gfx10>> integer addition + clamp ; d76d8000 02010080
+      //~gfx9>> v_add3_u32 v0, 0, 0, 0 clamp ; d1ff8000 02010080
+      //~gfx10>> v_add3_u32 v0, 0, 0, 0 clamp ; d76d8000 02010080
       aco_ptr<Instruction> add3{create_instruction(aco_opcode::v_add3_u32, Format::VOP3, 3, 1)};
       add3->operands[0] = Operand::zero();
       add3->operands[1] = Operand::zero();
@@ -307,11 +307,11 @@ BEGIN_TEST(assembler.p_constaddr)
    dst1.setFixed(PhysReg(2));
 
    //>> s_getpc_b64 s[0:1] ; be801c00
-   //! s_add_u32 s0, s0, 44 ; 8000ff00 0000002c
+   //! s_add_u32 s0, s0, 44                                        ; 8000ff00 0000002c
    bld.pseudo(aco_opcode::p_constaddr, dst0, bld.def(s1, scc), Operand::zero());
 
    //! s_getpc_b64 s[2:3] ; be821c00
-   //! s_add_u32 s2, s2, 64 ; 8002ff02 00000040
+   //! s_add_u32 s2, s2, 64                                        ; 8002ff02 00000040
    bld.pseudo(aco_opcode::p_constaddr, dst1, bld.def(s1, scc), Operand::c32(32));
 
    aco::lower_to_hw_instr(program.get());
@@ -381,7 +381,7 @@ BEGIN_TEST(assembler.smem)
       bld.smem(aco_opcode::s_load_dword, dst, op_s2, Operand::c32(42));
 
       //~gfx11! s_load_b32 s4, s[16:17], s8                                 ; f4000108 10000000
-      //~gfx12! s_load_b32 s4, s[16:17], s8 offset:0x0                      ; f4000108 10000000
+      //~gfx12! s_load_b32 s4, s[16:17], s8                                 ; f4000108 10000000
       bld.smem(aco_opcode::s_load_dword, dst, op_s2, op_s1);
 
       //! s_load_b32 s4, s[16:17], s8 offset:0x2a                     ; f4000108 1000002a
@@ -398,11 +398,11 @@ BEGIN_TEST(assembler.smem)
       }
 
       //~gfx11! s_buffer_load_b32 s4, s[32:35], s8 glc                      ; f4204110 10000000
-      //~gfx12! s_buffer_load_b32 s4, s[32:35], s8 offset:0x0 scope:SCOPE_DEV ; f4420110 10000000
+      //~gfx12! s_buffer_load_b32 s4, s[32:35], s8 scope:SCOPE_DEV          ; f4420110 10000000
       bld.smem(aco_opcode::s_buffer_load_dword, dst, op_s4, op_s1)->smem().cache = cache_coherent;
 
       //~gfx11! s_buffer_load_b32 s4, s[32:35], s8 dlc                      ; f4202110 10000000
-      //~gfx12! s_buffer_load_b32 s4, s[32:35], s8 offset:0x0 th:TH_LOAD_NT ; f4820110 10000000
+      //~gfx12! s_buffer_load_b32 s4, s[32:35], s8 th:TH_LOAD_NT            ; f4820110 10000000
       bld.smem(aco_opcode::s_buffer_load_dword, dst, op_s4, op_s1)->smem().cache =
          cache_non_temporal;
 
@@ -503,10 +503,7 @@ BEGIN_TEST(assembler.mubuf)
          ->mubuf()
          .cache = cache_sys_coherent;
 
-      //; if llvm_ver >= 16 and variant == 'gfx11':
-      //;    insert_pattern('buffer_load_b32 v[42:43], off, s[32:35], 0 tfe              ; e0500000 80282a80')
-      //; elif variant == 'gfx11':
-      //;    insert_pattern('buffer_load_b32 v42, off, s[32:35], 0 tfe                   ; e0500000 80282a80')
+      //~gfx11! buffer_load_b32 v[42:43], off, s[32:35], 0 tfe              ; e0500000 80282a80
       //~gfx12! buffer_load_b32 v[42:43], off, s[32:35], null tfe           ; c445007c 0080402a 00000000
       bld.mubuf(aco_opcode::buffer_load_dword, dst, op_s4, Operand(v1), Operand::zero(), 0, false)
          ->mubuf()
@@ -670,19 +667,8 @@ BEGIN_TEST(assembler.mtbuf)
          ->mtbuf()
          .cache = cache_sys_coherent;
 
-      //; if llvm_ver >= 19 and variant == 'gfx11':
-      //;    insert_pattern('(invalid instruction) ; e9900000')
-      //;    insert_pattern('s_add_u32 s40, 0, s42 ; 80282a80')
-      //; elif llvm_ver >= 19 and variant == 'gfx12':
-      //;    insert_pattern('(invalid instruction) ; c460007c')
-      //;    insert_pattern('v_mul_hi_u32_u24_e32 v128, s42, v32 ; 1900402a')
-      //;    insert_pattern('(invalid instruction) ; 00000080')
-      //; elif llvm_ver >= 16 and variant == 'gfx11':
-      //;    insert_pattern('tbuffer_load_format_x v42, off, s[32:35], 0 format:[BUF_FMT_32_32_FLOAT] ; e9900000 80282a80')
-      //; elif variant == 'gfx11':
-      //;    insert_pattern('tbuffer_load_format_x v42, off, s[32:35], 0 format:[BUF_FMT_32_32_FLOAT] tfe ; e9900000 80282a80')
-      //; elif variant == 'gfx12':
-      //;    insert_pattern('tbuffer_load_format_x v42, off, s[32:35], null format:[BUF_FMT_32_32_FLOAT] ; c460007c 1900402a 00000080')
+      //~gfx11! tbuffer_load_format_x v[42:43], off, s[32:35], 0 format:[BUF_FMT_32_32_FLOAT] tfe ; e9900000 80282a80
+      //~gfx12! tbuffer_load_format_x v[42:43], off, s[32:35], null format:[BUF_FMT_32_32_FLOAT] tfe ; c460007c 1900402a 00000080
       bld.mtbuf(aco_opcode::tbuffer_load_format_x, dst, op_s4, Operand(v1), Operand::zero(), dfmt,
                 nfmt, 0, false)
          ->mtbuf()
@@ -785,9 +771,9 @@ BEGIN_TEST(assembler.mimg)
       bld.mimg(aco_opcode::image_sample, dst_v4, op_s8, op_s4, Operand(v1), op_v1)->mimg().lwe =
          true;
 
-      //~gfx11! image_sample v[84:87], v10, s[64:71], s[32:35] dmask:0xf dim:SQ_RSRC_IMG_1D r128 ; f06c8f00 2010540a
-      //~gfx12! image_sample v[84:87], v10, s[64:71], s[32:35] dmask:0xf dim:SQ_RSRC_IMG_1D r128 ; e7c6c010 10008054 0000000a
-      bld.mimg(aco_opcode::image_sample, dst_v4, op_s8, op_s4, Operand(v1), op_v1)->mimg().r128 =
+      //~gfx11! image_sample v[84:87], v10, s[32:35], s[32:35] dmask:0xf dim:SQ_RSRC_IMG_1D ; f06c8f00 2008540a
+      //~gfx12! image_sample v[84:87], v10, s[32:35], s[32:35] dmask:0xf dim:SQ_RSRC_IMG_1D ; e7c6c010 10004054 0000000a
+      bld.mimg(aco_opcode::image_sample, dst_v4, op_s4, op_s4, Operand(v1), op_v1)->mimg().r128 =
          true;
 
       //~gfx11! image_sample v[84:87], v10, s[64:71], s[32:35] dmask:0xf dim:SQ_RSRC_IMG_1D a16 ; f06d0f00 2010540a
@@ -821,6 +807,7 @@ BEGIN_TEST(assembler.mimg)
       instr->operands[5] = Operand(PhysReg(256 + 44), v3); /* origin */
       instr->operands[6] = Operand(PhysReg(256 + 48), v3); /* dir */
       instr->operands[7] = Operand(PhysReg(256 + 52), v3); /* inv dir */
+      instr->mimg().dim = ac_image_1d;
       instr->mimg().dmask = 0xf;
       instr->mimg().unrm = true;
       instr->mimg().r128 = true;
@@ -1148,43 +1135,40 @@ BEGIN_TEST(assembler.vop12c_v128)
       fprintf(output, "llvm_version: %u\n", LLVM_VERSION_MAJOR);
 
       //>> BB0:
-      //; if llvm_ver == 16:
-      //;    insert_pattern('v_mul_f16_e32 v0, v1, v2 ; Error: VGPR_32_Lo128: unknown register 128 ; 6a000501')
-      //; else:
-      //;    insert_pattern('v_mul_f16_e32 v0, v1, v2                                    ; 6a000501')
+      //! v_mul_f16_e32 v0.l, v1.l, v2.l                              ; 6a000501
       bld.vop2(aco_opcode::v_mul_f16, dst_v0, op_v1, op_v2);
 
-      //! v_mul_f16_e64 v128, v1, v2                                  ; d5350080 00020501
+      //! v_mul_f16_e64 v0.h, v1.l, v2.l                              ; d5350080 00020501
       bld.vop2(aco_opcode::v_mul_f16, dst_v128, op_v1, op_v2);
 
-      //! v_mul_f16_e64 v0, v129, v2                                  ; d5350000 00020581
+      //! v_mul_f16_e64 v0.l, v1.h, v2.l                              ; d5350000 00020581
       bld.vop2(aco_opcode::v_mul_f16, dst_v0, op_v129, op_v2);
 
-      //! v_mul_f16_e64 v0, v1, v130                                  ; d5350000 00030501
+      //! v_mul_f16_e64 v0.l, v1.l, v2.h                              ; d5350000 00030501
       bld.vop2(aco_opcode::v_mul_f16, dst_v0, op_v1, op_v130);
 
-      //! v_rcp_f16_e64 v128, v1                                      ; d5d40080 00000101
+      //! v_rcp_f16_e64 v0.h, v1.l                                    ; d5d40080 00000101
       bld.vop1(aco_opcode::v_rcp_f16, dst_v128, op_v1);
 
-      //! v_cmp_eq_f16_e64 vcc, v129, v2                              ; d402006a 00020581
+      //! v_cmp_eq_f16_e64 vcc, v1.h, v2.l                            ; d402006a 00020581
       bld.vopc(aco_opcode::v_cmp_eq_f16, bld.def(s2, vcc), op_v129, op_v2);
 
-      //! v_mul_f16_e64_dpp v128, v1, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350080 000204fa ff0d2101
+      //! v_mul_f16_e64_dpp v0.h, v1.l, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350080 000204fa ff0d2101
       bld.vop2_dpp(aco_opcode::v_mul_f16, dst_v128, op_v1, op_v2, dpp_row_rr(1));
 
-      //! v_mul_f16_e64_dpp v0, v129, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350000 000204fa ff0d2181
+      //! v_mul_f16_e64_dpp v0.l, v1.h, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350000 000204fa ff0d2181
       bld.vop2_dpp(aco_opcode::v_mul_f16, dst_v0, op_v129, op_v2, dpp_row_rr(1));
 
-      //! v_mul_f16_e64_dpp v0, v1, v130 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350000 000304fa ff0d2101
+      //! v_mul_f16_e64_dpp v0.l, v1.l, v2.h row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350000 000304fa ff0d2101
       bld.vop2_dpp(aco_opcode::v_mul_f16, dst_v0, op_v1, op_v130, dpp_row_rr(1));
 
-      //! v_mul_f16_e64_dpp v128, v1, v2 dpp8:[0,0,0,0,0,0,0,0] fi:1  ; d5350080 000204ea 00000001
+      //! v_mul_f16_e64_dpp v0.h, v1.l, v2.l dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d5350080 000204ea 00000001
       bld.vop2_dpp8(aco_opcode::v_mul_f16, dst_v128, op_v1, op_v2);
 
-      //! v_mul_f16_e64_dpp v0, v129, v2 dpp8:[0,0,0,0,0,0,0,0] fi:1  ; d5350000 000204ea 00000081
+      //! v_mul_f16_e64_dpp v0.l, v1.h, v2.l dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d5350000 000204ea 00000081
       bld.vop2_dpp8(aco_opcode::v_mul_f16, dst_v0, op_v129, op_v2);
 
-      //! v_mul_f16_e64_dpp v0, v1, v130 dpp8:[0,0,0,0,0,0,0,0] fi:1  ; d5350000 000304ea 00000001
+      //! v_mul_f16_e64_dpp v0.l, v1.l, v2.h dpp8:[0,0,0,0,0,0,0,0] fi:1 ; d5350000 000304ea 00000001
       bld.vop2_dpp8(aco_opcode::v_mul_f16, dst_v0, op_v1, op_v130);
 
       //! v_fma_f16 v128, v1, v2, 0x60                                ; d6480080 03fe0501 00000060
@@ -1193,26 +1177,26 @@ BEGIN_TEST(assembler.vop12c_v128)
       //! v_fma_f16 v128, v1, 0x60, v2                                ; d6480080 0409ff01 00000060
       bld.vop2(aco_opcode::v_fmamk_f16, dst_v128, op_v1, op_v2, Operand::literal32(96));
 
-      //! v_rcp_f16_e64_dpp v128, -v1 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5d40080 200000fa ff1d2101
+      //! v_rcp_f16_e64_dpp v0.h, -v1.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5d40080 200000fa ff1d2101
       bld.vop1_dpp(aco_opcode::v_rcp_f16, dst_v128, op_v1, dpp_row_rr(1))->dpp16().neg[0] = true;
 
-      //! v_rcp_f16_e64_dpp v128, |v1| row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5d40180 000000fa ff2d2101
+      //! v_rcp_f16_e64_dpp v0.h, |v1.l| row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5d40180 000000fa ff2d2101
       bld.vop1_dpp(aco_opcode::v_rcp_f16, dst_v128, op_v1, dpp_row_rr(1))->dpp16().abs[0] = true;
 
-      //! v_mul_f16_e64_dpp v128, -v1, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350080 200204fa ff1d2101
+      //! v_mul_f16_e64_dpp v0.h, -v1.l, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350080 200204fa ff1d2101
       bld.vop2_dpp(aco_opcode::v_mul_f16, dst_v128, op_v1, op_v2, dpp_row_rr(1))->dpp16().neg[0] =
          true;
 
-      //! v_mul_f16_e64_dpp v128, |v1|, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350180 000204fa ff2d2101
+      //! v_mul_f16_e64_dpp v0.h, |v1.l|, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d5350180 000204fa ff2d2101
       bld.vop2_dpp(aco_opcode::v_mul_f16, dst_v128, op_v1, op_v2, dpp_row_rr(1))->dpp16().abs[0] =
          true;
 
-      //! v_cmp_eq_f16_e64_dpp vcc, -v129, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d402006a 200204fa ff1d2181
+      //! v_cmp_eq_f16_e64_dpp vcc, -v1.h, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d402006a 200204fa ff1d2181
       bld.vopc_dpp(aco_opcode::v_cmp_eq_f16, bld.def(s2, vcc), op_v129, op_v2, dpp_row_rr(1))
          ->dpp16()
          .neg[0] = true;
 
-      //! v_cmp_eq_f16_e64_dpp vcc, |v129|, v2 row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d402016a 000204fa ff2d2181
+      //! v_cmp_eq_f16_e64_dpp vcc, |v1.h|, v2.l row_ror:1 row_mask:0xf bank_mask:0xf bound_ctrl:1 fi:1 ; d402016a 000204fa ff2d2181
       bld.vopc_dpp(aco_opcode::v_cmp_eq_f16, bld.def(s2, vcc), op_v129, op_v2, dpp_row_rr(1))
          ->dpp16()
          .abs[0] = true;

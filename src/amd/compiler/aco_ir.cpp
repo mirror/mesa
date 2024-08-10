@@ -32,6 +32,7 @@ static const struct debug_control aco_debug_options[] = {
    {"nosched-vopd", DEBUG_NO_SCHED_VOPD},
    {"perfinfo", DEBUG_PERF_INFO},
    {"liveinfo", DEBUG_LIVE_INFO},
+   {"llvm-disasm", DEBUG_LLVM_DISASM},
    {NULL, 0}};
 
 static once_flag init_once_flag = ONCE_FLAG_INIT;

@@ -6,6 +6,7 @@
 
 #include "aco_ir.h"
 
+#include "util/memstream.h"
 #include "util/u_debug.h"
 
 #include "disassembler/aco_disassembler.h"
@@ -420,7 +421,107 @@ print_asm(Program* program, std::vector<uint32_t>& binary, unsigned exec_size, F
 
 #if AMD_LLVM_AVAILABLE
    if (program->gfx_level >= GFX8) {
+#if 1
       return print_asm_llvm(program, binary, exec_size, output);
+#else
+      char* aco_disasm = NULL;
+      char* llvm_disasm = NULL;
+
+      bool result = disasm_program(program, binary, exec_size, &aco_disasm);
+
+      size_t disasm_size = 0;
+      struct u_memstream mem;
+      if (!u_memstream_open(&mem, &llvm_disasm, &disasm_size))
+         return true;
+
+      bool invalid = print_asm_llvm(program, binary, exec_size, u_memstream_get(&mem));
+      u_memstream_close(&mem);
+
+      if (!invalid && strcmp(aco_disasm, llvm_disasm)) {
+         char* tmp_aco_disasm = aco_disasm;
+         char* tmp_llvm_disasm = llvm_disasm;
+         while (tmp_aco_disasm < aco_disasm + strlen(aco_disasm) &&
+                tmp_llvm_disasm < llvm_disasm + strlen(llvm_disasm) &&
+                strchr(tmp_aco_disasm, '\n') && strchr(tmp_llvm_disasm, '\n')) {
+            char* aco_line = strchr(tmp_aco_disasm, '\n') + 1;
+            uintptr_t aco_len = (uintptr_t)strchr(aco_line, '\n');
+
+            char* llvm_line = strchr(tmp_llvm_disasm, '\n') + 1;
+            uintptr_t llvm_len = (uintptr_t)strchr(llvm_line, '\n');
+
+            if (!aco_len || !llvm_len)
+               break;
+
+            aco_len -= (uintptr_t)aco_line;
+            llvm_len -= (uintptr_t)llvm_line;
+
+            if (!aco_len || !llvm_len)
+               break;
+
+            char* tmp_aco_line = aco_line;
+            char* tmp_llvm_line = llvm_line;
+            bool different = false;
+            while (tmp_aco_line < aco_line + aco_len && tmp_llvm_line < llvm_line + llvm_len) {
+               if (isspace(tmp_aco_line[0])) {
+                  tmp_aco_line++;
+                  continue;
+               }
+
+               if (isspace(tmp_llvm_line[0])) {
+                  tmp_llvm_line++;
+                  continue;
+               }
+
+               if (tmp_aco_line[0] != tmp_llvm_line[0]) {
+                  different = true;
+                  break;
+               }
+               tmp_aco_line++;
+               tmp_llvm_line++;
+            }
+
+            if (!different) {
+               while (tmp_aco_line < aco_line + aco_len) {
+                  if (isspace(tmp_aco_line[0])) {
+                     tmp_aco_line++;
+                     continue;
+                  }
+
+                  different = true;
+                  break;
+               }
+
+               while (tmp_llvm_line < llvm_line + llvm_len) {
+                  if (isspace(tmp_llvm_line[0])) {
+                     tmp_llvm_line++;
+                     continue;
+                  }
+
+                  different = true;
+                  break;
+               }
+            }
+
+            if (different) {
+               char tmp[1024];
+               memset(tmp, 0, sizeof(tmp));
+               strncpy(tmp, llvm_line, llvm_len);
+               printf("\nllvm: %s\n", tmp);
+               memset(tmp, 0, sizeof(tmp));
+               strncpy(tmp, aco_line, aco_len);
+               printf("aco:  %s\n", tmp);
+            }
+
+            tmp_aco_disasm += aco_len;
+            tmp_llvm_disasm += llvm_len;
+         }
+      }
+
+      free(aco_disasm);
+      free(llvm_disasm);
+
+      return result;
+#endif
    }
 #endif
 

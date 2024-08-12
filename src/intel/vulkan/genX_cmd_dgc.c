@@ -51,6 +51,8 @@ preprocess_gfx_sequences(struct anv_cmd_buffer *cmd_buffer,
                          const VkGeneratedCommandsInfoEXT *info,
                          enum anv_internal_kernel_name kernel_name)
 {
+   trace_intel_begin_generate_cmds_pre(&cmd_buffer->trace);
+
    struct anv_device *device = cmd_buffer->device;
    struct anv_graphics_pipeline *gfx_pipeline;
    if (indirect_set == NULL) {
@@ -208,6 +210,8 @@ preprocess_gfx_sequences(struct anv_cmd_buffer *cmd_buffer,
    genX(emit_simple_shader_dispatch)(&simple_state, info->maxSequenceCount,
                                      push_data_state);
 
+   trace_intel_end_generate_cmds_pre(&cmd_buffer->trace);
+
    return params;
 }
 
@@ -269,6 +273,8 @@ preprocess_cs_sequences(struct anv_cmd_buffer *cmd_buffer,
                         enum anv_internal_kernel_name kernel_name,
                         bool emit_driver_values)
 {
+   trace_intel_begin_generate_cmds_pre(&cmd_buffer->trace);
+
    struct anv_device *device = cmd_buffer->device;
    struct anv_cmd_compute_state *comp_state = &cmd_buffer_state->state.compute;
    struct anv_cmd_pipeline_state *pipe_state = &comp_state->base;
@@ -434,6 +440,8 @@ preprocess_cs_sequences(struct anv_cmd_buffer *cmd_buffer,
                                      info->maxSequenceCount,
                                      push_data_state);
 
+   trace_intel_end_generate_cmds_pre(&cmd_buffer->trace);
+
    return params;
 }
 
@@ -443,6 +451,8 @@ postprocess_cs_sequences(struct anv_cmd_buffer *cmd_buffer,
                          struct anv_indirect_execution_set *indirect_set,
                          const VkGeneratedCommandsInfoEXT *info)
 {
+   trace_intel_begin_generate_cmds_post(&cmd_buffer->trace);
+
    struct anv_device *device = cmd_buffer->device;
 
    /**/
@@ -530,6 +540,8 @@ postprocess_cs_sequences(struct anv_cmd_buffer *cmd_buffer,
                                      info->maxSequenceCount,
                                      push_data_state);
 
+   trace_intel_end_generate_cmds_post(&cmd_buffer->trace);
+
    return params;
 }
 
@@ -542,6 +554,8 @@ preprocess_rt_sequences(struct anv_cmd_buffer *cmd_buffer,
                         const VkGeneratedCommandsInfoEXT *info,
                         enum anv_internal_kernel_name kernel_name)
 {
+   trace_intel_begin_generate_cmds_pre(&cmd_buffer->trace);
+
    struct anv_device *device = cmd_buffer->device;
    struct anv_cmd_ray_tracing_state *rt_state = &cmd_buffer_state->state.rt;
    struct anv_cmd_pipeline_state *pipe_state = &rt_state->base;
@@ -688,6 +702,8 @@ preprocess_rt_sequences(struct anv_cmd_buffer *cmd_buffer,
    genX(emit_simple_shader_dispatch)(&state,
                                      info->maxSequenceCount,
                                      push_data_state);
+
+   trace_intel_end_generate_cmds_pre(&cmd_buffer->trace);
 
    return params;
 }

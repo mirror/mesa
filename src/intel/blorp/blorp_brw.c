@@ -37,7 +37,9 @@ blorp_compile_fs_brw(struct blorp_context *blorp, void *mem_ctx,
    struct brw_wm_prog_key wm_key;
    memset(&wm_key, 0, sizeof(wm_key));
    wm_key.multisample_fbo = multisample_fbo ? BRW_ALWAYS : BRW_NEVER;
-   wm_key.nr_color_regions = 1;
+
+   assert(nir->num_outputs != 0);
+   wm_key.nr_color_regions = nir->num_outputs;
 
    struct brw_compile_fs_params params = {
       .base = {

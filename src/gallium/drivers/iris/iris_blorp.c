@@ -437,8 +437,8 @@ iris_blorp_exec_render(struct blorp_batch *blorp_batch,
    if (params->src.enabled)
       iris_bo_bump_seqno(params->src.addr.buffer, batch->next_seqno,
                          IRIS_DOMAIN_SAMPLER_READ);
-   if (params->dst.enabled)
-      iris_bo_bump_seqno(params->dst.addr.buffer, batch->next_seqno,
+   if (params->dst[0].enabled)
+      iris_bo_bump_seqno(params->dst[0].addr.buffer, batch->next_seqno,
                          IRIS_DOMAIN_RENDER_WRITE);
    if (params->depth.enabled)
       iris_bo_bump_seqno(params->depth.addr.buffer, batch->next_seqno,
@@ -468,7 +468,7 @@ iris_blorp_exec_blitter(struct blorp_batch *blorp_batch,
                          IRIS_DOMAIN_OTHER_READ);
    }
 
-   iris_bo_bump_seqno(params->dst.addr.buffer, batch->next_seqno,
+   iris_bo_bump_seqno(params->dst[0].addr.buffer, batch->next_seqno,
                       IRIS_DOMAIN_OTHER_WRITE);
 }
 
@@ -512,7 +512,7 @@ blorp_measure_end(struct blorp_batch *blorp_batch,
                          params->y1 - params->y0,
                          params->num_samples,
                          params->shader_pipeline,
-                         params->dst.view.format,
+                         params->dst[0].view.format,
                          params->src.view.format,
                          (blorp_batch->flags & BLORP_BATCH_PREDICATE_ENABLE));
 }

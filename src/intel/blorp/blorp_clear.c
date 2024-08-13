@@ -43,6 +43,7 @@ struct blorp_const_color_prog_key
    bool use_simd16_replicated_data;
    bool clear_rgb_as_red;
    uint8_t local_y;
+   uint8_t num_buffers;
 };
 #pragma pack(pop)
 
@@ -62,6 +63,7 @@ blorp_params_get_clear_kernel_fs(struct blorp_batch *batch,
       .use_simd16_replicated_data = use_replicated_data,
       .clear_rgb_as_red = clear_rgb_as_red,
       .local_y = 0,
+      .num_buffers = params->num_buffers,
    };
 
    params->shader_type = blorp_key.base.shader_type;
@@ -77,21 +79,25 @@ blorp_params_get_clear_kernel_fs(struct blorp_batch *batch,
    blorp_nir_init_shader(&b, blorp, mem_ctx, MESA_SHADER_FRAGMENT,
                          blorp_shader_type_to_name(blorp_key.base.shader_type));
 
-   nir_variable *v_color =
-      BLORP_CREATE_NIR_INPUT(b.shader, clear_color, glsl_vec4_type());
-   nir_def *color = nir_load_var(&b, v_color);
+   assert(params->num_buffers > 0 && params->num_buffers <= MAX_RTS);
+   for (uint32_t i = 0; i < params->num_buffers; i++) {
+      nir_variable *v_color =
+         BLORP_CREATE_NIR_INPUT(b.shader, clear_color[i], glsl_vec4_type());
+      nir_def *color = nir_load_var(&b, v_color);
 
-   if (clear_rgb_as_red) {
-      nir_def *pos = nir_f2i32(&b, nir_load_frag_coord(&b));
-      nir_def *comp = nir_umod_imm(&b, nir_channel(&b, pos, 0), 3);
-      color = nir_pad_vec4(&b, nir_vector_extract(&b, color, comp));
+      if (clear_rgb_as_red) {
+         nir_def *pos = nir_f2i32(&b, nir_load_frag_coord(&b));
+         nir_def *comp = nir_umod_imm(&b, nir_channel(&b, pos, 0), 3);
+         color = nir_pad_vec4(&b, nir_vector_extract(&b, color, comp));
+      }
+
+      nir_variable *frag_color = nir_variable_create(b.shader, nir_var_shader_out,
+            glsl_vec4_type(),
+            "gl_FragColor");
+      frag_color->data.location = FRAG_RESULT_DATA0 + i;
+      nir_store_var(&b, frag_color, color, 0xf);
+      b.shader->num_outputs++;
    }
-
-   nir_variable *frag_color = nir_variable_create(b.shader, nir_var_shader_out,
-                                                  glsl_vec4_type(),
-                                                  "gl_FragColor");
-   frag_color->data.location = FRAG_RESULT_COLOR;
-   nir_store_var(&b, frag_color, color, 0xf);
 
    const bool multisample_fbo = false;
    struct blorp_program p =
@@ -440,9 +446,9 @@ blorp_fast_clear(struct blorp_batch *batch,
    if (!blorp_params_get_clear_kernel(batch, &params, true, false))
       return;
 
-   blorp_surface_info_init(batch, &params.dst, surf, level,
+   blorp_surface_info_init(batch, &params.dst[0], surf, level,
                                start_layer, format, true);
-   params.num_samples = params.dst.surf.samples;
+   params.num_samples = params.dst[0].surf.samples;
 
    assert(params.num_samples != 0);
    if (params.num_samples == 1)
@@ -453,8 +459,8 @@ blorp_fast_clear(struct blorp_batch *batch,
    /* If a swizzle was provided, we need to swizzle the clear color so that
     * the hardware color format conversion will work properly.
     */
-   params.dst.clear_color =
-      isl_color_value_swizzle_inv(params.dst.clear_color, swizzle);
+   params.dst[0].clear_color =
+      isl_color_value_swizzle_inv(params.dst[0].clear_color, swizzle);
 
    batch->blorp->exec(batch, &params);
 }
@@ -610,9 +616,9 @@ blorp_clear(struct blorp_batch *batch,
 
    assert(num_layers > 0);
    while (num_layers > 0) {
-      blorp_surface_info_init(batch, &params.dst, surf, level,
+      blorp_surface_info_init(batch, &params.dst[0], surf, level,
                                   start_layer, format, true);
-      params.dst.view.swizzle = swizzle;
+      params.dst[0].view.swizzle = swizzle;
 
       params.x0 = x0;
       params.y0 = y0;
@@ -626,85 +632,85 @@ blorp_clear(struct blorp_batch *batch,
          params.wm_inputs.bounds_rect.y1 = y1;
       }
 
-      if (params.dst.tile_x_sa || params.dst.tile_y_sa) {
-         assert(params.dst.surf.samples == 1);
+      if (params.dst[0].tile_x_sa || params.dst[0].tile_y_sa) {
+         assert(params.dst[0].surf.samples == 1);
          assert(num_layers == 1);
-         params.x0 += params.dst.tile_x_sa;
-         params.y0 += params.dst.tile_y_sa;
-         params.x1 += params.dst.tile_x_sa;
-         params.y1 += params.dst.tile_y_sa;
+         params.x0 += params.dst[0].tile_x_sa;
+         params.y0 += params.dst[0].tile_y_sa;
+         params.x1 += params.dst[0].tile_x_sa;
+         params.y1 += params.dst[0].tile_y_sa;
       }
 
       /* The MinLOD and MinimumArrayElement don't work properly for cube maps.
        * Convert them to a single slice on gfx4.
        */
       if (batch->blorp->isl_dev->info->ver == 4 &&
-          (params.dst.surf.usage & ISL_SURF_USAGE_CUBE_BIT)) {
-         blorp_surf_convert_to_single_slice(batch->blorp->isl_dev, &params.dst);
+          (params.dst[0].surf.usage & ISL_SURF_USAGE_CUBE_BIT)) {
+         blorp_surf_convert_to_single_slice(batch->blorp->isl_dev, &params.dst[0]);
       }
 
       if (clear_rgb_as_red) {
-         surf_fake_rgb_with_red(batch->blorp->isl_dev, &params.dst);
+         surf_fake_rgb_with_red(batch->blorp->isl_dev, &params.dst[0]);
          params.x0 *= 3;
          params.x1 *= 3;
       }
 
-      if (isl_format_is_compressed(params.dst.surf.format)) {
-         blorp_surf_convert_to_uncompressed(batch->blorp->isl_dev, &params.dst,
+      if (isl_format_is_compressed(params.dst[0].surf.format)) {
+         blorp_surf_convert_to_uncompressed(batch->blorp->isl_dev, &params.dst[0],
                                             NULL, NULL, NULL, NULL);
                                             //&dst_x, &dst_y, &dst_w, &dst_h);
       }
 
-      if (params.dst.tile_x_sa || params.dst.tile_y_sa) {
+      if (params.dst[0].tile_x_sa || params.dst[0].tile_y_sa) {
          /* Either we're on gfx4 where there is no multisampling or the
           * surface is compressed which also implies no multisampling.
           * Therefore, sa == px and we don't need to do a conversion.
           */
-         assert(params.dst.surf.samples == 1);
-         params.x0 += params.dst.tile_x_sa;
-         params.y0 += params.dst.tile_y_sa;
-         params.x1 += params.dst.tile_x_sa;
-         params.y1 += params.dst.tile_y_sa;
+         assert(params.dst[0].surf.samples == 1);
+         params.x0 += params.dst[0].tile_x_sa;
+         params.y0 += params.dst[0].tile_y_sa;
+         params.x1 += params.dst[0].tile_x_sa;
+         params.y1 += params.dst[0].tile_y_sa;
       }
 
-      params.num_samples = params.dst.surf.samples;
+      params.num_samples = params.dst[0].surf.samples;
 
       /* We may be restricted on the number of layers we can bind at any one
        * time.  In particular, Sandy Bridge has a maximum number of layers of
        * 512 but a maximum 3D texture size is much larger.
        */
-      params.num_layers = MIN2(params.dst.view.array_len, num_layers);
+      params.num_layers = MIN2(params.dst[0].view.array_len, num_layers);
 
       const unsigned max_image_width = 16 * 1024;
-      if (params.dst.surf.logical_level0_px.width > max_image_width) {
+      if (params.dst[0].surf.logical_level0_px.width > max_image_width) {
          /* Clearing an RGB image as red multiplies the surface width by 3
           * so it may now be too wide for the hardware surface limits.  We
           * have to break the clear up into pieces in order to clear wide
           * images.
           */
          assert(clear_rgb_as_red);
-         assert(params.dst.surf.dim == ISL_SURF_DIM_2D);
-         assert(params.dst.surf.tiling == ISL_TILING_LINEAR);
-         assert(params.dst.surf.logical_level0_px.depth == 1);
-         assert(params.dst.surf.logical_level0_px.array_len == 1);
-         assert(params.dst.surf.levels == 1);
-         assert(params.dst.surf.samples == 1);
-         assert(params.dst.tile_x_sa == 0 || params.dst.tile_y_sa == 0);
-         assert(params.dst.aux_usage == ISL_AUX_USAGE_NONE);
+         assert(params.dst[0].surf.dim == ISL_SURF_DIM_2D);
+         assert(params.dst[0].surf.tiling == ISL_TILING_LINEAR);
+         assert(params.dst[0].surf.logical_level0_px.depth == 1);
+         assert(params.dst[0].surf.logical_level0_px.array_len == 1);
+         assert(params.dst[0].surf.levels == 1);
+         assert(params.dst[0].surf.samples == 1);
+         assert(params.dst[0].tile_x_sa == 0 || params.dst[0].tile_y_sa == 0);
+         assert(params.dst[0].aux_usage == ISL_AUX_USAGE_NONE);
 
          /* max_image_width rounded down to a multiple of 3 */
          const unsigned max_fake_rgb_width = (max_image_width / 3) * 3;
          const unsigned cpp =
-            isl_format_get_layout(params.dst.surf.format)->bpb / 8;
+            isl_format_get_layout(params.dst[0].surf.format)->bpb / 8;
 
-         params.dst.surf.logical_level0_px.width = max_fake_rgb_width;
-         params.dst.surf.phys_level0_sa.width = max_fake_rgb_width;
+         params.dst[0].surf.logical_level0_px.width = max_fake_rgb_width;
+         params.dst[0].surf.phys_level0_sa.width = max_fake_rgb_width;
 
          uint32_t orig_x0 = params.x0, orig_x1 = params.x1;
-         uint64_t orig_offset = params.dst.addr.offset;
+         uint64_t orig_offset = params.dst[0].addr.offset;
          for (uint32_t x = orig_x0; x < orig_x1; x += max_fake_rgb_width) {
             /* Offset to the surface.  It's easy because we're linear */
-            params.dst.addr.offset = orig_offset + x * cpp;
+            params.dst[0].addr.offset = orig_offset + x * cpp;
 
             params.x0 = 0;
             params.x1 = MIN2(orig_x1 - x, max_image_width);
@@ -787,7 +793,7 @@ blorp_clear_stencil_as_rgba(struct blorp_batch *batch,
        * clamping giving us the wrong values
        */
       for (unsigned i = 0; i < 4; i++)
-         params.wm_inputs.clear_color[i] &= 0xffff;
+         params.wm_inputs.clear_color[0][i] &= 0xffff;
    } else {
       wide_format = ISL_FORMAT_R32G32B32A32_UINT;
    }
@@ -795,28 +801,28 @@ blorp_clear_stencil_as_rgba(struct blorp_batch *batch,
    for (uint32_t a = 0; a < num_layers; a++) {
       uint32_t layer = start_layer + a;
 
-      blorp_surface_info_init(batch, &params.dst, surf, level,
+      blorp_surface_info_init(batch, &params.dst[0], surf, level,
                                   layer, ISL_FORMAT_UNSUPPORTED, true);
 
       if (surf->surf->samples > 1)
-         blorp_surf_fake_interleaved_msaa(batch->blorp->isl_dev, &params.dst);
+         blorp_surf_fake_interleaved_msaa(batch->blorp->isl_dev, &params.dst[0]);
 
       /* Make it Y-tiled */
-      blorp_surf_retile_w_to_y(batch->blorp->isl_dev, &params.dst);
+      blorp_surf_retile_w_to_y(batch->blorp->isl_dev, &params.dst[0]);
 
       unsigned wide_Bpp =
          isl_format_get_layout(wide_format)->bpb / 8;
 
-      params.dst.view.format = params.dst.surf.format = wide_format;
-      assert(params.dst.surf.logical_level0_px.width % wide_Bpp == 0);
-      params.dst.surf.logical_level0_px.width /= wide_Bpp;
-      assert(params.dst.tile_x_sa % wide_Bpp == 0);
-      params.dst.tile_x_sa /= wide_Bpp;
+      params.dst[0].view.format = params.dst[0].surf.format = wide_format;
+      assert(params.dst[0].surf.logical_level0_px.width % wide_Bpp == 0);
+      params.dst[0].surf.logical_level0_px.width /= wide_Bpp;
+      assert(params.dst[0].tile_x_sa % wide_Bpp == 0);
+      params.dst[0].tile_x_sa /= wide_Bpp;
 
-      params.x0 = params.dst.tile_x_sa + x0 / (wide_Bpp / 2);
-      params.y0 = params.dst.tile_y_sa + y0 / 2;
-      params.x1 = params.dst.tile_x_sa + x1 / (wide_Bpp / 2);
-      params.y1 = params.dst.tile_y_sa + y1 / 2;
+      params.x0 = params.dst[0].tile_x_sa + x0 / (wide_Bpp / 2);
+      params.y0 = params.dst[0].tile_y_sa + y0 / 2;
+      params.x1 = params.dst[0].tile_x_sa + x1 / (wide_Bpp / 2);
+      params.y1 = params.dst[0].tile_y_sa + y1 / 2;
 
       batch->blorp->exec(batch, &params);
    }
@@ -873,10 +879,10 @@ blorp_clear_depth_stencil(struct blorp_batch *batch,
          params.stencil_mask = stencil_mask;
          params.stencil_ref = stencil_value;
 
-         params.dst.surf.samples = params.stencil.surf.samples;
-         params.dst.surf.logical_level0_px =
+         params.dst[0].surf.samples = params.stencil.surf.samples;
+         params.dst[0].surf.logical_level0_px =
             params.stencil.surf.logical_level0_px;
-         params.dst.view = params.stencil.view;
+         params.dst[0].view = params.stencil.view;
 
          params.num_samples = params.stencil.surf.samples;
 
@@ -896,10 +902,10 @@ blorp_clear_depth_stencil(struct blorp_batch *batch,
          params.depth_format =
             isl_format_get_depth_format(depth->surf->format, false);
 
-         params.dst.surf.samples = params.depth.surf.samples;
-         params.dst.surf.logical_level0_px =
+         params.dst[0].surf.samples = params.depth.surf.samples;
+         params.dst[0].surf.logical_level0_px =
             params.depth.surf.logical_level0_px;
-         params.dst.view = params.depth.view;
+         params.dst[0].view = params.depth.view;
 
          params.num_samples = params.depth.surf.samples;
 
@@ -1074,7 +1080,7 @@ blorp_clear_attachments(struct blorp_batch *batch,
    params.num_samples = num_samples;
 
    if (clear_color) {
-      params.dst.enabled = true;
+      params.dst[0].enabled = true;
       params.op = BLORP_OP_SLOW_COLOR_CLEAR;
 
       memcpy(&params.wm_inputs.clear_color, color_value.f32, sizeof(float) * 4);
@@ -1135,12 +1141,12 @@ blorp_ccs_resolve(struct blorp_batch *batch,
    default:
       assert(false);
    }
-   blorp_surface_info_init(batch, &params.dst, surf,
+   blorp_surface_info_init(batch, &params.dst[0], surf,
                                level, start_layer, format, true);
 
    params.x0 = params.y0 = 0;
-   params.x1 = u_minify(params.dst.surf.logical_level0_px.width, level);
-   params.y1 = u_minify(params.dst.surf.logical_level0_px.height, level);
+   params.x1 = u_minify(params.dst[0].surf.logical_level0_px.width, level);
+   params.y1 = u_minify(params.dst[0].surf.logical_level0_px.height, level);
    if (ISL_GFX_VER(batch->blorp->isl_dev) >= 9) {
       /* From Bspec 2424, "Render Target Resolve":
        *
@@ -1163,7 +1169,7 @@ blorp_ccs_resolve(struct blorp_batch *batch,
        * BDW we multiply by 8 and 16.
        */
       const struct isl_format_layout *aux_fmtl =
-         isl_format_get_layout(params.dst.aux_surf.format);
+         isl_format_get_layout(params.dst[0].aux_surf.format);
       assert(aux_fmtl->txc == ISL_TXC_CCS);
 
       unsigned x_scaledown, y_scaledown;
@@ -1240,8 +1246,8 @@ blorp_params_get_mcs_partial_resolve_kernel(struct blorp_batch *batch,
    struct blorp_context *blorp = batch->blorp;
    const struct blorp_mcs_partial_resolve_key blorp_key = {
       .base = BLORP_BASE_KEY_INIT(BLORP_SHADER_TYPE_MCS_PARTIAL_RESOLVE),
-      .indirect_clear_color = params->dst.clear_color_addr.buffer != NULL,
-      .int_format = isl_format_has_int_channel(params->dst.view.format),
+      .indirect_clear_color = params->dst[0].clear_color_addr.buffer != NULL,
+      .int_format = isl_format_has_int_channel(params->dst[0].view.format),
       .num_samples = params->num_samples,
    };
 
@@ -1286,6 +1292,8 @@ blorp_params_get_mcs_partial_resolve_kernel(struct blorp_batch *batch,
    }
    nir_store_var(&b, frag_color, clear_color, 0xf);
 
+   b.shader->num_outputs = 1;
+
    const bool multisample_fbo = true;
    const struct blorp_program p =
       blorp_compile_fs(blorp, mem_ctx, b.shader, multisample_fbo, false);
@@ -1320,10 +1328,10 @@ blorp_mcs_partial_resolve(struct blorp_batch *batch,
 
    blorp_surface_info_init(batch, &params.src, surf, 0,
                                start_layer, format, false);
-   blorp_surface_info_init(batch, &params.dst, surf, 0,
+   blorp_surface_info_init(batch, &params.dst[0], surf, 0,
                                start_layer, format, true);
 
-   params.num_samples = params.dst.surf.samples;
+   params.num_samples = params.dst[0].surf.samples;
    params.num_layers = num_layers;
    params.dst_clear_color_as_input = surf->clear_color_addr.buffer != NULL;
 
@@ -1410,7 +1418,7 @@ blorp_mcs_ambiguate(struct blorp_batch *batch,
    if (ISL_GFX_VER(batch->blorp->isl_dev) >= 20)
       aux_addr.offset += 4096;
 
-   params.dst = (struct blorp_surface_info) {
+   params.dst[0] = (struct blorp_surface_info) {
       .enabled = true,
       .surf = *surf->aux_surf,
       .addr = aux_addr,
@@ -1427,13 +1435,13 @@ blorp_mcs_ambiguate(struct blorp_batch *batch,
 
    params.x0 = 0;
    params.y0 = 0;
-   params.x1 = params.dst.surf.logical_level0_px.width;
-   params.y1 = params.dst.surf.logical_level0_px.height;
-   params.num_layers = params.dst.view.array_len;
+   params.x1 = params.dst[0].surf.logical_level0_px.width;
+   params.y1 = params.dst[0].surf.logical_level0_px.height;
+   params.num_layers = params.dst[0].view.array_len;
 
    const uint64_t pixel = get_mcs_ambiguate_pixel(surf->surf->samples);
-   params.wm_inputs.clear_color[0] = pixel & 0xFFFFFFFF;
-   params.wm_inputs.clear_color[1] = pixel >> 32;
+   params.wm_inputs.clear_color[0][0] = pixel & 0xFFFFFFFF;
+   params.wm_inputs.clear_color[0][1] = pixel >> 32;
 
    if (!blorp_params_get_clear_kernel(batch, &params, true, false))
       return;
@@ -1470,7 +1478,7 @@ blorp_ccs_ambiguate(struct blorp_batch *batch,
       isl_format_get_layout(surf->aux_surf->format);
    assert(aux_fmtl->txc == ISL_TXC_CCS);
 
-   params.dst = (struct blorp_surface_info) {
+   params.dst[0] = (struct blorp_surface_info) {
       .enabled = true,
       .addr = surf->aux_addr,
       .view = {
@@ -1494,7 +1502,7 @@ blorp_ccs_ambiguate(struct blorp_batch *batch,
    uint32_t x_offset_el, y_offset_el;
    isl_surf_get_image_offset_B_tile_el(surf->aux_surf, level, layer, z,
                                        &offset_B, &x_offset_el, &y_offset_el);
-   params.dst.addr.offset += offset_B;
+   params.dst[0].addr.offset += offset_B;
 
    const uint32_t width_px =
       u_minify(surf->aux_surf->logical_level0_px.width, level);
@@ -1571,7 +1579,7 @@ blorp_ccs_ambiguate(struct blorp_batch *batch,
    const uint32_t height_rgba_px = height_cl * 4;
 
    ASSERTED bool ok =
-      isl_surf_init(batch->blorp->isl_dev, &params.dst.surf,
+      isl_surf_init(batch->blorp->isl_dev, &params.dst[0].surf,
                     .dim = ISL_SURF_DIM_2D,
                     .format = ISL_FORMAT_R32G32B32A32_UINT,
                     .width = width_rgba_px + x_offset_rgba_px,

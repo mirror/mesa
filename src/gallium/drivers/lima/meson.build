@@ -19,6 +19,7 @@ files_lima = files(
   'ir/pp/nir.c',
   'ir/pp/node.c',
   'ir/pp/lower.c',
+  'ir/pp/opt.c',
   'ir/pp/scheduler.c',
   'ir/pp/instr.c',
   'ir/pp/regalloc.c',

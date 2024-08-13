@@ -977,6 +977,13 @@ bool ppir_compile_nir(struct lima_fs_compiled_shader *prog, struct nir_shader *n
    if (!ppir_lower_prog(comp))
       goto err_out0;
 
+   bool progress;
+   do {
+      progress = false;
+
+      progress |= ppir_copy_prop(comp);
+   } while (progress);
+
    ppir_add_ordering_deps(comp);
    ppir_add_write_after_read_deps(comp);
 

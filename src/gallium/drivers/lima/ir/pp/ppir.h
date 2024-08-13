@@ -732,6 +732,7 @@ static inline bool ppir_instr_is_leaf(ppir_instr *instr)
 }
 
 bool ppir_lower_prog(ppir_compiler *comp);
+bool ppir_copy_prop(ppir_compiler *comp);
 bool ppir_node_to_instr(ppir_compiler *comp);
 bool ppir_schedule_prog(ppir_compiler *comp);
 bool ppir_regalloc_prog(ppir_compiler *comp);

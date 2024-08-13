@@ -2244,65 +2244,6 @@ resolve_anb_image(struct anv_device *device,
 #endif
 }
 
-static bool
-anv_image_is_pat_compressible(struct anv_device *device, struct anv_image *image)
-{
-   if (INTEL_DEBUG(DEBUG_NO_CCS))
-      return false;
-
-   if (device->info->ver < 20)
-      return false;
-
-   /*
-    * Be aware that Vulkan spec requires that Images with some properties
-    * always returns the same memory types, so this function also needs to
-    * have the same return for the same set of properties.
-    *
-    *    For images created with a color format, the memoryTypeBits member is
-    *    identical for all VkImage objects created with the same combination
-    *    of values for the tiling member, the
-    *    VK_IMAGE_CREATE_SPARSE_BINDING_BIT bit and
-    *    VK_IMAGE_CREATE_PROTECTED_BIT bit of the flags member, the
-    *    VK_IMAGE_CREATE_SPLIT_INSTANCE_BIND_REGIONS_BIT bit of the flags
-    *    member, the VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT bit of the usage
-    *    member if the
-    *    VkPhysicalDeviceHostImageCopyPropertiesEXT::identicalMemoryTypeRequirements
-    *    property is VK_FALSE, handleTypes member of
-    *    VkExternalMemoryImageCreateInfo, and the
-    *    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT of the usage member in the
-    *    VkImageCreateInfo structure passed to vkCreateImage.
-    *
-    *    For images created with a depth/stencil format, the memoryTypeBits
-    *    member is identical for all VkImage objects created with the same
-    *    combination of values for the format member, the tiling member, the
-    *    VK_IMAGE_CREATE_SPARSE_BINDING_BIT bit and
-    *    VK_IMAGE_CREATE_PROTECTED_BIT bit of the flags member, the
-    *    VK_IMAGE_CREATE_SPLIT_INSTANCE_BIND_REGIONS_BIT bit of the flags
-    *    member, the VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT bit of the usage
-    *    member if the
-    *    VkPhysicalDeviceHostImageCopyPropertiesEXT::identicalMemoryTypeRequirements
-    *    property is VK_FALSE, handleTypes member of
-    *    VkExternalMemoryImageCreateInfo, and the
-    *    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT of the usage member in the
-    *    VkImageCreateInfo structure passed to vkCreateImage.
-    */
-
-   /* There are no compression-enabled modifiers on Xe2, and all legacy
-    * modifiers are not defined with compression. We simply disable
-    * compression on all modifiers.
-    *
-    * We disable this in anv_AllocateMemory() as well.
-    */
-   if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
-      return false;
-
-   /* Host accessed images cannot be compressed. */
-   if (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)
-      return false;
-
-   return true;
-}
-
 void
 anv_image_get_memory_requirements(struct anv_device *device,
                                   struct anv_image *image,
@@ -2321,9 +2262,8 @@ anv_image_get_memory_requirements(struct anv_device *device,
    if (image->vk.create_flags & VK_IMAGE_CREATE_PROTECTED_BIT) {
       memory_types = device->physical->memory.protected_mem_types;
    } else {
-      memory_types = device->physical->memory.default_buffer_mem_types;
-      if (anv_image_is_pat_compressible(device, image))
-         memory_types |= device->physical->memory.compressed_mem_types;
+      memory_types = device->physical->memory.default_buffer_mem_types |
+                     device->physical->memory.compressed_mem_types;
    }
 
    if (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) {

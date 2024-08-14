@@ -514,6 +514,106 @@ blorp_clear_supports_compute(struct blorp_context *blorp,
 }
 
 void
+blorp_clear_multi(struct blorp_batch *batch,
+                  const struct blorp_surf *surfaces,
+                  enum isl_format *formats,
+                  struct isl_swizzle *swizzles,
+                  union isl_color_value *clear_colors,
+                  uint32_t num_buffers,
+                  uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1)
+{
+   struct blorp_params params;
+   blorp_params_init(&params);
+   params.op = BLORP_OP_SLOW_COLOR_CLEAR;
+   params.num_buffers = num_buffers;
+
+   assert(!(batch->flags & BLORP_BATCH_USE_COMPUTE));
+   assert(!(batch->flags & BLORP_BATCH_USE_BLITTER));
+
+   bool use_simd16_replicated_data = true;
+   for (uint32_t i = 0; i < num_buffers; ++i) {
+      enum isl_format format = formats[i];
+      const struct blorp_surf *surf = &surfaces[i];
+      clear_colors[i] = isl_color_value_swizzle_inv(clear_colors[i], swizzles[i]);
+      swizzles[i] = ISL_SWIZZLE_IDENTITY;
+      assert(format != ISL_FORMAT_R9G9B9E5_SHAREDEXP);
+      assert(format != ISL_FORMAT_L8_UNORM_SRGB);
+      assert(isl_format_get_layout(format)->bpb % 3 != 0);
+
+      if (format == ISL_FORMAT_A4B4G4R4_UNORM) {
+         /* Broadwell and earlier cannot render to this format so we need to work
+          * around it by swapping the colors around and using B4G4R4A4 instead.
+          */
+         const struct isl_swizzle ARGB = ISL_SWIZZLE(ALPHA, RED, GREEN, BLUE);
+         clear_colors[i] = isl_color_value_swizzle_inv(clear_colors[i], ARGB);
+         format = ISL_FORMAT_B4G4R4A4_UNORM;
+      }
+
+      memcpy(&params.wm_inputs.clear_color[i], clear_colors[i].f32, sizeof(float) * 4);
+
+      /* From the SNB PRM (Vol4_Part1):
+       *
+       *     "Replicated data (Message Type = 111) is only supported when
+       *      accessing tiled memory.  Using this Message Type to access linear
+       *      (untiled) memory is UNDEFINED."
+       */
+      if (surf->surf->tiling == ISL_TILING_LINEAR)
+         use_simd16_replicated_data = false;
+
+      /* Replicated clears don't work before gfx6 */
+      if (batch->blorp->isl_dev->info->ver < 6)
+         use_simd16_replicated_data = false;
+
+      /* From the BSpec: 47719 (TGL/DG2/MTL) Replicate Data:
+       *
+       * "Replicate Data Render Target Write message should not be used
+       *  on all projects TGL+."
+       *
+       * Xe2 spec (57350) does not mention this restriction.
+       *
+       *  See 14017879046, 14017880152 for additional information.
+       */
+      if (batch->blorp->isl_dev->info->ver >= 12 &&
+          batch->blorp->isl_dev->info->ver < 20)
+         use_simd16_replicated_data = false;
+
+      blorp_surface_info_init(batch, &params.dst[i], surf, 0,
+                              0, format, true);
+      params.dst[i].view.swizzle = swizzles[i];
+
+      assert(!(params.dst[i].tile_x_sa || params.dst[i].tile_y_sa));
+
+      if (isl_format_is_compressed(params.dst[i].surf.format)) {
+         blorp_surf_convert_to_uncompressed(batch->blorp->isl_dev, &params.dst[i],
+                                            NULL, NULL, NULL, NULL);
+      }
+
+      assert(params.dst[i].surf.samples == 1);
+      assert(params.dst[i].view.array_len == 1);
+      assert(!(params.dst[i].tile_x_sa || params.dst[i].tile_y_sa));
+      assert(!(batch->blorp->isl_dev->info->ver == 4 &&
+             (params.dst[0].surf.usage & ISL_SURF_USAGE_CUBE_BIT)));
+   }
+
+   params.x0 = x0;
+   params.y0 = y0;
+   params.x1 = x1;
+   params.y1 = y1;
+   params.num_samples = 1;
+   params.num_layers = 1;
+
+   if (!blorp_params_get_clear_kernel(batch, &params,
+                                      use_simd16_replicated_data,
+                                      false))
+      return;
+
+   if (!blorp_ensure_sf_program(batch, &params))
+      return;
+
+   batch->blorp->exec(batch, &params);
+}
+
+void
 blorp_clear(struct blorp_batch *batch,
             const struct blorp_surf *surf,
             enum isl_format format, struct isl_swizzle swizzle,

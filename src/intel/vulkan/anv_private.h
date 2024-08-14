@@ -5690,7 +5690,16 @@ anv_cmd_buffer_load_clear_color_from_image(struct anv_cmd_buffer *cmd_buffer,
 struct anv_image_binding *
 anv_image_aspect_to_binding(struct anv_image *image,
                             VkImageAspectFlags aspect);
-
+void
+anv_image_clear_color_multi(struct anv_cmd_buffer *cmd_buffer,
+                            const struct anv_image **images,
+                            VkImageAspectFlagBits *aspects,
+                            enum isl_aux_usage *aux_usages,
+                            struct isl_swizzle *swizzles,
+                            enum isl_format *formats,
+                            union isl_color_value *clear_colors,
+                            uint32_t num_buffers,
+                            VkRect2D area);
 void
 anv_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
                       const struct anv_image *image,

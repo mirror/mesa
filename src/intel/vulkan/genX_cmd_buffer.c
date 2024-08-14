@@ -5131,6 +5131,44 @@ attachment_initial_layout(const VkRenderingAttachmentInfo *att)
    return att->imageLayout;
 }
 
+static bool
+can_multi_clear(uint32_t num_buffers, const VkRenderingInfo* pRenderingInfo)
+{
+   if (pRenderingInfo->layerCount != 1)
+      return false;
+
+   if (util_last_bit(pRenderingInfo->viewMask) != 1)
+      return false;
+
+   if (pRenderingInfo->layerCount != 1)
+      return false;
+
+   for (uint32_t i = 0; i < num_buffers; i++) {
+      if (pRenderingInfo->pColorAttachments[i].imageView == VK_NULL_HANDLE)
+         continue;
+
+      const VkRenderingAttachmentInfo *att =
+         &pRenderingInfo->pColorAttachments[i];
+      ANV_FROM_HANDLE(anv_image_view, iview, att->imageView);
+
+      if (iview->vk.base_array_layer != 0)
+         return false;
+
+      /* TODO Multiclear with more samples might be possible but I'm
+         unsure how it would work right now */
+      if (iview->image->vk.samples > 1)
+         return false;
+
+      /* TODO Likewise multiclear might work with multiple layers but
+         I'm unsure hot it would work right now */
+      struct isl_view isl_view = iview->planes[0].isl;
+      if (isl_view.array_len != 1)
+         return false;
+   }
+
+   return true;
+}
+
 void genX(CmdBeginRendering)(
     VkCommandBuffer                             commandBuffer,
     const VkRenderingInfo*                      pRenderingInfo)
@@ -5184,6 +5222,15 @@ void genX(CmdBeginRendering)(
    genX(flush_pipeline_select_3d)(cmd_buffer);
 
    UNUSED bool render_target_change = false;
+   bool multi_clear = can_multi_clear(gfx->color_att_count, pRenderingInfo);
+   enum isl_format formats[MAX_RTS];
+   struct isl_swizzle swizzles[MAX_RTS];
+   const struct anv_image *images[MAX_RTS];
+   enum isl_aux_usage aux_usages[MAX_RTS];
+   VkImageAspectFlagBits aspects[MAX_RTS];
+   union isl_color_value clear_colors[MAX_RTS];
+   uint32_t num_buffers = 0;
+
    for (uint32_t i = 0; i < gfx->color_att_count; i++) {
       if (pRenderingInfo->pColorAttachments[i].imageView == VK_NULL_HANDLE) {
          render_target_change |= gfx->color_att[i].iview != NULL;
@@ -5314,27 +5361,38 @@ void genX(CmdBeginRendering)(
 #endif
          }
 
-         if (is_multiview) {
-            u_foreach_bit(view, clear_view_mask) {
+         if (multi_clear) {
+            assert(num_buffers != MAX_RTS);
+            images[num_buffers] = iview->image;
+            formats[num_buffers] = iview->planes[0].isl.format;
+            swizzles[num_buffers] = iview->planes[0].isl.swizzle;
+            aux_usages[num_buffers] = aux_usage;
+            aspects[num_buffers] = VK_IMAGE_ASPECT_COLOR_BIT;
+            clear_colors[num_buffers] = clear_color;
+            num_buffers++;
+         } else {
+            if (is_multiview) {
+               u_foreach_bit(view, clear_view_mask) {
+                  anv_image_clear_color(cmd_buffer, iview->image,
+                                        VK_IMAGE_ASPECT_COLOR_BIT,
+                                        aux_usage,
+                                        iview->planes[0].isl.format,
+                                        iview->planes[0].isl.swizzle,
+                                        iview->vk.base_mip_level,
+                                        iview->vk.base_array_layer + view, 1,
+                                        render_area, clear_color);
+               }
+            } else if (clear_rect.layerCount > 0) {
                anv_image_clear_color(cmd_buffer, iview->image,
                                      VK_IMAGE_ASPECT_COLOR_BIT,
                                      aux_usage,
                                      iview->planes[0].isl.format,
                                      iview->planes[0].isl.swizzle,
                                      iview->vk.base_mip_level,
-                                     iview->vk.base_array_layer + view, 1,
+                                     clear_rect.baseArrayLayer,
+                                     clear_rect.layerCount,
                                      render_area, clear_color);
             }
-         } else if (clear_rect.layerCount > 0) {
-            anv_image_clear_color(cmd_buffer, iview->image,
-                                  VK_IMAGE_ASPECT_COLOR_BIT,
-                                  aux_usage,
-                                  iview->planes[0].isl.format,
-                                  iview->planes[0].isl.swizzle,
-                                  iview->vk.base_mip_level,
-                                  clear_rect.baseArrayLayer,
-                                  clear_rect.layerCount,
-                                  render_area, clear_color);
          }
       } else {
          /* If not LOAD_OP_CLEAR, we shouldn't have a layout transition. */
@@ -5379,6 +5437,11 @@ void genX(CmdBeginRendering)(
          gfx->color_att[i].resolve_layout = att->resolveImageLayout;
       }
    }
+
+   if (multi_clear && num_buffers > 0)
+      anv_image_clear_color_multi(cmd_buffer, images, aspects,
+                                  aux_usages, swizzles, formats,
+                                  clear_colors, num_buffers, render_area);
 
    anv_cmd_graphic_state_update_has_uint_rt(gfx);
 

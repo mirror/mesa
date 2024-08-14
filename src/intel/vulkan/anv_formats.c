@@ -356,7 +356,7 @@ static const struct anv_format ycbcr_formats[] = {
    fmt_unsupported(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16),
    fmt_unsupported(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16),
    fmt_unsupported(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16),
-   ycbcr_fmt(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, 2, false, true,
+   ycbcr_fmt(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, 2, true, true,
              ycbcr_plane(0, ISL_FORMAT_R16_UNORM, RGBA),
              ycbcr_plane(1, ISL_FORMAT_R16G16_UNORM, RGBA)),
    fmt_unsupported(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16),
@@ -796,7 +796,8 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
           * camera/media interop in Android.
           */
          if (vk_format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM &&
-             vk_format != VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) {
+             vk_format != VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM &&
+             vk_format != VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16) {
             anv_finishme("support more multi-planar formats with DRM modifiers");
             return 0;
          }

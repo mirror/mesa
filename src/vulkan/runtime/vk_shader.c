@@ -377,6 +377,50 @@ vk_common_GetShaderBinaryDataEXT(VkDevice _device,
  */
 #define VK_MAX_LINKED_SHADER_STAGES MESA_VK_MAX_GRAPHICS_PIPELINE_STAGES
 
+static VkPipelineRobustnessBufferBehaviorEXT
+vk_physical_device_max_robust_buffer_behavior(
+   const struct vk_physical_device *device)
+{
+   if (device->supported_features.robustBufferAccess2) {
+      return VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT;
+   } else if (device->supported_features.robustBufferAccess) {
+      return VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_EXT;
+   } else {
+      return VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT;
+   }
+}
+
+static VkPipelineRobustnessImageBehaviorEXT
+vk_physical_device_max_robust_image_behavior(
+   const struct vk_physical_device *device)
+{
+   if (device->supported_features.robustImageAccess2) {
+      return VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_2_EXT;
+   } else if (device->supported_features.robustImageAccess) {
+      return VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_EXT;
+   } else {
+      return VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_DISABLED_EXT;
+   }
+}
+
+static void
+vk_shader_robustness_state_fill(const struct vk_physical_device *device,
+                                struct vk_pipeline_robustness_state *rs,
+                                const void *shader_pNext)
+{
+   /* Because CreateShadersEXT doesn't have any way to specify robustness,
+    * all shader objects need to work correctly regardless of whether or not
+    * robustBufferAccess is specified on device creation, meaning that we need
+    * to always have the maximum amount of robustness.
+    */
+   *rs = (struct vk_pipeline_robustness_state) {
+      .storage_buffers = vk_physical_device_max_robust_buffer_behavior(device),
+      .uniform_buffers = vk_physical_device_max_robust_buffer_behavior(device),
+      .vertex_inputs = vk_physical_device_max_robust_buffer_behavior(device),
+      .images = vk_physical_device_max_robust_image_behavior(device),
+   };
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 vk_common_CreateShadersEXT(VkDevice _device,
                            uint32_t createInfoCount,
@@ -387,13 +431,6 @@ vk_common_CreateShadersEXT(VkDevice _device,
    VK_FROM_HANDLE(vk_device, device, _device);
    const struct vk_device_shader_ops *ops = device->shader_ops;
    VkResult first_fail_or_success = VK_SUCCESS;
-
-   struct vk_pipeline_robustness_state rs = {
-      .storage_buffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT,
-      .uniform_buffers = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT,
-      .vertex_inputs = VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT,
-      .images = VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_DISABLED_EXT,
-   };
 
    /* From the Vulkan 1.3.274 spec:
     *
@@ -452,6 +489,10 @@ vk_common_CreateShadersEXT(VkDevice _device,
                .idx = i,
             };
          } else {
+            struct vk_pipeline_robustness_state rs;
+            vk_shader_robustness_state_fill(device->physical, &rs,
+                                            vk_info->pNext);
+
             nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs);
             if (nir == NULL) {
                result = vk_errorf(device, VK_ERROR_UNKNOWN,
@@ -496,6 +537,10 @@ vk_common_CreateShadersEXT(VkDevice _device,
 
       for (uint32_t l = 0; l < linked_count; l++) {
          const VkShaderCreateInfoEXT *vk_info = &pCreateInfos[linked[l].idx];
+
+         struct vk_pipeline_robustness_state rs;
+         vk_shader_robustness_state_fill(device->physical, &rs,
+                                         vk_info->pNext);
 
          nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs);
          if (nir == NULL) {

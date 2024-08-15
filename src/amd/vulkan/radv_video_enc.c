@@ -1476,8 +1476,12 @@ radv_enc_ctx_av1(struct radv_cmd_buffer *cmd_buffer,
    }
 
    uint32_t rec_alignment = 64;
-   uint32_t aligned_width = align(dpb->vk.extent.width, rec_alignment);
-   uint32_t aligned_height = align(dpb->vk.extent.height, rec_alignment);
+   uint32_t aligned_width = rec_alignment;
+   uint32_t aligned_height = rec_alignment;
+   if (dpb) {
+      aligned_width = align(dpb->vk.extent.width, aligned_width);
+      aligned_height = align(dpb->vk.extent.height, aligned_height);
+   }
    uint32_t pitch = align(aligned_width, ENC_ALIGNMENT);
    uint32_t aligned_dpb_height = MAX2(256, aligned_height);
    uint32_t luma_size = align(pitch * aligned_dpb_height, 256);

@@ -536,7 +536,8 @@ radv_enc_session_init(struct radv_cmd_buffer *cmd_buffer, const struct VkVideoEn
    struct radeon_cmdbuf *cs = cmd_buffer->cs;
    unsigned alignment_w = 16;
    unsigned alignment_h = 16;
-   if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
+   if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR ||
+       vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
       alignment_w = 64;
    }
 
@@ -558,6 +559,7 @@ radv_enc_session_init(struct radv_cmd_buffer *cmd_buffer, const struct VkVideoEn
    radeon_emit(cs, vid->enc_session.pre_encode_chroma_enabled);
    if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_3) {
       radeon_emit(cs, 0); // slice output enabled.
+      radeon_emit(cs, 0); // display remote
    }
    radeon_emit(cs, vid->enc_session.display_remote);
    if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
@@ -725,6 +727,8 @@ radv_enc_spec_misc_av1(struct radv_cmd_buffer *cmd_buffer,
    radeon_emit(cs, 1); //num_tiles_per_picture
    radeon_emit(cs, 0);
    radeon_emit(cs, 0);
+   radeon_emit(cs, 0xffffffff);
+   radeon_emit(cs, 0xffffffff);
    ENC_END;
 }
 
@@ -1941,6 +1945,9 @@ radv_enc_output_format(struct radv_cmd_buffer *cmd_buffer)
          color_bit_depth = RENCODE_COLOR_BIT_DEPTH_10_BIT;
       else
          color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
+      break;
+   case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
+      color_bit_depth = RENCODE_COLOR_BIT_DEPTH_8_BIT;
       break;
    default:
       assert(0);

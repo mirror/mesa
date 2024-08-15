@@ -229,6 +229,11 @@ radv_init_physical_device_encoder(struct radv_physical_device *pdev)
          pdev->vcn_enc_cmds.enc_statistics = RENCODE_V4_IB_PARAM_ENCODE_STATISTICS;
       } else
          pdev->vcn_enc_cmds.enc_statistics = RENCODE_V2_IB_PARAM_ENCODE_STATISTICS;
+      if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
+         pdev->vcn_enc_cmds.cdf_default_table_av1 = RENCODE_V4_IB_PARAM_CDF_DEFAULT_TABLE_BUFFER;
+         pdev->vcn_enc_cmds.spec_misc_av1 = RENCODE_V4_AV1_IB_PARAM_SPEC_MISC;
+         pdev->vcn_enc_cmds.bitstream_instruction_av1 = RENCODE_V4_AV1_IB_PARAM_BITSTREAM_INSTRUCTION;
+      }
    } else {
       pdev->vcn_enc_cmds.session_info = RENCODE_IB_PARAM_SESSION_INFO;
       pdev->vcn_enc_cmds.task_info = RENCODE_IB_PARAM_TASK_INFO;

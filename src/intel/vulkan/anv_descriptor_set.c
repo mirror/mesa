@@ -1286,17 +1286,65 @@ void anv_DestroyPipelineLayout(
 
 #define EMPTY 1
 
+/* Report descriptor pool events such as allocation/free, allocation failed. */
+static void
+anv_dmr_emit_descriptor_pool_event(struct anv_descriptor_pool *pool,
+                                   struct anv_descriptor_pool_heap *heap,
+                                   bool is_alloc,
+                                   bool alloc_success)
+{
+   uint64_t memory_object_id = 0;
+
+   if (!is_alloc || alloc_success) {
+      assert(heap->bo);
+      memory_object_id = heap->bo->gem_handle;
+   }
+
+   VkDeviceMemoryReportEventTypeEXT event_type =
+      !is_alloc ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT :
+      alloc_success ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT:
+      VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT;
+
+   vk_device_memory_report_emit(pool->base.device, event_type, memory_object_id, (VkDeviceSize)heap->size,
+                                VK_OBJECT_TYPE_DESCRIPTOR_POOL,
+                                (uint64_t)anv_descriptor_pool_to_handle(pool), 0 /* heap 0: device memory */);
+}
+
+/* Report descriptor set events such as allocation/free, allocation failed. */
+static void
+anv_dmr_emit_descriptor_set_event(struct anv_descriptor_pool_heap *heap,
+                                  struct anv_descriptor_set *set,
+                                  VkDeviceSize size,
+                                  bool is_alloc,
+                                  bool alloc_success)
+{
+   /* Don't track host only descriptor sets since it's not on device memory. */
+   if (heap->host_mem)
+      return;
+
+   assert(heap->bo);
+
+   VkDeviceMemoryReportEventTypeEXT event_type =
+      !is_alloc ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT :
+      alloc_success ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT:
+      VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT;
+
+   vk_device_memory_report_emit(set->base.device, event_type, heap->bo->gem_handle, size,
+                                VK_OBJECT_TYPE_DESCRIPTOR_POOL,
+                                (uint64_t)anv_descriptor_set_to_handle(set), 0 /* heap 0: device memory */);
+}
+
 static VkResult
 anv_descriptor_pool_heap_init(struct anv_device *device,
+                              struct anv_descriptor_pool *pool,
                               struct anv_descriptor_pool_heap *heap,
                               uint32_t size,
-                              bool host_only,
                               bool samplers)
 {
    if (size == 0)
       return VK_SUCCESS;
 
-   if (host_only) {
+   if (pool->host_only) {
       heap->size = size;
       heap->host_mem = vk_zalloc(&device->vk.alloc, size, 8,
                                  VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
@@ -1319,6 +1367,8 @@ anv_descriptor_pool_heap_init(struct anv_device *device,
                                              ANV_BO_ALLOC_DESCRIPTOR_POOL),
                                             0 /* explicit_address */,
                                             &heap->bo);
+
+      anv_dmr_emit_descriptor_pool_event(pool, heap, true, result == VK_SUCCESS);
       if (result != VK_SUCCESS)
          return vk_error(device, VK_ERROR_OUT_OF_DEVICE_MEMORY);
    }
@@ -1329,7 +1379,7 @@ anv_descriptor_pool_heap_init(struct anv_device *device,
 }
 
 static void
-anv_descriptor_pool_heap_fini(struct anv_device *device,
+anv_descriptor_pool_heap_fini(struct anv_device *device, struct anv_descriptor_pool *pool,
                               struct anv_descriptor_pool_heap *heap)
 {
    if (heap->size == 0)
@@ -1337,8 +1387,10 @@ anv_descriptor_pool_heap_fini(struct anv_device *device,
 
    util_vma_heap_finish(&heap->heap);
 
-   if (heap->bo)
+   if (heap->bo) {
+      anv_dmr_emit_descriptor_pool_event(pool, heap, false, true);
       anv_device_release_bo(device, heap->bo);
+   }
 
    if (heap->host_mem)
       vk_free(&device->vk.alloc, heap->host_mem);
@@ -1356,36 +1408,46 @@ anv_descriptor_pool_heap_reset(struct anv_device *device,
 }
 
 static VkResult
-anv_descriptor_pool_heap_alloc(struct anv_descriptor_pool *pool,
+anv_descriptor_pool_heap_alloc(struct anv_device *device,
+                               struct anv_descriptor_pool *pool,
                                struct anv_descriptor_pool_heap *heap,
+                               struct anv_descriptor_set *set,
                                uint32_t size, uint32_t alignment,
                                struct anv_state *state)
 {
    uint64_t pool_vma_offset =
       util_vma_heap_alloc(&heap->heap, size, alignment);
-   if (pool_vma_offset == 0)
+   if (pool_vma_offset == 0) {
+      anv_dmr_emit_descriptor_set_event(heap, set, size, true, false);
       return vk_error(pool, VK_ERROR_FRAGMENTED_POOL);
+   }
 
    assert(pool_vma_offset >= POOL_HEAP_OFFSET &&
           pool_vma_offset - POOL_HEAP_OFFSET <= INT32_MAX);
 
    state->offset = pool_vma_offset - POOL_HEAP_OFFSET;
    state->alloc_size = size;
-   if (heap->host_mem)
+   if (heap->host_mem) {
       state->map = heap->host_mem + state->offset;
-   else
+   } else {
       state->map = heap->bo->map + state->offset;
+      anv_dmr_emit_descriptor_set_event(heap, set, size, true, true);
+   }
 
    return VK_SUCCESS;
 }
 
 static void
-anv_descriptor_pool_heap_free(struct anv_descriptor_pool_heap *heap,
+anv_descriptor_pool_heap_free(struct anv_device *device,
+                              struct anv_descriptor_pool *pool,
+                              struct anv_descriptor_pool_heap *heap,
+                              struct anv_descriptor_set *set,
                               struct anv_state state)
 {
    util_vma_heap_free(&heap->heap,
                       (uint64_t)state.offset + POOL_HEAP_OFFSET,
                       state.alloc_size);
+   anv_dmr_emit_descriptor_set_event(heap, set, state.alloc_size, false, true);
 }
 
 VkResult anv_CreateDescriptorPool(
@@ -1505,9 +1567,9 @@ VkResult anv_CreateDescriptorPool(
    pool->host_only = host_only;
 
    VkResult result = anv_descriptor_pool_heap_init(device,
+                                                   pool,
                                                    &pool->surfaces,
                                                    descriptor_bo_surface_size,
-                                                   pool->host_only,
                                                    false /* samplers */);
    if (result != VK_SUCCESS) {
       vk_object_free(&device->vk, pAllocator, pool);
@@ -1515,12 +1577,12 @@ VkResult anv_CreateDescriptorPool(
    }
 
    result = anv_descriptor_pool_heap_init(device,
+                                          pool,
                                           &pool->samplers,
                                           descriptor_bo_sampler_size,
-                                          pool->host_only,
                                           true /* samplers */);
    if (result != VK_SUCCESS) {
-      anv_descriptor_pool_heap_fini(device, &pool->surfaces);
+      anv_descriptor_pool_heap_fini(device, pool, &pool->surfaces);
       vk_object_free(&device->vk, pAllocator, pool);
       return result;
    }
@@ -1564,8 +1626,8 @@ void anv_DestroyDescriptorPool(
 
    anv_state_stream_finish(&pool->surface_state_stream);
 
-   anv_descriptor_pool_heap_fini(device, &pool->surfaces);
-   anv_descriptor_pool_heap_fini(device, &pool->samplers);
+   anv_descriptor_pool_heap_fini(device, pool, &pool->surfaces);
+   anv_descriptor_pool_heap_fini(device, pool, &pool->samplers);
 
    vk_object_free(&device->vk, pAllocator, pool);
 }
@@ -1700,6 +1762,9 @@ anv_descriptor_set_create(struct anv_device *device,
    if (result != VK_SUCCESS)
       return result;
 
+   vk_object_base_init(&device->vk, &set->base,
+                       VK_OBJECT_TYPE_DESCRIPTOR_SET);
+
    uint32_t descriptor_buffer_surface_size, descriptor_buffer_sampler_size;
    anv_descriptor_set_layout_descriptor_buffer_size(layout, var_desc_count,
                                                     &descriptor_buffer_surface_size,
@@ -1709,7 +1774,7 @@ anv_descriptor_set_create(struct anv_device *device,
    set->is_push = false;
 
    if (descriptor_buffer_surface_size) {
-      result = anv_descriptor_pool_heap_alloc(pool, &pool->surfaces,
+      result = anv_descriptor_pool_heap_alloc(device, pool, &pool->surfaces, set,
                                               descriptor_buffer_surface_size,
                                               ANV_UBO_ALIGNMENT,
                                               &set->desc_surface_mem);
@@ -1748,7 +1813,8 @@ anv_descriptor_set_create(struct anv_device *device,
    }
 
    if (descriptor_buffer_sampler_size) {
-      result = anv_descriptor_pool_heap_alloc(pool, &pool->samplers,
+      result = anv_descriptor_pool_heap_alloc(device, pool, &pool->samplers,
+                                              set,
                                               descriptor_buffer_sampler_size,
                                               ANV_SAMPLER_STATE_SIZE,
                                               &set->desc_sampler_mem);
@@ -1766,8 +1832,6 @@ anv_descriptor_set_create(struct anv_device *device,
       set->desc_sampler_addr = ANV_NULL_ADDRESS;
    }
 
-   vk_object_base_init(&device->vk, &set->base,
-                       VK_OBJECT_TYPE_DESCRIPTOR_SET);
    set->pool = pool;
    set->layout = layout;
    anv_descriptor_set_layout_ref(layout);
@@ -1846,13 +1910,14 @@ anv_descriptor_set_destroy(struct anv_device *device,
    anv_descriptor_set_layout_unref(device, set->layout);
 
    if (set->desc_surface_mem.alloc_size) {
-      anv_descriptor_pool_heap_free(&pool->surfaces, set->desc_surface_mem);
+      anv_descriptor_pool_heap_free(device, pool, &pool->surfaces, set, set->desc_surface_mem);
       if (set->desc_surface_state.alloc_size)
          anv_descriptor_pool_free_state(pool, set->desc_surface_state);
    }
 
-   if (set->desc_sampler_mem.alloc_size)
-      anv_descriptor_pool_heap_free(&pool->samplers, set->desc_sampler_mem);
+   if (set->desc_sampler_mem.alloc_size) {
+      anv_descriptor_pool_heap_free(device, pool, &pool->samplers, set, set->desc_sampler_mem);
+   }
 
    if (device->physical->indirect_descriptors) {
       if (!pool->host_only) {

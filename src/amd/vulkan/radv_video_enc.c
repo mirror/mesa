@@ -2555,9 +2555,12 @@ radv_video_enc_control_video_coding(struct radv_cmd_buffer *cmd_buffer, const Vk
       if (h264_rate_control) {
          vid->rc_layer_control.max_num_temporal_layers = h264_rate_control->temporalLayerCount;
          vid->rc_layer_control.num_temporal_layers = h264_rate_control->temporalLayerCount;
-      } else if (h265_rate_control || av1_rate_control) {
+      } else if (h265_rate_control) {
          vid->rc_layer_control.max_num_temporal_layers = h265_rate_control->subLayerCount;
          vid->rc_layer_control.num_temporal_layers = h265_rate_control->subLayerCount;
+      } else if (av1_rate_control) {
+         vid->rc_layer_control.max_num_temporal_layers = av1_rate_control->temporalLayerCount;
+         vid->rc_layer_control.num_temporal_layers = av1_rate_control->temporalLayerCount;
       }
 
       for (unsigned l = 0; l < rate_control->layerCount; l++) {

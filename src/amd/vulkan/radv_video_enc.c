@@ -1968,6 +1968,30 @@ radv_enc_output_format(struct radv_cmd_buffer *cmd_buffer)
    ENC_END;
 }
 
+static
+void radv_enc_av1_obu_header(struct radv_cmd_buffer *cmd_buffer, uint32_t obu_type)
+{
+   bool use_extension_flag  = 0;//(enc->enc_pic.num_temporal_layers) > 1 &&
+   //(enc->enc_pic.temporal_id) > 0 ? 1 : 0;
+   /* obu header () */
+   /* obu_forbidden_bit */
+   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
+   /* obu_type */
+   radv_enc_code_fixed_bits(cmd_buffer, obu_type, 4);
+   /* obu_extension_flag */
+   radv_enc_code_fixed_bits(cmd_buffer, use_extension_flag ? 1 : 0, 1);
+   /* obu_has_size_field */
+   radv_enc_code_fixed_bits(cmd_buffer, 1, 1);
+   /* obu_reserved_1bit */
+   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
+
+   if (use_extension_flag) {
+      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);//enc->enc_pic.temporal_id, 3);
+      radv_enc_code_fixed_bits(cmd_buffer, 0, 2);  /* spatial_id should always be zero */
+      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);  /* reserved 3 bits */
+   }
+}
+
 static void
 radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
                           const VkVideoEncodeInfoKHR *enc_info)
@@ -1982,24 +2006,11 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
    bool show_existing = false;
    bool frame_is_intra = av1_pic->frame_type == AV1_ENC_FRAME_TYPE_KEY ||
                          av1_pic->frame_type == AV1_ENC_FRAME_TYPE_INTRA_ONLY;
+   uint32_t obu_type = RENCODE_OBU_TYPE_FRAME_HEADER;
 
    radv_enc_av1_bs_instruction_type(cmd_buffer, RENCODE_AV1_BITSTREAM_INSTRUCTION_COPY, 0);
-   /*  obu_header() */
-   /*  obu_forbidden_bit  */
-   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
-   /*  obu_type  */
-   radv_enc_code_fixed_bits(cmd_buffer, /* frame_header */ RENCODE_OBU_TYPE_FRAME_HEADER, 4);
-   /*  obu_extension_flag  */
-   radv_enc_code_fixed_bits(cmd_buffer, extension_flag, 1);
-   /*  obu_has_size_field  */
-   radv_enc_code_fixed_bits(cmd_buffer, 1, 1);
-   /*  obu_reserved_1bit  */
-   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
-   if (extension_flag) {
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);//enc->enc_pic.temporal_id, 3);
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 2);
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);
-   }
+
+   radv_enc_av1_obu_header(cmd_buffer, obu_type);
 
    radv_enc_av1_bs_instruction_type(cmd_buffer, RENCODE_AV1_BITSTREAM_INSTRUCTION_OBU_SIZE, 0);
 

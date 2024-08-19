@@ -1660,9 +1660,7 @@ impl<'a> ShaderFromNir<'a> {
                     b.shr(srcs[0], srcs[1], false)
                 }
             }
-            nir_op_fddx | nir_op_fddx_coarse | nir_op_fddx_fine => {
-                // TODO: Real coarse derivatives
-
+            nir_op_fddx | nir_op_fddx_fine => {
                 assert!(alu.def.bit_size() == 32);
                 let ftype = FloatType::F32;
                 let scratch = b.alloc_ssa(RegFile::GPR, 1);
@@ -1693,9 +1691,7 @@ impl<'a> ShaderFromNir<'a> {
 
                 dst
             }
-            nir_op_fddy | nir_op_fddy_coarse | nir_op_fddy_fine => {
-                // TODO: Real coarse derivatives
-
+            nir_op_fddy | nir_op_fddy_fine => {
                 assert!(alu.def.bit_size() == 32);
                 let ftype = FloatType::F32;
                 let scratch = b.alloc_ssa(RegFile::GPR, 1);
@@ -1722,6 +1718,49 @@ impl<'a> ShaderFromNir<'a> {
                     ],
                     rnd_mode: self.float_ctl[ftype].rnd_mode,
                     ftz: self.float_ctl[ftype].ftz,
+                });
+
+                dst
+            }
+            nir_op_fddx_coarse | nir_op_fddy_coarse => {
+                assert!(alu.def.bit_size() == 32);
+                let ftype = FloatType::F32;
+                let scratch0 = b.alloc_ssa(RegFile::GPR, 1);
+
+                b.push_op(OpShfl {
+                    dst: scratch0[0].into(),
+                    in_bounds: Dst::None,
+                    src: srcs[0],
+                    lane: 0_u32.into(),
+                    c: (0x3_u32 | 0x1c_u32 << 8).into(),
+                    op: ShflOp::Idx,
+                });
+
+                let scratch1 = b.alloc_ssa(RegFile::GPR, 1);
+                b.push_op(OpFSwzAdd {
+                    dst: scratch1[0].into(),
+                    srcs: [scratch0[0].into(), srcs[0]],
+                    ops: [
+                        FSwzAddOp::MoveLeft,
+                        FSwzAddOp::SubRight,
+                        FSwzAddOp::SubRight,
+                        FSwzAddOp::MoveLeft,
+                    ],
+                    rnd_mode: self.float_ctl[ftype].rnd_mode,
+                    ftz: self.float_ctl[ftype].ftz,
+                });
+
+                let dst = b.alloc_ssa(RegFile::GPR, 1);
+
+                let lane = if alu.op == nir_op_fddy_coarse { 2 } else { 1 };
+
+                b.push_op(OpShfl {
+                    dst: dst[0].into(),
+                    in_bounds: Dst::None,
+                    src: scratch1[0].into(),
+                    lane: lane.into(),
+                    c: (0x3_u32 | 0x1c_u32 << 8).into(),
+                    op: ShflOp::Idx,
                 });
 
                 dst

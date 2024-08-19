@@ -4097,14 +4097,19 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    } else if (instr->opcode == aco_opcode::v_add_u16_e64 && !instr->valu().clamp) {
       combine_three_valu_op(ctx, instr, aco_opcode::v_mul_lo_u16_e64, aco_opcode::v_mad_u16, "120",
                             1 | 2);
-   } else if (instr->opcode == aco_opcode::v_add_u32 && !instr->usesModifiers()) {
+   } else if ((instr->opcode == aco_opcode::v_add_u32 ||
+               instr->opcode == aco_opcode::v_add_co_u32 ||
+               instr->opcode == aco_opcode::v_add_co_u32_e64) &&
+              !instr->usesModifiers()) {
+      bool carry_out =
+         instr->opcode != aco_opcode::v_add_u32 && ctx.uses[instr->definitions[1].tempId()] > 0;
       if (combine_add_sub_b2i(ctx, instr, aco_opcode::v_addc_co_u32, 1 | 2)) {
-      } else if (combine_add_bcnt(ctx, instr)) {
-      } else if (combine_three_valu_op(ctx, instr, aco_opcode::v_mul_u32_u24,
-                                       aco_opcode::v_mad_u32_u24, "120", 1 | 2)) {
-      } else if (combine_three_valu_op(ctx, instr, aco_opcode::v_mul_i32_i24,
-                                       aco_opcode::v_mad_i32_i24, "120", 1 | 2)) {
-      } else if (ctx.program->gfx_level >= GFX9) {
+      } else if (!carry_out && combine_add_bcnt(ctx, instr)) {
+      } else if (!carry_out && combine_three_valu_op(ctx, instr, aco_opcode::v_mul_u32_u24,
+                                                     aco_opcode::v_mad_u32_u24, "120", 1 | 2)) {
+      } else if (!carry_out && combine_three_valu_op(ctx, instr, aco_opcode::v_mul_i32_i24,
+                                                     aco_opcode::v_mad_i32_i24, "120", 1 | 2)) {
+      } else if (!carry_out && ctx.program->gfx_level >= GFX9) {
          if (combine_three_valu_op(ctx, instr, aco_opcode::s_xor_b32, aco_opcode::v_xad_u32, "120",
                                    1 | 2)) {
          } else if (combine_three_valu_op(ctx, instr, aco_opcode::v_xor_b32, aco_opcode::v_xad_u32,
@@ -4117,17 +4122,6 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
                                           "012", 1 | 2)) {
          } else if (combine_add_or_then_and_lshl(ctx, instr)) {
          }
-      }
-   } else if ((instr->opcode == aco_opcode::v_add_co_u32 ||
-               instr->opcode == aco_opcode::v_add_co_u32_e64) &&
-              !instr->usesModifiers()) {
-      bool carry_out = ctx.uses[instr->definitions[1].tempId()] > 0;
-      if (combine_add_sub_b2i(ctx, instr, aco_opcode::v_addc_co_u32, 1 | 2)) {
-      } else if (!carry_out && combine_add_bcnt(ctx, instr)) {
-      } else if (!carry_out && combine_three_valu_op(ctx, instr, aco_opcode::v_mul_u32_u24,
-                                                     aco_opcode::v_mad_u32_u24, "120", 1 | 2)) {
-      } else if (!carry_out && combine_three_valu_op(ctx, instr, aco_opcode::v_mul_i32_i24,
-                                                     aco_opcode::v_mad_i32_i24, "120", 1 | 2)) {
       } else if (!carry_out && combine_add_lshl(ctx, instr, false)) {
       }
    } else if (instr->opcode == aco_opcode::v_sub_u32 || instr->opcode == aco_opcode::v_sub_co_u32 ||

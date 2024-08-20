@@ -488,6 +488,7 @@ def get_pnext_member_copy(struct, src_type, member, types, level):
     if not types[src_type].extended_by:
         return ""
     field_name = "%s->%s" % (struct, member.name)
+    pthis_decl = "VkBaseInStructure *pthis = (void *)%s;" % struct
     pnext_decl = "const VkBaseInStructure *pnext = %s;" % field_name
     case_stmts = ""
     for type in types[src_type].extended_by:
@@ -502,15 +503,18 @@ def get_pnext_member_copy(struct, src_type, member, types, level):
             %s
          break;
 %s
-      """ % (guard_pre_stmt, type.enum, get_struct_copy(field_name, "pnext", type.name, "sizeof(%s)" % type.name, types, level), guard_post_stmt)
+      """ % (guard_pre_stmt, type.enum, get_struct_copy("pthis->pNext", "pnext", type.name, "sizeof(%s)" % type.name, types, level), guard_post_stmt)
     return """
       %s
-      if (pnext) {
+      %s
+      while (pnext) {
          switch ((int32_t)pnext->sType) {
          %s
          }
+         pthis = (void *)pthis->pNext;
+         pnext = pnext->pNext;
       }
-      """ % (pnext_decl, case_stmts)
+      """ % (pthis_decl, pnext_decl, case_stmts)
 
 def get_struct_copy(dst, src_name, src_type, size, types, level=0):
     global tmp_dst_idx
@@ -554,11 +558,13 @@ def get_pnext_member_free(struct, type, member, types):
             %s
          break;
 %s
-      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pnext)" % ext_type.name, ext_type.name, "", types), guard_post_stmt)
+      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pthis)" % ext_type.name, ext_type.name, "", types), guard_post_stmt)
     return """
       %s
-      if (pnext) {
-         switch ((int32_t)pnext->sType) {
+      while (pnext) {
+         const VkBaseInStructure *pthis = pnext;
+         pnext = pnext->pNext;
+         switch ((int32_t)pthis->sType) {
          %s
          }
       }

@@ -1182,6 +1182,12 @@ nir_src_is_undef(nir_src src)
 }
 
 static inline bool
+nir_src_is_alu(nir_src src)
+{
+   return src.ssa->parent_instr->type == nir_instr_type_alu;
+}
+
+static inline bool
 nir_src_is_divergent(nir_src src)
 {
    return src.ssa->divergent;

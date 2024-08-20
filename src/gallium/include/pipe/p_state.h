@@ -1051,6 +1051,7 @@ enum pipe_ml_operation_type {
    PIPE_ML_OPERATION_TYPE_ADD,
    PIPE_ML_OPERATION_TYPE_CONVOLUTION,
    PIPE_ML_OPERATION_TYPE_POOLING,
+   PIPE_ML_OPERATION_TYPE_PAD,
 };
 
 /**
@@ -1142,6 +1143,26 @@ struct pipe_ml_operation
           */
          bool padding_same;
       } pooling;
+      struct {
+         /**
+          * Left padding.
+          */
+         unsigned before_x;
+
+         /**
+          * Right padding.
+          */
+         unsigned after_x;
+
+         /**
+          * Top padding.
+          */
+         unsigned before_y;
+         /**
+          * Bottom padding.
+          */
+         unsigned after_y;
+      } pad;
    };
 };
 

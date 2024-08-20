@@ -151,6 +151,16 @@ fill_operation(struct teflon_delegate *delegate, TfLiteContext *tf_context, TfLi
       case kTfLiteBuiltinAdd:
          operation->type = PIPE_ML_OPERATION_TYPE_ADD;
          break;
+      case kTfLiteBuiltinPad: {
+         int32_t *paddings = tf_context->tensors[node->inputs->data[1]].data.data;
+
+         operation->type = PIPE_ML_OPERATION_TYPE_PAD;
+         operation->pad.before_x = paddings[2];
+         operation->pad.after_x = paddings[3];
+         operation->pad.before_y = paddings[4];
+         operation->pad.after_y = paddings[5];
+         break;
+      }
       default:
          unreachable("Unsupported ML operation type");
    }
@@ -219,6 +229,9 @@ dump_graph(struct pipe_tensor *tensors, unsigned tensor_count, struct pipe_ml_op
             break;
          case PIPE_ML_OPERATION_TYPE_POOLING:
             teflon_debug("%-6s ", "POOL");
+            break;
+         case PIPE_ML_OPERATION_TYPE_PAD:
+            teflon_debug("%-6s ", "PAD");
             break;
       }
 
@@ -469,6 +482,28 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
          case kTfLiteBuiltinAdd:
             supported = true;
             break;
+         case kTfLiteBuiltinPad: {
+            // Values tensor for non-zero padding not yet implemented
+            if (node->inputs->size == 2) {
+               TfLiteTensor *padding_tensor = &context->tensors[node->inputs->data[1]];
+               if (padding_tensor->type == kTfLiteInt32) {
+                  int32_t *paddings = padding_tensor->data.data;
+                  if (padding_tensor->dims->size == 2 &&
+                      padding_tensor->dims->data[0] == 4 &&
+                      padding_tensor->dims->data[1] == 2) {
+                     if (paddings[0] == 0 && paddings[1] == 0 &&
+                         paddings[2] >= 0 && paddings[2] <= 2 &&
+                         paddings[3] >= 0 && paddings[3] <= 2 &&
+                         paddings[4] >= 0 && paddings[4] <= 2 &&
+                         paddings[5] >= 0 && paddings[5] <= 2 &&
+                         paddings[6] == 0 && paddings[7] == 0) {
+                        supported = true;
+                     }
+                  }
+               }
+            }
+            break;
+         }
       }
 
       if (supported)

@@ -310,6 +310,12 @@ lower_operations(struct etna_ml_subgraph *subgraph,
             }
             break;
          }
+         case PIPE_ML_OPERATION_TYPE_PAD: {
+            struct etna_operation *operation = calloc(1, sizeof(*operation));
+            etna_ml_lower_pad(subgraph, poperation, operation);
+            list_addtail(&operation->link, etna_operations);
+            break;
+         }
          default:
             unreachable("Unsupported ML operation type");
       }
@@ -377,6 +383,7 @@ count_tensors(const struct pipe_ml_operation *poperations,
          tensor_count = MAX2(tensor_count, poperation->conv.bias_tensor->index);
          break;
       case PIPE_ML_OPERATION_TYPE_ADD:
+      case PIPE_ML_OPERATION_TYPE_PAD:
          break;
       default:
          unreachable("Unsupported ML operation type");

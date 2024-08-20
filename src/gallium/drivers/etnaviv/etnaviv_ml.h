@@ -31,6 +31,7 @@ enum etna_ml_tp_type {
    ETNA_ML_TP_TRANSPOSE,
    ETNA_ML_TP_DETRANSPOSE,
    ETNA_ML_TP_RESHUFFLE,
+   ETNA_ML_TP_PAD,
 };
 
 struct etna_ml_subgraph {
@@ -99,6 +100,11 @@ struct etna_operation {
    uint8_t addition_offset;
 
    struct pipe_resource *bias_tensor;
+
+   unsigned pad_before_x;
+   unsigned pad_after_x;
+   unsigned pad_before_y;
+   unsigned pad_after_y;
 };
 
 #define ML_DBG(fmt, ...)                                  \

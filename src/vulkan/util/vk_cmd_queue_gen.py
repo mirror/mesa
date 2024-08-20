@@ -474,7 +474,7 @@ def get_array_copy(command, param):
     copy = "memcpy((void*)%s, %s, %s * (%s));" % (field_name, param.name, field_size, param.len)
     return "%s\n   %s" % (allocation, copy)
 
-def get_array_member_copy(struct, src_name, member):
+def get_array_member_copy(struct, src_name, member, types, level):
     field_name = "%s->%s" % (struct, member.name)
     if member.len == "struct-ptr":
         field_size = "sizeof(*%s)" % (field_name)
@@ -482,7 +482,22 @@ def get_array_member_copy(struct, src_name, member):
         field_size = "sizeof(*%s) * %s->%s" % (field_name, struct, member.len)
     allocation = "%s = vk_zalloc(queue->alloc, %s, 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n   if (%s == NULL) goto err;\n" % (field_name, field_size, field_name)
     copy = "memcpy((void*)%s, %s->%s, %s);" % (field_name, src_name, member.name, field_size)
-    return "if (%s->%s) {\n   %s\n   %s\n}\n" % (src_name, member.name, allocation, copy)
+
+    member_copies = ""
+    if member.type in types:
+        for sub_member in types[member.type].members:
+            if sub_member.len and sub_member.len != 'null-terminated':
+                const_cast = remove_suffix(member.decl.replace("const", ""), member.name)
+                if member.len == "struct-ptr":
+                    member_copies += get_array_member_copy("((%s)%s->%s)" % (const_cast, struct, member.name), "%s->%s" % (src_name, member.name), sub_member, types, level)
+                else:
+                    counter_name = "i%s" % level
+                    member_copies += "   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s   }\n" % (counter_name, counter_name, struct, member.len, counter_name,
+                        get_array_member_copy("((%s)%s->%s + %s)" % (const_cast, struct, member.name, counter_name), "(%s->%s + %s)" % (src_name, member.name, counter_name), sub_member, types, level + 1))
+            elif member.name == 'pNext':
+                raise NotImplementedError("pNext in array not supported")
+
+    return "if (%s->%s) {\n   %s\n   %s\n%s}\n" % (src_name, member.name, allocation, copy, member_copies)
 
 def get_pnext_member_copy(struct, src_type, member, types, level):
     if not types[src_type].extended_by:
@@ -531,7 +546,7 @@ def get_struct_copy(dst, src_name, src_type, size, types, level=0):
     if src_type in types:
         for member in types[src_type].members:
             if member.len and member.len != 'null-terminated':
-                member_copies += get_array_member_copy("tmp_dst%d" % level, "tmp_src%d" % level, member)
+                member_copies += get_array_member_copy("tmp_dst%d" % level, "tmp_src%d" % level, member, types, level)
             elif member.name == 'pNext':
                 member_copies += get_pnext_member_copy("tmp_dst%d" % level, src_type, member, types, level)
 
@@ -540,7 +555,31 @@ def get_struct_copy(dst, src_name, src_type, size, types, level=0):
     indent = "   " * level
     return "%s\n      %s\n      %s\n      %s\n      %s\n      %s\n%s} else {\n      %s\n%s}" % (if_stmt, allocation, copy, tmp_dst, tmp_src, member_copies, indent, null_assignment, indent)
 
-def get_pnext_member_free(struct, type, member, types):
+def get_array_member_free(struct, member, types, level):
+    field_name = "%s->%s" % (struct, member.name)
+    member_frees = ""
+    if member.type in types:
+        for sub_member in types[member.type].members:
+            if sub_member.len and sub_member.len != 'null-terminated':
+                if member.len == "struct-ptr":
+                    member_frees += get_array_member_free(field_name, sub_member, types, level)
+                else:
+                    counter_name = "i%s" % level
+                    member_frees += "   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s   }\n" % (counter_name, counter_name, struct, member.len, counter_name,
+                        get_array_member_free("(%s + %s)" % (field_name, counter_name), sub_member, types, level + 1))
+            elif member.name == 'pNext':
+                raise NotImplementedError("pNext in array not supported")
+    
+    const_cast = remove_suffix(member.decl.replace("const", ""), member.name)
+    array_free = "vk_free(queue->alloc, (%s)%s);" % (const_cast, field_name)
+    if_stmt = ""
+    endif_stmt = ""
+    if len(member_frees) > 0:
+        if_stmt = "if (%s) {\n" % field_name
+        endif_stmt = "}\n"
+    return "%s%s%s\n%s" % (if_stmt, member_frees, array_free, endif_stmt)
+
+def get_pnext_member_free(struct, type, member, types, level):
     if not types[type].extended_by:
         return ""
     field_name = "%s->%s" % (struct, member.name)
@@ -558,7 +597,7 @@ def get_pnext_member_free(struct, type, member, types):
             %s
          break;
 %s
-      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pthis)" % ext_type.name, ext_type.name, "", types), guard_post_stmt)
+      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pthis)" % ext_type.name, ext_type.name, "", types, level), guard_post_stmt)
     return """
       %s
       while (pnext) {
@@ -575,17 +614,15 @@ def get_command_struct_free(command, param, types):
     const_cast = remove_suffix(param.decl.replace("const", ""), param.name)
     return get_struct_free(field_name, param.type, "(%s)" % const_cast, types)
 
-def get_struct_free(field_name, type, cast, types):
+def get_struct_free(field_name, type, cast, types, level=1):
     struct_free = "vk_free(queue->alloc, %s%s);" % (cast, field_name)
     member_frees = ""
     if (type in types):
         for member in types[type].members:
             if member.len and member.len != 'null-terminated':
-                member_name = "%s->%s" % (field_name, member.name)
-                const_cast = remove_suffix(member.decl.replace("const", ""), member.name)
-                member_frees += "vk_free(queue->alloc, (%s)%s);\n" % (const_cast, member_name)
+                member_frees += get_array_member_free(field_name, member, types, level)
             elif member.name == 'pNext':
-                member_frees += get_pnext_member_free(field_name, type, member, types)
+                member_frees += get_pnext_member_free(field_name, type, member, types, level)
     return "%s      %s\n" % (member_frees, struct_free)
 
 EntrypointType = namedtuple('EntrypointType', 'name enum members extended_by guard')

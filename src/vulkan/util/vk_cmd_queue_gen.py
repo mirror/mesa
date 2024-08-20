@@ -272,7 +272,7 @@ struct vk_cmd_queue_entry *cmd)
 % if p.len:
    vk_free(queue->alloc, (${remove_suffix(p.decl.replace("const", ""), p.name)})cmd->u.${to_struct_field_name(c.name)}.${to_field_name(p.name)});
 % elif '*' in p.decl:
-   ${get_struct_free(c, p, types)}
+   ${get_command_struct_free(c, p, types)}
 % endif
 % endfor
    vk_free(queue->alloc, cmd);
@@ -536,17 +536,50 @@ def get_struct_copy(dst, src_name, src_type, size, types, level=0):
     indent = "   " * level
     return "%s\n      %s\n      %s\n      %s\n      %s\n      %s\n%s} else {\n      %s\n%s}" % (if_stmt, allocation, copy, tmp_dst, tmp_src, member_copies, indent, null_assignment, indent)
 
-def get_struct_free(command, param, types):
+def get_pnext_member_free(struct, type, member, types):
+    if not types[type].extended_by:
+        return ""
+    field_name = "%s->%s" % (struct, member.name)
+    pnext_decl = "const VkBaseInStructure *pnext = %s;" % field_name
+    case_stmts = ""
+    for ext_type in types[type].extended_by:
+        guard_pre_stmt = ""
+        guard_post_stmt = ""
+        if ext_type.guard is not None:
+            guard_pre_stmt = "#ifdef %s" % ext_type.guard
+            guard_post_stmt = "#endif"
+        case_stmts += """
+%s
+         case %s:
+            %s
+         break;
+%s
+      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pnext)" % ext_type.name, ext_type.name, "", types), guard_post_stmt)
+    return """
+      %s
+      if (pnext) {
+         switch ((int32_t)pnext->sType) {
+         %s
+         }
+      }
+   """ % (pnext_decl, case_stmts)
+
+def get_command_struct_free(command, param, types):
     field_name = "cmd->u.%s.%s" % (to_struct_field_name(command.name), to_field_name(param.name))
     const_cast = remove_suffix(param.decl.replace("const", ""), param.name)
-    struct_free = "vk_free(queue->alloc, (%s)%s);" % (const_cast, field_name)
+    return get_struct_free(field_name, param.type, "(%s)" % const_cast, types)
+
+def get_struct_free(field_name, type, cast, types):
+    struct_free = "vk_free(queue->alloc, %s%s);" % (cast, field_name)
     member_frees = ""
-    if (param.type in types):
-        for member in types[param.type].members:
+    if (type in types):
+        for member in types[type].members:
             if member.len and member.len != 'null-terminated':
-                member_name = "cmd->u.%s.%s->%s" % (to_struct_field_name(command.name), to_field_name(param.name), member.name)
+                member_name = "%s->%s" % (field_name, member.name)
                 const_cast = remove_suffix(member.decl.replace("const", ""), member.name)
                 member_frees += "vk_free(queue->alloc, (%s)%s);\n" % (const_cast, member_name)
+            elif member.name == 'pNext':
+                member_frees += get_pnext_member_free(field_name, type, member, types)
     return "%s      %s\n" % (member_frees, struct_free)
 
 EntrypointType = namedtuple('EntrypointType', 'name enum members extended_by guard')
@@ -593,7 +626,8 @@ def get_types(doc, beta, api, types_to_defines):
 
             mem_type = p.find('./type').text
             mem_name = p.find('./name').text
-            mem_decl = ''.join(p.itertext())
+            # get the whole declaration string from XML, but exclude comment tags
+            mem_decl = ('' if p.text is None else p.text) + ''.join((('' if e.tag =='comment' else ''.join(e.itertext())) + ('' if e.tail is None else e.tail) for e in p))
             mem_len = p.attrib.get('altlen', p.attrib.get('len', None))
             if mem_len is None and '*' in mem_decl and mem_name != 'pNext':
                 mem_len = "struct-ptr"
@@ -666,7 +700,7 @@ def main():
         'to_struct_name': to_struct_name,
         'get_array_copy': get_array_copy,
         'get_struct_copy': get_struct_copy,
-        'get_struct_free': get_struct_free,
+        'get_command_struct_free': get_command_struct_free,
         'types': types,
         'manual_commands': MANUAL_COMMANDS,
         'no_enqueue_commands': NO_ENQUEUE_COMMANDS,

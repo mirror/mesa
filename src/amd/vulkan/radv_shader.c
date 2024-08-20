@@ -219,6 +219,7 @@ radv_optimize_nir_algebraic(nir_shader *nir, bool opt_offsets, bool opt_mqsad)
    struct set *skip = _mesa_pointer_set_create(NULL);
    while (more_late_algebraic) {
       more_late_algebraic = false;
+      NIR_LOOP_PASS_NOT_IDEMPOTENT(more_late_algebraic, skip, nir, nir_opt_select);
       NIR_LOOP_PASS_NOT_IDEMPOTENT(more_late_algebraic, skip, nir, nir_opt_algebraic_late);
       NIR_LOOP_PASS(_, skip, nir, nir_opt_constant_folding);
       NIR_LOOP_PASS(_, skip, nir, nir_copy_prop);

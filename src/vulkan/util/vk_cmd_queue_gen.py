@@ -304,7 +304,7 @@ VkResult vk_enqueue_${to_underscore(c.name)}(struct vk_cmd_queue *queue
 % elif p.type == "void":
    cmd->u.${to_struct_field_name(c.name)}.${to_field_name(p.name)} = (${remove_suffix(p.decl.replace("const", ""), p.name)}) ${p.name};
 % elif '*' in p.decl:
-   ${get_struct_copy("cmd->u.%s.%s" % (to_struct_field_name(c.name), to_field_name(p.name)), p.name, p.type, 'sizeof(%s)' % p.type, types)}\
+${get_struct_copy("cmd->u.%s.%s" % (to_struct_field_name(c.name), to_field_name(p.name)), p.name, p.type, 'sizeof(%s)' % p.type, types)}\
    <% need_error_handling = True %>
 % else:
    cmd->u.${to_struct_field_name(c.name)}.${to_field_name(p.name)} = ${p.name};
@@ -470,18 +470,19 @@ def get_array_copy(command, param):
         field_size = "1"
     else:
         field_size = "sizeof(*%s)" % field_name
-    allocation = "%s = vk_zalloc(queue->alloc, %s * (%s), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n   if (%s == NULL) goto err;\n" % (field_name, field_size, param.len, field_name)
+    allocation = "%s = vk_zalloc(queue->alloc, %s * (%s), 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n      if (%s == NULL) goto err;\n" % (field_name, field_size, param.len, field_name)
     copy = "memcpy((void*)%s, %s, %s * (%s));" % (field_name, param.name, field_size, param.len)
-    return "%s\n   %s" % (allocation, copy)
+    return "%s\n      %s" % (allocation, copy)
 
-def get_array_member_copy(struct, src_name, member, types, level):
+def get_array_member_copy(struct, src_name, member, types, level, indent_level):
+    indent = "   " * indent_level
     field_name = "%s->%s" % (struct, member.name)
     if member.len == "struct-ptr":
         field_size = "sizeof(*%s)" % (field_name)
     else:
         field_size = "sizeof(*%s) * %s->%s" % (field_name, struct, member.len)
-    allocation = "%s = vk_zalloc(queue->alloc, %s, 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n   if (%s == NULL) goto err;\n" % (field_name, field_size, field_name)
-    copy = "memcpy((void*)%s, %s->%s, %s);" % (field_name, src_name, member.name, field_size)
+    allocation = "%s   %s = vk_zalloc(queue->alloc, %s, 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n%s   if (%s == NULL) goto err;\n" % (indent, field_name, field_size, indent, field_name)
+    copy = "%s   memcpy((void*)%s, %s->%s, %s);" % (indent, field_name, src_name, member.name, field_size)
 
     member_copies = ""
     if member.type in types:
@@ -489,84 +490,101 @@ def get_array_member_copy(struct, src_name, member, types, level):
             if sub_member.len and sub_member.len != 'null-terminated':
                 const_cast = remove_suffix(member.decl.replace("const", ""), member.name)
                 if member.len == "struct-ptr":
-                    member_copies += get_array_member_copy("((%s)%s->%s)" % (const_cast, struct, member.name), "%s->%s" % (src_name, member.name), sub_member, types, level)
+                    member_copies += get_array_member_copy("((%s)%s->%s)" % (const_cast, struct, member.name), "%s->%s" % (src_name, member.name), sub_member, types, level, indent_level + 1)
                 else:
                     counter_name = "i%s" % level
-                    member_copies += "   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s   }\n" % (counter_name, counter_name, struct, member.len, counter_name,
-                        get_array_member_copy("((%s)%s->%s + %s)" % (const_cast, struct, member.name, counter_name), "(%s->%s + %s)" % (src_name, member.name, counter_name), sub_member, types, level + 1))
+                    member_copies += "%s   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s%s   }\n" % \
+                        (indent, counter_name, counter_name, struct, member.len, counter_name,
+                        get_array_member_copy(
+                            "((%s)%s->%s + %s)" % (const_cast, struct, member.name, counter_name),
+                            "(%s->%s + %s)" % (src_name, member.name, counter_name),
+                            sub_member, types, level + 1, indent_level + 2),
+                        indent)
             elif member.name == 'pNext':
                 raise NotImplementedError("pNext in array not supported")
 
-    return "if (%s->%s) {\n   %s\n   %s\n%s}\n" % (src_name, member.name, allocation, copy, member_copies)
+    return "%sif (%s->%s) {\n%s\n%s\n%s%s}\n" % (indent, src_name, member.name, allocation, copy, member_copies, indent)
 
-def get_pnext_member_copy(struct, src_type, member, types, level):
+def get_pnext_member_copy(struct, src_type, member, types, level, indent_level):
     if not types[src_type].extended_by:
         return ""
     field_name = "%s->%s" % (struct, member.name)
     pthis_decl = "VkBaseInStructure *pthis = (void *)%s;" % struct
     pnext_decl = "const VkBaseInStructure *pnext = %s;" % field_name
     case_stmts = ""
+    indent = "   " * (indent_level + 2)
     for type in types[src_type].extended_by:
         guard_pre_stmt = ""
         guard_post_stmt = ""
         if type.guard is not None:
-            guard_pre_stmt = "#ifdef %s" % type.guard
-            guard_post_stmt = "#endif"
-        case_stmts += """
+            guard_pre_stmt = "#ifdef %s\n" % type.guard
+            guard_post_stmt = "#endif\n"
+        case_stmts += """%s%scase %s:
 %s
-         case %s:
-            %s
-         break;
+%sbreak;
 %s
-      """ % (guard_pre_stmt, type.enum, get_struct_copy("pthis->pNext", "pnext", type.name, "sizeof(%s)" % type.name, types, level), guard_post_stmt)
+""" % (guard_pre_stmt, indent, type.enum,
+       get_struct_copy("pthis->pNext", "pnext", type.name, "sizeof(%s)" % type.name, types, level, indent_level + 2),
+       indent, guard_post_stmt)
+        
+    indent = "   " * indent_level
     return """
-      %s
-      %s
-      while (pnext) {
-         switch ((int32_t)pnext->sType) {
-         %s
-         }
-         pthis = (void *)pthis->pNext;
-         pnext = pnext->pNext;
-      }
-      """ % (pthis_decl, pnext_decl, case_stmts)
+%s%s
+%s%s
+%swhile (pnext) {
+%s   switch ((int32_t)pnext->sType) {
+%s%s   }
+%s   pthis = (void *)pthis->pNext;
+%s   pnext = pnext->pNext;
+%s}
 
-def get_struct_copy(dst, src_name, src_type, size, types, level=0):
+""" % (indent, pthis_decl, indent, pnext_decl, indent,
+       indent, case_stmts,
+       indent, indent, indent, indent)
+
+def get_struct_copy(dst, src_name, src_type, size, types, level=0, indent_level=1):
     global tmp_dst_idx
     global tmp_src_idx
 
-    allocation = "%s = vk_zalloc(queue->alloc, %s, 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n      if (%s == NULL) goto err;\n" % (dst, size, dst)
-    copy = "memcpy((void*)%s, %s, %s);" % (dst, src_name, size)
+    indent = "   " * indent_level
+    allocation = "%s   %s = vk_zalloc(queue->alloc, %s, 8, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);\n%s   if (%s == NULL) goto err;\n" % (indent, dst, size, indent, dst)
+    copy = "%s   memcpy((void*)%s, %s, %s);" % (indent, dst, src_name, size)
 
     level += 1
-    tmp_dst = "%s *tmp_dst%d = (void *) %s; (void) tmp_dst%d;" % (src_type, level, dst, level)
-    tmp_src = "%s *tmp_src%d = (void *) %s; (void) tmp_src%d;" % (src_type, level, src_name, level)
+    tmp_dst = "%s   %s *tmp_dst%d = (void *) %s; (void) tmp_dst%d;" % (indent, src_type, level, dst, level)
+    tmp_src = "%s   %s *tmp_src%d = (void *) %s; (void) tmp_src%d;" % (indent, src_type, level, src_name, level)
 
     member_copies = ""
     if src_type in types:
         for member in types[src_type].members:
             if member.len and member.len != 'null-terminated':
-                member_copies += get_array_member_copy("tmp_dst%d" % level, "tmp_src%d" % level, member, types, level)
+                member_copies += get_array_member_copy("tmp_dst%d" % level, "tmp_src%d" % level, member, types, level, indent_level + 1)
             elif member.name == 'pNext':
-                member_copies += get_pnext_member_copy("tmp_dst%d" % level, src_type, member, types, level)
+                member_copies += get_pnext_member_copy("tmp_dst%d" % level, src_type, member, types, level, indent_level + 1)
 
-    null_assignment = "%s = NULL;" % dst
+    null_assignment = "%s   %s = NULL;" % (indent, dst)
     if_stmt = "if (%s) {" % src_name
-    indent = "   " * level
-    return "%s\n      %s\n      %s\n      %s\n      %s\n      %s\n%s} else {\n      %s\n%s}" % (if_stmt, allocation, copy, tmp_dst, tmp_src, member_copies, indent, null_assignment, indent)
+    return "%s%s\n%s\n%s\n%s\n%s\n%s%s} else {\n%s\n%s}" % \
+        (indent, if_stmt,
+         allocation, copy, tmp_dst, tmp_src, member_copies,
+         indent, null_assignment, indent)
 
-def get_array_member_free(struct, member, types, level):
+def get_array_member_free(struct, member, types, level, indent_level):
     field_name = "%s->%s" % (struct, member.name)
     member_frees = ""
+    indent = "   " * indent_level
     if member.type in types:
         for sub_member in types[member.type].members:
             if sub_member.len and sub_member.len != 'null-terminated':
                 if member.len == "struct-ptr":
-                    member_frees += get_array_member_free(field_name, sub_member, types, level)
+                    member_frees += get_array_member_free(field_name, sub_member, types, level, indent_level + 1)
                 else:
                     counter_name = "i%s" % level
-                    member_frees += "   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s   }\n" % (counter_name, counter_name, struct, member.len, counter_name,
-                        get_array_member_free("(%s + %s)" % (field_name, counter_name), sub_member, types, level + 1))
+                    member_frees += "%s   for (uint32_t %s = 0; %s < %s->%s; ++%s) {\n%s%s   }\n" % \
+                        (indent, counter_name, counter_name, struct, member.len, counter_name,
+                        get_array_member_free("(%s + %s)" % (field_name, counter_name),
+                                              sub_member, types, level + 1, indent_level + 2),
+                        indent)
             elif member.name == 'pNext':
                 raise NotImplementedError("pNext in array not supported")
     
@@ -575,55 +593,64 @@ def get_array_member_free(struct, member, types, level):
     if_stmt = ""
     endif_stmt = ""
     if len(member_frees) > 0:
-        if_stmt = "if (%s) {\n" % field_name
-        endif_stmt = "}\n"
-    return "%s%s%s\n%s" % (if_stmt, member_frees, array_free, endif_stmt)
+        if_stmt = "%sif (%s) {\n" % (indent, field_name)
+        endif_stmt = "%s}\n" % indent
+        indent = "   " * (indent_level + 1)
+    return "%s%s%s%s\n%s" % (if_stmt, member_frees, indent, array_free, endif_stmt)
 
-def get_pnext_member_free(struct, type, member, types, level):
+def get_pnext_member_free(struct, type, member, types, level, indent_level):
     if not types[type].extended_by:
         return ""
     field_name = "%s->%s" % (struct, member.name)
     pnext_decl = "const VkBaseInStructure *pnext = %s;" % field_name
     case_stmts = ""
+    indent = "   " * (indent_level + 2)
     for ext_type in types[type].extended_by:
         guard_pre_stmt = ""
         guard_post_stmt = ""
         if ext_type.guard is not None:
-            guard_pre_stmt = "#ifdef %s" % ext_type.guard
-            guard_post_stmt = "#endif"
-        case_stmts += """
+            guard_pre_stmt = "#ifdef %s\n" % ext_type.guard
+            guard_post_stmt = "#endif\n"
+        case_stmts += """%s%scase %s:
 %s
-         case %s:
-            %s
-         break;
+%sbreak;
 %s
-      """ % (guard_pre_stmt, ext_type.enum, get_struct_free("((%s*)pthis)" % ext_type.name, ext_type.name, "", types, level), guard_post_stmt)
+""" % (guard_pre_stmt,
+             indent, ext_type.enum,
+             get_struct_free("((%s*)pthis)" % ext_type.name, ext_type.name, "", types, level, indent_level + 3),
+             indent,
+             guard_post_stmt)
+        
+    indent = "   " * indent_level
     return """
-      %s
-      while (pnext) {
-         const VkBaseInStructure *pthis = pnext;
-         pnext = pnext->pNext;
-         switch ((int32_t)pthis->sType) {
-         %s
-         }
-      }
-   """ % (pnext_decl, case_stmts)
+%s%s
+%swhile (pnext) {
+%s   const VkBaseInStructure *pthis = pnext;
+%s   pnext = pnext->pNext;
+%s   switch ((int32_t)pthis->sType) {
+%s%s   }
+%s}
+""" % (indent, pnext_decl,
+          indent, indent, indent, indent,
+          case_stmts, indent,
+          indent)
 
 def get_command_struct_free(command, param, types):
     field_name = "cmd->u.%s.%s" % (to_struct_field_name(command.name), to_field_name(param.name))
     const_cast = remove_suffix(param.decl.replace("const", ""), param.name)
     return get_struct_free(field_name, param.type, "(%s)" % const_cast, types)
 
-def get_struct_free(field_name, type, cast, types, level=1):
+def get_struct_free(field_name, type, cast, types, level=1, indent_level=1):
     struct_free = "vk_free(queue->alloc, %s%s);" % (cast, field_name)
     member_frees = ""
     if (type in types):
         for member in types[type].members:
             if member.len and member.len != 'null-terminated':
-                member_frees += get_array_member_free(field_name, member, types, level)
+                member_frees += get_array_member_free(field_name, member, types, level, indent_level)
             elif member.name == 'pNext':
-                member_frees += get_pnext_member_free(field_name, type, member, types, level)
-    return "%s      %s\n" % (member_frees, struct_free)
+                member_frees += get_pnext_member_free(field_name, type, member, types, level, indent_level)
+    indent = "   " * indent_level
+    return "%s%s%s" % (member_frees, indent, struct_free)
 
 EntrypointType = namedtuple('EntrypointType', 'name enum members extended_by guard')
 

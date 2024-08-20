@@ -78,10 +78,10 @@ vk_common_entrypoints = custom_target(
 
 vk_cmd_queue = custom_target(
   'vk_cmd_queue',
-  input : [vk_cmd_queue_gen, vk_api_xml],
+  input : [vk_cmd_queue_gen, vk_api_xml, vk_video_api_xml],
   output : ['vk_cmd_queue.c', 'vk_cmd_queue.h'],
   command : [
-    prog_python, '@INPUT0@', '--xml', '@INPUT1@',
+    prog_python, '@INPUT0@', '--xml', '@INPUT1@', '--xml', '@INPUT2@',
     '--out-c', '@OUTPUT0@', '--out-h', '@OUTPUT1@',
     '--beta', with_vulkan_beta.to_string()
   ],

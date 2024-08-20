@@ -15,15 +15,8 @@
  */
 
 static bool
-pass(nir_builder *b, nir_instr *instr, void *data)
+opt_bcsel(nir_builder *b, nir_alu_instr *alu)
 {
-   if (instr->type != nir_instr_type_alu)
-      return false;
-
-   nir_alu_instr *alu = nir_instr_as_alu(instr);
-   if (alu->op != nir_op_bcsel)
-      return false;
-
    nir_instr *source_instrs[2] = {
       alu->src[1].src.ssa->parent_instr,
       alu->src[2].src.ssa->parent_instr,
@@ -71,16 +64,100 @@ pass(nir_builder *b, nir_instr *instr, void *data)
    alu->src[2].swizzle[0] = source_alus[1]->src[different_src_index].swizzle[0];
 
    nir_def_rewrite_uses(&alu->def, &source_alus[0]->def);
-   nir_def_init(instr, &alu->def, 1, alu->src[1].src.ssa->bit_size);
+   nir_def_init(&alu->instr, &alu->def, 1, alu->src[1].src.ssa->bit_size);
 
    /* Rewrite the first OP to use the bcsel for the different source. */
    nir_src_rewrite(&source_alus[0]->src[different_src_index].src, &alu->def);
    source_alus[0]->src[different_src_index].swizzle[0] = 0;
 
-   nir_instr_move(nir_after_instr(instr), &source_alus[0]->instr);
+   nir_instr_move(nir_after_instr(&alu->instr), &source_alus[0]->instr);
    nir_instr_remove(&source_alus[1]->instr);
 
    return true;
+}
+
+static bool
+opt_phi(nir_builder *b, nir_phi_instr *phi)
+{
+   if (exec_list_length(&phi->srcs) < 2)
+      return false;
+
+   nir_foreach_phi_src(src, phi) {
+      if (!nir_src_is_alu(src->src))
+         return false;
+   }
+
+   nir_alu_instr *first_alu = NULL;
+   nir_op op = nir_num_opcodes;
+   nir_foreach_phi_src(src, phi) {
+      nir_alu_instr *alu = nir_src_as_alu_instr(src->src);
+
+      if (!first_alu)
+         first_alu = alu;
+
+      if (op == nir_num_opcodes)
+         op = alu->op;
+      else if (op != alu->op)
+         return false;
+      
+      if (!list_is_singular(&alu->def.uses))
+         return false;
+   }
+
+   uint32_t different_src_index = 0;
+   uint32_t different_src_count = 0;
+   for (uint32_t i = 0; i < nir_op_infos[op].num_inputs; i++) {
+      nir_foreach_phi_src(src, phi) {
+         nir_alu_instr *alu = nir_src_as_alu_instr(src->src);
+         if (!nir_alu_srcs_equal(first_alu, alu, i, i)) {
+            different_src_count++;
+            different_src_index = i;
+         }
+      }
+   }
+
+   /* TODO: Having multiple PHIs may be worth it if register allocation is good. */
+   if (different_src_count != 1)
+      return false;
+
+   nir_foreach_phi_src(src, phi) {
+      nir_alu_instr *alu = nir_src_as_alu_instr(src->src);
+      if (nir_src_num_components(alu->src[different_src_index].src) != 1)
+         return false;
+      if (alu->src[different_src_index].swizzle[0] != 0)
+         return false;
+   }
+
+   /* Rewrite the phi sources to be the different sources. */
+   nir_foreach_phi_src(src, phi) {
+      nir_alu_instr *alu = nir_src_as_alu_instr(src->src);
+      nir_src_rewrite(&src->src, alu->src[different_src_index].src.ssa);
+   }
+
+   nir_def_rewrite_uses(&phi->def, &first_alu->def);
+   nir_def_init(&phi->instr, &phi->def, 1, nir_src_bit_size(first_alu->src[different_src_index].src));
+
+   /* Rewrite the first OP to use the phi for the different source. */
+   nir_src_rewrite(&first_alu->src[different_src_index].src, &phi->def);
+
+   nir_instr_move(nir_after_phis(phi->instr.block), &first_alu->instr);
+
+   return true;
+}
+
+static bool
+pass(nir_builder *b, nir_instr *instr, void *data)
+{
+   if (instr->type == nir_instr_type_alu) {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      if (alu->op == nir_op_bcsel)
+         return opt_bcsel(b, alu);
+   }
+
+   if (instr->type == nir_instr_type_phi)
+      return opt_phi(b, nir_instr_as_phi(instr));
+
+   return false;
 }
 
 bool

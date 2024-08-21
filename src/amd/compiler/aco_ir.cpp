@@ -503,19 +503,6 @@ convert_to_DPP(amd_gfx_level gfx_level, aco_ptr<Instruction>& instr, bool dpp8)
 }
 
 bool
-can_use_input_modifiers(amd_gfx_level gfx_level, aco_opcode op, int idx)
-{
-   if (op == aco_opcode::v_mov_b32)
-      return gfx_level >= GFX10;
-
-   if (op == aco_opcode::v_ldexp_f16 || op == aco_opcode::v_ldexp_f32 ||
-       op == aco_opcode::v_ldexp_f64)
-      return idx == 0;
-
-   return instr_info.can_use_input_modifiers[(int)op];
-}
-
-bool
 can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx)
 {
    /* opsel is only GFX9+ */
@@ -817,28 +804,34 @@ get_reduction_identity(ReduceOp op, unsigned idx)
    return 0;
 }
 
-unsigned
-get_operand_size(aco_ptr<Instruction>& instr, unsigned index)
+SrcDestInfo
+get_operand_info(enum amd_gfx_level gfx_level, Instruction* instr, unsigned index)
 {
-   if (instr->isPseudo())
-      return instr->operands[index].bytes() * 8u;
-   else if (instr->opcode == aco_opcode::v_mad_u64_u32 ||
-            instr->opcode == aco_opcode::v_mad_i64_i32)
-      return index == 2 ? 64 : 32;
-   else if (instr->opcode == aco_opcode::v_fma_mix_f32 ||
-            instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
-            instr->opcode == aco_opcode::v_fma_mixhi_f16)
-      return instr->valu().opsel_hi[index] ? 16 : 32;
-   else if (instr->opcode == aco_opcode::v_interp_p10_f16_f32_inreg ||
-            instr->opcode == aco_opcode::v_interp_p10_rtz_f16_f32_inreg)
-      return index == 1 ? 32 : 16;
-   else if (instr->opcode == aco_opcode::v_interp_p2_f16_f32_inreg ||
-            instr->opcode == aco_opcode::v_interp_p2_rtz_f16_f32_inreg)
-      return index == 0 ? 16 : 32;
-   else if (instr->isVALU() || instr->isSALU())
-      return instr_info.operand_size[(int)instr->opcode];
-   else
-      return 0;
+   assert(index < 4);
+   SrcDestInfo res = instr_info.operands[(int)instr->opcode][index];
+   if (index == 0 && instr->opcode == aco_opcode::v_mov_b32 && gfx_level >= GFX10)
+      res.mods = true;
+   if (index < 3 && (instr->opcode == aco_opcode::v_fma_mix_f32 ||
+                     instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
+                     instr->opcode == aco_opcode::v_fma_mixhi_f16))
+      res.bitsize = instr->valu().opsel_hi[index] ? 16 : 32;
+   return res;
+}
+
+SrcDestInfo
+get_definition_info(enum amd_gfx_level gfx_level, Instruction* instr, unsigned index)
+{
+   assert(index < 4);
+   /* Before GFX10 v_cmpx also writes VCC. */
+   if (instr->isVOPC() && gfx_level < GFX10 && index < 2) {
+      SrcDestInfo res = instr_info.definitions[(int)instr->opcode][0];
+      if (!res.should_be_fixed)
+         return index == 0 ? res : SrcDestInfo{};
+
+      res.should_be_fixed = index;
+      return res;
+   }
+   return instr_info.definitions[(int)instr->opcode][index];
 }
 
 bool

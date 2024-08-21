@@ -1811,7 +1811,6 @@ is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
    return !(get_sync_info(instr).semantics & (semantic_volatile | semantic_acqrel));
 }
 
-bool can_use_input_modifiers(amd_gfx_level gfx_level, aco_opcode op, int idx);
 bool can_use_opsel(amd_gfx_level gfx_level, aco_opcode op, int idx);
 bool instr_is_16bit(amd_gfx_level gfx_level, aco_opcode op);
 uint8_t get_gfx11_true16_mask(aco_opcode op);
@@ -1837,8 +1836,6 @@ uint32_t get_reduction_identity(ReduceOp op, unsigned idx);
 unsigned get_mimg_nsa_dwords(const Instruction* instr);
 
 unsigned get_vopd_opy_start(const Instruction* instr);
-
-unsigned get_operand_size(aco_ptr<Instruction>& instr, unsigned index);
 
 bool should_form_clause(const Instruction* a, const Instruction* b);
 
@@ -2245,22 +2242,59 @@ uint16_t get_addr_vgpr_from_waves(Program* program, uint16_t max_waves);
 
 bool uses_scratch(Program* program);
 
+struct SrcDestInfo {
+   aco_type type;
+   uint8_t bitsize;
+   uint8_t components;
+   bool should_be_fixed;
+   PhysReg reg;
+   bool mods;
+
+   inline unsigned bytes() { return (bitsize * components) / 8; }
+   inline unsigned dwords() { return DIV_ROUND_UP(bytes(), 4); }
+   inline unsigned constant_size()
+   {
+      switch (type) {
+      case alu_bfloat: /* XXX might be useful some day. */
+      case alu_invalid_type:
+      case alu_bool: return 0;
+      case alu_float:
+         if (bitsize == 16 && (components == 1 || components == 2))
+            return 16;
+         else if (bitsize == 32 && components == 1)
+            return 32;
+         else if (bitsize == 64 && components == 1)
+            return 64;
+         return 0;
+      case alu_uint:
+         if (bitsize == 16 && (components == 1 || components == 2))
+            return 32; /* 16bit int alu uses 32bit float constants. */
+         else if (bitsize == 32 && components == 1)
+            return 32;
+         else if (bitsize == 64 && components == 1)
+            return 64;
+         return 0;
+      case alu_int: assert(bitsize == 64 && components == 1); return 64;
+      }
+      return 0;
+   }
+};
+
+SrcDestInfo get_operand_info(enum amd_gfx_level gfx_level, Instruction* instr, unsigned index);
+SrcDestInfo get_definition_info(enum amd_gfx_level gfx_level, Instruction* instr, unsigned index);
+
 typedef struct {
    const int16_t opcode_gfx7[static_cast<int>(aco_opcode::num_opcodes)];
    const int16_t opcode_gfx9[static_cast<int>(aco_opcode::num_opcodes)];
    const int16_t opcode_gfx10[static_cast<int>(aco_opcode::num_opcodes)];
    const int16_t opcode_gfx11[static_cast<int>(aco_opcode::num_opcodes)];
    const int16_t opcode_gfx12[static_cast<int>(aco_opcode::num_opcodes)];
-   const std::bitset<static_cast<int>(aco_opcode::num_opcodes)> can_use_input_modifiers;
-   const std::bitset<static_cast<int>(aco_opcode::num_opcodes)> can_use_output_modifiers;
    const std::bitset<static_cast<int>(aco_opcode::num_opcodes)> is_atomic;
    const char* name[static_cast<int>(aco_opcode::num_opcodes)];
    const aco::Format format[static_cast<int>(aco_opcode::num_opcodes)];
-   /* sizes used for input/output modifiers and constants */
-   const unsigned operand_size[static_cast<int>(aco_opcode::num_opcodes)];
    const instr_class classes[static_cast<int>(aco_opcode::num_opcodes)];
-   const uint32_t definitions[static_cast<int>(aco_opcode::num_opcodes)];
-   const uint32_t operands[static_cast<int>(aco_opcode::num_opcodes)];
+   const SrcDestInfo definitions[static_cast<int>(aco_opcode::num_opcodes)][4];
+   const SrcDestInfo operands[static_cast<int>(aco_opcode::num_opcodes)][4];
 } Info;
 
 extern const Info instr_info;

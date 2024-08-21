@@ -874,19 +874,14 @@ propagate_constants_vop3p(opt_ctx& ctx, aco_ptr<Instruction>& instr, ssa_info& i
       return;
 
    assert(instr->operands[i].isTemp());
-   unsigned bits = get_operand_size(instr, i);
+   unsigned bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
    if (info.is_constant(bits)) {
       instr->operands[i] = get_constant_op(ctx, info, bits);
       return;
    }
 
    /* The accumulation operand of dot product instructions ignores opsel. */
-   bool cannot_use_opsel =
-      (instr->opcode == aco_opcode::v_dot4_i32_i8 || instr->opcode == aco_opcode::v_dot2_i32_i16 ||
-       instr->opcode == aco_opcode::v_dot4_i32_iu8 || instr->opcode == aco_opcode::v_dot4_u32_u8 ||
-       instr->opcode == aco_opcode::v_dot2_u32_u16) &&
-      i == 2;
-   if (cannot_use_opsel)
+   if (get_operand_info(ctx.program->gfx_level, instr.get(), i).components != 2)
       return;
 
    /* try to fold inline constants */
@@ -950,7 +945,7 @@ propagate_constants_vop3p(opt_ctx& ctx, aco_ptr<Instruction>& instr, ssa_info& i
       assert(const_lo_opsel == false && const_hi_opsel == false);
 
       /* const_lo == -const_hi */
-      if (!can_use_input_modifiers(ctx.program->gfx_level, instr->opcode, i))
+      if (!get_operand_info(ctx.program->gfx_level, instr.get(), i).mods)
          return;
 
       instr->operands[i] = Operand::c16(const_lo.constantValue() & 0x7FFF);
@@ -1199,7 +1194,7 @@ can_eliminate_fcanonicalize(opt_ctx& ctx, aco_ptr<Instruction>& instr, Temp tmp,
       return true;
 
    aco_opcode op = instr->opcode;
-   return can_use_input_modifiers(ctx.program->gfx_level, instr->opcode, idx) &&
+   return get_operand_info(ctx.program->gfx_level, instr.get(), idx).mods &&
           does_fp_op_flush_denorms(ctx, op);
 }
 
@@ -1323,10 +1318,15 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
       }
 
       /* SALU / PSEUDO: propagate inline constants */
-      if (instr->isSALU() || instr->isPseudo()) {
-         unsigned bits = get_operand_size(instr, i);
-         if ((info.is_constant(bits) || (info.is_literal(bits) && instr->isPseudo())) &&
-             alu_can_accept_constant(instr, i)) {
+      if (instr->isSALU()) {
+         unsigned bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
+         if (info.is_constant(bits) && alu_can_accept_constant(instr, i)) {
+            instr->operands[i] = get_constant_op(ctx, info, bits);
+            continue;
+         }
+      } else if (instr->isPseudo()) {
+         unsigned bits = instr->operands[i].bytes() * 8u;
+         if (info.is_literal(bits) && alu_can_accept_constant(instr, i)) {
             instr->operands[i] = get_constant_op(ctx, info, bits);
             continue;
          }
@@ -1351,7 +1351,7 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
           * operand size */
          bool can_use_mod =
             instr->opcode != aco_opcode::v_cndmask_b32 || instr->operands[i].getTemp().bytes() == 4;
-         can_use_mod &= can_use_input_modifiers(ctx.program->gfx_level, instr->opcode, i);
+         can_use_mod &= get_operand_info(ctx.program->gfx_level, instr.get(), i).mods;
 
          bool packed_math = instr->isVOP3P() && instr->opcode != aco_opcode::v_fma_mix_f32 &&
                             instr->opcode != aco_opcode::v_fma_mixlo_f16 &&
@@ -1366,7 +1366,7 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          else
             can_use_mod &= instr->isDPP16() || can_use_VOP3(ctx, instr);
 
-         unsigned bits = get_operand_size(instr, i);
+         unsigned bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).bitsize;
          can_use_mod &= instr->operands[i].bytes() * 8 == bits;
 
          if (info.is_neg() && can_use_mod &&
@@ -1402,6 +1402,8 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
             propagate_constants_vop3p(ctx, instr, info, i);
             continue;
          }
+
+         bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
 
          if (info.is_constant(bits) && alu_can_accept_constant(instr, i) &&
              (!instr->isSDWA() || ctx.program->gfx_level >= GFX9) && (!instr->isDPP() || i != 1)) {
@@ -1591,7 +1593,7 @@ label_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    }
 
    if (instr->isVALU() || instr->isVINTRP()) {
-      if (instr_info.can_use_output_modifiers[(int)instr->opcode] || instr->isVINTRP() ||
+      if (get_definition_info(ctx.program->gfx_level, instr.get(), 0).mods || instr->isVINTRP() ||
           instr->opcode == aco_opcode::v_cndmask_b32) {
          bool canonicalized = true;
          if (!does_fp_op_flush_denorms(ctx, instr->opcode)) {
@@ -3024,7 +3026,7 @@ bool
 apply_omod_clamp(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 {
    if (instr->definitions.empty() || ctx.uses[instr->definitions[0].tempId()] != 1 ||
-       !instr_info.can_use_output_modifiers[(int)instr->opcode])
+       !get_definition_info(ctx.program->gfx_level, instr.get(), 0).mods)
       return false;
 
    bool can_vop3 = can_use_VOP3(ctx, instr);
@@ -3349,7 +3351,7 @@ combine_vop3p(opt_ctx& ctx, aco_ptr<Instruction>& instr)
        !vop3p->opsel_lo[1] && !vop3p->opsel_hi[1]) {
 
       ssa_info& info = ctx.info[instr->operands[0].tempId()];
-      if (info.is_vop3p() && instr_info.can_use_output_modifiers[(int)info.instr->opcode]) {
+      if (info.is_vop3p() && get_definition_info(ctx.program->gfx_level, info.instr, 0).mods) {
          VALU_instruction* candidate = &ctx.info[instr->operands[0].tempId()].instr->valu();
          candidate->clamp = true;
          propagate_swizzles(candidate, vop3p->opsel_lo[0], vop3p->opsel_hi[0]);
@@ -3362,7 +3364,7 @@ combine_vop3p(opt_ctx& ctx, aco_ptr<Instruction>& instr)
 
    /* check for fneg modifiers */
    for (unsigned i = 0; i < instr->operands.size(); i++) {
-      if (!can_use_input_modifiers(ctx.program->gfx_level, instr->opcode, i))
+      if (!get_operand_info(ctx.program->gfx_level, instr.get(), i).mods)
          continue;
       Operand& op = instr->operands[i];
       if (!op.isTemp())
@@ -3637,7 +3639,7 @@ combine_mad_mix(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          continue;
       }
 
-      if (get_operand_size(instr, i) != 32)
+      if (get_operand_info(ctx.program->gfx_level, instr.get(), i).bitsize != 32)
          continue;
 
       /* Conversion to VOP3P will add inline constant operands, but that shouldn't affect
@@ -3869,7 +3871,8 @@ combine_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          if (is_add_mix && info.instr->definitions[0].bytes() == 2)
             continue;
 
-         if (get_operand_size(instr, i) != info.instr->definitions[0].bytes() * 8)
+         if (get_operand_info(ctx.program->gfx_level, instr.get(), i).bitsize !=
+             info.instr->definitions[0].bytes() * 8)
             continue;
 
          bool legacy = info.instr->opcode == aco_opcode::v_mul_legacy_f32;
@@ -4421,7 +4424,9 @@ select_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
             Operand& op = instr->operands[i];
             if (!op.isTemp())
                continue;
-            if (ctx.info[op.tempId()].is_literal(get_operand_size(instr, i))) {
+            unsigned bit_size =
+               get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
+            if (ctx.info[op.tempId()].is_literal(bit_size)) {
                uint32_t new_literal = ctx.info[op.tempId()].val;
                float value = uif(new_literal);
                uint16_t fp16_val = _mesa_float_to_half(value);
@@ -4567,9 +4572,9 @@ select_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
          if (!can_use_DPP(ctx.program->gfx_level, instr, info.is_dpp8()))
             continue;
 
+         SrcDestInfo op_info = get_operand_info(ctx.program->gfx_level, instr.get(), i);
          bool dpp8 = info.is_dpp8();
-         bool input_mods = can_use_input_modifiers(ctx.program->gfx_level, instr->opcode, 0) &&
-                           get_operand_size(instr, 0) == 32;
+         bool input_mods = op_info.mods && op_info.bitsize == 32 && op_info.components == 1;
          bool mov_uses_mods = info.instr->valu().neg[0] || info.instr->valu().abs[0];
          if (((dpp8 && ctx.program->gfx_level < GFX11) || !input_mods) && mov_uses_mods)
             continue;
@@ -4647,7 +4652,7 @@ select_instruction(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    /* choose a literal to apply */
    for (unsigned i = 0; i < num_operands; i++) {
       Operand op = instr->operands[i];
-      unsigned bits = get_operand_size(instr, i);
+      unsigned bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
 
       if (instr->isVALU() && op.isTemp() && op.getTemp().type() == RegType::sgpr &&
           op.tempId() != sgpr_ids[0])
@@ -4933,7 +4938,7 @@ apply_literals(opt_ctx& ctx, aco_ptr<Instruction>& instr)
    if (instr->isSALU() || instr->isVALU()) {
       for (unsigned i = 0; i < instr->operands.size(); i++) {
          Operand op = instr->operands[i];
-         unsigned bits = get_operand_size(instr, i);
+         unsigned bits = get_operand_info(ctx.program->gfx_level, instr.get(), i).constant_size();
          if (op.isTemp() && ctx.info[op.tempId()].is_literal(bits) && ctx.uses[op.tempId()] == 0) {
             Operand literal = Operand::literal32(ctx.info[op.tempId()].val);
             instr->format = withoutDPP(instr->format);

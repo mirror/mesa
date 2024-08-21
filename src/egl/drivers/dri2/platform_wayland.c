@@ -651,6 +651,31 @@ dri2_wl_modifiers_have_common(struct u_vector *modifiers1,
    return false;
 }
 
+static bool
+dri2_wl_intersect_modifiers(struct u_vector *subset,
+                            struct u_vector *modifiers1,
+                            struct u_vector *modifiers2)
+{
+   uint64_t *mod1, *mod2;
+   if (!u_vector_init_pow2(subset, 2, sizeof(uint64_t)))
+      return false;
+
+   u_vector_foreach(mod1, modifiers1)
+   {
+      u_vector_foreach(mod2, modifiers2)
+      {
+         if (*mod1 != *mod2)
+            continue;
+
+         uint64_t* p = u_vector_add(subset);
+         if (p)
+            *p = *mod1;
+      }
+   }
+
+   return true;
+}
+
 /**
  * Called via eglCreateWindowSurface(), drv->CreateWindowSurface().
  */
@@ -929,10 +954,9 @@ dri2_wl_release_buffers(struct dri2_egl_surface *dri2_surf)
  * to get the set of modifiers used for fixed-rate compression. */
 static uint64_t *
 get_surface_specific_modifiers(struct dri2_egl_surface *dri2_surf,
+                               struct dri_screen *dri_screen_gpu,
                                int *modifiers_count)
 {
-   struct dri2_egl_display *dri2_dpy =
-      dri2_egl_display(dri2_surf->base.Resource.Display);
    int rate = dri2_surf->base.CompressionRate;
    uint64_t *modifiers;
 
@@ -941,7 +965,7 @@ get_surface_specific_modifiers(struct dri2_egl_surface *dri2_surf,
       return NULL;
 
    if (!dri2_query_compression_modifiers(
-          dri2_dpy->dri_screen_render_gpu, dri2_surf->format, rate,
+          dri_screen_gpu, dri2_surf->format, rate,
           0, NULL, modifiers_count))
       return NULL;
 
@@ -950,7 +974,7 @@ get_surface_specific_modifiers(struct dri2_egl_surface *dri2_surf,
       return NULL;
 
    if (!dri2_query_compression_modifiers(
-          dri2_dpy->dri_screen_render_gpu, dri2_surf->format, rate,
+          dri_screen_gpu, dri2_surf->format, rate,
           *modifiers_count, modifiers, modifiers_count)) {
       free(modifiers);
       return NULL;
@@ -1008,6 +1032,7 @@ create_dri_image(struct dri2_egl_surface *dri2_surf,
    uint64_t *modifiers;
    unsigned int num_modifiers;
    struct u_vector *modifiers_present;
+   struct u_vector *modifiers_gpus;
 
    assert(visual_idx != -1);
 
@@ -1047,6 +1072,59 @@ create_dri_image(struct dri2_egl_surface *dri2_surf,
       num_modifiers = u_vector_length(modifiers_present);
    }
 
+   /* Intersect modifiers from both GPUs. */
+   if (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) {
+      int display_gpu_modifiers_count, render_gpu_modifiers_count;
+      struct u_vector intersected_modifiers;
+
+      if (!u_vector_init_pow2(&intersected_modifiers, 4, sizeof(uint64_t)))
+         return;
+
+      uint64_t *display_gpu_modifiers =
+         get_surface_specific_modifiers(dri2_surf,
+                                        dri2_dpy->dri_screen_display_gpu,
+                                        &display_gpu_modifiers_count);
+
+      uint64_t *render_gpu_modifiers =
+         get_surface_specific_modifiers(dri2_surf,
+                                        dri2_dpy->dri_screen_render_gpu,
+                                        &render_gpu_modifiers_count);
+
+      for (int i = 0; i < display_gpu_modifiers_count; i++) {
+         for (int j = 0; j < render_gpu_modifiers_count; j++) {
+            if (display_gpu_modifiers[i] != render_gpu_modifiers[j])
+                  continue;
+
+               uint64_t *data = u_vector_add(&intersected_modifiers);
+               if (data)
+                  *data = display_gpu_modifiers[i];
+         }
+      }
+
+      modifiers = u_vector_tail(&intersected_modifiers);
+      num_modifiers = u_vector_length(&intersected_modifiers);
+      modifiers_gpus = &intersected_modifiers;
+
+      free(display_gpu_modifiers);
+      free(render_gpu_modifiers);
+
+      if (u_vector_length(modifiers_present)) {
+         struct u_vector subset;
+         if (!dri2_wl_intersect_modifiers(&subset, modifiers_present,
+                                          &intersected_modifiers)) {
+            u_vector_finish(&intersected_modifiers);
+            return;
+         }
+
+         modifiers = u_vector_tail(&subset);
+         num_modifiers = u_vector_length(&subset);
+         modifiers_gpus = &subset;
+
+         u_vector_finish(&intersected_modifiers);
+         modifiers_gpus = NULL;
+      }
+   }
+
    /* For the purposes of this function, an INVALID modifier on
     * its own means the modifiers aren't supported. */
    if (num_modifiers == 0 ||
@@ -1054,17 +1132,21 @@ create_dri_image(struct dri2_egl_surface *dri2_surf,
       num_modifiers = 0;
       modifiers = NULL;
    }
-
+   
    dri2_surf->back->dri_image = dri_create_image_with_modifiers(
       dri2_dpy->dri_screen_render_gpu, dri2_surf->base.Width,
       dri2_surf->base.Height, pipe_format,
       (dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu) ? 0 : use_flags,
       modifiers, num_modifiers, NULL);
 
-   if (surf_modifiers_count > 0) {
+   if (surf_modifiers_count > 0)
       u_vector_finish(&modifiers_subset);
-      update_surface(dri2_surf, dri2_surf->back->dri_image);
-   }
+
+   if (modifiers_gpus &&
+       dri2_dpy->fd_render_gpu != dri2_dpy->fd_display_gpu)
+      u_vector_finish(modifiers_gpus);
+
+   update_surface(dri2_surf, dri2_surf->back->dri_image);
 
 cleanup_present:
    if (modifiers_present == &modifiers_subset_opaque)
@@ -1295,7 +1377,9 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
    if (dri2_surf->back->dri_image == NULL) {
       int modifiers_count = 0;
       uint64_t *modifiers =
-         get_surface_specific_modifiers(dri2_surf, &modifiers_count);
+         get_surface_specific_modifiers(dri2_surf,
+                                        dri2_dpy->dri_screen_render_gpu,
+                                        &modifiers_count);
 
       if (dri2_surf->wl_dmabuf_feedback)
          create_dri_image_from_dmabuf_feedback(

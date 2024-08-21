@@ -38,11 +38,11 @@
 #include "dri_context.h"
 #include "dri_drawable.h"
 #include "dri_helpers.h"
-#include "loader_dri3_helper.h"
 
 #include <vulkan/vulkan.h>
 
 #ifdef VK_USE_PLATFORM_XCB_KHR
+#include "loader_dri3_helper.h"
 #include <xcb/xcb.h>
 #include <xcb/dri3.h>
 #include <xcb/present.h>

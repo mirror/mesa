@@ -272,7 +272,7 @@ struct vk_cmd_queue_entry *cmd)
 % if p.len:
    vk_free(queue->alloc, (${remove_suffix(p.decl.replace("const", ""), p.name)})cmd->u.${to_struct_field_name(c.name)}.${to_field_name(p.name)});
 % elif '*' in p.decl:
-   ${get_command_struct_free(c, p, types)}
+${get_command_struct_free(c, p, types)}
 % endif
 % endfor
    vk_free(queue->alloc, cmd);
@@ -646,11 +646,11 @@ def get_struct_free(field_name, type, cast, types, level=1, indent_level=1):
     if (type in types):
         for member in types[type].members:
             if member.len and member.len != 'null-terminated':
-                member_frees += get_array_member_free(field_name, member, types, level, indent_level)
+                member_frees += get_array_member_free(field_name, member, types, level, indent_level + 1)
             elif member.name == 'pNext':
-                member_frees += get_pnext_member_free(field_name, type, member, types, level, indent_level)
+                member_frees += get_pnext_member_free(field_name, type, member, types, level, indent_level + 1)
     indent = "   " * indent_level
-    return "%s%s%s" % (member_frees, indent, struct_free)
+    return "%sif (!cmd->driver_free_cb) {\n%s%s}\n%s%s" % (indent, member_frees, indent, indent, struct_free)
 
 EntrypointType = namedtuple('EntrypointType', 'name enum members extended_by guard')
 

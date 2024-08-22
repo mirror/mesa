@@ -156,8 +156,13 @@ lower_urb_write_logical_send(const fs_builder &bld, fs_inst *inst)
    if (per_slot_present)
       payload_sources[header_size++] = inst->src[URB_LOGICAL_SRC_PER_SLOT_OFFSETS];
 
-   if (channel_mask_present)
-      payload_sources[header_size++] = inst->src[URB_LOGICAL_SRC_CHANNEL_MASK];
+   if (channel_mask_present) {
+      payload_sources[header_size++] =
+         inst->src[URB_LOGICAL_SRC_CHANNEL_MASK].file == IMM ?
+         brw_imm_ud(inst->src[URB_LOGICAL_SRC_CHANNEL_MASK].ud << 16) :
+         bld.SHL(retype(inst->src[URB_LOGICAL_SRC_CHANNEL_MASK], BRW_TYPE_UD),
+                 brw_imm_ud(16));
+   }
 
    for (unsigned i = header_size, j = 0; i < length; i++, j++)
       payload_sources[i] = offset(inst->src[URB_LOGICAL_SRC_DATA], bld, j);
@@ -229,7 +234,7 @@ lower_urb_write_logical_send_xe2(const fs_builder &bld, fs_inst *inst)
    if (cmask.file != BAD_FILE) {
       assert(cmask.file == IMM);
       assert(cmask.type == BRW_TYPE_UD);
-      mask = cmask.ud >> 16;
+      mask = cmask.ud;
    }
 
    brw_reg payload2 = bld.move_to_vgrf(src, src_comps);

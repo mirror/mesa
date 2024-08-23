@@ -1171,14 +1171,32 @@ encode_nodes(VkCommandBuffer commandBuffer, uint32_t infoCount,
       vk_common_CmdPushConstants(commandBuffer, device->meta_state.accel_struct_build.encode_p_layout,
                                  VK_SHADER_STAGE_COMPUTE_BIT, 0, sizeof(args), &args);
 
-      struct radv_dispatch_info dispatch = {
-         .unaligned = true,
-         .ordered = true,
-         .va = pInfos[i].scratchData.deviceAddress + bvh_states[i].scratch.header_offset +
-               offsetof(struct radv_ir_header, ir_internal_node_count),
-      };
+      if (radv_device_physical(device)->info.gfx_level >= GFX7) {
+         struct radv_dispatch_info dispatch = {
+            .unaligned = true,
+            .ordered = true,
+            .va = pInfos[i].scratchData.deviceAddress + bvh_states[i].scratch.header_offset +
+                  offsetof(struct radv_ir_header, ir_internal_node_count),
+         };
 
-      radv_compute_dispatch(cmd_buffer, &dispatch);
+         radv_compute_dispatch(cmd_buffer, &dispatch);
+      } else {
+         /* Unaligned indirect dispatch is broken on gfx6. Instead, do a direct unaligned dispatch with the
+          * worst-case internal node count. We bounds-check the internal node count inside the encode shader to make
+          * sure we don't overrun anything.
+          *
+          * TODO: gfx7 might also be affected?
+          */
+         struct radv_dispatch_info dispatch = {
+            .unaligned = true,
+            .ordered = true,
+            .blocks[0] = MAX2(bvh_states[i].node_count, 2) - 1,
+            .blocks[1] = 1,
+            .blocks[2] = 1,
+         };
+
+         radv_compute_dispatch(cmd_buffer, &dispatch);
+      }
    }
    /* This is the final access to the leaf nodes, no need to flush */
 

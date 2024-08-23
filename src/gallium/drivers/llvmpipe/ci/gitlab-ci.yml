@@ -7,7 +7,8 @@ llvmpipe-piglit-rusticl:
     - .llvmpipe-rusticl-rules
   needs:
     - debian-testing
-    - debian/x86_64_test-gl
+    - job: debian/x86_64_test-gl
+      optional: true
   variables:
     DEQP_SUITE: llvmpipe-rusticl
     DEQP_RUNNER_OPTIONS: "--timeout 120.0"
@@ -56,5 +57,6 @@ llvmpipe-deqp-asan:
     LP_NUM_THREADS: 0
   extends: .llvmpipe-deqp-test
   needs:
-    - debian/x86_64_test-gl
+    - job: debian/x86_64_test-gl
+      optional: true
     - debian-testing-asan

@@ -132,14 +132,16 @@
   extends:
     - .piglit-performance-base
   needs:
-    - debian/baremetal_arm64_test
+    - job: debian/baremetal_arm64_test
+      optional: true
     - debian-arm64-release
 
 .piglit-performance:x86_64:
   extends:
     - .piglit-performance-base
   needs:
-    - kernel+rootfs_x86_64
+    - job: kernel+rootfs_x86_64
+      optional: true
     - debian-release
 
 # Mesa source file dependencies that may impact any GL driver test job.

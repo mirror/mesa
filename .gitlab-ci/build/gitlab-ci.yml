@@ -430,7 +430,8 @@ debian-android:
     - .meson-cross
     - .use-debian/arm64_build
   needs:
-    - debian/arm64_build
+    - job: debian/arm64_build
+      optional: true
   variables:
     VULKAN_DRIVERS: asahi,freedreno,broadcom
     GALLIUM_DRIVERS: "etnaviv,freedreno,lima,nouveau,panfrost,llvmpipe,softpipe,tegra,v3d,vc4,zink"

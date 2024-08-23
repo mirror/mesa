@@ -211,7 +211,21 @@ include:
       when: never
 
 
-.container+build-rules:
+.container-rules:
+  rules:
+    - !reference [.common-rules, rules]
+    # Run when re-enabling a disabled farm, but not when disabling it
+    - !reference [.disable-farm-mr-rules, rules]
+    # Never run immediately after merging, as we just ran everything
+    - !reference [.never-post-merge-rules, rules]
+    # Run in forks because they might need to copy the images from mesa/mesa
+    # even if they don't modify them
+    - if: '$CI_PROJECT_NAMESPACE != "mesa"'
+    # Run when touching the image tags
+    - changes:
+        - .gitlab-ci/image-tags.yml
+
+.build-rules:
   rules:
     - !reference [.common-rules, rules]
     # Run when re-enabling a disabled farm, but not when disabling it

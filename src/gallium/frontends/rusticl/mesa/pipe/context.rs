@@ -79,6 +79,7 @@ impl PipeContext {
         &self,
         res: &PipeResource,
         bx: &pipe_box,
+        mipmap_level: u32,
         data: *const c_void,
         stride: u32,
         layer_stride: usize,
@@ -87,7 +88,7 @@ impl PipeContext {
             self.pipe.as_ref().texture_subdata.unwrap()(
                 self.pipe.as_ptr(),
                 res.pipe(),
-                0,
+                mipmap_level,
                 pipe_map_flags::PIPE_MAP_WRITE.0, // TODO PIPE_MAP_x
                 bx,
                 data,
@@ -145,7 +146,13 @@ impl PipeContext {
         }
     }
 
-    pub fn clear_texture(&self, res: &PipeResource, pattern: &[u32], bx: &pipe_box) {
+    pub fn clear_texture(
+        &self,
+        res: &PipeResource,
+        pattern: &[u32],
+        bx: &pipe_box,
+        mipmap_level: c_uint,
+    ) {
         unsafe {
             let clear_texture = self
                 .pipe
@@ -155,7 +162,7 @@ impl PipeContext {
             clear_texture(
                 self.pipe.as_ptr(),
                 res.pipe(),
-                0,
+                mipmap_level,
                 bx,
                 pattern.as_ptr().cast(),
             )
@@ -165,20 +172,22 @@ impl PipeContext {
     fn resource_copy_region(
         &self,
         src: &PipeResource,
+        src_mipmap_level: c_uint,
         dst: &PipeResource,
         dst_offset: &[u32; 3],
+        dst_mipmap_level: c_uint,
         bx: &pipe_box,
     ) {
         unsafe {
             self.pipe.as_ref().resource_copy_region.unwrap()(
                 self.pipe.as_ptr(),
                 dst.pipe(),
-                0,
+                dst_mipmap_level,
                 dst_offset[0],
                 dst_offset[1],
                 dst_offset[2],
                 src.pipe(),
-                0,
+                src_mipmap_level,
                 bx,
             )
         }
@@ -203,26 +212,29 @@ impl PipeContext {
             ..Default::default()
         };
 
-        self.resource_copy_region(src, dst, &[dst_offset, 0, 0], &bx)
+        self.resource_copy_region(src, 0, dst, &[dst_offset, 0, 0], 0, &bx)
     }
 
     pub fn resource_copy_texture(
         &self,
         src: &PipeResource,
+        src_mipmap_level: c_uint,
         dst: &PipeResource,
         dst_offset: &[u32; 3],
+        dst_mipmap_level: c_uint,
         bx: &pipe_box,
     ) {
         debug_assert!(!src.is_buffer());
         debug_assert!(!dst.is_buffer());
 
-        self.resource_copy_region(src, dst, dst_offset, bx)
+        self.resource_copy_region(src, src_mipmap_level, dst, dst_offset, dst_mipmap_level, bx)
     }
 
     fn resource_map(
         &self,
         res: &PipeResource,
         bx: &pipe_box,
+        mipmap_level: c_uint,
         flags: pipe_map_flags,
         is_buffer: bool,
     ) -> Option<PipeTransfer> {
@@ -235,7 +247,14 @@ impl PipeContext {
                 self.pipe.as_ref().texture_map
             };
 
-            func.unwrap()(self.pipe.as_ptr(), res.pipe(), 0, flags.0, bx, &mut out)
+            func.unwrap()(
+                self.pipe.as_ptr(),
+                res.pipe(),
+                mipmap_level,
+                flags.0,
+                bx,
+                &mut out,
+            )
         };
 
         if ptr.is_null() {
@@ -260,7 +279,7 @@ impl PipeContext {
             ..Default::default()
         };
 
-        self.resource_map(res, &b, flags, true)
+        self.resource_map(res, &b, 0, flags, true)
     }
 
     pub fn buffer_map(
@@ -281,18 +300,20 @@ impl PipeContext {
         &self,
         res: &PipeResource,
         bx: &pipe_box,
+        mipmap_level: c_uint,
         flags: pipe_map_flags,
     ) -> Option<PipeTransfer> {
-        self.resource_map(res, bx, flags, false)
+        self.resource_map(res, bx, mipmap_level, flags, false)
     }
 
     pub fn texture_map(
         &self,
         res: &PipeResource,
         bx: &pipe_box,
+        mipmap_level: c_uint,
         rw: RWFlags,
     ) -> Option<PipeTransfer> {
-        self.texture_map_flags(res, bx, rw.into())
+        self.texture_map_flags(res, bx, mipmap_level, rw.into())
     }
 
     pub(super) fn texture_unmap(&self, tx: *mut pipe_transfer) {

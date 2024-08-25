@@ -975,7 +975,7 @@ Rusticl extensions that are not part of any OpenCL version:
   cl_khr_int64_base_atomics                             not started
   cl_khr_int64_extended_atomics                         not started
   cl_khr_integer_dot_product                            DONE
-  cl_khr_mipmap_image                                   not started
+  cl_khr_mipmap_image                                   DONE
   cl_khr_pci_bus_info                                   DONE (iris, nvc0, radeonsi, zink)
   cl_khr_priority_hints                                 not started
   cl_khr_spirv_extended_debug_info                      not started

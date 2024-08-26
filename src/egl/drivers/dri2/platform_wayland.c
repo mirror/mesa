@@ -1612,6 +1612,27 @@ try_damage_buffer(struct dri2_egl_surface *dri2_surf, const EGLint *rects,
    return EGL_TRUE;
 }
 
+static EGLBoolean
+dri2_wl_surface_throttle(struct dri2_egl_surface *dri2_surf)
+{
+   struct dri2_egl_display *dri2_dpy =
+      dri2_egl_display(dri2_surf->base.Resource.Display);
+
+   while (dri2_surf->throttle_callback != NULL)
+      if (loader_wayland_dispatch(dri2_dpy->wl_dpy, dri2_surf->wl_queue, NULL) ==
+          -1)
+         return EGL_FALSE;
+
+   if (dri2_surf->base.SwapInterval > 0) {
+      dri2_surf->throttle_callback =
+         wl_surface_frame(dri2_surf->wl_surface_wrapper);
+      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
+                               dri2_surf);
+   }
+
+   return EGL_TRUE;
+}
+
 /**
  * Called via eglSwapBuffers(), drv->SwapBuffers().
  */
@@ -2497,27 +2518,6 @@ dri2_wl_swrast_get_backbuffer_data(struct dri2_egl_surface *dri2_surf)
 {
    assert(dri2_surf->back);
    return dri2_surf->back->data;
-}
-
-static EGLBoolean
-dri2_wl_surface_throttle(struct dri2_egl_surface *dri2_surf)
-{
-   struct dri2_egl_display *dri2_dpy =
-      dri2_egl_display(dri2_surf->base.Resource.Display);
-
-   while (dri2_surf->throttle_callback != NULL)
-      if (loader_wayland_dispatch(dri2_dpy->wl_dpy, dri2_surf->wl_queue, NULL) ==
-          -1)
-         return EGL_FALSE;
-
-   if (dri2_surf->base.SwapInterval > 0) {
-      dri2_surf->throttle_callback =
-         wl_surface_frame(dri2_surf->wl_surface_wrapper);
-      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                               dri2_surf);
-   }
-
-   return EGL_TRUE;
 }
 
 static void

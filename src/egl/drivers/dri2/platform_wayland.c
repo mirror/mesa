@@ -1612,6 +1612,42 @@ try_damage_buffer(struct dri2_egl_surface *dri2_surf, const EGLint *rects,
    return EGL_TRUE;
 }
 
+static void
+prepare_throttle(struct dri2_egl_surface *dri2_surf)
+{
+   assert(!dri2_surf->throttle_callback);
+
+   if (dri2_surf->base.SwapInterval == 0)
+      return;
+
+   dri2_surf->throttle_callback =
+      wl_surface_frame(dri2_surf->wl_surface_wrapper);
+   wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
+                            dri2_surf);
+}
+
+static void
+finish_frame(struct dri2_egl_surface *dri2_surf)
+{
+   struct dri2_egl_display *dri2_dpy =
+      dri2_egl_display(dri2_surf->base.Resource.Display);
+
+   prepare_throttle(dri2_surf);
+   wl_surface_commit(dri2_surf->wl_surface_wrapper);
+   if (dri2_surf->base.SwapInterval == 0) {
+      /* If we're not waiting for a frame callback then we'll at least throttle
+       * to a sync callback so that we always give a chance for the compositor to
+       * handle the commit and send a release event before checking for a free
+       * buffer */
+      assert(!dri2_surf->throttle_callback);
+      dri2_surf->throttle_callback = wl_display_sync(dri2_surf->wl_dpy_wrapper);
+      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
+                               dri2_surf);
+   }
+
+   wl_display_flush(dri2_dpy->wl_dpy);
+}
+
 static EGLBoolean
 dri2_wl_surface_throttle(struct dri2_egl_surface *dri2_surf)
 {
@@ -1622,13 +1658,6 @@ dri2_wl_surface_throttle(struct dri2_egl_surface *dri2_surf)
       if (loader_wayland_dispatch(dri2_dpy->wl_dpy, dri2_surf->wl_queue, NULL) ==
           -1)
          return EGL_FALSE;
-
-   if (dri2_surf->base.SwapInterval > 0) {
-      dri2_surf->throttle_callback =
-         wl_surface_frame(dri2_surf->wl_surface_wrapper);
-      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                               dri2_surf);
-   }
 
    return EGL_TRUE;
 }
@@ -1659,10 +1688,8 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
    dri2_flush_drawable_for_swapbuffers(disp, draw);
    dri_invalidate_drawable(dri2_surf->dri_drawable);
 
-   while (dri2_surf->throttle_callback != NULL)
-      if (loader_wayland_dispatch(dri2_dpy->wl_dpy, dri2_surf->wl_queue, NULL) ==
-          -1)
-         return -1;
+   if (!dri2_wl_surface_throttle(dri2_surf))
+      return -1;
 
    for (int i = 0; i < ARRAY_SIZE(dri2_surf->color_buffers); i++)
       if (dri2_surf->color_buffers[i].age > 0)
@@ -1672,13 +1699,6 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
     * rendering. */
    if (update_buffers_if_needed(dri2_surf) < 0)
       return _eglError(EGL_BAD_ALLOC, "dri2_swap_buffers");
-
-   if (draw->SwapInterval > 0) {
-      dri2_surf->throttle_callback =
-         wl_surface_frame(dri2_surf->wl_surface_wrapper);
-      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                               dri2_surf);
-   }
 
    dri2_surf->back->age = 1;
    dri2_surf->current = dri2_surf->back;
@@ -1733,17 +1753,7 @@ dri2_wl_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
       dri_flush_drawable(dri_drawable);
    }
 
-   wl_surface_commit(dri2_surf->wl_surface_wrapper);
-
-   /* If we're not waiting for a frame callback then we'll at least throttle
-    * to a sync callback so that we always give a chance for the compositor to
-    * handle the commit and send a release event before checking for a free
-    * buffer */
-   if (dri2_surf->throttle_callback == NULL) {
-      dri2_surf->throttle_callback = wl_display_sync(dri2_surf->wl_dpy_wrapper);
-      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                               dri2_surf);
-   }
+   finish_frame(dri2_surf);
 
    wl_display_flush(dri2_dpy->wl_dpy);
 
@@ -2523,28 +2533,13 @@ dri2_wl_swrast_get_backbuffer_data(struct dri2_egl_surface *dri2_surf)
 static void
 dri2_wl_swrast_commit_backbuffer(struct dri2_egl_surface *dri2_surf)
 {
-   struct dri2_egl_display *dri2_dpy =
-      dri2_egl_display(dri2_surf->base.Resource.Display);
-
    dri2_surf->wl_win->attached_width = dri2_surf->base.Width;
    dri2_surf->wl_win->attached_height = dri2_surf->base.Height;
    /* reset resize growing parameters */
    dri2_surf->dx = 0;
    dri2_surf->dy = 0;
 
-   wl_surface_commit(dri2_surf->wl_surface_wrapper);
-
-   /* If we're not waiting for a frame callback then we'll at least throttle
-    * to a sync callback so that we always give a chance for the compositor to
-    * handle the commit and send a release event before checking for a free
-    * buffer */
-   if (dri2_surf->throttle_callback == NULL) {
-      dri2_surf->throttle_callback = wl_display_sync(dri2_surf->wl_dpy_wrapper);
-      wl_callback_add_listener(dri2_surf->throttle_callback, &throttle_listener,
-                               dri2_surf);
-   }
-
-   wl_display_flush(dri2_dpy->wl_dpy);
+   finish_frame(dri2_surf);
 }
 
 static void
@@ -2683,6 +2678,8 @@ dri2_wl_kopper_swap_buffers_with_damage(_EGLDisplay *disp, _EGLSurface *draw,
       else
          driSwapBuffers(dri2_surf->dri_drawable);
    }
+
+   prepare_throttle(dri2_surf);
 
    dri2_surf->current = dri2_surf->back;
    dri2_surf->back = NULL;

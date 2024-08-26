@@ -62,7 +62,7 @@ llvmpipe-deqp-asan:
     - debian/x86_64_test-gl
     - debian-testing-asan
 
-.android-llvmpipe:
+android-llvmpipe:
   extends:
     - .test-android
     - .llvmpipe-rules

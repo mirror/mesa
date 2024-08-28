@@ -1547,8 +1547,7 @@ brw_nir_lower_mue_outputs(nir_shader *nir, const struct brw_mue_map *map)
 
 static void
 brw_nir_initialize_mue(nir_shader *nir,
-                       const struct brw_mue_map *map,
-                       unsigned dispatch_width)
+                       const struct brw_mue_map *map)
 {
    assert(map->per_primitive_header_size_dw > 0);
 
@@ -1616,17 +1615,18 @@ brw_nir_initialize_mue(nir_shader *nir,
    /* If there's more than one subgroup, then we need to wait for all of them
     * to finish initialization before we can proceed. Otherwise some subgroups
     * may start filling MUE before other finished initializing.
+    *
+    * Note that brw_nir_lower_simd and subsequent optimizations will remove
+    * this code if condition is false.
     */
-   if (workgroup_size > dispatch_width) {
+   nir_push_if(&b, nir_ilt_imm(&b, nir_load_subgroup_size(&b), workgroup_size));
+   {
       nir_barrier(&b, SCOPE_WORKGROUP, SCOPE_WORKGROUP,
-                         NIR_MEMORY_ACQ_REL, nir_var_shader_out);
+                  NIR_MEMORY_ACQ_REL, nir_var_shader_out);
    }
+   nir_pop_if(&b, NULL);
 
-   if (remaining) {
-      nir_metadata_preserve(entrypoint, nir_metadata_none);
-   } else {
-      nir_metadata_preserve(entrypoint, nir_metadata_control_flow);
-   }
+   nir_metadata_preserve(entrypoint, nir_metadata_none);
 }
 
 static void
@@ -1960,6 +1960,13 @@ brw_compile_mesh(const struct brw_compiler *compiler,
                        prog_data->index_format, key->compact_mue);
    brw_nir_lower_mue_outputs(nir, &prog_data->map);
 
+   /*
+    * When Primitive Header is enabled, we may not generates writes to all
+    * fields, so let's initialize everything.
+    */
+   if (prog_data->map.per_primitive_header_size_dw > 0)
+      NIR_PASS_V(nir, brw_nir_initialize_mue, &prog_data->map);
+
    prog_data->autostrip_enable = brw_mesh_autostrip_enable(compiler, nir, &prog_data->map);
 
    brw_simd_selection_state simd_state{
@@ -1977,13 +1984,6 @@ brw_compile_mesh(const struct brw_compiler *compiler,
       const unsigned dispatch_width = 8 << simd;
 
       nir_shader *shader = nir_shader_clone(params->base.mem_ctx, nir);
-
-      /*
-       * When Primitive Header is enabled, we may not generates writes to all
-       * fields, so let's initialize everything.
-       */
-      if (prog_data->map.per_primitive_header_size_dw > 0)
-         NIR_PASS_V(shader, brw_nir_initialize_mue, &prog_data->map, dispatch_width);
 
       brw_nir_apply_key(shader, compiler, &key->base, dispatch_width);
 

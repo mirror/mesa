@@ -150,6 +150,8 @@ brw_nir_lower_tue_outputs(nir_shader *nir, brw_tue_map *map)
 
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_out,
             type_size_scalar_dwords, nir_lower_io_lower_64bit_to_32);
+   /* Remove dead code left by lower_io */
+   NIR_PASS(_, nir, nir_opt_dce);
 
    /* From bspec: "It is suggested that SW reserve the 16 bytes following the
     * TUE Header, and therefore start the SW-defined data structure at 32B
@@ -1217,6 +1219,8 @@ brw_nir_lower_mue_outputs(nir_shader *nir, const struct brw_mue_map *map)
 
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_out,
             type_size_scalar_dwords, nir_lower_io_lower_64bit_to_32);
+   /* Remove dead code left by lower_io */
+   NIR_PASS(_, nir, nir_opt_dce);
 }
 
 static void

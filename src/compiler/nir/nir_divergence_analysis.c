@@ -271,6 +271,8 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
    case nir_intrinsic_load_samples_log2_agx:
    case nir_intrinsic_load_active_subgroup_count_agx:
    case nir_intrinsic_load_constant_base_ptr:
+   case nir_intrinsic_load_urb_task_input_handle_intel:
+   case nir_intrinsic_load_urb_output_handle_intel:
       is_divergent = false;
       break;
 
@@ -596,7 +598,8 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
    case nir_intrinsic_load_const_ir3:
    case nir_intrinsic_load_frag_size_ir3:
    case nir_intrinsic_load_frag_offset_ir3:
-   case nir_intrinsic_bindless_resource_ir3: {
+   case nir_intrinsic_bindless_resource_ir3:
+   case nir_intrinsic_load_urb_intel: {
       unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
       for (unsigned i = 0; i < num_srcs; i++) {
          if (instr->src[i].ssa->divergent) {

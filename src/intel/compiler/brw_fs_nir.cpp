@@ -5903,6 +5903,70 @@ fs_nir_emit_task_mesh_intrinsic(nir_to_brw_state &ntb, const fs_builder &bld,
       bld.MOV(dest, retype(brw_vec1_grf(0, 1), BRW_TYPE_UD));
       break;
 
+   case nir_intrinsic_load_urb_output_handle_intel:
+      bld.MOV(retype(dest, BRW_TYPE_UD), payload.urb_output);
+      break;
+
+   case nir_intrinsic_load_urb_intel: {
+      brw_reg srcs[URB_LOGICAL_NUM_SRCS];
+      unsigned urb_global_offset = 0;
+
+      if (s.devinfo->ver >= 20) {
+         srcs[URB_LOGICAL_SRC_HANDLE] = bld.ADD(
+            retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_UD),
+            retype(get_nir_src(ntb, instr->src[1]), BRW_TYPE_UD));
+      } else {
+         brw_reg urb_handle = get_nir_src(ntb, instr->src[0]);
+         if (nir_src_is_const(instr->src[1])) {
+            urb_global_offset = nir_src_as_uint(instr->src[1]);
+            adjust_handle_and_offset(bld, urb_handle, urb_global_offset);
+         } else {
+            srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] =
+               get_nir_src(ntb, instr->src[1]);
+         }
+         srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
+      }
+
+      fs_inst *inst =
+         bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dest, srcs, ARRAY_SIZE(srcs));
+      inst->offset = urb_global_offset;
+      inst->size_written = instr->num_components *
+                           inst->dst.component_size(inst->exec_size);
+      break;
+   }
+
+   case nir_intrinsic_store_urb_intel: {
+      brw_reg srcs[URB_LOGICAL_NUM_SRCS];
+      unsigned urb_global_offset = 0;
+
+      if (s.devinfo->ver >= 20) {
+         srcs[URB_LOGICAL_SRC_HANDLE] = bld.ADD(
+            retype(get_nir_src(ntb, instr->src[1]), BRW_TYPE_UD),
+            retype(get_nir_src(ntb, instr->src[2]), BRW_TYPE_UD));
+         assert(nir_src_is_const(instr->src[3]));
+         srcs[URB_LOGICAL_SRC_CHANNEL_MASK] =
+            brw_imm_ud(nir_src_as_uint(instr->src[3]));
+      } else {
+         brw_reg urb_handle = get_nir_src(ntb, instr->src[1]);
+         if (nir_src_is_const(instr->src[2])) {
+            urb_global_offset = nir_src_as_uint(instr->src[2]);
+            adjust_handle_and_offset(bld, urb_handle, urb_global_offset);
+         } else {
+            srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] =
+               get_nir_src(ntb, instr->src[2]);
+         }
+         srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
+         srcs[URB_LOGICAL_SRC_CHANNEL_MASK] = get_nir_src(ntb, instr->src[3]);
+      }
+      srcs[URB_LOGICAL_SRC_DATA] = get_nir_src(ntb, instr->src[0]);
+      srcs[URB_LOGICAL_SRC_COMPONENTS] = brw_imm_ud(instr->src[0].ssa->num_components);
+
+      fs_inst *inst =
+         bld.emit(SHADER_OPCODE_URB_WRITE_LOGICAL, bld.null_reg_ud(), srcs, ARRAY_SIZE(srcs));
+      inst->offset = urb_global_offset;
+      break;
+   }
+
    default:
       fs_nir_emit_cs_intrinsic(ntb, instr);
       break;
@@ -5946,7 +6010,15 @@ fs_nir_emit_mesh_intrinsic(nir_to_brw_state &ntb,
    assert(s.stage == MESA_SHADER_MESH);
    const task_mesh_thread_payload &payload = s.task_mesh_payload();
 
+   brw_reg dest;
+   if (nir_intrinsic_infos[instr->intrinsic].has_dest)
+      dest = get_nir_def(ntb, instr->def);
+
    switch (instr->intrinsic) {
+   case nir_intrinsic_load_urb_task_input_handle_intel:
+      bld.MOV(retype(dest, BRW_TYPE_UD), payload.task_urb_input);
+      break;
+
    case nir_intrinsic_store_per_primitive_output:
    case nir_intrinsic_store_per_vertex_output:
    case nir_intrinsic_store_output:

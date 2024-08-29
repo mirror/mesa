@@ -894,6 +894,13 @@ driSWRastQueryBufferAge(__DRIdrawable *pdp)
    return drawable->buffer_age;
 }
 
+void
+driSWRastResetBufferAge(__DRIdrawable *pdp)
+{
+   struct dri_drawable *drawable = dri_drawable(pdp);
+   drawable->buffer_age = 0;
+}
+
 /*
  * Note: the first match is returned, which is important for formats like
  * __DRI_IMAGE_FORMAT_R8 which maps to both MESA_FORMAT_{R,L}_UNORM8

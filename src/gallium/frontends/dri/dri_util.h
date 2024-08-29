@@ -297,6 +297,9 @@ PUBLIC int
 driSWRastQueryBufferAge(__DRIdrawable *pdp);
 
 PUBLIC void
+driSWRastResetBufferAge(__DRIdrawable *pdp);
+
+PUBLIC void
 dri2_set_in_fence_fd(__DRIimage *img, int fd);
 
 PUBLIC bool

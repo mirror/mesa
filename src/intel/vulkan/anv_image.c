@@ -2286,9 +2286,20 @@ anv_image_get_memory_requirements(struct anv_device *device,
          if (image->vk.wsi_legacy_scanout ||
              image->from_ahb ||
              (isl_drm_modifier_has_aux(image->vk.drm_format_mod) &&
-              anv_image_uses_aux_map(device, image))) {
+              (anv_image_uses_aux_map(device, image) ||
+               (device->info->ver >= 20 && device->info->has_local_mem)))) {
             /* If we need to set the tiling for external consumers or the
              * modifier involves AUX tables, we need a dedicated allocation.
+             *
+             * Xe2+ discrete GPUs like BMG require some special treatments on
+             * compression modifiers. But in allocation (vkAllocateMemory()),
+             * the modifier is unavailable for us to tell this case. We
+             * require a dedicated allocation, and then applications should
+             * provide info of the image along with the modifier in allocation
+             * for us (VkMemoryDedicatedAllocateInfo). On the other hand,
+             * modifiers on integrated Xe2+ GPUs don't need these treatments,
+             * so we don't require dedicated allocation to preserve
+             * suballocation.
              *
              * See also anv_AllocateMemory.
              */

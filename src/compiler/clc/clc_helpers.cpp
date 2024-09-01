@@ -873,7 +873,7 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
          ::llvm::MemoryBuffer::getMemBuffer(llvm::StringRef(opencl_c_source, ARRAY_SIZE(opencl_c_source) - 1)).release());
    }
 #else
-
+#ifdef HAVE_DLADDR
    Dl_info info;
    if (dladdr((void *)clang::CompilerInvocation::CreateFromArgs, &info) == 0) {
       clc_error(logger, "Couldn't find libclang path.\n");
@@ -900,6 +900,7 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
    c->getHeaderSearchOpts().AddPath(clang_res_path.string(),
                                     clang::frontend::Angled,
                                     false, false);
+#endif
 #endif
 
    // Enable/Disable optional OpenCL C features. Some can be toggled via `OpenCLExtensionsAsWritten`

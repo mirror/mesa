@@ -2351,9 +2351,18 @@ to upconvert to 32b float internally?
 		<bitfield pos="0" name="ACCESS_PROT_EN" type="boolean"/>
 	</reg32>
 
-	<array offset="0x0883" name="CP_SCRATCH" stride="1" length="8">
+	<array offset="0x0883" name="CP_SCRATCH" stride="1" length="8" variants="A6XX">
 		<reg32 offset="0x0" name="REG" type="uint"/>
 	</array>
+	<array offset="0x0883" name="CP_SCRATCH_SHARED" stride="1" length="4" variants="A7XX-">
+		<doc>Shared between BR/BV/LPAC</doc>
+		<reg32 offset="0x0" name="REG" type="uint"/>
+	</array>
+	<array offset="0x0887" name="CP_SCRATCH_PER_PIPE" stride="1" length="6" variants="A7XX-">
+		<doc>Per-pipe private scratch space</doc>
+		<reg32 offset="0x0" name="REG" type="uint"/>
+	</array>
+
 	<array offset="0x0850" name="CP_PROTECT" stride="1" length="32">
 		<reg32 offset="0x0" name="REG" type="a6x_cp_protect"/>
 	</array>

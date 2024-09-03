@@ -141,6 +141,16 @@ fn set_default_device_command_queue(
     Err(CL_INVALID_OPERATION)
 }
 
+#[cl_entrypoint(clRetainDevice)]
+fn retain_device(_device: cl_device_id) -> CLResult<()> {
+    Ok(())
+}
+
+#[cl_entrypoint(clReleaseDevice)]
+fn release_device(_device: cl_device_id) -> CLResult<()> {
+    Ok(())
+}
+
 #[cfg(test)]
 mod test {
     use super::*;

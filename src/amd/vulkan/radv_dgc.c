@@ -732,7 +732,7 @@ dgc_load_ies_va(struct dgc_cmdbuf *cs, nir_def *stream_addr)
 }
 
 static nir_def *
-dgc_load_shader_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, uint32_t field_offset)
+dgc_load_shader_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, uint32_t field_offset, gl_shader_stage stage)
 {
    const struct radv_indirect_command_layout *layout = cs->layout;
    nir_builder *b = cs->b;
@@ -748,8 +748,10 @@ dgc_load_shader_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, uint32_t field
    return NULL;
 }
 
-#define load_shader_metadata32(cs, field) dgc_load_shader_metadata(cs, 32, offsetof(struct radv_shader_metadata, field))
-#define load_shader_metadata64(cs, field) dgc_load_shader_metadata(cs, 64, offsetof(struct radv_shader_metadata, field))
+#define load_shader_metadata32(cs, field, stage)                                                                       \
+   dgc_load_shader_metadata(cs, 32, offsetof(struct radv_shader_metadata, field), stage)
+#define load_shader_metadata64(cs, field, stage)                                                                       \
+   dgc_load_shader_metadata(cs, 64, offsetof(struct radv_shader_metadata, field), stage)
 
 static nir_def *
 dgc_load_vbo_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, nir_def *idx, uint32_t field_offset)
@@ -1449,7 +1451,7 @@ dgc_get_push_constant_stages(struct dgc_cmdbuf *cs)
    nir_builder *b = cs->b;
 
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      nir_def *has_push_constant = nir_ine_imm(b, load_shader_metadata32(cs, push_const_sgpr), 0);
+      nir_def *has_push_constant = nir_ine_imm(b, load_shader_metadata32(cs, push_const_sgpr, MESA_SHADER_COMPUTE), 0);
       return nir_bcsel(b, has_push_constant, nir_imm_int(b, VK_SHADER_STAGE_COMPUTE_BIT), nir_imm_int(b, 0));
    } else {
       return load_param16(b, push_constant_stages);
@@ -1464,7 +1466,7 @@ dgc_get_upload_sgpr(struct dgc_cmdbuf *cs, nir_def *param_buf, nir_def *param_of
    nir_def *res;
 
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      res = load_shader_metadata32(cs, push_const_sgpr);
+      res = load_shader_metadata32(cs, push_const_sgpr, MESA_SHADER_COMPUTE);
    } else {
       res = nir_load_ssbo(b, 1, 32, param_buf, nir_iadd_imm(b, param_offset, stage * 12));
    }
@@ -1480,7 +1482,7 @@ dgc_get_inline_sgpr(struct dgc_cmdbuf *cs, nir_def *param_buf, nir_def *param_of
    nir_def *res;
 
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      res = load_shader_metadata32(cs, push_const_sgpr);
+      res = load_shader_metadata32(cs, push_const_sgpr, MESA_SHADER_COMPUTE);
    } else {
       res = nir_load_ssbo(b, 1, 32, param_buf, nir_iadd_imm(b, param_offset, stage * 12));
    }
@@ -1495,7 +1497,7 @@ dgc_get_inline_mask(struct dgc_cmdbuf *cs, nir_def *param_buf, nir_def *param_of
    nir_builder *b = cs->b;
 
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      return load_shader_metadata64(cs, inline_push_const_mask);
+      return load_shader_metadata64(cs, inline_push_const_mask, MESA_SHADER_COMPUTE);
    } else {
       nir_def *reg_info = nir_load_ssbo(b, 2, 32, param_buf, nir_iadd_imm(b, param_offset, stage * 12 + 4));
       return nir_pack_64_2x32(b, nir_channels(b, reg_info, 0x3));
@@ -1509,7 +1511,8 @@ dgc_push_constant_needs_copy(struct dgc_cmdbuf *cs)
    nir_builder *b = cs->b;
 
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      return nir_ine_imm(b, nir_ubfe_imm(b, load_shader_metadata32(cs, push_const_sgpr), 0, 16), 0);
+      return nir_ine_imm(b, nir_ubfe_imm(b, load_shader_metadata32(cs, push_const_sgpr, MESA_SHADER_COMPUTE), 0, 16),
+                         0);
    } else {
       return nir_ine_imm(b, load_param8(b, const_copy), 0);
    }
@@ -1890,7 +1893,8 @@ dgc_get_dispatch_initiator(struct dgc_cmdbuf *cs)
    nir_builder *b = cs->b;
 
    const uint32_t dispatch_initiator = device->dispatch_initiator | S_00B800_FORCE_START_AT_000(1);
-   nir_def *is_wave32 = nir_test_mask(b, load_shader_metadata32(cs, flags), RADV_SHADER_METADATA_WAVE32);
+   nir_def *is_wave32 =
+      nir_test_mask(b, load_shader_metadata32(cs, flags, MESA_SHADER_COMPUTE), RADV_SHADER_METADATA_WAVE32);
    return nir_bcsel(b, is_wave32, nir_imm_int(b, dispatch_initiator | S_00B800_CS_W32_EN(1)),
                     nir_imm_int(b, dispatch_initiator));
 }
@@ -1975,7 +1979,7 @@ dgc_emit_dispatch(struct dgc_cmdbuf *cs, nir_def *stream_addr, nir_def *sequence
    nir_def *wg_y = nir_channel(b, dispatch_data, 1);
    nir_def *wg_z = nir_channel(b, dispatch_data, 2);
 
-   nir_def *grid_sgpr = load_shader_metadata32(cs, u.cs.grid_size_sgpr);
+   nir_def *grid_sgpr = load_shader_metadata32(cs, u.cs.grid_size_sgpr, MESA_SHADER_COMPUTE);
    nir_def *dispatch_initiator = dgc_get_dispatch_initiator(cs);
    nir_def *size_va = nir_iadd_imm(b, stream_addr, layout->vk.dispatch_src_offset_B);
 
@@ -2305,7 +2309,7 @@ dgc_emit_indirect_sets(struct dgc_cmdbuf *cs)
 {
    nir_builder *b = cs->b;
 
-   nir_def *indirect_desc_sets_sgpr = load_shader_metadata32(cs, indirect_desc_sets_sgpr);
+   nir_def *indirect_desc_sets_sgpr = load_shader_metadata32(cs, indirect_desc_sets_sgpr, MESA_SHADER_COMPUTE);
    nir_push_if(b, nir_ine_imm(b, indirect_desc_sets_sgpr, 0));
    {
       dgc_cs_begin(cs);

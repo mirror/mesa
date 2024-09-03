@@ -742,6 +742,13 @@ void radv_set_stage_key_robustness(const struct vk_pipeline_robustness_state *rs
 
 enum radv_shader_metadata_flags {
    RADV_SHADER_METADATA_WAVE32 = 1u << 0,
+   RADV_SHADER_METADATA_VS_NEEDS_DRAW_ID = 1u << 1, /* VS/MS */
+   RADV_SHADER_METADATA_VS_NEEDS_BASE_INSTANCE = 1u << 2,
+   RADV_SHADER_METADATA_VS_DYNAMIC_INPUTS = 1u << 3,
+   RADV_SHADER_METADATA_VS_USE_PER_ATTRIBUTE_VB_DESCS = 1u << 4,
+   RADV_SHADER_METADATA_MS_HAS_TASK = 1u << 5,
+   RADV_SHADER_METADATA_CS_USES_GRID_SIZE = 1u << 6,
+   RADV_SHADER_METADATA_CS_LINEAR_TASKMESH_DISPATCH = 1u << 7,
 };
 
 struct radv_shader_metadata {
@@ -751,7 +758,24 @@ struct radv_shader_metadata {
    uint32_t indirect_desc_sets_sgpr;
    uint64_t inline_push_const_mask;
 
+   uint32_t vtx_base_sgpr; /* VS/MS */
+
    union {
+      struct {
+         uint32_t vb_desc_usage_mask;
+         uint32_t vertex_buffers_sgpr;
+      } vs;
+
+      struct {
+         uint32_t task_ring_entry_sgpr;
+      } ms;
+
+      struct {
+         uint32_t task_ring_entry_sgpr;
+         uint32_t task_xyz_sgpr;
+         uint32_t task_draw_id_sgpr;
+      } ts;
+
       struct {
          uint32_t grid_size_sgpr;
       } cs;

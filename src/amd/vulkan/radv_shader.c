@@ -3734,6 +3734,7 @@ void
 radv_get_shader_metadata(const struct radv_device *device, const struct radv_shader *shader,
                          struct radv_shader_metadata *metadata)
 {
+   const struct radv_physical_device *pdev = radv_device_physical(device);
    uint32_t upload_sgpr = 0, inline_sgpr = 0;
 
    memset(metadata, 0, sizeof(*metadata));
@@ -3748,8 +3749,49 @@ radv_get_shader_metadata(const struct radv_device *device, const struct radv_sha
 
    if (shader->info.wave_size == 32)
       metadata->flags |= RADV_SHADER_METADATA_WAVE32;
+   if (shader->info.vs.needs_draw_id)
+      metadata->flags |= RADV_SHADER_METADATA_VS_NEEDS_DRAW_ID;
 
-   switch (shader->info.stage) {
+   metadata->vtx_base_sgpr = radv_get_user_sgpr(shader, AC_UD_VS_BASE_VERTEX_START_INSTANCE);
+
+   /* On GFX9+, VS is merged to TCS or GS, and TES to GS. */
+   gl_shader_stage stage = shader->info.stage;
+   if (pdev->info.gfx_level >= GFX9 && (stage == MESA_SHADER_TESS_CTRL || stage == MESA_SHADER_GEOMETRY)) {
+      if (stage == MESA_SHADER_GEOMETRY && shader->info.gs.es_type == MESA_SHADER_TESS_EVAL) {
+         stage = MESA_SHADER_TESS_EVAL;
+      } else {
+         stage = MESA_SHADER_VERTEX;
+      }
+   }
+
+   switch (stage) {
+   case MESA_SHADER_VERTEX:
+      if (shader->info.vs.needs_base_instance)
+         metadata->flags |= RADV_SHADER_METADATA_VS_NEEDS_BASE_INSTANCE;
+      if (shader->info.vs.dynamic_inputs)
+         metadata->flags |= RADV_SHADER_METADATA_VS_DYNAMIC_INPUTS;
+      if (shader->info.vs.use_per_attribute_vb_descs)
+         metadata->flags |= RADV_SHADER_METADATA_VS_USE_PER_ATTRIBUTE_VB_DESCS;
+
+      metadata->u.vs.vb_desc_usage_mask = shader->info.vs.vb_desc_usage_mask;
+      metadata->u.vs.vertex_buffers_sgpr = radv_get_user_sgpr(shader, AC_UD_VS_VERTEX_BUFFERS);
+      break;
+   case MESA_SHADER_MESH:
+      if (shader->info.ms.has_task)
+         metadata->flags |= RADV_SHADER_METADATA_MS_HAS_TASK;
+      if (shader->info.cs.uses_grid_size)
+         metadata->flags |= RADV_SHADER_METADATA_CS_USES_GRID_SIZE;
+
+      metadata->u.ms.task_ring_entry_sgpr = radv_get_user_sgpr(shader, AC_UD_TASK_RING_ENTRY);
+      break;
+   case MESA_SHADER_TASK:
+      if (shader->info.cs.linear_taskmesh_dispatch)
+         metadata->flags |= RADV_SHADER_METADATA_CS_LINEAR_TASKMESH_DISPATCH;
+
+      metadata->u.ts.task_ring_entry_sgpr = radv_get_user_sgpr(shader, AC_UD_TASK_RING_ENTRY);
+      metadata->u.ts.task_xyz_sgpr = radv_get_user_sgpr(shader, AC_UD_CS_GRID_SIZE);
+      metadata->u.ts.task_draw_id_sgpr = radv_get_user_sgpr(shader, AC_UD_CS_TASK_DRAW_ID);
+      break;
    case MESA_SHADER_COMPUTE:
       metadata->u.cs.grid_size_sgpr = radv_get_user_sgpr(shader, AC_UD_CS_GRID_SIZE);
       break;

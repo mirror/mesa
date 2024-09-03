@@ -748,10 +748,8 @@ dgc_load_shader_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, uint32_t field
    return NULL;
 }
 
-#define load_shader_metadata32(cs, field)                                                                              \
-   dgc_load_shader_metadata(cs, 32, offsetof(struct radv_compute_pipeline_metadata, field))
-#define load_shader_metadata64(cs, field)                                                                              \
-   dgc_load_shader_metadata(cs, 64, offsetof(struct radv_compute_pipeline_metadata, field))
+#define load_shader_metadata32(cs, field) dgc_load_shader_metadata(cs, 32, offsetof(struct radv_shader_metadata, field))
+#define load_shader_metadata64(cs, field) dgc_load_shader_metadata(cs, 64, offsetof(struct radv_shader_metadata, field))
 
 static nir_def *
 dgc_load_vbo_metadata(struct dgc_cmdbuf *cs, uint32_t bitsize, nir_def *idx, uint32_t field_offset)
@@ -1534,8 +1532,7 @@ dgc_get_pc_params(struct dgc_cmdbuf *cs)
 
    uint32_t offset = 0;
    if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_DISPATCH)) {
-      offset =
-         (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_IES)) ? 0 : sizeof(struct radv_compute_pipeline_metadata);
+      offset = (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_IES)) ? 0 : sizeof(struct radv_shader_metadata);
    } else {
       if (layout->vk.dgc_info & BITFIELD_BIT(MESA_VK_DGC_VB))
          offset = MAX_VBS * DGC_VBO_INFO_SIZE;
@@ -1893,7 +1890,7 @@ dgc_get_dispatch_initiator(struct dgc_cmdbuf *cs)
    nir_builder *b = cs->b;
 
    const uint32_t dispatch_initiator = device->dispatch_initiator | S_00B800_FORCE_START_AT_000(1);
-   nir_def *is_wave32 = nir_ieq_imm(b, load_shader_metadata32(cs, wave32), 1);
+   nir_def *is_wave32 = nir_test_mask(b, load_shader_metadata32(cs, flags), RADV_SHADER_METADATA_WAVE32);
    return nir_bcsel(b, is_wave32, nir_imm_int(b, dispatch_initiator | S_00B800_CS_W32_EN(1)),
                     nir_imm_int(b, dispatch_initiator));
 }
@@ -1978,7 +1975,7 @@ dgc_emit_dispatch(struct dgc_cmdbuf *cs, nir_def *stream_addr, nir_def *sequence
    nir_def *wg_y = nir_channel(b, dispatch_data, 1);
    nir_def *wg_z = nir_channel(b, dispatch_data, 2);
 
-   nir_def *grid_sgpr = load_shader_metadata32(cs, grid_base_sgpr);
+   nir_def *grid_sgpr = load_shader_metadata32(cs, u.cs.grid_size_sgpr);
    nir_def *dispatch_initiator = dgc_get_dispatch_initiator(cs);
    nir_def *size_va = nir_iadd_imm(b, stream_addr, layout->vk.dispatch_src_offset_B);
 
@@ -2325,7 +2322,7 @@ dgc_emit_ies(struct dgc_cmdbuf *cs)
 {
    nir_builder *b = cs->b;
 
-   nir_def *va = nir_iadd_imm(b, cs->ies_va, sizeof(struct radv_compute_pipeline_metadata));
+   nir_def *va = nir_iadd_imm(b, cs->ies_va, sizeof(struct radv_shader_metadata));
    nir_def *num_dw = nir_build_load_global(b, 1, 32, va, .access = ACCESS_NON_WRITEABLE);
    nir_def *cs_va = nir_iadd_imm(b, va, 4);
 
@@ -2797,7 +2794,7 @@ radv_prepare_dgc_compute(struct radv_cmd_buffer *cmd_buffer, const VkGeneratedCo
 {
    VK_FROM_HANDLE(radv_indirect_execution_set, ies, pGeneratedCommandsInfo->indirectExecutionSet);
    const struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
-   const uint32_t alloc_size = ies ? 0 : sizeof(struct radv_compute_pipeline_metadata);
+   const uint32_t alloc_size = ies ? 0 : sizeof(struct radv_shader_metadata);
 
    *upload_size = MAX2(*upload_size + alloc_size, 16);
 
@@ -2826,9 +2823,9 @@ radv_prepare_dgc_compute(struct radv_cmd_buffer *cmd_buffer, const VkGeneratedCo
       const VkGeneratedCommandsShaderInfoEXT *eso_info =
          vk_find_struct_const(pGeneratedCommandsInfo->pNext, GENERATED_COMMANDS_SHADER_INFO_EXT);
       const struct radv_shader *cs = radv_dgc_get_shader(pipeline_info, eso_info, MESA_SHADER_COMPUTE);
-      struct radv_compute_pipeline_metadata *metadata = (struct radv_compute_pipeline_metadata *)(*upload_data);
+      struct radv_shader_metadata *metadata = (struct radv_shader_metadata *)(*upload_data);
 
-      radv_get_compute_shader_metadata(device, cs, metadata);
+      radv_get_shader_metadata(device, cs, metadata);
 
       *upload_data = (char *)*upload_data + alloc_size;
    }
@@ -3176,11 +3173,11 @@ radv_update_ies_shader(struct radv_device *device, struct radv_indirect_executio
 {
    const struct radv_physical_device *pdev = radv_device_physical(device);
    uint8_t *ptr = set->mapped_ptr + set->stride * index;
-   struct radv_compute_pipeline_metadata md;
+   struct radv_shader_metadata md;
    struct radeon_cmdbuf *cs;
 
    assert(shader->info.stage == MESA_SHADER_COMPUTE);
-   radv_get_compute_shader_metadata(device, shader, &md);
+   radv_get_shader_metadata(device, shader, &md);
 
    cs = calloc(1, sizeof(*cs));
    if (!cs)
@@ -3269,7 +3266,7 @@ radv_CreateIndirectExecutionSetEXT(VkDevice _device, const VkIndirectExecutionSe
       unreachable("Invalid IES type");
    }
 
-   stride = sizeof(struct radv_compute_pipeline_metadata);
+   stride = sizeof(struct radv_shader_metadata);
    stride += 4 /* num CS DW */;
    stride += (pdev->info.gfx_level >= GFX10 ? 19 : 16) * 4;
 

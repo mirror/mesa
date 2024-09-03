@@ -3729,3 +3729,31 @@ fail:
    free(props);
    return result;
 }
+
+void
+radv_get_shader_metadata(const struct radv_device *device, const struct radv_shader *shader,
+                         struct radv_shader_metadata *metadata)
+{
+   uint32_t upload_sgpr = 0, inline_sgpr = 0;
+
+   memset(metadata, 0, sizeof(*metadata));
+
+   upload_sgpr = radv_get_user_sgpr(shader, AC_UD_PUSH_CONSTANTS);
+   inline_sgpr = radv_get_user_sgpr(shader, AC_UD_INLINE_PUSH_CONSTANTS);
+
+   metadata->push_const_sgpr = upload_sgpr | (inline_sgpr << 16);
+   metadata->inline_push_const_mask = shader->info.inline_push_constant_mask;
+
+   metadata->indirect_desc_sets_sgpr = radv_get_user_sgpr(shader, AC_UD_INDIRECT_DESCRIPTOR_SETS);
+
+   if (shader->info.wave_size == 32)
+      metadata->flags |= RADV_SHADER_METADATA_WAVE32;
+
+   switch (shader->info.stage) {
+   case MESA_SHADER_COMPUTE:
+      metadata->u.cs.grid_size_sgpr = radv_get_user_sgpr(shader, AC_UD_CS_GRID_SIZE);
+      break;
+   default:
+      break;
+   }
+}

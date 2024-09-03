@@ -740,4 +740,25 @@ void radv_precompute_registers_hw_ngg(struct radv_device *device, const struct a
 void radv_set_stage_key_robustness(const struct vk_pipeline_robustness_state *rs, gl_shader_stage stage,
                                    struct radv_shader_stage_key *key);
 
+enum radv_shader_metadata_flags {
+   RADV_SHADER_METADATA_WAVE32 = 1u << 0,
+};
+
+struct radv_shader_metadata {
+   enum radv_shader_metadata_flags flags;
+
+   uint32_t push_const_sgpr;
+   uint32_t indirect_desc_sets_sgpr;
+   uint64_t inline_push_const_mask;
+
+   union {
+      struct {
+         uint32_t grid_size_sgpr;
+      } cs;
+   } u;
+};
+
+void radv_get_shader_metadata(const struct radv_device *device, const struct radv_shader *shader,
+                              struct radv_shader_metadata *metadata);
+
 #endif /* RADV_SHADER_H */

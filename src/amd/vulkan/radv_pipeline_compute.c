@@ -57,27 +57,6 @@ radv_get_compute_resource_limits(const struct radv_physical_device *pdev, const 
 }
 
 void
-radv_get_compute_shader_metadata(const struct radv_device *device, const struct radv_shader *cs,
-                                 struct radv_compute_pipeline_metadata *metadata)
-{
-   uint32_t upload_sgpr = 0, inline_sgpr = 0;
-
-   memset(metadata, 0, sizeof(*metadata));
-
-   metadata->wave32 = cs->info.wave_size == 32;
-
-   metadata->grid_base_sgpr = radv_get_user_sgpr(cs, AC_UD_CS_GRID_SIZE);
-
-   upload_sgpr = radv_get_user_sgpr(cs, AC_UD_PUSH_CONSTANTS);
-   inline_sgpr = radv_get_user_sgpr(cs, AC_UD_INLINE_PUSH_CONSTANTS);
-
-   metadata->push_const_sgpr = upload_sgpr | (inline_sgpr << 16);
-   metadata->inline_push_const_mask = cs->info.inline_push_constant_mask;
-
-   metadata->indirect_desc_sets_sgpr = radv_get_user_sgpr(cs, AC_UD_INDIRECT_DESCRIPTOR_SETS);
-}
-
-void
 radv_compute_pipeline_init(struct radv_compute_pipeline *pipeline, const struct radv_pipeline_layout *layout,
                            struct radv_shader *shader)
 {

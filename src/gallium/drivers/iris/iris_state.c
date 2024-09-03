@@ -9270,6 +9270,13 @@ iris_upload_gpgpu_walker(struct iris_context *ice,
                          true, IRIS_DOMAIN_NONE);
    }
 
+   for (unsigned i = 0; i < grid->num_globals; i++) {
+      struct iris_resource *res = (void *) grid->globals[i];
+      iris_use_pinned_bo(batch, res->bo, true, IRIS_DOMAIN_NONE);
+      util_range_add(&res->base.b, &res->valid_buffer_range,
+                     0, res->base.b.width0);
+   }
+
    if (stage_dirty & (IRIS_STAGE_DIRTY_SAMPLER_STATES_CS |
                       IRIS_STAGE_DIRTY_BINDINGS_CS |
                       IRIS_STAGE_DIRTY_CONSTANTS_CS |

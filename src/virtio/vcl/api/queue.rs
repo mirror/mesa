@@ -94,8 +94,15 @@ fn release_command_queue(queue: cl_command_queue) -> CLResult<()> {
 
 impl CLInfo<cl_command_queue_info> for cl_command_queue {
     fn query(&self, q: cl_command_queue_info, _: &[u8]) -> CLResult<Vec<MaybeUninit<u8>>> {
+        let queue = self.get_ref()?;
         Ok(match q {
             CL_QUEUE_REFERENCE_COUNT => cl_prop::<cl_uint>(self.refcnt()?),
+            CL_QUEUE_CONTEXT => {
+                // Note we use as_ptr here which doesn't increase the reference count.
+                let ptr = Arc::as_ptr(&queue.context);
+                cl_prop::<cl_context>(cl_context::from_ptr(ptr))
+            }
+            CL_QUEUE_DEVICE => cl_prop::<cl_device_id>(cl_device_id::from_ptr(queue.device)),
             _ => return Err(CL_INVALID_VALUE),
         })
     }
@@ -111,13 +118,16 @@ fn get_command_queue_info(
 ) -> CLResult<()> {
     queue.get_ref()?;
 
-    if param_name == CL_QUEUE_REFERENCE_COUNT {
-        return queue.get_info(
-            param_name,
-            param_value_size,
-            param_value,
-            param_value_size_ret,
-        );
+    match param_name {
+        CL_QUEUE_REFERENCE_COUNT | CL_QUEUE_CONTEXT | CL_QUEUE_DEVICE => {
+            return queue.get_info(
+                param_name,
+                param_value_size,
+                param_value,
+                param_value_size_ret,
+            )
+        }
+        _ => (),
     }
 
     let mut size = 0;

@@ -326,7 +326,7 @@ v3d_write_uniforms(struct v3d_context *v3d, struct v3d_job *job,
                          * the GPU.
                         */
                         if (!cb->cb[unit].buffer) {
-                                u_upload_data(v3d->uploader, 0,
+                                u_upload_data(v3d->state_uploader, 0,
                                               cb->cb[unit].buffer_size, 16,
                                               cb->cb[unit].user_buffer,
                                               &cb->cb[unit].buffer_offset,

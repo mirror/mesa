@@ -2829,6 +2829,8 @@ radv_prepare_dgc_compute(struct radv_cmd_buffer *cmd_buffer, const VkGeneratedCo
       const struct radv_shader *cs = radv_dgc_get_shader(pipeline_info, eso_info, MESA_SHADER_COMPUTE);
       struct radv_shader_metadata *metadata = (struct radv_shader_metadata *)(*upload_data);
 
+      memset(metadata, 0, sizeof(*metadata));
+
       radv_get_shader_metadata(device, cs, metadata);
 
       *upload_data = (char *)*upload_data + alloc_size;
@@ -3177,7 +3179,7 @@ radv_update_ies_shader(struct radv_device *device, struct radv_indirect_executio
 {
    const struct radv_physical_device *pdev = radv_device_physical(device);
    uint8_t *ptr = set->mapped_ptr + set->stride * index;
-   struct radv_shader_metadata md;
+   struct radv_shader_metadata md = {0};
    struct radeon_cmdbuf *cs;
 
    assert(shader->info.stage == MESA_SHADER_COMPUTE);

@@ -3737,8 +3737,6 @@ radv_get_shader_metadata(const struct radv_device *device, const struct radv_sha
    const struct radv_physical_device *pdev = radv_device_physical(device);
    uint32_t upload_sgpr = 0, inline_sgpr = 0;
 
-   memset(metadata, 0, sizeof(*metadata));
-
    upload_sgpr = radv_get_user_sgpr(shader, AC_UD_PUSH_CONSTANTS);
    inline_sgpr = radv_get_user_sgpr(shader, AC_UD_INLINE_PUSH_CONSTANTS);
 

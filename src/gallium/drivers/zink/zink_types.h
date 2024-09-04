@@ -1350,6 +1350,7 @@ struct zink_resource {
    bool dmabuf;
    unsigned dt_stride;
 
+   uint8_t plane;
    uint8_t modifiers_count;
    uint64_t *modifiers;
 };

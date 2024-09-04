@@ -1706,7 +1706,45 @@ static struct pipe_resource *
 zink_resource_create_with_modifiers(struct pipe_screen *pscreen, const struct pipe_resource *templ,
                                     const uint64_t *modifiers, int modifiers_count)
 {
-   return resource_create(pscreen, templ, NULL, 0, modifiers, modifiers_count, NULL, NULL);
+   struct pipe_resource *pres = resource_create(pscreen, templ, NULL, 0, modifiers, modifiers_count, NULL, NULL);
+   if (!pres)
+      return NULL;
+   struct zink_resource *res = zink_resource(pres);
+   struct zink_resource *res_planes[3];
+   res_planes[0] = res;
+   unsigned num_planes = util_format_get_num_planes(templ->format);
+   for (unsigned p = 1; p < num_planes; p++) {
+      struct zink_resource *res_plane = CALLOC_STRUCT_CL(zink_resource);
+      res_plane->base.b = *templ;
+
+      threaded_resource_init(&res_plane->base.b, false);
+      pipe_reference_init(&res_plane->base.b.reference, 1);
+      res_plane->base.b.screen = pscreen;
+      zink_resource_object_reference(zink_screen(pscreen), &res_plane->obj, res->obj);
+
+      _mesa_hash_table_init(&res_plane->surface_cache, NULL, NULL, equals_ivci);
+      simple_mtx_init(&res_plane->surface_mtx, mtx_plain);
+      res_planes[p] = res_plane;
+
+      res_plane->base.b.format = util_format_get_plane_format(templ->format, p);
+      res_plane->modifiers_count = modifiers_count;
+      res_plane->modifiers = mem_dup(modifiers, modifiers_count * sizeof(uint64_t));
+      if (p == 1) {
+         res_planes[0]->base.b.format = util_format_get_plane_format(templ->format, 0);
+         res_planes[0]->base.b.next = &res_plane->base.b;
+      } else if (p == 2) {
+         res_planes[1]->base.b.next = &res_plane->base.b;
+      }
+      res_plane->plane = p;
+      res_plane->aspect = plane_aspects[p];
+      res_plane->internal_format = res_plane->base.b.format;
+   }
+   if (num_planes > 1) {
+      res->aspect = plane_aspects[0];
+      res->internal_format = res_planes[0]->base.b.format;
+   }
+
+   return pres;
 }
 
 static struct pipe_resource *
@@ -1977,11 +2015,11 @@ zink_resource_get_handle(struct pipe_screen *pscreen,
       whandle->handle = handle;
 #endif
       uint64_t value;
-      zink_resource_get_param(pscreen, context, tex, 0, 0, 0, PIPE_RESOURCE_PARAM_MODIFIER, 0, &value);
+      zink_resource_get_param(pscreen, context, tex, res->plane, 0, 0, PIPE_RESOURCE_PARAM_MODIFIER, 0, &value);
       whandle->modifier = value;
-      zink_resource_get_param(pscreen, context, tex, 0, 0, 0, PIPE_RESOURCE_PARAM_OFFSET, 0, &value);
+      zink_resource_get_param(pscreen, context, tex, res->plane, 0, 0, PIPE_RESOURCE_PARAM_OFFSET, 0, &value);
       whandle->offset = value;
-      zink_resource_get_param(pscreen, context, tex, 0, 0, 0, PIPE_RESOURCE_PARAM_STRIDE, 0, &value);
+      zink_resource_get_param(pscreen, context, tex, res->plane, 0, 0, PIPE_RESOURCE_PARAM_STRIDE, 0, &value);
       whandle->stride = value;
 #else
       return false;

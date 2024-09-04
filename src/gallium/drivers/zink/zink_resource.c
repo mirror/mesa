@@ -31,6 +31,7 @@
 #include "zink_program.h"
 #include "zink_screen.h"
 #include "zink_kopper.h"
+#include "zink_video.h"
 
 #ifdef VK_USE_PLATFORM_METAL_EXT
 #include "QuartzCore/CAMetalLayer.h"
@@ -302,6 +303,11 @@ create_bci(struct zink_screen *screen, const struct pipe_resource *templ, unsign
                   VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_BUFFER_BIT_EXT |
                   VK_BUFFER_USAGE_TRANSFORM_FEEDBACK_COUNTER_BUFFER_BIT_EXT;
    }
+   if (bind & ZINK_BIND_VIDEO) {
+      bci.usage |= VK_BUFFER_USAGE_VIDEO_DECODE_SRC_BIT_KHR;
+      // with KHR_video_maintenance1
+      // bci.flags |= VK_BUFFER_CREATE_VIDEO_PROFILE_INDEPENDENT_BIT_KHR;
+   }
    if (screen->info.have_KHR_buffer_device_address)
       bci.usage |= VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
 
@@ -408,7 +414,12 @@ get_image_usage_for_feats(struct zink_screen *screen, VkFormatFeatureFlags2 feat
       }
    }
 
-   if (bind & PIPE_BIND_RENDER_TARGET) {
+   if (bind & ZINK_BIND_VIDEO) {
+      if (templ->flags & ZINK_RESOURCE_FLAG_VIDEO_DPB)
+         usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR;
+      if (templ->flags & ZINK_RESOURCE_FLAG_VIDEO_OUTPUT)
+         usage |= VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR;
+   } else if (bind & PIPE_BIND_RENDER_TARGET) {
       if (feats & VK_FORMAT_FEATURE_COLOR_ATTACHMENT_BIT) {
          usage |= VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT;
          if (!(bind & ZINK_BIND_TRANSIENT) && (bind & (PIPE_BIND_LINEAR | PIPE_BIND_SHARED)) != (PIPE_BIND_LINEAR | PIPE_BIND_SHARED))
@@ -680,6 +691,12 @@ eval_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
          }
       }
    }
+   if (templ->bind & ZINK_BIND_VIDEO) {
+      if (!(ici->usage & (VK_IMAGE_USAGE_VIDEO_DECODE_DPB_BIT_KHR|VK_IMAGE_USAGE_VIDEO_DECODE_DST_BIT_KHR))) {
+         *success = false;
+         return DRM_FORMAT_MOD_INVALID;
+      }
+   }
    if (want_cube) {
       ici->flags |= VK_IMAGE_CREATE_CUBE_COMPATIBLE_BIT;
       VkImageUsageFlags usage = ici->usage;
@@ -693,7 +710,7 @@ eval_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
    return mod;
 }
 
-static void
+static bool
 init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_resource *templ, unsigned bind, unsigned modifiers_count)
 {
    ici->sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -705,6 +722,35 @@ init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
    ici->arrayLayers = MAX2(templ->array_size, 1);
    ici->samples = templ->nr_samples ? templ->nr_samples : VK_SAMPLE_COUNT_1_BIT;
 
+   ici->usage = 0;
+   ici->queueFamilyIndexCount = 0;
+   ici->pQueueFamilyIndices = NULL;
+   if (bind & ZINK_BIND_VIDEO) {
+      struct zink_video_format_prop prop_obj;
+      uint32_t bit_depth = zink_video_get_format_bit_depth(templ->format);
+      bool found = false;
+      VkResult ret = zink_fill_video_format_props(screen,
+                                                  screen->video_output_usage,
+                                                  PIPE_VIDEO_FORMAT_UNKNOWN,
+                                                  bit_depth, &prop_obj);
+      if (ret != VK_SUCCESS)
+         return false;
+
+      for (unsigned i = 0; i < prop_obj.videoFormatPropertyCount; i++) {
+         VkVideoFormatPropertiesKHR *fprop = &prop_obj.pVideoFormatProperties[i];
+         if (fprop->format != ici->format)
+            continue;
+         if (modifiers_count && fprop->imageTiling == VK_IMAGE_TILING_OPTIMAL)
+            continue;
+         if (!(fprop->imageCreateFlags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
+            continue;
+         found = true;
+         break;
+      }
+      free(prop_obj.pVideoFormatProperties);
+      if (!found)
+         return false;
+   }
    /* pNext may already be set */
    if (bind & ZINK_BIND_MUTABLE)
       ici->flags = VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
@@ -716,9 +762,6 @@ init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
    else if (ici->pNext)
       /* add mutable if VkImageFormatListCreateInfo */
       ici->flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
-   ici->usage = 0;
-   ici->queueFamilyIndexCount = 0;
-   ici->pQueueFamilyIndices = NULL;
 
    /* assume we're going to be doing some CompressedTexSubImage */
    if (util_format_is_compressed(templ->format) && (ici->flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT) &&
@@ -784,6 +827,7 @@ init_ici(struct zink_screen *screen, VkImageCreateInfo *ici, const struct pipe_r
 
    if (templ->target == PIPE_TEXTURE_CUBE)
       ici->arrayLayers *= 6;
+   return true;
 }
 
 static const VkImageAspectFlags plane_aspects[] = {
@@ -1179,6 +1223,13 @@ create_buffer(struct zink_screen *screen, struct zink_resource_object *obj,
       bci.pNext = &embci;
    }
 
+   struct zink_video_profile_info profiles = {0};
+   zink_video_fill_profiles(screen, &profiles, PIPE_VIDEO_PROFILE_UNKNOWN, 8);
+   if (templ->bind & ZINK_BIND_VIDEO) {
+      profiles.list.pNext = bci.pNext;
+      bci.pNext = &profiles.list;
+   }
+
    if (VKSCR(CreateBuffer)(screen->dev, &bci, NULL, &obj->buffer) != VK_SUCCESS) {
       mesa_loge("ZINK: vkCreateBuffer failed");
       return roc_fail_and_free_object;
@@ -1261,6 +1312,8 @@ create_image(struct zink_screen *screen, struct zink_resource_object *obj,
    }
    VkFormat formats[4] = {VK_FORMAT_UNDEFINED};
    VkImageFormatListCreateInfo format_list;
+   struct zink_video_profile_info vid_profile = { 0 };
+
    if (srgb) {
       formats[0] = zink_get_format(screen, templ->format);
       formats[1] = zink_get_format(screen, srgb);
@@ -1279,7 +1332,15 @@ create_image(struct zink_screen *screen, struct zink_resource_object *obj,
    } else {
       ici.pNext = NULL;
    }
-   init_ici(screen, &ici, templ, templ->bind, ici_modifier_count);
+   if (!init_ici(screen, &ici, templ, templ->bind, ici_modifier_count))
+      return roc_fail_and_free_object;
+
+   if (templ->bind & ZINK_BIND_VIDEO) {
+      uint32_t bit_depth = zink_video_get_format_bit_depth(templ->format);
+      zink_video_fill_profiles(screen, &vid_profile, PIPE_VIDEO_PROFILE_UNKNOWN, bit_depth);
+      vid_profile.list.pNext = ici.pNext;
+      ici.pNext = &vid_profile.list;
+   }
 
    bool success = false;
    uint64_t mod = eval_ici(screen, &ici, templ, templ->bind, ici_modifier_count, ici_modifiers, &success);

@@ -630,17 +630,6 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
       NIR_PASS(_, nir, radv_nir_lower_primitive_shading_rate, pdev->info.gfx_level);
    }
 
-   /* Indirect lowering must be called after the radv_optimize_nir() loop
-    * has been called at least once. Otherwise indirect lowering can
-    * bloat the instruction count of the loop and cause it to be
-    * considered too large for unrolling.
-    */
-   if (ac_nir_lower_indirect_derefs(nir, pdev->info.gfx_level) && !stage->key.optimisations_disabled &&
-       nir->info.stage != MESA_SHADER_COMPUTE) {
-      /* Optimize the lowered code before the linking optimizations. */
-      radv_optimize_nir(nir, false);
-   }
-
    return nir;
 }
 

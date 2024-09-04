@@ -19,6 +19,7 @@
 #include "radv_pipeline_rt.h"
 #include "radv_rmv.h"
 #include "radv_shader.h"
+#include "ac_nir.h"
 
 struct rt_handle_hash_entry {
    uint32_t key;
@@ -576,6 +577,7 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
                         struct radv_serialized_shader_arena_block *capture_replay_handles)
 {
    VK_FROM_HANDLE(radv_pipeline_layout, pipeline_layout, pCreateInfo->layout);
+   const struct radv_physical_device *pdev = radv_device_physical(device);
 
    if (pipeline->base.base.create_flags & VK_PIPELINE_CREATE_2_FAIL_ON_PIPELINE_COMPILE_REQUIRED_BIT_KHR)
       return VK_PIPELINE_COMPILE_REQUIRED;
@@ -603,6 +605,9 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
 
       /* precompile the shader */
       stage->nir = radv_shader_spirv_to_nir(device, stage, NULL, false);
+
+      if (ac_nir_lower_indirect_derefs(stage->nir, pdev->info.gfx_level))
+         radv_optimize_nir(stage->nir, false);
 
       NIR_PASS(_, stage->nir, radv_nir_lower_hit_attrib_derefs);
 

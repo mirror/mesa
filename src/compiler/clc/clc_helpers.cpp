@@ -65,6 +65,10 @@
 #include <dlfcn.h>
 #endif
 
+#if DETECT_OS_WINDOWS
+#include <windows.h>
+#endif
+
 #ifdef USE_STATIC_OPENCL_C_H
 #include "opencl-c-base.h.h"
 #include "opencl-c.h.h"
@@ -773,6 +777,78 @@ clc_free_kernels_info(const struct clc_kernel_info *kernels,
    free((void *)kernels);
 }
 
+static char *
+get_clang_path(const struct clc_logger *logger)
+{
+#if defined (HAVE_DLADDR)
+
+   char *clang_path = nullptr;
+
+   Dl_info info;
+   if (dladdr((void *)clang::CompilerInvocation::CreateFromArgs, &info) == 0) {
+      clc_error(logger, "Couldn't find libclang path.\n");
+      return nullptr;
+   }
+
+   char *clang_path = realpath(info.dli_fname, NULL);
+   if (clang_path == nullptr) {
+      clc_error(logger, "Couldn't find libclang path.\n");
+      return nullptr;
+   }
+
+   return clang_path;
+
+#elif DETECT_OS_WINDOWS
+
+   HMODULE module_handle = nullptr;
+   DWORD wchars_count = 0;
+   wchar_t *module_path = nullptr;
+   int size = 0;
+   char *path = nullptr;
+
+   constexpr DWORD flags = GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                           GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT;
+   const LPCWSTR address = reinterpret_cast<LPCWSTR>(clang::CompilerInvocation::CreateFromArgs);
+   if (!GetModuleHandleExW(flags, address, &module_handle))
+      goto failed;
+
+   do {
+      wchars_count += MAX_PATH;
+
+      module_path = (wchar_t *) realloc (module_path, wchars_count * sizeof(module_path[0]));
+      if (!module_path)
+         goto failed;
+
+      SetLastError(NO_ERROR);
+      if (!GetModuleFileNameW(module_handle, module_path, wchars_count))
+         goto failed;
+   } while (GetLastError() == ERROR_INSUFFICIENT_BUFFER);
+
+   do {
+      size = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, module_path, -1, path, size, NULL, NULL);
+      if (size <= 0)
+         goto failed;
+   } while (path == nullptr && (path = (char *) malloc(size)));
+
+   free(module_path);
+
+   return path;
+
+failed:
+   clc_error(logger, "Couldn't find libclang path.\n");
+
+   free(path);
+   free(module_path);
+
+   return nullptr;
+
+#else
+
+   return nullptr;
+
+#endif
+}
+
 static std::unique_ptr<::llvm::Module>
 clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
                            const struct clc_compile_args *args,
@@ -873,33 +949,24 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
          ::llvm::MemoryBuffer::getMemBuffer(llvm::StringRef(opencl_c_source, ARRAY_SIZE(opencl_c_source) - 1)).release());
    }
 #else
+   char *clang_path = get_clang_path (logger);
 
-   Dl_info info;
-   if (dladdr((void *)clang::CompilerInvocation::CreateFromArgs, &info) == 0) {
-      clc_error(logger, "Couldn't find libclang path.\n");
-      return {};
+   if (clang_path) {
+      // GetResourcePath is a way to retrive the actual libclang resource dir based on a given binary
+      // or library.
+      auto clang_res_path =
+         fs::path(Driver::GetResourcesPath(std::string(clang_path), CLANG_RESOURCE_DIR)) / "include";
+      free(clang_path);
+
+      c->getHeaderSearchOpts().UseBuiltinIncludes = true;
+      c->getHeaderSearchOpts().UseStandardSystemIncludes = true;
+      c->getHeaderSearchOpts().ResourceDir = clang_res_path.string();
+
+      // Add opencl-c generic search path
+      c->getHeaderSearchOpts().AddPath(clang_res_path.string(),
+                                       clang::frontend::Angled,
+                                       false, false);
    }
-
-   char *clang_path = realpath(info.dli_fname, NULL);
-   if (clang_path == nullptr) {
-      clc_error(logger, "Couldn't find libclang path.\n");
-      return {};
-   }
-
-   // GetResourcePath is a way to retrive the actual libclang resource dir based on a given binary
-   // or library.
-   auto clang_res_path =
-      fs::path(Driver::GetResourcesPath(std::string(clang_path), CLANG_RESOURCE_DIR)) / "include";
-   free(clang_path);
-
-   c->getHeaderSearchOpts().UseBuiltinIncludes = true;
-   c->getHeaderSearchOpts().UseStandardSystemIncludes = true;
-   c->getHeaderSearchOpts().ResourceDir = clang_res_path.string();
-
-   // Add opencl-c generic search path
-   c->getHeaderSearchOpts().AddPath(clang_res_path.string(),
-                                    clang::frontend::Angled,
-                                    false, false);
 #endif
 
    // Enable/Disable optional OpenCL C features. Some can be toggled via `OpenCLExtensionsAsWritten`

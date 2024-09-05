@@ -4829,6 +4829,21 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
             return retype(payload.global_arg_ptr, BRW_TYPE_Q);
          }
 
+         case nir_intrinsic_load_urb_output_handle_intel: {
+            assert(ntb.s.stage == MESA_SHADER_MESH ||
+                   ntb.s.stage == MESA_SHADER_TASK);
+            const task_mesh_thread_payload &payload = ntb.s.task_mesh_payload();
+            return retype(payload.urb_output,
+                          brw_type_with_size(BRW_TYPE_D, intrin->def.bit_size));
+         }
+
+         case nir_intrinsic_load_urb_task_input_handle_intel: {
+            assert(ntb.s.stage == MESA_SHADER_MESH);
+            const task_mesh_thread_payload &payload = ntb.s.task_mesh_payload();
+            return retype(payload.task_urb_input,
+                          brw_type_with_size(BRW_TYPE_D, intrin->def.bit_size));
+         }
+
          default:
             /* Execute the code below, since we have to generate new
              * instructions.
@@ -4999,6 +5014,25 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
             ntb.resource_insts[def->index] =
                ubld8.emit(SHADER_OPCODE_MOV_RELOC_IMM, dst,
                           brw_imm_ud(id), brw_imm_ud(0));
+            break;
+         }
+
+         case nir_intrinsic_load_urb_output_handle_intel: {
+            assert(ntb.s.stage == MESA_SHADER_MESH ||
+                   ntb.s.stage == MESA_SHADER_TASK);
+            const task_mesh_thread_payload &payload = ntb.s.task_mesh_payload();
+            ubld8.MOV(retype(payload.urb_output,
+                             brw_type_with_size(BRW_TYPE_D, intrin->def.bit_size)),
+                      &ntb.resource_insts[def->index]);
+            break;
+         }
+
+         case nir_intrinsic_load_urb_task_input_handle_intel: {
+            assert(ntb.s.stage == MESA_SHADER_MESH);
+            const task_mesh_thread_payload &payload = ntb.s.task_mesh_payload();
+            ubld8.MOV(retype(payload.task_urb_input,
+                             brw_type_with_size(BRW_TYPE_D, intrin->def.bit_size)),
+                      &ntb.resource_insts[def->index]);
             break;
          }
 
@@ -5351,30 +5385,54 @@ fs_nir_emit_task_mesh_intrinsic(nir_to_brw_state &ntb, const fs_builder &bld,
       break;
 
    case nir_intrinsic_load_urb_intel: {
+      fs_builder ubld = bld;
+      brw_reg urb_handle, urb_offset, udst = dest;
+
+      if (!instr->def.divergent) {
+         urb_handle = try_rebuild_source(ntb, bld, instr->src[0].ssa);
+         urb_offset = try_rebuild_source(ntb, bld, instr->src[1].ssa);
+      }
+
+      if (!instr->def.divergent &&
+          urb_handle.file != BAD_FILE &&
+          urb_offset.file != BAD_FILE) {
+         ubld = bld.exec_all().group(8 * reg_unit(ntb.devinfo), 0);
+         udst = ubld.vgrf(dest.type, instr->def.num_components);
+      } else {
+         urb_handle = get_nir_src(ntb, instr->src[0]);
+         urb_offset = get_nir_src(ntb, instr->src[1]);
+      }
+
       brw_reg srcs[URB_LOGICAL_NUM_SRCS];
       unsigned urb_global_offset = 0;
-
       if (s.devinfo->ver >= 20) {
-         srcs[URB_LOGICAL_SRC_HANDLE] = bld.ADD(
-            retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_UD),
-            retype(get_nir_src(ntb, instr->src[1]), BRW_TYPE_UD));
+         srcs[URB_LOGICAL_SRC_HANDLE] =
+            ubld.ADD(retype(urb_handle, BRW_TYPE_UD),
+                     retype(urb_offset, BRW_TYPE_UD));
       } else {
-         brw_reg urb_handle = get_nir_src(ntb, instr->src[0]);
          if (nir_src_is_const(instr->src[1])) {
             urb_global_offset = nir_src_as_uint(instr->src[1]);
-            adjust_handle_and_offset(bld, urb_handle, urb_global_offset);
+            adjust_handle_and_offset(ubld, urb_handle, urb_global_offset);
          } else {
-            srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] =
-               get_nir_src(ntb, instr->src[1]);
+            srcs[URB_LOGICAL_SRC_PER_SLOT_OFFSETS] = urb_offset;
          }
          srcs[URB_LOGICAL_SRC_HANDLE] = urb_handle;
       }
 
       fs_inst *inst =
-         bld.emit(SHADER_OPCODE_URB_READ_LOGICAL, dest, srcs, ARRAY_SIZE(srcs));
+         ubld.emit(SHADER_OPCODE_URB_READ_LOGICAL, udst, srcs, ARRAY_SIZE(srcs));
       inst->offset = urb_global_offset;
       inst->size_written = instr->num_components *
                            inst->dst.component_size(inst->exec_size);
+
+      /* If the load is uniform, spread the reduced width load's value over to
+       * the larger vector register. Copy propagation will get rid of the
+       * extra MOVs later.
+       */
+      if (inst->force_writemask_all) {
+         for (unsigned c = 0; c < instr->def.num_components; c++)
+            bld.MOV(offset(dest, bld, c), component(offset(udst, ubld, c), 0));
+      }
       break;
    }
 

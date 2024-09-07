@@ -1497,6 +1497,8 @@ void st_init_extensions(struct pipe_screen *screen,
    if (screen->get_param(screen, PIPE_CAP_QUERY_TIME_ELAPSED) ||
        extensions->ARB_timer_query) {
       extensions->EXT_timer_query = GL_TRUE;
+      // TODO should we add a pipecap for this?
+      extensions->EXT_disjoint_timer_query = GL_TRUE;
    }
 
    if (extensions->ARB_transform_feedback2 &&

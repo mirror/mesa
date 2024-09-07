@@ -203,6 +203,10 @@ GENX(jm_submit_batch)(struct panfrost_batch *batch)
    uint32_t out_sync = batch->ctx->syncobj;
    int ret = 0;
 
+   if (batch->timestamp_query) {
+      GENX(jm_emit_write_timestamp)(batch, false);
+   }
+
    /* Take the submit lock to make sure no tiler jobs from other context
     * are inserted between our tiler and fragment jobs, failing to do that
     * might result in tiler heap corruption.
@@ -266,6 +270,29 @@ GENX(jm_emit_fragment_job)(struct panfrost_batch *batch,
 
    batch->jm.jobs.frag = transfer.gpu;
 }
+
+void
+GENX(jm_emit_write_timestamp)(struct panfrost_batch *batch,
+                              bool start)
+{
+
+   struct panfrost_ptr t = pan_pool_alloc_desc(&batch->pool.base, WRITE_VALUE_JOB);
+
+   struct panfrost_resource *rsrc =
+   pan_resource(batch->timestamp_query->rsrc);
+
+   panfrost_batch_write_rsrc(batch, rsrc, PIPE_SHADER_VERTEX);
+
+   pan_section_pack(t.cpu, WRITE_VALUE_JOB, PAYLOAD, cfg) {
+      cfg.address = rsrc->image.data.base + rsrc->image.data.offset +
+         (sizeof(uint64_t) * !start);
+      cfg.type = MALI_WRITE_VALUE_TYPE_SYSTEM_TIMESTAMP;
+   }
+
+   pan_jc_add_job(&batch->jm.jobs.vtc_jc, MALI_JOB_TYPE_WRITE_VALUE, false, false,
+                  0, 0, &t, false);
+}
+
 
 #if PAN_ARCH == 9
 static void

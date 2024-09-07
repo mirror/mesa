@@ -221,6 +221,9 @@ struct panfrost_batch {
       struct panfrost_jm_batch jm;
       struct panfrost_csf_batch csf;
    };
+
+   struct panfrost_query *timestamp_query;
+   bool timestamp_query_ending;
 };
 
 /* Functions for managing the above */

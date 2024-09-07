@@ -104,6 +104,7 @@ struct panfrost_vtable {
                      struct pan_image_slice_layout *slice,
                      struct panfrost_bo *metadata, unsigned metadata_offset,
                      unsigned level);
+   void (*emit_write_timestamp)(struct panfrost_batch *batch);
 };
 
 struct panfrost_screen {

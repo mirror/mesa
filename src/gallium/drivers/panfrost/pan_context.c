@@ -609,6 +609,10 @@ panfrost_begin_query(struct pipe_context *pipe, struct pipe_query *q)
    struct panfrost_context *ctx = pan_context(pipe);
    struct panfrost_device *dev = pan_device(ctx->base.screen);
    struct panfrost_query *query = (struct panfrost_query *)q;
+   struct panfrost_batch *batch = panfrost_get_batch_for_fbo(ctx);
+
+   if (query->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
+      return true;
 
    switch (query->type) {
    case PIPE_QUERY_OCCLUSION_COUNTER:
@@ -630,6 +634,23 @@ panfrost_begin_query(struct pipe_context *pipe, struct pipe_query *q)
       query->msaa = (ctx->pipe_framebuffer.samples > 1);
       ctx->occlusion_query = query;
       ctx->dirty |= PAN_DIRTY_OQ;
+      break;
+   }
+
+   case PIPE_QUERY_TIMESTAMP:
+   case PIPE_QUERY_TIME_ELAPSED: {
+      unsigned size = 3 * sizeof(uint64_t);
+      /* Allocate a resource for the query results to be stored */
+      if (!query->rsrc) {
+         query->rsrc = pipe_buffer_create(ctx->base.screen,
+                                          PIPE_BIND_QUERY_BUFFER, 0, size);
+      }
+
+      /* Default to 0 if nothing at all drawn. */
+      uint64_t zeroes[3] = { 0, 0, 0 };
+      pipe_buffer_write(pipe, query->rsrc, 0, size, (uint8_t *)&zeroes);
+      batch->timestamp_query = query;
+      pan_screen(ctx->base.screen)->vtbl.emit_write_timestamp(batch);
       break;
    }
 
@@ -660,6 +681,10 @@ panfrost_end_query(struct pipe_context *pipe, struct pipe_query *q)
 {
    struct panfrost_context *ctx = pan_context(pipe);
    struct panfrost_query *query = (struct panfrost_query *)q;
+   struct panfrost_batch *batch = panfrost_get_batch_for_fbo(ctx);
+
+   if (query->type == PIPE_QUERY_TIMESTAMP_DISJOINT)
+      return true;
 
    switch (query->type) {
    case PIPE_QUERY_OCCLUSION_COUNTER:
@@ -667,6 +692,10 @@ panfrost_end_query(struct pipe_context *pipe, struct pipe_query *q)
    case PIPE_QUERY_OCCLUSION_PREDICATE_CONSERVATIVE:
       ctx->occlusion_query = NULL;
       ctx->dirty |= PAN_DIRTY_OQ;
+      break;
+   case PIPE_QUERY_TIMESTAMP:
+   case PIPE_QUERY_TIME_ELAPSED:
+      batch->timestamp_query_ending = true;
       break;
    case PIPE_QUERY_PRIMITIVES_GENERATED:
       query->end = ctx->prims_generated;
@@ -725,6 +754,28 @@ panfrost_get_query_result(struct pipe_context *pipe, struct pipe_query *q,
    case PAN_QUERY_DRAW_CALLS:
       vresult->u64 = query->end - query->start;
       break;
+
+   case PIPE_QUERY_TIME_ELAPSED: {
+      /* panfrost_flush_all_batches(ctx, "Time elapsed query"); */
+      panfrost_flush_writer(ctx, rsrc, "Time elapsed query");
+      panfrost_bo_wait(rsrc->bo, INT64_MAX, false);
+      uint64_t *start_end = (uint64_t *)rsrc->bo->ptr.cpu;
+      printf("start %lu end %lu\n", start_end[1], start_end[0]);
+      vresult->u64 = start_end[1] - start_end[0];
+      break;
+   }
+
+   case PIPE_QUERY_TIMESTAMP_DISJOINT: {
+      /* panfrost_flush_all_batches(ctx, "Time elapsed query"); */
+      panfrost_flush_writer(ctx, rsrc, "Time elapsed query");
+      panfrost_bo_wait(rsrc->bo, INT64_MAX, false);
+      uint64_t disjoint_count = ((uint64_t *)rsrc->bo->ptr.cpu)[2];
+      printf("disjoint count %lu\n", disjoint_count);
+      /* TODO this is the same system timer as the CPU so perhaps the frequency can be retreived with some libc call? */
+      vresult->timestamp_disjoint.frequency = 1;
+      vresult->timestamp_disjoint.disjoint = disjoint_count != 0;
+      break;
+   }
 
    default:
       /* TODO: more queries */

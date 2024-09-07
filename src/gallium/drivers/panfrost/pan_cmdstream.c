@@ -3901,6 +3901,12 @@ submit_batch(struct panfrost_batch *batch, struct pan_fb_info *fb)
    return JOBX(submit_batch)(batch);
 }
 
+static void
+emit_write_timestamp(struct panfrost_batch *batch)
+{
+   JOBX(emit_write_timestamp)(batch, true);
+}
+
 void
 GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
 {
@@ -3929,4 +3935,6 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
       &dev->indirect_dispatch, panfrost_device_gpu_id(dev),
       &screen->blitter.bin_pool.base, &screen->blitter.desc_pool.base);
 #endif
+
+   screen->vtbl.emit_write_timestamp = emit_write_timestamp;
 }

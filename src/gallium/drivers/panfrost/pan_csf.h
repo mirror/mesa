@@ -81,6 +81,9 @@ int GENX(csf_submit_batch)(struct panfrost_batch *batch);
 void GENX(csf_preload_fb)(struct panfrost_batch *batch, struct pan_fb_info *fb);
 void GENX(csf_emit_fragment_job)(struct panfrost_batch *batch,
                                  const struct pan_fb_info *pfb);
+void GENX(csf_emit_write_timestamp)(struct panfrost_batch *batch,
+                               bool start);
+void GENX(csf_emit_write_disjoint_count)(struct panfrost_batch *batch);
 void GENX(csf_emit_batch_end)(struct panfrost_batch *batch);
 void GENX(csf_launch_xfb)(struct panfrost_batch *batch,
                           const struct pipe_draw_info *info, unsigned count);

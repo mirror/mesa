@@ -403,6 +403,13 @@ csf_submit_wait_and_dump(struct panfrost_batch *batch,
 int
 GENX(csf_submit_batch)(struct panfrost_batch *batch)
 {
+   if (batch->timestamp_query && batch->timestamp_query_ending) {
+      GENX(csf_emit_write_timestamp)(batch, false);
+      GENX(csf_emit_write_disjoint_count)(batch);
+      batch->timestamp_query = NULL;
+      batch->timestamp_query_ending = false;
+   }
+
    /* Close the batch before submitting. */
    csf_emit_batch_end(batch);
 
@@ -501,6 +508,45 @@ GENX(csf_emit_fragment_job)(struct panfrost_batch *batch,
       cs_wait_slot(b, 0, false);
       cs_finish_fragment(b, true, cs_reg64(b, 86), cs_reg64(b, 88), cs_now());
    }
+}
+
+void
+GENX(csf_emit_write_timestamp)(struct panfrost_batch *batch,
+                               bool start)
+{
+   struct cs_builder *b = batch->csf.cs.builder;
+
+   struct panfrost_resource *rsrc =
+      pan_resource(batch->timestamp_query->rsrc);
+
+   panfrost_batch_write_rsrc(batch, rsrc, PIPE_SHADER_VERTEX);
+
+   struct cs_index address = cs_reg64(b, 40);
+   cs_move64_to(b, address,
+                rsrc->image.data.base +
+                rsrc->image.data.offset +
+                (sizeof(uint64_t) * !start));
+   cs_store_state(b, address, 0, MALI_CS_STATE_TIMESTAMP,
+                  cs_now());
+}
+
+void
+GENX(csf_emit_write_disjoint_count)(struct panfrost_batch *batch)
+{
+   struct cs_builder *b = batch->csf.cs.builder;
+
+   struct panfrost_resource *rsrc =
+      pan_resource(batch->timestamp_query->rsrc);
+
+   panfrost_batch_write_rsrc(batch, rsrc, PIPE_SHADER_VERTEX);
+
+   struct cs_index address = cs_reg64(b, 40);
+   cs_move64_to(b, address,
+                rsrc->image.data.base +
+                rsrc->image.data.offset +
+                sizeof(uint64_t) * 2);
+   cs_store_state(b, address, 0, MALI_CS_STATE_DISJOINT_COUNT,
+                  cs_now());
 }
 
 static void

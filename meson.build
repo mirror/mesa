@@ -694,31 +694,13 @@ endif
 pre_args += '-DENABLE_ST_OMX_BELLAGIO=@0@'.format((with_gallium_omx == 'bellagio').to_int())
 pre_args += '-DENABLE_ST_OMX_TIZONIA=@0@'.format((with_gallium_omx == 'tizonia').to_int())
 
-
+# Figure out where to put the omx driver.
 omx_drivers_path = get_option('omx-libs-path')
-
-if with_gallium_omx != 'disabled'
-  # Figure out where to put the omx driver.
-  # FIXME: this could all be vastly simplified by adding a 'defined_variable'
-  # argument to meson's get_variable method.
-  if omx_drivers_path == ''
-    _omx_libdir = dep_omx.get_variable(pkgconfig : 'libdir')
-    _omx_drivers_dir = dep_omx.get_variable(pkgconfig : 'pluginsdir')
-    if _omx_libdir == get_option('libdir')
-      omx_drivers_path = _omx_drivers_dir
-    else
-      _omx_base_dir = []
-      # This will fail on windows. Does OMX run on windows?
-      _omx_libdir = _omx_libdir.split('/')
-      _omx_drivers_dir = _omx_drivers_dir.split('/')
-      foreach o : _omx_drivers_dir
-        if not _omx_libdir.contains(o)
-          _omx_base_dir += o
-        endif
-      endforeach
-      omx_drivers_path = join_paths(get_option('libdir'), _omx_base_dir)
-    endif
-  endif
+if omx_drivers_path == '' and with_gallium_omx != 'disabled'
+  omx_drivers_path = dep_omx.get_variable(
+    pkgconfig : 'pluginsdir',
+    pkgconfig_define : ['libdir=@0@'.format(get_option('libdir'))]
+  )
 endif
 
 _va_drivers = [

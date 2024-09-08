@@ -29,6 +29,7 @@
 
 #ifdef _WIN32
 #include <windows.h>
+#include <io.h>
 #endif
 
 bool
@@ -53,6 +54,8 @@ u_memstream_open(struct u_memstream *mem, char **bufp, size_t *sizep)
          success = f != NULL;
          if (success)
          {
+            *bufp = NULL;
+            *sizep = 0;
             mem->f = f;
             mem->bufp = bufp;
             mem->sizep = sizep;
@@ -68,27 +71,63 @@ u_memstream_open(struct u_memstream *mem, char **bufp, size_t *sizep)
 #endif
 }
 
+#ifdef _WIN32
+void u_memstream_update_buffer(struct u_memstream *mem)
+{
+   FILE *const f = mem->f;
+   long size = ftell(f);
+   if (size > 0) {
+      /* reserve space for the null terminator as well */
+      if (*mem->bufp == NULL || *mem->sizep < size + 1)
+         *mem->bufp = realloc(*mem->bufp, size * 2);
+
+      fseek(f, 0, SEEK_SET);
+      fread(*mem->bufp, 1, size, f);
+   }
+   *mem->sizep = size;
+   (*mem->bufp)[size] = '\0';
+}
+#endif /* _WIN32 */
+
 void
 u_memstream_close(struct u_memstream *mem)
 {
    FILE *const f = mem->f;
 
 #ifdef _WIN32
-   long size = ftell(f);
-   if (size > 0) {
-      /* reserve space for the null terminator */
-      char *buf = malloc(size + 1);
-      fseek(f, 0, SEEK_SET);
-      fread(buf, 1, size, f);
-      /* insert null terminator */
-      buf[size] = '\0';
-
-      *mem->bufp = buf;
-      *mem->sizep = size;
-   }
-
+   u_memstream_update_buffer(mem);
    remove(mem->temp);
 #endif
 
    fclose(f);
+}
+
+int
+u_memstream_flush(struct u_memstream *mem)
+{
+   int ret;
+
+#ifndef _WIN32
+   ret = fflush(mem->f);
+   if (ret)
+      return ret;
+#else
+   u_memstream_update_buffer(mem);
+#endif /* _WIN32 */
+
+   return 0;
+}
+
+int
+u_memstream_reset(struct u_memstream *mem)
+{
+   FILE *const f = mem->f;
+   int ret;
+
+   rewind(f);
+   ret = fwrite("\0", 1, 1, f);
+   if (ret != 1)
+      return ret;
+
+   return u_memstream_flush(mem);
 }

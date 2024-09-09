@@ -14,9 +14,7 @@ trap terminate SIGTERM
 
 if [ -f /ci-kdl.venv/bin/activate ]; then
   source /ci-kdl.venv/bin/activate
-  /ci-kdl.venv/bin/python /ci-kdl.venv/bin/ci-kdl | tee -a /results/kdl.log &
-  child=$!
-  wait $child
+  /ci-kdl.venv/bin/python /ci-kdl.venv/bin/ci-kdl | tee -a /results/kdl.log
   mv kdl_*.json /results/kdl.json
 else
   echo -e "Not possible to activate ci-kdl virtual environment"

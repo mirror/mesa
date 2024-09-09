@@ -6565,8 +6565,9 @@ calculate_tile_dimensions(struct iris_context *ice,
    struct iris_screen *screen = (void *)ice->ctx.screen;
    const struct intel_device_info *devinfo = screen->devinfo;
 
-   assert(GFX_VER == 12);
-   const unsigned aux_scale = ISL_MAIN_TO_CCS_SIZE_RATIO_XE;
+   const unsigned aux_scale = GFX_VER >= 20 ?
+                              ISL_MAIN_TO_CCS_SIZE_RATIO_XE2 :
+                              ISL_MAIN_TO_CCS_SIZE_RATIO_XE;
 
    /* Perform a rough calculation of the tile cache footprint of the
     * pixel pipeline, approximating it as the sum of the amount of
@@ -7057,7 +7058,7 @@ iris_upload_dirty_render_state(struct iris_context *ice,
       }
    }
 
-#if GFX_VERx10 == 125
+#if GFX_VERx10 >= 125
    if (dirty & (IRIS_DIRTY_RENDER_BUFFER | IRIS_DIRTY_DEPTH_BUFFER)) {
       struct pipe_framebuffer_state *cso_fb = &ice->state.framebuffer;
       unsigned tile_width, tile_height;

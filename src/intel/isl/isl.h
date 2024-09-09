@@ -2730,6 +2730,13 @@ isl_surf_get_ccs_surf(const struct isl_device *dev,
  */
 #define ISL_MAIN_TO_CCS_SIZE_RATIO_XE 256
 
+/* The value is from Bspec 58797, Memory Compression Description:
+ *
+ *    "The memory required for the CCS of the entire device memory is 1/512 of
+ *    the main device memory."
+ */
+#define ISL_MAIN_TO_CCS_SIZE_RATIO_XE2 512
+
 #define isl_surf_fill_state(dev, state, ...) \
    (dev)->surf_fill_state_s(dev, state, \
                          &(struct isl_surf_fill_state_info) {  __VA_ARGS__ });

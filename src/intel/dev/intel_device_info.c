@@ -1334,10 +1334,13 @@ intel_device_info_update_pixel_pipes(struct intel_device_info *devinfo, uint8_t 
 void
 intel_device_info_update_l3_banks(struct intel_device_info *devinfo)
 {
-   if (devinfo->ver != 12)
+   if (devinfo->ver < 12 || devinfo->ver > 20)
       return;
 
-   if (devinfo->verx10 >= 125) {
+   if (devinfo->ver >= 20) {
+      devinfo->l3_banks =
+         DIV_ROUND_UP(intel_device_info_eu_total(devinfo), 64) * 4;
+   } else if (devinfo->verx10 >= 125) {
       if (devinfo->subslice_total > 16) {
          assert(devinfo->subslice_total <= 32);
          devinfo->l3_banks = 32;

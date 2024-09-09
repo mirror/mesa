@@ -410,7 +410,13 @@ intel_get_l3_partition_size(const struct intel_device_info *devinfo,
                             const struct intel_l3_config *cfg,
                             enum intel_l3_partition i)
 {
-   return cfg->n[i] * get_l3_way_size(devinfo);
+   if (!cfg) {
+      assert(devinfo->ver >= 12);
+      return (i == INTEL_L3P_ALL) ?
+             (devinfo->urb.size * devinfo->l3_banks) : 0;
+   } else {
+      return cfg->n[i] * get_l3_way_size(devinfo);
+   }
 }
 
 /**

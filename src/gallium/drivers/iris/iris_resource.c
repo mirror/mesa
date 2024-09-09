@@ -1658,12 +1658,24 @@ iris_flush_resource(struct pipe_context *ctx, struct pipe_resource *resource)
    const struct isl_drm_modifier_info *mod = res->mod_info;
    bool newly_external = false;
 
+   const enum iris_heap heap = res->bo->real.heap;
+   bool xe2_copy = (heap == IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED ||
+      heap == IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT ||
+      heap == IRIS_HEAP_DEVICE_LOCAL_COMPRESSED ||
+      heap == IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT) &&
+      !(mod && isl_drm_modifier_has_aux(mod->modifier)) &&
+      !(res->base.b.bind & PIPE_BIND_SHARED);
+
    /* flush_resource() may be used to prepare an image for sharing externally
     * with other clients (e.g. via eglCreateImage).  To account for this, we
     * make sure to eliminate suballocation and any compression that a consumer
     * wouldn't know how to handle.
     */
-   if (!iris_bo_is_real(res->bo)) {
+   /* On Xe2+ platforms, when an image wasn't created with a modifier that
+    * supports compression, we need to resolve by copying the image to an
+    * uncompressed bo.
+    */
+   if (!iris_bo_is_real(res->bo) || xe2_copy) {
       assert(!(res->base.b.bind & PIPE_BIND_SHARED));
       iris_reallocate_resource_inplace(ice, res, PIPE_BIND_SHARED);
       assert(res->base.b.bind & PIPE_BIND_SHARED);

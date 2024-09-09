@@ -199,6 +199,7 @@ vkcts-tahiti-valve:
     B2C_TIMEOUT_BOOT_MINUTES: 350
     B2C_TIMEOUT_OVERALL_MINUTES: 350
     B2C_TIMEOUT_BOOT_RETRIES: 0
+    RADV_PERFTEST: video_decode,video_encode
 
 vkcts-polaris10-valve:
   extends:
@@ -210,6 +211,7 @@ vkcts-polaris10-valve:
     GPU_VERSION: radv-polaris10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
+    RADV_PERFTEST: video_decode,video_encode
 
 vkcts-vega10-valve:
   extends:
@@ -221,7 +223,7 @@ vkcts-vega10-valve:
     GPU_VERSION: radv-vega10-aco
     B2C_TIMEOUT_BOOT_MINUTES: 70
     B2C_TIMEOUT_OVERALL_MINUTES: 70
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 vkcts-renoir-valve:
   extends:
@@ -233,7 +235,7 @@ vkcts-renoir-valve:
     GPU_VERSION: radv-renoir-aco
     B2C_TIMEOUT_BOOT_MINUTES: 130
     B2C_TIMEOUT_OVERALL_MINUTES: 130
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 vkcts-navi10-valve:
   parallel: 2
@@ -243,7 +245,7 @@ vkcts-navi10-valve:
     - .radv-valve-manual-rules
   variables:
     GPU_VERSION: radv-navi10-aco
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 vkcts-navi21-valve:
   timeout: 35m
@@ -256,7 +258,7 @@ vkcts-navi21-valve:
     GPU_VERSION: radv-navi21-aco
     B2C_TIMEOUT_BOOT_MINUTES: 30
     B2C_TIMEOUT_OVERALL_MINUTES: 30
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 # Disabled due to its extremelly-broken nature
 .vkcts-navi21-llvm-valve:
@@ -277,7 +279,7 @@ vkcts-vangogh-valve:
   timeout: 2h 10m
   variables:
     GPU_VERSION: radv-vangogh-aco
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 .glcts-vangogh-valve-common:
   extends:
@@ -311,7 +313,7 @@ vkcts-navi31-valve:
   variables:
     GPU_VERSION: radv-navi31-aco
     RADV_DEBUG: nomeshshader # Disable mesh shaders until task shaders stop hanging
-    RADV_PERFTEST: transfer_queue
+    RADV_PERFTEST: transfer_queue,video_decode,video_encode
 
 ############### Fossilize
 radv-fossils:

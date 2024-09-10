@@ -893,7 +893,7 @@ Anvil(ANV) driver environment variables
 
 .. envvar:: ANV_NO_GPL
 
-   If set to 1, true, or yes, then VK_EXT_graphics_pipeline_library
+   If set to 1, true, or yes, then :vk-ext:`EXT_graphics_pipeline_library`
    will be disabled.
 
 .. envvar:: ANV_SPARSE
@@ -1364,13 +1364,13 @@ RADV driver environment variables
    ``nodynamicbounds``
       do not check OOB access for dynamic descriptors
    ``noeso``
-      disable VK_EXT_shader_object
+      disable :vk-ext:`EXT_shader_object`
    ``nofastclears``
       disable fast color/depthstencil clears
    ``nofmask``
       disable FMASK compression on MSAA images (GFX6-GFX10.3)
    ``nogpl``
-      disable VK_EXT_graphics_pipeline_library
+      disable :vk-ext:`EXT_graphics_pipeline_library`
    ``nohiz``
       disable HIZ for depthstencil images
    ``noibs``

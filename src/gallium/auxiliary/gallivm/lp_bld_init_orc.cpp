@@ -58,12 +58,6 @@
 /* conflict with ObjectLinkingLayer.h */
 #include "util/u_memory.h"
 
-#if DETECT_ARCH_RISCV64 == 1 || DETECT_ARCH_RISCV32 == 1 || DETECT_ARCH_LOONGARCH64 == 1 || (defined(_WIN32) && LLVM_VERSION_MAJOR >= 15)
-/* use ObjectLinkingLayer (JITLINK backend) */
-#define USE_JITLINK
-#endif
-/* else use old RTDyldObjectLinkingLayer (RuntimeDyld backend) */
-
 namespace {
 
 class LPObjectCacheORC : public llvm::ObjectCache {
@@ -334,24 +328,17 @@ LPJit::LPJit() :jit_dylib_count(0) {
    tm = wrap(tm_unique.get());
 
    /* Create an LLJIT instance with an ObjectLinkingLayer (JITLINK)
-    * or RuntimeDyld as the base layer.
+    * as the base layer.
     * intel & perf listeners are not supported by ObjectLinkingLayer yet
     */
    lljit = ExitOnErr(
       LLJITBuilder()
          .setJITTargetMachineBuilder(std::move(JTMB))
-#ifdef USE_JITLINK
          .setObjectLinkingLayerCreator(
             [&](ExecutionSession &ES, const llvm::Triple &TT) {
                return std::make_unique<ObjectLinkingLayer>(
                   ES, ExitOnErr(llvm::jitlink::InProcessMemoryManager::Create()));
             })
-#else
-#if LLVM_USE_INTEL_JITEVENTS
-         .RegisterJITEventListener(
-               llvm::JITEventListener::createIntelJITEventListener())
-#endif
-#endif
          .create());
 
    LLVMOrcIRTransformLayerRef TL = wrap(&lljit->getIRTransformLayer());

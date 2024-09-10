@@ -150,6 +150,9 @@ static void encode(struct radeon_encoder *enc)
    enc->total_task_size = 0;
    enc->task_info(enc, enc->need_feedback);
 
+   if (enc->need_begin)
+      enc->begin(enc);
+
    if (enc->need_spec_misc)
       enc->spec_misc(enc);
 

@@ -4921,6 +4921,7 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
             ubld8.SHL(srcs[0], srcs[1], &ntb.resource_insts[def->index]);
             break;
          case nir_op_mov:
+            ubld8.MOV(srcs[0], &ntb.resource_insts[def->index]);
             break;
          case nir_op_ult32: {
             if (brw_type_size_bits(srcs[0].type) != 32)
@@ -5037,7 +5038,8 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
          }
 
          case nir_intrinsic_load_ubo_uniform_block_intel:
-         case nir_intrinsic_load_ssbo_uniform_block_intel: {
+         case nir_intrinsic_load_ssbo_uniform_block_intel:
+         case nir_intrinsic_load_global_constant_uniform_block_intel: {
             enum brw_reg_type type =
                brw_type_with_size(BRW_TYPE_D, intrin->def.bit_size);
             brw_reg src_data = retype(ntb.ssa_values[def->index], type);

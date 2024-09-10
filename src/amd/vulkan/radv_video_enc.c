@@ -2623,7 +2623,15 @@ radv_video_enc_control_video_coding(struct radv_cmd_buffer *cmd_buffer, const Vk
             vid->rc_per_pic[l].max_au_size_p = h265_layer->useMaxFrameSize ? h265_layer->maxFrameSize.framePSize : 0;
             vid->rc_per_pic[l].max_au_size_b = h265_layer->useMaxFrameSize ? h265_layer->maxFrameSize.frameBSize : 0;
          } else if (av1_layer) {
-
+            vid->rc_per_pic[l].min_qp_i = av1_layer->useMinQIndex ? av1_layer->minQIndex.intraQIndex : 0;
+            vid->rc_per_pic[l].min_qp_p = av1_layer->useMinQIndex ? av1_layer->minQIndex.predictiveQIndex : 0;
+            vid->rc_per_pic[l].min_qp_b = av1_layer->useMinQIndex ? av1_layer->minQIndex.bipredictiveQIndex : 0;
+            vid->rc_per_pic[l].max_qp_i = av1_layer->useMaxQIndex ? av1_layer->maxQIndex.intraQIndex : 0;
+            vid->rc_per_pic[l].max_qp_p = av1_layer->useMaxQIndex ? av1_layer->maxQIndex.predictiveQIndex : 0;
+            vid->rc_per_pic[l].max_qp_b = av1_layer->useMaxQIndex ? av1_layer->maxQIndex.bipredictiveQIndex : 0;
+            vid->rc_per_pic[l].max_au_size_i = av1_layer->useMaxFrameSize ? av1_layer->maxFrameSize.intraFrameSize : 0;
+            vid->rc_per_pic[l].max_au_size_p = av1_layer->useMaxFrameSize ? av1_layer->maxFrameSize.predictiveFrameSize : 0;
+            vid->rc_per_pic[l].max_au_size_b = av1_layer->useMaxFrameSize ? av1_layer->maxFrameSize.bipredictiveFrameSize : 0;
          }
 
          vid->rc_per_pic[l].enabled_filler_data = 1;

@@ -19,8 +19,6 @@ use rusticl_opencl_gen::*;
 use rusticl_proc_macros::cl_entrypoint;
 use rusticl_proc_macros::cl_info_entrypoint;
 
-use std::alloc;
-use std::alloc::Layout;
 use std::cmp;
 use std::cmp::Ordering;
 use std::mem::{self, MaybeUninit};
@@ -2367,22 +2365,8 @@ pub fn svm_alloc(
         return Err(CL_INVALID_VALUE);
     }
 
-    let layout;
-    let ptr;
-
-    // SAFETY: we already verify the parameters to from_size_align above and layout is of non zero
-    // size
-    unsafe {
-        layout = Layout::from_size_align_unchecked(size, alignment as usize);
-        ptr = alloc::alloc(layout);
-    }
-
-    if ptr.is_null() {
-        return Err(CL_OUT_OF_HOST_MEMORY);
-    }
-
-    c.add_svm_ptr(ptr as usize, layout);
-    Ok(ptr.cast())
+    // SAFETY: we make sure that alignment is sound above and size is small enough to not overflow
+    unsafe { c.alloc_svm_ptr(size, alignment as usize) }
 
     // Values specified in flags do not follow rules described for supported values in the SVM Memory Flags table.
     // CL_MEM_SVM_FINE_GRAIN_BUFFER or CL_MEM_SVM_ATOMICS is specified in flags and these are not supported by at least one device in context.
@@ -2391,19 +2375,9 @@ pub fn svm_alloc(
     // There was a failure to allocate resources.
 }
 
-fn svm_free_impl(c: &Context, svm_pointer: usize) {
-    if let Some(layout) = c.remove_svm_ptr(svm_pointer) {
-        // SAFETY: we make sure that svm_pointer is a valid allocation and reuse the same layout
-        // from the allocation
-        unsafe {
-            alloc::dealloc(svm_pointer as *mut u8, layout);
-        }
-    }
-}
-
 pub fn svm_free(context: cl_context, svm_pointer: usize) -> CLResult<()> {
     let c = Context::ref_from_raw(context)?;
-    svm_free_impl(c, svm_pointer);
+    c.remove_svm_ptr(svm_pointer);
     Ok(())
 }
 
@@ -2454,7 +2428,7 @@ fn enqueue_svm_free_impl(
                 cb.call(q, &mut svm_pointers);
             } else {
                 for ptr in svm_pointers {
-                    svm_free_impl(&q.context, ptr);
+                    q.context.remove_svm_ptr(ptr);
                 }
             }
 

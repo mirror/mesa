@@ -16,6 +16,7 @@ use mesa_rust_util::ptr::AllocSize;
 use mesa_rust_util::ptr::TrackedPointers;
 use rusticl_opencl_gen::*;
 
+use std::alloc;
 use std::alloc::Layout;
 use std::collections::HashMap;
 use std::convert::TryInto;
@@ -207,8 +208,22 @@ impl Context {
         self.devs.iter().any(|dev| dev.svm_supported())
     }
 
-    pub fn add_svm_ptr(&self, ptr: usize, layout: Layout) {
-        self.svm_ptrs.lock().unwrap().insert(ptr, layout);
+    /// # Safety
+    ///
+    /// Alignment must be a pot value and non 0 and size must not overflow when rounded up to next
+    /// alignment.
+    pub unsafe fn alloc_svm_ptr(&self, size: usize, alignment: usize) -> CLResult<*mut c_void> {
+        // SAFETY: already verified on the API layer
+        let layout = unsafe { Layout::from_size_align_unchecked(size, alignment) };
+        let ptr = unsafe { alloc::alloc(layout) };
+
+        self.svm_ptrs.lock().unwrap().insert(ptr as usize, layout);
+
+        if ptr.is_null() {
+            return Err(CL_OUT_OF_HOST_MEMORY);
+        }
+
+        Ok(ptr.cast())
     }
 
     pub fn find_svm_alloc(&self, ptr: usize) -> Option<(*const c_void, usize)> {
@@ -219,8 +234,14 @@ impl Context {
             .map(|(ptr, layout)| (ptr as *const c_void, layout.size()))
     }
 
-    pub fn remove_svm_ptr(&self, ptr: usize) -> Option<Layout> {
-        self.svm_ptrs.lock().unwrap().remove(ptr)
+    pub fn remove_svm_ptr(&self, ptr: usize) {
+        if let Some(layout) = self.svm_ptrs.lock().unwrap().remove(ptr) {
+            // SAFETY: we make sure that svm_pointer is a valid allocation and reuse the same layout
+            // from the allocation
+            unsafe {
+                alloc::dealloc(ptr as *mut u8, layout);
+            }
+        }
     }
 
     pub fn add_bda_ptr(&self, buffer: &Arc<Buffer>) {

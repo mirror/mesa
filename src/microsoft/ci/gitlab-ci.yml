@@ -10,7 +10,8 @@ test-spirv2dxil-windows:
     - windows-msvc
   needs:
     - windows-msvc
-    - windows_test_msvc
+    - job: windows_test_msvc
+      optional: true
     - !reference [.required-for-hardware-jobs, needs]
   variables:
     GIT_STRATEGY: none # testing doesn't build anything from source
@@ -31,7 +32,8 @@ test-dozen-deqp:
     - windows-msvc
   needs:
     - windows-msvc
-    - windows_test_msvc
+    - job: windows_test_msvc
+      optional: true
     - !reference [.required-for-hardware-jobs, needs]
   variables:
     GIT_STRATEGY: none # testing doesn't build anything from source

@@ -1,6 +1,6 @@
 # Shared between windows and Linux
 .build-common:
-  extends: .container+build-rules
+  extends: .build-rules
   # Cancel job if a newer commit is pushed to the same branch
   interruptible: true
   # Build jobs don't take more than 1-3 minutes. 5-8 min max on a fresh runner
@@ -216,7 +216,7 @@ shader-db:
   stage: code-validation
   extends:
     - .use-debian/x86_64_build
-    - .container+build-rules
+    - .build-rules
   needs:
     - debian-build-testing
   variables:
@@ -444,7 +444,8 @@ debian-android:
     - .meson-cross
     - .use-debian/arm64_build
   needs:
-    - debian/arm64_build
+    - job: debian/arm64_build
+      optional: true
   variables:
     VULKAN_DRIVERS: asahi,freedreno,broadcom
     GALLIUM_DRIVERS: "etnaviv,freedreno,lima,nouveau,panfrost,llvmpipe,softpipe,tegra,v3d,vc4,zink"

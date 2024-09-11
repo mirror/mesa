@@ -100,7 +100,8 @@ yaml-toml-shell-test:
     - .test
     - .use-debian/x86_64_test-gl
   needs:
-    - debian/x86_64_test-gl
+    - job: debian/x86_64_test-gl
+      optional: true
     - debian-testing
     - !reference [.required-for-hardware-jobs, needs]
   variables:
@@ -112,7 +113,8 @@ yaml-toml-shell-test:
     - .use-debian/x86_64_test-vk
   needs:
     - debian-testing
-    - debian/x86_64_test-vk
+    - job: debian/x86_64_test-vk
+      optional: true
     - !reference [.required-for-hardware-jobs, needs]
   variables:
     DEBIAN_ARCH: amd64
@@ -122,7 +124,8 @@ yaml-toml-shell-test:
     - .test
     - .use-debian/x86_64_test-gl
   needs:
-    - debian/x86_64_test-gl
+    - job: debian/x86_64_test-gl
+      optional: true
     - !reference [.required-for-hardware-jobs, needs]
 
 .test-android:
@@ -233,7 +236,8 @@ yaml-toml-shell-test:
     DEBIAN_ARCH: armhf
     S3_ARTIFACT_NAME: mesa-arm32-default-debugoptimized
   needs:
-    - debian/baremetal_arm32_test
+    - job: debian/baremetal_arm32_test
+      optional: true
     - job: debian-arm32
       artifacts: false
     - !reference [.required-for-hardware-jobs, needs]
@@ -247,7 +251,8 @@ yaml-toml-shell-test:
     DEBIAN_ARCH: arm64
     S3_ARTIFACT_NAME: mesa-arm64-default-debugoptimized
   needs:
-    - debian/baremetal_arm64_test
+    - job: debian/baremetal_arm64_test
+      optional: true
     - job: debian-arm64
       artifacts: false
     - !reference [.required-for-hardware-jobs, needs]
@@ -261,7 +266,8 @@ yaml-toml-shell-test:
     DEQP_RUNNER_OPTIONS: "--env LD_PRELOAD=libasan.so.8:/install/lib/libdlclose-skip.so"
     S3_ARTIFACT_NAME: mesa-arm32-asan-debugoptimized
   needs:
-    - debian/baremetal_arm32_test
+    - job: debian/baremetal_arm32_test
+      optional: true
     - job: debian-arm32-asan
       artifacts: false
     - !reference [.required-for-hardware-jobs, needs]
@@ -274,7 +280,8 @@ yaml-toml-shell-test:
     DEQP_RUNNER_OPTIONS: "--env LD_PRELOAD=libasan.so.8:/install/lib/libdlclose-skip.so"
     S3_ARTIFACT_NAME: mesa-arm64-asan-debugoptimized
   needs:
-    - debian/baremetal_arm64_test
+    - job: debian/baremetal_arm64_test
+      optional: true
     - job: debian-arm64-asan
       artifacts: false
     - !reference [.required-for-hardware-jobs, needs]
@@ -413,7 +420,8 @@ yaml-toml-shell-test:
     - .use-debian/x86_64_test-vk
     - .b2c-test
   needs:
-    - debian/x86_64_test-vk
+    - job: debian/x86_64_test-vk
+      optional: true
     - debian-testing
     - !reference [.required-for-hardware-jobs, needs]
 
@@ -422,7 +430,8 @@ yaml-toml-shell-test:
     - .use-debian/x86_64_test-gl
     - .b2c-test
   needs:
-    - debian/x86_64_test-gl
+    - job: debian/x86_64_test-gl
+      optional: true
     - debian-testing
     - !reference [.required-for-hardware-jobs, needs]
 
@@ -431,7 +440,8 @@ yaml-toml-shell-test:
     - .use-debian/arm64_test-vk
     - .b2c-test
   needs:
-    - debian/arm64_test-vk
+    - job: debian/arm64_test-vk
+      optional: true
     - debian-arm64
     - !reference [.required-for-hardware-jobs, needs]
 
@@ -440,6 +450,7 @@ yaml-toml-shell-test:
     - .use-debian/arm64_test-gl
     - .b2c-test
   needs:
-    - debian/arm64_test-gl
+    - job: debian/arm64_test-gl
+      optional: true
     - debian-arm64
     - !reference [.required-for-hardware-jobs, needs]

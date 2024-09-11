@@ -163,6 +163,9 @@ void brw_nir_lower_tcs_outputs(nir_shader *nir, const struct intel_vue_map *vue,
                                enum tess_primitive_mode tes_primitive_mode);
 void brw_nir_lower_fs_outputs(nir_shader *nir);
 
+bool brw_nir_lower_task_mesh_io(nir_shader *nir,
+                                const struct intel_device_info *devinfo);
+
 bool brw_nir_lower_cmat(nir_shader *nir, unsigned subgroup_size);
 
 struct brw_nir_lower_storage_image_opts {
@@ -239,8 +242,6 @@ nir_def *brw_nir_load_global_const(nir_builder *b,
 
 const struct glsl_type *brw_nir_get_var_type(const struct nir_shader *nir,
                                              nir_variable *var);
-
-void brw_nir_adjust_payload(nir_shader *shader);
 
 static inline nir_variable_mode
 brw_nir_no_indirect_mask(const struct brw_compiler *compiler,

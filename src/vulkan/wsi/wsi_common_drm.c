@@ -858,6 +858,7 @@ static void
 wsi_drm_images_explicit_sync_state(struct vk_device *device, int count, uint32_t *indices,
                                    struct wsi_image **images, uint32_t *flags)
 {
+   bool any_release_signaled = false;
    struct wsi_image *image;
    int i;
 
@@ -877,12 +878,12 @@ wsi_drm_images_explicit_sync_state(struct vk_device *device, int count, uint32_t
    STACK_ARRAY(uint32_t, handles, count * WSI_ES_COUNT);
 
    for (i = 0; i < count; i++) {
-      points[i * WSI_ES_COUNT + WSI_ES_ACQUIRE] = 0;
-      points[i * WSI_ES_COUNT + WSI_ES_RELEASE] = 0;
+      points[WSI_ES_ACQUIRE * count + i] = 0;
+      points[WSI_ES_RELEASE * count + i] = 0;
 
       image = images[indices[i]];
-      handles[i * WSI_ES_COUNT + WSI_ES_ACQUIRE] = image->explicit_sync[WSI_ES_ACQUIRE].handle;
-      handles[i * WSI_ES_COUNT + WSI_ES_RELEASE] = image->explicit_sync[WSI_ES_RELEASE].handle;
+      handles[WSI_ES_ACQUIRE * count + i] = image->explicit_sync[WSI_ES_ACQUIRE].handle;
+      handles[WSI_ES_RELEASE * count + i] = image->explicit_sync[WSI_ES_RELEASE].handle;
    }
 
    int ret = drmSyncobjQuery(device->drm_fd, handles, points, count * WSI_ES_COUNT);
@@ -892,17 +893,24 @@ wsi_drm_images_explicit_sync_state(struct vk_device *device, int count, uint32_t
    for (i = 0; i < count; i++) {
       image = images[indices[i]];
 
-      if (points[i * WSI_ES_COUNT + WSI_ES_ACQUIRE] >= image->explicit_sync[WSI_ES_ACQUIRE].timeline)
+      if (points[WSI_ES_ACQUIRE * count + i] >= image->explicit_sync[WSI_ES_ACQUIRE].timeline)
          flags[i] |= WSI_ES_STATE_ACQUIRE_SIGNALLED;
 
-      if (points[i * WSI_ES_COUNT + WSI_ES_RELEASE] >= image->explicit_sync[WSI_ES_RELEASE].timeline) {
+      if (points[WSI_ES_RELEASE * count + i] >= image->explicit_sync[WSI_ES_RELEASE].timeline) {
          flags[i] |= WSI_ES_STATE_RELEASE_SIGNALLED | WSI_ES_STATE_RELEASE_MATERIALIZED;
-      } else {
-         uint32_t first_signalled;
-         ret = drmSyncobjTimelineWait(device->drm_fd, &handles[i * WSI_ES_COUNT + WSI_ES_RELEASE],
-                                      &image->explicit_sync[WSI_ES_RELEASE].timeline, 1, 0,
-                                      DRM_SYNCOBJ_WAIT_FLAGS_WAIT_AVAILABLE, &first_signalled);
-         if (ret == 0)
+         any_release_signaled = true;
+      }
+   }
+
+   if (!any_release_signaled) {
+      ret = drmSyncobjQuery2(device->drm_fd, &handles[WSI_ES_RELEASE * count],
+                             &points[WSI_ES_RELEASE * count], count,
+                             DRM_SYNCOBJ_QUERY_FLAGS_LAST_SUBMITTED);
+      if (ret)
+         goto done;
+      for (i = 0; i < count; i++) {
+         image = images[indices[i]];
+         if (points[WSI_ES_RELEASE * count + i] >= image->explicit_sync[WSI_ES_RELEASE].timeline)
             flags[i] |= WSI_ES_STATE_RELEASE_MATERIALIZED;
       }
    }

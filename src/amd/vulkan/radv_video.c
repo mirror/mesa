@@ -856,6 +856,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
       ext->flags = 0;
       pCapabilities->maxDpbSlots = 9;//NUM_AV1_REFS;
       pCapabilities->maxActiveReferencePictures = 8;//NUM_AV1_REFS;
+      strcpy(pCapabilities->stdHeaderVersion.extensionName, VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_EXTENSION_NAME);
+      pCapabilities->stdHeaderVersion.specVersion = VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_SPEC_VERSION;
       break;
    }
    default:

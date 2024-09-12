@@ -1044,8 +1044,7 @@ get_reg_for_create_vector_copy(ra_ctx& ctx, RegisterFile& reg_file,
    /* dead operand: return position in vector */
    for (unsigned i = 0; i < instr->operands.size(); i++) {
       if (instr->operands[i].isTemp() && instr->operands[i].tempId() == id &&
-          instr->operands[i].isKillBeforeDef()) {
-         assert(!reg_file.test(reg, instr->operands[i].bytes()));
+          instr->operands[i].isKillBeforeDef() && !reg_file.test(reg, instr->operands[i].bytes())) {
          if (info.rc.is_subdword() || reg.byte() == 0)
             return reg;
          else
@@ -1356,15 +1355,10 @@ get_reg_impl(ra_ctx& ctx, const RegisterFile& reg_file,
 
    /* now, we figured the placement for our definition */
    RegisterFile tmp_file(reg_file);
-
-   /* p_create_vector: also re-place killed operands in the definition space */
-   if (instr->opcode == aco_opcode::p_create_vector)
-      tmp_file.fill_killed_operands(instr.get());
-
    std::vector<unsigned> vars = collect_vars(ctx, tmp_file, best_win);
 
    /* re-enable killed operands */
-   if (!is_phi(instr) && instr->opcode != aco_opcode::p_create_vector)
+   if (!is_phi(instr))
       tmp_file.fill_killed_operands(instr.get());
 
    std::vector<std::pair<Operand, Definition>> pc;
@@ -1870,7 +1864,6 @@ get_reg_create_vector(ra_ctx& ctx, const RegisterFile& reg_file, Temp temp,
    PhysReg best_pos{0xFFF};
    unsigned num_moves = 0xFF;
    bool best_avoid = true;
-   uint32_t correct_pos_mask = 0;
 
    /* test for each operand which definition placement causes the least shuffle instructions */
    for (unsigned i = 0, offset = 0; i < instr->operands.size();
@@ -1931,13 +1924,10 @@ get_reg_create_vector(ra_ctx& ctx, const RegisterFile& reg_file, Temp temp,
          continue;
 
       /* count operands in wrong positions */
-      uint32_t correct_pos_mask_new = 0;
       for (unsigned j = 0, offset2 = 0; j < instr->operands.size();
            offset2 += instr->operands[j].bytes(), j++) {
          Operand& op = instr->operands[j];
-         if (op.isTemp() && op.physReg().reg_b == reg_win.lo() * 4 + offset2)
-            correct_pos_mask_new |= 1 << j;
-         else
+         if (!op.isTemp() || op.physReg().reg_b != reg_win.lo() * 4 + offset2)
             k += op.bytes();
       }
       bool aligned = rc == RegClass::v4 && reg_win.lo() % 4 == 0;
@@ -1947,7 +1937,6 @@ get_reg_create_vector(ra_ctx& ctx, const RegisterFile& reg_file, Temp temp,
       best_pos = reg_win.lo();
       num_moves = k;
       best_avoid = avoid;
-      correct_pos_mask = correct_pos_mask_new;
    }
 
    /* too many moves: try the generic get_reg() function */
@@ -1960,17 +1949,10 @@ get_reg_create_vector(ra_ctx& ctx, const RegisterFile& reg_file, Temp temp,
          return *res;
    }
 
-   /* re-enable killed operands which are in the wrong position */
-   RegisterFile tmp_file(reg_file);
-   tmp_file.fill_killed_operands(instr.get());
-
-   for (unsigned i = 0; i < instr->operands.size(); i++) {
-      if ((correct_pos_mask >> i) & 1u && instr->operands[i].isKill())
-         tmp_file.clear(instr->operands[i]);
-   }
-
    /* collect variables to be moved */
+   RegisterFile tmp_file(reg_file);
    std::vector<unsigned> vars = collect_vars(ctx, tmp_file, PhysRegInterval{best_pos, size});
+   tmp_file.fill_killed_operands(instr.get());
 
    bool success = false;
    std::vector<std::pair<Operand, Definition>> pc;

@@ -564,19 +564,6 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
                           level, base_layer, level_layer_count, hiz_op);
       }
    }
-
-   /* Additional tile cache flush for MTL:
-    *
-    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
-    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
-    */
-   if (intel_device_info_is_mtl(cmd_buffer->device->info) &&
-       image->planes[depth_plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS &&
-       final_needs_depth && !initial_depth_valid) {
-      anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_TILE_CACHE_FLUSH_BIT,
-                                "HIZ-CCS flush");
-   }
 }
 
 /* Transitions a HiZ-enabled depth buffer from one layout to another. Unless

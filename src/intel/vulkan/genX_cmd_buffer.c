@@ -565,14 +565,17 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
       }
    }
 
-   /* Additional tile cache flush for MTL:
+   /* Additional tile cache flush which appears to be needed to
+    * guarantee that a resolved depth surface has no remaining
+    * fast-cleared blocks on DG2 as well as MTL:
     *
     * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
     * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/11315
     */
-   if (intel_device_info_is_mtl(cmd_buffer->device->info) &&
+   if (cmd_buffer->device->info->verx10 == 125 &&
        image->planes[depth_plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS &&
-       final_needs_depth && !initial_depth_valid) {
+       hiz_op == ISL_AUX_OP_FULL_RESOLVE) {
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_TILE_CACHE_FLUSH_BIT,
                                 "HIZ-CCS flush");

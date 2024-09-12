@@ -1653,6 +1653,12 @@ radv_enc_rc_per_pic(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoK
          qp = h265_slice->constantQp;
          break;
       }
+      case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: {
+         const struct VkVideoEncodeAV1PictureInfoKHR *av1_picture_info =
+            vk_find_struct_const(enc_info->pNext, VIDEO_ENCODE_AV1_PICTURE_INFO_KHR);
+         qp = av1_picture_info->constantQIndex;
+         break;
+      }
       default:
          break;
       }

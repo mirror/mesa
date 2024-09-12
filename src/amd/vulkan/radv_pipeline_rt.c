@@ -606,8 +606,10 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
       /* precompile the shader */
       stage->nir = radv_shader_spirv_to_nir(device, stage, NULL, false);
 
-      if (ac_nir_lower_indirect_derefs(stage->nir, pdev->info.gfx_level))
-         radv_optimize_nir(stage->nir, false);
+      if (ac_nir_lower_indirect_derefs(stage->nir, pdev->info.gfx_level)) {
+         NIR_PASS(_, stage->nir, nir_lower_vars_to_ssa);
+         NIR_PASS(_, stage->nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
+      }
 
       NIR_PASS(_, stage->nir, radv_nir_lower_hit_attrib_derefs);
 

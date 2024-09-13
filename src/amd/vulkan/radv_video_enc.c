@@ -1476,14 +1476,23 @@ radv_enc_ctx_av1(struct radv_cmd_buffer *cmd_buffer,
    struct radv_image_view *dpb_iv = NULL;
    struct radv_image *dpb = NULL;
    uint64_t va = 0;
+   int max_ref_slot_idx = 0;
 
    if (info->pSetupReferenceSlot) {
       dpb_iv = radv_image_view_from_handle(info->pSetupReferenceSlot->pPictureResource->imageViewBinding);
       dpb = dpb_iv->image;
       radv_cs_add_buffer(device->ws, cs, dpb->bindings[0].bo);
       va = radv_buffer_get_va(dpb->bindings[0].bo) + dpb->bindings[0].offset; // TODO DPB resource
+      if (info->pSetupReferenceSlot->slotIndex > max_ref_slot_idx)
+         max_ref_slot_idx = info->pSetupReferenceSlot->slotIndex;
    }
 
+   if (info->referenceSlotCount > 0) {
+      for (unsigned i = 0; i < info->referenceSlotCount; i++) {
+         if (info->pReferenceSlots[i].slotIndex > max_ref_slot_idx)
+            max_ref_slot_idx = info->pReferenceSlots[i].slotIndex;
+      }
+   }
    uint32_t rec_alignment = 64;
    uint32_t aligned_width = rec_alignment;
    uint32_t aligned_height = rec_alignment;
@@ -1508,14 +1517,14 @@ radv_enc_ctx_av1(struct radv_cmd_buffer *cmd_buffer,
    radeon_emit(cs, swizzle_mode);
    radeon_emit(cs, pitch); //rec_luma_pitch
    radeon_emit(cs, pitch); //rec_luma_pitch0); //rec_chromma_pitch
-   radeon_emit(cs, info->referenceSlotCount + 1); //num_reconstructed_pictures
+   radeon_emit(cs, max_ref_slot_idx + 1); //num_reconstructed_pictures
 
    int i;
    uint32_t offset = 0;
    uint32_t sdb_frame_offset = offset;
 
    offset += RENCODE_AV1_SDB_FRAME_CONTEXT_SIZE;
-   for (i = 0; i < info->referenceSlotCount + 1; i++) {
+   for (i = 0; i < max_ref_slot_idx + 1; i++) {
       radeon_emit(cs, offset);
       offset += luma_size;
       radeon_emit(cs, offset);
@@ -1747,6 +1756,7 @@ radv_enc_params(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *
       case 0:
       case 1:
          pic_type = RENCODE_PICTURE_TYPE_I;
+         slot_idx = 0;
          break;
       default:
          pic_type = RENCODE_PICTURE_TYPE_P;

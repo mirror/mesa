@@ -1161,10 +1161,12 @@ radv_image_create_layout(struct radv_device *device, struct radv_image_create_in
          assert(profile_list);
       uint32_t width_align, height_align;
       radv_video_get_profile_alignments(pdev, profile_list, &width_align, &height_align);
-      for (unsigned i = 0; i < profile_list->profileCount; i++) {
-         if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
-            is_av1_enc = true;
-            break;
+      if (profile_list) {
+         for (unsigned i = 0; i < profile_list->profileCount; i++) {
+            if (profile_list->pProfiles[i].videoCodecOperation == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR) {
+               is_av1_enc = true;
+               break;
+            }
          }
       }
       image_info.width = align(image_info.width, width_align);

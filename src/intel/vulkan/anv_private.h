@@ -5659,6 +5659,17 @@ anv_address_allows_aux_map(const struct anv_device *device,
    return true;
 }
 
+uint64_t
+anv_cmd_buffer_data_size(struct anv_cmd_buffer *cmd_buffer);
+
+uint64_t
+anv_cmd_buffer_executable_size(struct anv_cmd_buffer *cmd_buffer);
+
+void
+anv_dmr_emit_cmd_buffer_event(struct vk_device *device,
+                              struct anv_cmd_buffer *cmd_buffer,
+                              bool is_alloc);
+
 void
 anv_cmd_buffer_mark_image_written(struct anv_cmd_buffer *cmd_buffer,
                                   const struct anv_image *image,

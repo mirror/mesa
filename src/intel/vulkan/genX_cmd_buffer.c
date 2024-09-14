@@ -3454,7 +3454,7 @@ end_command_buffer(struct anv_cmd_buffer *cmd_buffer)
 
    anv_cmd_buffer_end_batch_buffer(cmd_buffer);
 
-   return VK_SUCCESS;
+   return vk_command_buffer_end(&cmd_buffer->vk);
 }
 
 VkResult
@@ -3477,6 +3477,7 @@ genX(EndCommandBuffer)(
    }
 
    ANV_RMV(cmd_buffer_create, cmd_buffer->device, cmd_buffer);
+   anv_dmr_emit_cmd_buffer_event(&cmd_buffer->device->vk, cmd_buffer, true);
 
    return status;
 }

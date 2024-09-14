@@ -266,7 +266,7 @@ option(
                 'optionally followed by ``K``, ``M``, or ``G`` to specify ' +
                 'a size in kilobytes, megabytes, or gigabytes. By default, ' +
                 'gigabytes will be assumed. And if unset, a maximum size of ' +
-                '1GB will be used.'
+                '200M will be used.'
 )
 
 option(

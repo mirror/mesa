@@ -188,13 +188,13 @@ Core Mesa environment variables
    shader programs. Should be set to a number optionally followed by
    ``K``, ``M``, or ``G`` to specify a size in kilobytes, megabytes, or
    gigabytes. By default, gigabytes will be assumed. And if unset, a
-   maximum size of 1GB will be used.
+   maximum size of 200M will be used.
 
    .. note::
 
       A separate cache might be created for each architecture that Mesa is
       installed for on your system. For example under the default settings
-      you may end up with a 1GB cache for x86_64 and another 1GB cache for
+      you may end up with a 200M cache for x86_64 and another 200M cache for
       i386.
 
 .. envvar:: MESA_SHADER_CACHE_DIR
@@ -247,7 +247,7 @@ Core Mesa environment variables
 
 .. envvar:: MESA_DISK_CACHE_DATABASE_NUM_PARTS
 
-   specifies number of mesa-db cache parts, default is 50.
+   specifies number of mesa-db cache parts, default is 10.
 
 .. envvar:: MESA_DISK_CACHE_DATABASE_EVICTION_SCORE_2X_PERIOD
 

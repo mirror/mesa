@@ -200,9 +200,9 @@ disk_cache_type_create(const char *gpu_name,
       }
    }
 
-   /* Default to 1GB for maximum cache size. */
+   /* Default to 200M for maximum cache size. */
    if (max_size == 0) {
-      max_size = 1024*1024*1024;
+      max_size = 200*1024*1024;
    }
 
    cache->max_size = max_size;

@@ -47,6 +47,7 @@ brw_optimize(brw_shader &s)
       OPT(brw_lower_dpas);
 
    OPT(brw_opt_split_virtual_grfs);
+   OPT(brw_insert_load_and_store_reg);
 
    /* Before anything else, eliminate dead code.  The results of some NIR
     * instructions may effectively be calculated twice.  Once when the
@@ -84,6 +85,13 @@ brw_optimize(brw_shader &s)
 
    if (OPT(brw_opt_combine_convergent_txf))
       OPT(brw_opt_copy_propagation_defs);
+
+   if (OPT(brw_lower_load_and_store_reg)) {
+      OPT(brw_opt_split_virtual_grfs);
+      OPT(brw_opt_copy_propagation);
+      OPT(brw_opt_register_coalesce);
+      OPT(brw_opt_dead_code_eliminate);
+   }
 
    if (OPT(brw_lower_pack)) {
       OPT(brw_opt_register_coalesce);

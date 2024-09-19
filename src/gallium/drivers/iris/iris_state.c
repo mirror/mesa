@@ -3042,7 +3042,18 @@ iris_create_sampler_view(struct pipe_context *ctx,
       aux_usages = 1 << ISL_AUX_USAGE_NONE;
    } else if (isl_aux_usage_has_hiz(isv->res->aux.usage) &&
               !iris_sample_with_depth_aux(devinfo, isv->res)) {
-      aux_usages = 1 << ISL_AUX_USAGE_NONE;
+      if (isv->res->aux.usage == ISL_AUX_USAGE_HIZ_CCS &&
+          devinfo->verx10 >= 125) {
+         /* On Gfx12.5+ we can use partial resolves to maintain a
+          * depth surface CCS-compressed while sampling.  We don't
+          * allow NONE though since the full resolves required to
+          * bring the surface to that state appear to be buggy on at
+          * least DG2 and MTL.
+          */
+         aux_usages = 1 << ISL_AUX_USAGE_HIZ_CCS_WT;
+      } else {
+         aux_usages = 1 << ISL_AUX_USAGE_NONE;
+      }
    } else {
       aux_usages = 1 << ISL_AUX_USAGE_NONE |
                    1 << isv->res->aux.usage;

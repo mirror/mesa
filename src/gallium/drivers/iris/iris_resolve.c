@@ -429,8 +429,9 @@ flush_previous_aux_mode(struct iris_batch *batch,
     * to avoid extra cache flushing.
     */
    void *v_aux_usage = (void *) (uintptr_t)
-      (aux_usage == ISL_AUX_USAGE_FCV_CCS_E ?
-       ISL_AUX_USAGE_CCS_E : aux_usage);
+      (aux_usage == ISL_AUX_USAGE_FCV_CCS_E ? ISL_AUX_USAGE_CCS_E :
+       aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT ? ISL_AUX_USAGE_HIZ_CCS :
+       aux_usage);
 
    struct hash_entry *entry =
       _mesa_hash_table_search_pre_hashed(batch->bo_aux_modes, bo->hash, bo);
@@ -1024,8 +1025,19 @@ iris_resource_texture_aux_usage(struct iris_context *ice,
    case ISL_AUX_USAGE_HIZ_CCS:
    case ISL_AUX_USAGE_HIZ_CCS_WT:
       assert(res->surf.format == view_format);
-      return iris_sample_with_depth_aux(devinfo, res) ?
-             res->aux.usage : ISL_AUX_USAGE_NONE;
+      /* Even if iris_sample_with_depth_aux() tells us we can't keep
+       * HiZ enabled for sampling it is possible to perform a partial
+       * resolve (supported on Gfx12.5+) which makes the CCS surface
+       * consistent with the contents of the HiZ surface, allowing us
+       * to keep CCS enabled while sampling from it.  This avoids the
+       * overhead of a full resolve, is beneficial for bandwidth
+       * consumption and avoids triggering the hardware bugs of full
+       * resolves on DG2/MTL.
+       */
+      return (iris_sample_with_depth_aux(devinfo, res) ? res->aux.usage :
+              devinfo->verx10 >= 125 && res->aux.usage == ISL_AUX_USAGE_HIZ_CCS ?
+                 ISL_AUX_USAGE_HIZ_CCS_WT :
+              ISL_AUX_USAGE_NONE);
 
    case ISL_AUX_USAGE_MCS:
    case ISL_AUX_USAGE_MCS_CCS:

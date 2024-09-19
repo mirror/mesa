@@ -467,10 +467,17 @@ dri3_get_swap_interval(__GLXDRIdrawable *pdraw)
   return priv->loader_drawable.swap_interval;
 }
 
+static void
+dri3_unbind_context(struct glx_context *context)
+{
+   driReleaseDrawables(context);
+   dri_unbind_context(context);
+}
+
 static const struct glx_context_vtable dri3_context_vtable = {
    .destroy             = dri_destroy_context,
    .bind                = dri_bind_context,
-   .unbind              = dri_unbind_context,
+   .unbind              = dri3_unbind_context,
    .wait_gl             = dri3_wait_gl,
    .wait_x              = dri3_wait_x,
 };

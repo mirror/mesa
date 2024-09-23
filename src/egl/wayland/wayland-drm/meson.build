@@ -63,3 +63,22 @@ foreach name, xml : wp_protos
   )
   wp_files += { name: [code, header] }
 endforeach
+
+frog_protocols_dir = dep_frog_protocols.get_variable(pkgconfig : 'pkgdatadir', internal : 'pkgdatadir')
+frog_protocols_protos = {}
+frog_protocols_files = {}
+foreach name, xml : frog_protocols_protos
+  code = custom_target(
+    name + '-protocol.c',
+    input : files(join_paths(frog_protocols_dir, xml)),
+    output : name + '-protocol.c',
+    command : [prog_wl_scanner, wl_scanner_arg, '@INPUT@', '@OUTPUT@'],
+  )
+  header = custom_target(
+    name + '-client-protocol.h',
+    input : files(join_paths(frog_protocols_dir, xml)),
+    output : name + '-client-protocol.h',
+    command : [prog_wl_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+  )
+  frog_protocols_files += { name: [code, header] }
+endforeach

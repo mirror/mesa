@@ -65,7 +65,9 @@ foreach name, xml : wp_protos
 endforeach
 
 frog_protocols_dir = dep_frog_protocols.get_variable(pkgconfig : 'pkgdatadir', internal : 'pkgdatadir')
-frog_protocols_protos = {}
+frog_protocols_protos = {
+  'frog-fifo-v1': 'frog-protocols/frog-fifo-v1.xml',
+}
 frog_protocols_files = {}
 foreach name, xml : frog_protocols_protos
   code = custom_target(

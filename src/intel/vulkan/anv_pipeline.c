@@ -2267,12 +2267,12 @@ anv_graphics_pipeline_compile(struct anv_graphics_base_pipeline *pipeline,
       anv_pipeline_nir_preprocess(&pipeline->base, &stages[s]);
    }
 
-   if (stages[MESA_SHADER_MESH].info && stages[MESA_SHADER_FRAGMENT].info) {
-      anv_apply_per_prim_attr_wa(stages[MESA_SHADER_MESH].nir,
-                                 stages[MESA_SHADER_FRAGMENT].nir,
-                                 device,
-                                 info);
-   }
+   /* if (stages[MESA_SHADER_MESH].info && stages[MESA_SHADER_FRAGMENT].info) { */
+   /*    anv_apply_per_prim_attr_wa(stages[MESA_SHADER_MESH].nir, */
+   /*                               stages[MESA_SHADER_FRAGMENT].nir, */
+   /*                               device, */
+   /*                               info); */
+   /* } */
 
    /* Walk backwards to link */
    struct anv_pipeline_stage *next_stage = NULL;

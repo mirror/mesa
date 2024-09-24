@@ -722,6 +722,32 @@ brw_opt_algebraic(brw_shader &s)
          }
          break;
 
+      case SHADER_OPCODE_LOAD_REG: {
+         const brw_def_analysis &defs = s.def_analysis.require();
+
+         /* If the source and destiontion of a LOAD_REG are both SSA, then we
+          * can convert it to a normal MOV. The purpose of these instructions
+          * is to bridge between SSA and non-SSA values. If both values are
+          * already SSA, there's nothing special about the instruction. SSA
+          * copy propagation will eliminate the instruction later.
+          */
+         if (defs.get(inst->src[0]) != NULL && defs.get(inst->dst) != NULL) {
+            const unsigned bytes = inst->size_written;
+            const unsigned type_bytes = brw_type_size_bytes(inst->dst.type);
+            const unsigned bytes_per_mov = inst->exec_size * type_bytes;
+
+            if (bytes == bytes_per_mov) {
+               inst->opcode = BRW_OPCODE_MOV;
+               progress = true;
+            } else {
+               /* FINISHME: Convert to LOAD_PAYLOAD? */
+               ;
+            }
+         }
+
+         break;
+      }
+
       default:
 	 break;
       }
@@ -743,7 +769,8 @@ brw_opt_algebraic(brw_shader &s)
 
    if (progress)
       s.invalidate_analysis(BRW_DEPENDENCY_INSTRUCTION_DATA_FLOW |
-                            BRW_DEPENDENCY_INSTRUCTION_DETAIL);
+                            BRW_DEPENDENCY_INSTRUCTIONS |
+                            BRW_DEPENDENCY_VARIABLES);
 
    return progress;
 }

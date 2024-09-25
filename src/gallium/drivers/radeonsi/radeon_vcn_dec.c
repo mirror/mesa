@@ -236,8 +236,9 @@ static rvcn_dec_message_avc_t get_h264_msg(struct radeon_decoder *dec,
                break;
          }
       }
-      if (result.ref_frame_list[i] != 0xff && (j == ARRAY_SIZE(dec->h264_valid_ref_num))
-                                           && (k == ARRAY_SIZE(dec->h264_valid_poc_num))) {
+      if (pic->is_non_existing[i] ||
+          (result.ref_frame_list[i] != 0xff && (j == ARRAY_SIZE(dec->h264_valid_ref_num))
+                                            && (k == ARRAY_SIZE(dec->h264_valid_poc_num)))) {
          result.non_existing_frame_flags |= 1 << i;
          result.curr_pic_ref_frame_num--;
          result.ref_frame_list[i] = 0xff;

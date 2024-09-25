@@ -30,6 +30,10 @@
 #include "util/u_handle_table.h"
 #include "va_private.h"
 
+#ifndef VA_PICTURE_H264_NON_EXISTING
+#define VA_PICTURE_H264_NON_EXISTING 0x00000020
+#endif
+
 static void resetReferencePictureDesc(struct pipe_h264_picture_desc *h264,
                                       unsigned int i)
 {
@@ -144,6 +148,8 @@ void vlVaHandlePictureParameterBufferH264(vlVaDriver *drv, vlVaContext *context,
       context->desc.h264.bottom_is_reference[i] =
          !!(h264->ReferenceFrames[i].flags & VA_PICTURE_H264_BOTTOM_FIELD) ||
          ((!top_or_bottom_field) && is_ref);
+      context->desc.h264.is_non_existing[i] =
+         !!(h264->ReferenceFrames[i].flags & VA_PICTURE_H264_NON_EXISTING);
       context->desc.h264.field_order_cnt_list[i][0] =
          top_or_bottom_field != VA_PICTURE_H264_BOTTOM_FIELD ?
          h264->ReferenceFrames[i].TopFieldOrderCnt: INT_MAX;

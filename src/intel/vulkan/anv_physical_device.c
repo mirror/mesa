@@ -543,10 +543,6 @@ get_features(const struct anv_physical_device *pdevice,
       .stippledBresenhamLines = true,
       .stippledSmoothLines = false,
 
-      /* VK_NV_mesh_shader */
-      .taskShaderNV = false,
-      .meshShaderNV = false,
-
       /* VK_EXT_mesh_shader */
       .taskShader = mesh_shader,
       .meshShader = mesh_shader,

@@ -92,9 +92,6 @@ lvp_nv_dgc_token_to_cmd_type(const VkIndirectCommandsLayoutTokenNV *token)
       // only available if VK_EXT_mesh_shader is supported
       case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_MESH_TASKS_NV:
          return VK_CMD_DRAW_MESH_TASKS_INDIRECT_EXT;
-      // only available if VK_NV_mesh_shader is supported
-      case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_TASKS_NV:
-         unreachable("NV_mesh_shader unsupported!");
       default:
          unreachable("unknown token type");
    }

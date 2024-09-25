@@ -4714,8 +4714,6 @@ vtn_handle_barrier(struct vtn_builder *b, SpvOp opcode,
        *    variables performed by any invocation executed prior to a
        *    OpControlBarrier will be visible to any other invocation after
        *    return from that OpControlBarrier."
-       *
-       * The same applies to VK_NV_mesh_shader.
        */
       if (b->nb.shader->info.stage == MESA_SHADER_TESS_CTRL ||
           b->nb.shader->info.stage == MESA_SHADER_TASK ||
@@ -4890,16 +4888,8 @@ vtn_handle_preamble_instruction(struct vtn_builder *b, SpvOp opcode,
       vtn_handle_debug_text(b, opcode, w, count);
       break;
 
-   case SpvOpExtension: {
-      /* Implementing both NV_mesh_shader and EXT_mesh_shader
-       * is difficult without knowing which we're dealing with.
-       * TODO: remove this when we stop supporting NV_mesh_shader.
-       */
-      const char *ext_name = (const char *)&w[1];
-      if (strcmp(ext_name, "SPV_NV_mesh_shader") == 0)
-         b->shader->info.mesh.nv = true;
+   case SpvOpExtension:
       break;
-   }
 
    case SpvOpCapability: {
       SpvCapability cap = w[1];

@@ -862,8 +862,6 @@ static void
 set_mode_system_value(struct vtn_builder *b, nir_variable_mode *mode)
 {
    vtn_assert(*mode == nir_var_system_value || *mode == nir_var_shader_in ||
-              /* Hack for NV_mesh_shader due to lack of dedicated storage class. */
-              *mode == nir_var_mem_task_payload ||
               /* Hack for DPCPP, see https://github.com/intel/llvm/issues/6703 */
               *mode == nir_var_mem_global);
    *mode = nir_var_system_value;
@@ -883,11 +881,9 @@ vtn_get_builtin_location(struct vtn_builder *b,
       *location = VARYING_SLOT_PSIZ;
       break;
    case SpvBuiltInClipDistance:
-   case SpvBuiltInClipDistancePerViewNV:
       *location = VARYING_SLOT_CLIP_DIST0;
       break;
    case SpvBuiltInCullDistance:
-   case SpvBuiltInCullDistancePerViewNV:
       *location = VARYING_SLOT_CULL_DIST0;
       break;
    case SpvBuiltInVertexId:
@@ -925,7 +921,6 @@ vtn_get_builtin_location(struct vtn_builder *b,
       set_mode_system_value(b, mode);
       break;
    case SpvBuiltInLayer:
-   case SpvBuiltInLayerPerViewNV:
       *location = VARYING_SLOT_LAYER;
       if (b->shader->info.stage == MESA_SHADER_FRAGMENT)
          *mode = nir_var_shader_in;
@@ -1229,27 +1224,10 @@ vtn_get_builtin_location(struct vtn_builder *b,
          vtn_fail("invalid stage for SpvBuiltInPrimitiveShadingRateKHR");
       }
       break;
-   case SpvBuiltInPrimitiveCountNV:
-      *location = VARYING_SLOT_PRIMITIVE_COUNT;
-      break;
    case SpvBuiltInPrimitivePointIndicesEXT:
    case SpvBuiltInPrimitiveLineIndicesEXT:
    case SpvBuiltInPrimitiveTriangleIndicesEXT:
-   case SpvBuiltInPrimitiveIndicesNV:
       *location = VARYING_SLOT_PRIMITIVE_INDICES;
-      break;
-   case SpvBuiltInTaskCountNV:
-      /* NV_mesh_shader only. */
-      *location = VARYING_SLOT_TASK_COUNT;
-      *mode = nir_var_shader_out;
-      break;
-   case SpvBuiltInMeshViewCountNV:
-      *location = SYSTEM_VALUE_MESH_VIEW_COUNT;
-      set_mode_system_value(b, mode);
-      break;
-   case SpvBuiltInMeshViewIndicesNV:
-      *location = SYSTEM_VALUE_MESH_VIEW_INDICES;
-      set_mode_system_value(b, mode);
       break;
    case SpvBuiltInCullPrimitiveEXT:
       *location = VARYING_SLOT_CULL_PRIMITIVE;
@@ -1379,9 +1357,7 @@ apply_var_decoration(struct vtn_builder *b,
       case SpvBuiltInTessLevelOuter:
       case SpvBuiltInTessLevelInner:
       case SpvBuiltInClipDistance:
-      case SpvBuiltInClipDistancePerViewNV:
       case SpvBuiltInCullDistance:
-      case SpvBuiltInCullDistancePerViewNV:
          var_data->compact = true;
          break;
       case SpvBuiltInPrimitivePointIndicesEXT:
@@ -1393,7 +1369,6 @@ apply_var_decoration(struct vtn_builder *b,
           * control where and how they are stored.
           *
           * EXT_mesh_shader: write-only array of vectors indexed by the primitive index
-          * NV_mesh_shader: read/write flat array
           */
          var_data->per_primitive = true;
          break;
@@ -1478,28 +1453,6 @@ apply_var_decoration(struct vtn_builder *b,
       /* TODO: We should actually plumb alias information through NIR. */
       break;
 
-   case SpvDecorationPerPrimitiveNV:
-      vtn_fail_if(
-         !(b->shader->info.stage == MESA_SHADER_MESH && var_data->mode == nir_var_shader_out) &&
-         !(b->shader->info.stage == MESA_SHADER_FRAGMENT && var_data->mode == nir_var_shader_in),
-         "PerPrimitiveNV decoration only allowed for Mesh shader outputs or Fragment shader inputs");
-      var_data->per_primitive = true;
-      break;
-
-   case SpvDecorationPerTaskNV:
-      vtn_fail_if(
-         (b->shader->info.stage != MESA_SHADER_MESH &&
-          b->shader->info.stage != MESA_SHADER_TASK) ||
-         var_data->mode != nir_var_mem_task_payload,
-         "PerTaskNV decoration only allowed on Task/Mesh payload variables.");
-      break;
-
-   case SpvDecorationPerViewNV:
-      vtn_fail_if(b->shader->info.stage != MESA_SHADER_MESH,
-                  "PerViewNV decoration only allowed in Mesh shaders");
-      var_data->per_view = true;
-      break;
-
    case SpvDecorationPerVertexKHR:
       vtn_fail_if(b->shader->info.stage != MESA_SHADER_FRAGMENT,
                   "PerVertexKHR decoration only allowed in Fragment shaders");
@@ -1540,12 +1493,6 @@ gather_var_kind_cb(struct vtn_builder *b, struct vtn_value *val, int member,
    switch (dec->decoration) {
    case SpvDecorationPatch:
       vtn_var->var->data.patch = true;
-      break;
-   case SpvDecorationPerPrimitiveNV:
-      vtn_var->var->data.per_primitive = true;
-      break;
-   case SpvDecorationPerViewNV:
-      vtn_var->var->data.per_view = true;
       break;
    default:
       /* Nothing to do. */
@@ -1780,22 +1727,10 @@ vtn_storage_class_to_mode(struct vtn_builder *b,
    case SpvStorageClassInput:
       mode = vtn_variable_mode_input;
       nir_mode = nir_var_shader_in;
-
-      /* NV_mesh_shader: fixup due to lack of dedicated storage class */
-      if (b->shader->info.stage == MESA_SHADER_MESH) {
-         mode = vtn_variable_mode_task_payload;
-         nir_mode = nir_var_mem_task_payload;
-      }
       break;
    case SpvStorageClassOutput:
       mode = vtn_variable_mode_output;
       nir_mode = nir_var_shader_out;
-
-      /* NV_mesh_shader: fixup due to lack of dedicated storage class */
-      if (b->shader->info.stage == MESA_SHADER_TASK) {
-         mode = vtn_variable_mode_task_payload;
-         nir_mode = nir_var_mem_task_payload;
-      }
       break;
    case SpvStorageClassPrivate:
       mode = vtn_variable_mode_private;

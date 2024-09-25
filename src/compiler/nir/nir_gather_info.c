@@ -208,11 +208,7 @@ mark_whole_variable(nir_shader *shader, nir_variable *var,
 {
    const struct glsl_type *type = var->type;
 
-   if (nir_is_arrayed_io(var, shader->info.stage) ||
-       /* For NV_mesh_shader. */
-       (shader->info.stage == MESA_SHADER_MESH &&
-        var->data.location == VARYING_SLOT_PRIMITIVE_INDICES &&
-        !var->data.per_primitive)) {
+   if (nir_is_arrayed_io(var, shader->info.stage)) {
       assert(glsl_type_is_array(type));
       type = glsl_get_array_element(type);
    }
@@ -591,13 +587,6 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
           instr->intrinsic == nir_intrinsic_load_per_vertex_output &&
           !src_is_invocation_id(nir_get_io_arrayed_index_src(instr)))
          shader->info.tess.tcs_cross_invocation_outputs_read |= slot_mask;
-
-      /* NV_mesh_shader: mesh shaders can load their outputs. */
-      if (shader->info.stage == MESA_SHADER_MESH &&
-          (instr->intrinsic == nir_intrinsic_load_per_vertex_output ||
-           instr->intrinsic == nir_intrinsic_load_per_primitive_output) &&
-          !src_is_local_invocation_index(shader, nir_get_io_arrayed_index_src(instr)))
-         shader->info.mesh.ms_cross_invocation_output_access |= slot_mask;
 
       if (shader->info.stage == MESA_SHADER_FRAGMENT &&
           nir_intrinsic_io_semantics(instr).fb_fetch_output)

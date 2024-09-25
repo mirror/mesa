@@ -4066,9 +4066,6 @@ process_sequence(struct rendering_state *state,
          cmd->u.draw_mesh_tasks_indirect_ext.stride = 0;
          break;
       }
-      // only available if VK_NV_mesh_shader is supported
-      case VK_INDIRECT_COMMANDS_TOKEN_TYPE_DRAW_TASKS_NV:
-         unreachable("NV_mesh_shader unsupported!");
       default:
          unreachable("unknown token type");
          break;

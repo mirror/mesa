@@ -3371,20 +3371,13 @@ nir_slot_is_sysval_output(gl_varying_slot slot, gl_shader_stage next_shader)
              slot == VARYING_SLOT_VIEWPORT ||
              slot == VARYING_SLOT_VIEW_INDEX ||
              slot == VARYING_SLOT_VIEWPORT_MASK ||
-             slot == VARYING_SLOT_PRIMITIVE_SHADING_RATE ||
-             /* NV_mesh_shader_only */
-             slot == VARYING_SLOT_PRIMITIVE_COUNT ||
-             slot == VARYING_SLOT_PRIMITIVE_INDICES;
+             slot == VARYING_SLOT_PRIMITIVE_SHADING_RATE;
 
    case MESA_SHADER_TESS_EVAL:
       return slot == VARYING_SLOT_TESS_LEVEL_OUTER ||
              slot == VARYING_SLOT_TESS_LEVEL_INNER ||
              slot == VARYING_SLOT_BOUNDING_BOX0 ||
              slot == VARYING_SLOT_BOUNDING_BOX1;
-
-   case MESA_SHADER_MESH:
-      /* NV_mesh_shader only */
-      return slot == VARYING_SLOT_TASK_COUNT;
 
    case MESA_SHADER_NONE:
       /* NONE means unknown. Check all possibilities. */

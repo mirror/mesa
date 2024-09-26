@@ -125,6 +125,35 @@ reverse_prefetch(struct prefetch_state *s, int lvl)
    return NULL;
 }
 
+/*
+ * Check if an IB ends with a chaining packet and return the next IB.
+ */
+static bool
+check_chain(uint32_t *dwords, uint32_t sizedwords,
+            uint64_t *ibaddr, uint32_t *ibsize)
+{
+   int dwords_left = sizedwords;
+   uint32_t count = 0; /* dword count including packet header */
+   uint32_t val;
+
+   while (dwords_left > 0) {
+      if (pkt_is_opcode(dwords[0], &val, &count)) {
+         if (pktname(val) && !strcmp(pktname(val), "CP_INDIRECT_BUFFER_CHAIN")) {
+            parse_cp_indirect(&dwords[1], count - 1, ibaddr, ibsize);
+            return true;
+         }
+      } else if (pkt_is_regwrite(dwords[0], &val, &count)) {
+      } else {
+         count = find_next_packet(dwords, dwords_left);
+      }
+
+      dwords += count;
+      dwords_left -= count;
+   }
+
+   return false;
+}
+
 /**
  * Scan cmdstream looking for CP_INDIRECT_BUFFER packets, tracking history
  * of consecutive CP_INDIRECT_BUFFER packets, until we find the one that
@@ -139,18 +168,28 @@ scan_cmdstream(struct prefetch_state *s, int lvl, uint32_t *dwords, uint32_t siz
 
    while (dwords_left > 0) {
       if (pkt_is_opcode(dwords[0], &val, &count)) {
-         if (!strcmp(pktname(val), "CP_INDIRECT_BUFFER")) {
+         if (pktname(val) && !strcmp(pktname(val), "CP_INDIRECT_BUFFER")) {
             uint64_t ibaddr;
             uint32_t ibsize;
 
             parse_cp_indirect(&dwords[1], count - 1, &ibaddr, &ibsize);
-            push_ib(s, &(struct ib){ ibaddr, ibsize });
 
-            /* If we've found the IB indicated by CP_IBn_BASE, then we can
-             * search backwards from here to find the SQE position:
-             */
-            if (ibaddr == options.ibs[lvl].base)
-               return reverse_prefetch(s, lvl);
+            while (true) {
+               push_ib(s, &(struct ib){ ibaddr, ibsize });
+
+               /* If we've found the IB indicated by CP_IBn_BASE, then we can
+                * search backwards from here to find the SQE position:
+                */
+               if (ibaddr == options.ibs[lvl].base)
+                  return reverse_prefetch(s, lvl);
+
+               uint32_t *dwords = hostptr(ibaddr);
+               if (!dwords)
+                  break;
+
+               if (!check_chain(dwords, ibsize, &ibaddr, &ibsize))
+                  break;
+            }
 
             goto next_pkt;
          }

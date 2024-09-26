@@ -2462,11 +2462,14 @@ v3dX(cmd_buffer_emit_gl_shader_state)(struct v3dv_cmd_buffer *cmd_buffer)
          2 * cl_packet_length(TESSELLATION_GEOMETRY_SHADER_PARAMS);
    }
 
+   uint32_t shader_record_total_length =
+      shader_state_record_length +
+      num_elements_to_emit *
+      cl_packet_length(GL_SHADER_STATE_ATTRIBUTE_RECORD);
+
    uint32_t shader_rec_offset =
       v3dv_cl_ensure_space(&job->indirect,
-                           shader_state_record_length +
-                           num_elements_to_emit *
-                           cl_packet_length(GL_SHADER_STATE_ATTRIBUTE_RECORD),
+                           shader_record_total_length,
                            32);
    v3dv_return_if_oom(cmd_buffer, NULL);
 
@@ -2635,8 +2638,20 @@ v3dX(cmd_buffer_emit_gl_shader_state)(struct v3dv_cmd_buffer *cmd_buffer)
        * the shader, set up a dummy to be loaded into the VPM.
        */
       cl_emit(&job->indirect, GL_SHADER_STATE_ATTRIBUTE_RECORD, attr) {
-         /* Valid address of data whose value will be unused. */
-         attr.address = v3dv_cl_address(job->indirect.bo, 0);
+         /* Valid address of data whose value will be unused. With autoclif,
+          * we can't reuse any valid address, as the tool will assert if the
+          * address already contains non attribute data (like uniforms or
+          * others). In this case, we will use an address that contains a
+          * valid dummy attribute.
+          */
+#if USE_V3D_AUTOCLIF
+         attr.address =
+            v3dv_cl_address(job->indirect.bo,
+                            shader_rec_offset + shader_record_total_length);
+#else
+         attr.address =
+            v3dv_cl_address(job->indirect.bo, 0);
+#endif
 
          attr.type = ATTRIBUTE_FLOAT;
          attr.stride = 0;
@@ -2645,6 +2660,11 @@ v3dX(cmd_buffer_emit_gl_shader_state)(struct v3dv_cmd_buffer *cmd_buffer)
          attr.number_of_values_read_by_coordinate_shader = 1;
          attr.number_of_values_read_by_vertex_shader = 1;
       }
+#if USE_V3D_AUTOCLIF
+      struct v3dv_cl_out *dummy_attr = cl_start(&job->indirect);
+      cl_aligned_f(&dummy_attr, 0.0);
+      cl_end(&job->indirect, dummy_attr);
+#endif
    }
 
    if (cmd_buffer->state.dirty & V3DV_CMD_DIRTY_PIPELINE) {

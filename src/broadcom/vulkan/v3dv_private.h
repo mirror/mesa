@@ -1824,6 +1824,8 @@ void v3dv_cmd_buffer_copy_query_results(struct v3dv_cmd_buffer *cmd_buffer,
                                         VkQueryResultFlags flags);
 
 void v3dv_cmd_buffer_add_tfu_job(struct v3dv_cmd_buffer *cmd_buffer,
+                                 struct v3dv_bo *dst_bo,
+                                 struct v3dv_bo *src_bo,
                                  struct drm_v3d_submit_tfu *tfu);
 
 void v3dv_cmd_buffer_rewrite_indirect_csd_job(struct v3dv_device *device,

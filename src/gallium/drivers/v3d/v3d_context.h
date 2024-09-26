@@ -802,6 +802,9 @@ void v3d_flush_jobs_reading_resource(struct v3d_context *v3d,
                                      struct pipe_resource *prsc,
                                      enum v3d_flush_cond flush_cond,
                                      bool is_compute_pipeline);
+#if USE_V3D_AUTOCLIF
+void v3d_job_bos_read(void *dst, uint64_t src_addr, size_t size, void *p);
+#endif
 void v3d_update_compiled_shaders(struct v3d_context *v3d, uint8_t prim_mode);
 void v3d_update_compiled_cs(struct v3d_context *v3d);
 

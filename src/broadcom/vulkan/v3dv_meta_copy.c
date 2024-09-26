@@ -1248,13 +1248,6 @@ copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    const uint32_t base_dst_layer = dst->vk.image_type != VK_IMAGE_TYPE_3D ?
       region->dstSubresource.baseArrayLayer : region->dstOffset.z;
    for (uint32_t i = 0; i < layer_count; i++) {
-      const uint32_t dst_offset =
-         dst->planes[dst_plane].mem->bo->offset +
-         v3dv_layer_offset(dst, dst_mip_level, base_dst_layer + i, dst_plane);
-      const uint32_t src_offset =
-         src->planes[src_plane].mem->bo->offset +
-         v3dv_layer_offset(src, src_mip_level, base_src_layer + i, src_plane);
-
       const struct v3d_resource_slice *dst_slice =
          &dst->planes[dst_plane].slices[dst_mip_level];
       const struct v3d_resource_slice *src_slice =
@@ -1262,13 +1255,13 @@ copy_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
 
       v3d_X((&cmd_buffer->device->devinfo), meta_emit_tfu_job)(
          cmd_buffer,
-         dst->planes[dst_plane].mem->bo->handle,
-         dst_offset,
+         dst->planes[dst_plane].mem->bo,
+         v3dv_layer_offset(dst, dst_mip_level, base_dst_layer + i, dst_plane),
          dst_slice->tiling,
          dst_slice->padded_height,
          dst->planes[dst_plane].cpp,
-         src->planes[src_plane].mem->bo->handle,
-         src_offset,
+         src->planes[src_plane].mem->bo,
+         v3dv_layer_offset(src, src_mip_level, base_src_layer + i, src_plane),
          src_slice->tiling,
          src_slice->tiling == V3D_TILING_RASTER ?
                               src_slice->stride : src_slice->padded_height,
@@ -1941,10 +1934,10 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
    assert(num_layers > 0);
 
    assert(image->planes[plane].mem && image->planes[plane].mem->bo);
-   const struct v3dv_bo *dst_bo = image->planes[plane].mem->bo;
+   struct v3dv_bo *dst_bo = image->planes[plane].mem->bo;
 
    assert(buffer->mem && buffer->mem->bo);
-   const struct v3dv_bo *src_bo = buffer->mem->bo;
+   struct v3dv_bo *src_bo = buffer->mem->bo;
 
    /* Emit a TFU job per layer to copy */
    const uint32_t buffer_stride = width * image->planes[plane].cpp;
@@ -1958,20 +1951,16 @@ copy_buffer_to_image_tfu(struct v3dv_cmd_buffer *cmd_buffer,
       const uint32_t buffer_offset =
          buffer->mem_offset + region->bufferOffset +
          height * buffer_stride * i;
-      const uint32_t src_offset = src_bo->offset + buffer_offset;
-
-      const uint32_t dst_offset =
-         dst_bo->offset + v3dv_layer_offset(image, mip_level, layer, plane);
 
       v3d_X((&cmd_buffer->device->devinfo), meta_emit_tfu_job)(
              cmd_buffer,
-             dst_bo->handle,
-             dst_offset,
+             dst_bo,
+             v3dv_layer_offset(image, mip_level, layer, plane),
              slice->tiling,
              slice->padded_height,
              image->planes[plane].cpp,
-             src_bo->handle,
-             src_offset,
+             src_bo,
+             buffer_offset,
              V3D_TILING_RASTER,
              width,
              1,
@@ -3490,25 +3479,18 @@ blit_tfu(struct v3dv_cmd_buffer *cmd_buffer,
       const uint32_t src_layer =
          src_mirror_z ? max_src_layer - i - 1: min_src_layer + i;
 
-      const uint32_t dst_offset =
-         dst->planes[0].mem->bo->offset + v3dv_layer_offset(dst, dst_mip_level,
-                                                            dst_layer, 0);
-      const uint32_t src_offset =
-         src->planes[0].mem->bo->offset + v3dv_layer_offset(src, src_mip_level,
-                                                            src_layer, 0);
-
       const struct v3d_resource_slice *dst_slice = &dst->planes[0].slices[dst_mip_level];
       const struct v3d_resource_slice *src_slice = &src->planes[0].slices[src_mip_level];
 
       v3d_X((&cmd_buffer->device->devinfo), meta_emit_tfu_job)(
          cmd_buffer,
-         dst->planes[0].mem->bo->handle,
-         dst_offset,
+         dst->planes[0].mem->bo,
+         v3dv_layer_offset(dst, dst_mip_level, dst_layer, 0),
          dst_slice->tiling,
          dst_slice->padded_height,
          dst->planes[0].cpp,
-         src->planes[0].mem->bo->handle,
-         src_offset,
+         src->planes[0].mem->bo,
+         v3dv_layer_offset(src, src_mip_level, src_layer, 0),
          src_slice->tiling,
          src_slice->tiling == V3D_TILING_RASTER ?
                               src_slice->stride : src_slice->padded_height,

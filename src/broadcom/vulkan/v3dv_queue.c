@@ -32,11 +32,46 @@
 #include <errno.h>
 #include <time.h>
 
+#if USE_V3D_AUTOCLIF
+#include "broadcom/clif/autoclif_dump.h"
+
+static void
+v3dv_job_bos_read(void *dst,
+                  uint64_t src_addr,
+                  size_t size,
+                  void *p)
+{
+   struct v3dv_job *job = (struct v3dv_job *)p;
+   set_foreach(job->bos, entry) {
+      struct v3dv_bo *bo = (struct v3dv_bo *)entry->key;
+      if (src_addr >= bo->offset &&
+          src_addr < (bo->offset + bo->size)) {
+         bool ok = v3dv_bo_map(job->device, bo, bo->size);
+         if (!ok) {
+            fprintf(stderr, "failed to map BO for autoclif_dump.\n");
+         } else {
+            memcpy(dst, (char *)bo->map + (src_addr - bo->offset), size);
+         }
+         return;
+      }
+   }
+   unreachable("No BO found matching the address");
+}
+#endif
+
 static void
 v3dv_clif_dump(struct v3dv_device *device,
                struct v3dv_job *job,
                struct drm_v3d_submit_cl *submit)
 {
+#if USE_V3D_AUTOCLIF
+   if (V3D_DBG(AUTOCLIF))
+      autoclif_cl_dump(device->devinfo.qpu_count,
+                       submit,
+                       v3dv_job_bos_read,
+                       job);
+#endif
+
    if (!(V3D_DBG(CL) ||
          V3D_DBG(CL_NO_BIN) ||
          V3D_DBG(CLIF)))
@@ -1057,6 +1092,12 @@ handle_tfu_job(struct v3dv_queue *queue,
    job->tfu.in_sync = 0;
    job->tfu.out_sync = 0;
 
+#if USE_V3D_AUTOCLIF
+   if (V3D_DBG(AUTOCLIF))
+      autoclif_tfu_dump(device->devinfo.qpu_count,
+                        &job->tfu, v3dv_job_bos_read, job);
+#endif
+
    int ret = v3d_ioctl(device->pdevice->render_fd,
                        DRM_IOCTL_V3D_SUBMIT_TFU, &job->tfu);
 
@@ -1121,6 +1162,12 @@ handle_csd_job(struct v3dv_queue *queue,
    submit->perfmon_id = job->perf ?
       job->perf->kperfmon_ids[counter_pass_idx] : 0;
    queue->last_perfmon_id = submit->perfmon_id;
+
+#if USE_V3D_AUTOCLIF
+   if (V3D_DBG(AUTOCLIF))
+      autoclif_csd_dump(device->devinfo.qpu_count,
+                        submit, v3dv_job_bos_read, job);
+#endif
 
    int ret = v3d_ioctl(device->pdevice->render_fd,
                        DRM_IOCTL_V3D_SUBMIT_CSD, submit);

@@ -40,6 +40,10 @@
 #include "broadcom/common/v3d_csd.h"
 #include "broadcom/cle/v3dx_pack.h"
 
+#if USE_V3D_AUTOCLIF
+#include "broadcom/clif/autoclif_dump.h"
+#endif
+
 void
 v3dX(start_binning)(struct v3d_context *v3d, struct v3d_job *job)
 {
@@ -740,12 +744,15 @@ v3d_emit_gl_shader_state(struct v3d_context *v3d,
         }
 
         /* See GFXH-930 workaround below */
+        uint32_t shader_record_total_length =
+                shader_state_record_length +
+                MAX2(num_elements_to_emit, 1) *
+                cl_packet_length(GL_SHADER_STATE_ATTRIBUTE_RECORD);
+
         uint32_t shader_rec_offset =
                     v3d_cl_ensure_space(&job->indirect,
-                                    shader_state_record_length +
-                                    MAX2(num_elements_to_emit, 1) *
-                                    cl_packet_length(GL_SHADER_STATE_ATTRIBUTE_RECORD),
-                                    32);
+                                        shader_record_total_length,
+                                        32);
 
         /* XXX perf: We should move most of the SHADER_STATE_RECORD setup to
          * compile time, so that we mostly just have to OR the VS and FS
@@ -845,8 +852,22 @@ v3d_emit_gl_shader_state(struct v3d_context *v3d,
                  * the shader, set up a dummy to be loaded into the VPM.
                  */
                 cl_emit(&job->indirect, GL_SHADER_STATE_ATTRIBUTE_RECORD, attr) {
-                        /* Valid address of data whose value will be unused. */
-                        attr.address = cl_address(job->indirect.bo, 0);
+                        /* Valid address of data whose value will be
+                         * unused. With autoclif, we can't reuse any valid
+                         * address, as the tool will assert if the address
+                         * already contains non attribute data (like uniforms
+                         * or others). In this case, we will use an address
+                         * that contains a valid dummy attribute.
+                         */
+#if USE_V3D_AUTOCLIF
+                        attr.address =
+                                cl_address(job->indirect.bo,
+                                           shader_rec_offset +
+                                           shader_record_total_length);
+#else
+                        attr.address =
+                                cl_address(job->indirect.bo, 0);
+#endif
 
                         attr.type = ATTRIBUTE_FLOAT;
                         attr.stride = 0;
@@ -856,6 +877,11 @@ v3d_emit_gl_shader_state(struct v3d_context *v3d,
                         attr.number_of_values_read_by_vertex_shader = 1;
                 }
                 num_elements_to_emit = 1;
+#if USE_V3D_AUTOCLIF
+                struct v3d_cl_out *dummy_attr = cl_start(&job->indirect);
+                cl_aligned_f(&dummy_attr, 0.0);
+                cl_end(&job->indirect, dummy_attr);
+#endif
         }
 
         cl_emit(&job->bcl, VCM_CACHE_SIZE, vcm) {
@@ -1593,6 +1619,12 @@ v3d_launch_grid(struct pipe_context *pctx, const struct pipe_grid_info *info)
         }
 
         v3d->last_perfmon = v3d->active_perfmon;
+
+#if USE_V3D_AUTOCLIF
+        if (V3D_DBG(AUTOCLIF))
+                autoclif_csd_dump(screen->devinfo.qpu_count,
+                                  &submit, v3d_job_bos_read, job);
+#endif
 
         if (!V3D_DBG(NORAST)) {
                 int ret = v3d_ioctl(screen->fd, DRM_IOCTL_V3D_SUBMIT_CSD,

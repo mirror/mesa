@@ -620,6 +620,7 @@ init_render_queue_state(struct anv_queue *queue, bool is_companion_rcs_batch)
       cm.Mask1 = 0xffff;
 #if GFX_VERx10 >= 200
       cm.Mask2 = 0xffff;
+      cm.UAVCoherencyMode = FlushDataportL1;
 #endif
    }
    anv_batch_emit(batch, GENX(3DSTATE_MESH_CONTROL), zero);
@@ -751,7 +752,10 @@ init_compute_queue_state(struct anv_queue *queue)
    }
 
    anv_batch_emit(batch, GENX(STATE_COMPUTE_MODE), cm) {
-#if GFX_VER < 20
+#if GFX_VER >= 20
+      cm.Mask2 = 0xffff;
+      cm.UAVCoherencyMode = FlushDataportL1;
+#else
       cm.PixelAsyncComputeThreadLimit = 4;
       cm.PixelAsyncComputeThreadLimitMask = 0x7;
 #endif

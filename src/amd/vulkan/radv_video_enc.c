@@ -1343,7 +1343,8 @@ dpb_image_sizes(struct radv_image *image,
 }
 
 static void
-radv_enc_ctx(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *info)
+radv_enc_ctx(struct radv_cmd_buffer *cmd_buffer, bool is_av1,
+             const VkVideoEncodeInfoKHR *info)
 {
    struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
    const struct radv_physical_device *pdev = radv_device_physical(device);
@@ -1397,12 +1398,15 @@ radv_enc_ctx(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *inf
    int i;
    unsigned offset = 0;
    unsigned colloc_buffer_offset = 0;
+   uint32_t sdb_frame_offset = offset;
 
    if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR &&
        pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_3)  {
       colloc_buffer_offset = offset;
       offset += colloc_bytes;
-   }
+   } else if (is_av1)
+      offset += RENCODE_AV1_SDB_FRAME_CONTEXT_SIZE;
+
    for (i = 0; i < max_ref_slot_idx + 1; i++) {
       radeon_emit(cs, offset);
       offset += luma_size;
@@ -1410,8 +1414,15 @@ radv_enc_ctx(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *inf
       offset += chroma_size;
 
       if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
-         radeon_emit(cs, 0); /* unused offset 1 */
-         radeon_emit(cs, 0); /* unused offset 2 */
+         if (is_av1) {
+            radeon_emit(cs, offset); /* unused offset 1 */
+            offset += RENCODE_AV1_FRAME_CONTEXT_CDF_TABLE_SIZE;
+            radeon_emit(cs, offset); /* unused offset 2 */
+            offset += RENCODE_AV1_CDEF_ALGORITHM_FRAME_CONTEXT_SIZE;
+         } else {
+            radeon_emit(cs, 0); /* unused offset 1 */
+            radeon_emit(cs, 0); /* unused offset 2 */
+         }
       }
    }
 
@@ -1455,129 +1466,14 @@ radv_enc_ctx(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *inf
       radeon_emit(cs, 0); // blue
       radeon_emit(cs, 0); // v3 two pass search center map offset
       if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
-         radeon_emit(cs, colloc_buffer_offset);
+         if (is_av1) {
+            radeon_emit(cs, sdb_frame_offset);
+         } else {
+            radeon_emit(cs, colloc_buffer_offset);
+         }
       } else {
          radeon_emit(cs, 0);
       }
-      if (pdev->enc_hw_ver == RADV_VIDEO_ENC_HW_3) {
-         radeon_emit(cs, 0);
-      }
-   }
-   ENC_END;
-}
-
-static void
-radv_enc_ctx_av1(struct radv_cmd_buffer *cmd_buffer,
-                 const VkVideoEncodeInfoKHR *info)
-{
-   struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
-   const struct radv_physical_device *pdev = radv_device_physical(device);
-   struct radeon_cmdbuf *cs = cmd_buffer->cs;
-   struct radv_image_view *dpb_iv = NULL;
-   struct radv_image *dpb = NULL;
-   uint64_t va = 0;
-   int max_ref_slot_idx = 0;
-
-   if (info->pSetupReferenceSlot) {
-      dpb_iv = radv_image_view_from_handle(info->pSetupReferenceSlot->pPictureResource->imageViewBinding);
-      dpb = dpb_iv->image;
-      radv_cs_add_buffer(device->ws, cs, dpb->bindings[0].bo);
-      va = radv_buffer_get_va(dpb->bindings[0].bo) + dpb->bindings[0].offset; // TODO DPB resource
-      if (info->pSetupReferenceSlot->slotIndex > max_ref_slot_idx)
-         max_ref_slot_idx = info->pSetupReferenceSlot->slotIndex;
-   }
-
-   if (info->referenceSlotCount > 0) {
-      for (unsigned i = 0; i < info->referenceSlotCount; i++) {
-         if (info->pReferenceSlots[i].slotIndex > max_ref_slot_idx)
-            max_ref_slot_idx = info->pReferenceSlots[i].slotIndex;
-      }
-   }
-   uint32_t rec_alignment = 64;
-   uint32_t aligned_width = rec_alignment;
-   uint32_t aligned_height = rec_alignment;
-   if (dpb) {
-      aligned_width = align(dpb->vk.extent.width, aligned_width);
-      aligned_height = align(dpb->vk.extent.height, aligned_height);
-   }
-   uint32_t pitch = align(aligned_width, ENC_ALIGNMENT);
-   uint32_t aligned_dpb_height = MAX2(256, aligned_height);
-   uint32_t luma_size = align(pitch * aligned_dpb_height, 256);
-   uint32_t chroma_size = align(luma_size / 2, 256);
-   uint32_t swizzle_mode = 0;
-
-   if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4)
-      swizzle_mode = RENCODE_REC_SWIZZLE_MODE_256B_D;
-   else if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_2)
-      swizzle_mode = RENCODE_REC_SWIZZLE_MODE_256B_S;
-   ENC_BEGIN;
-   radeon_emit(cs, pdev->vcn_enc_cmds.ctx);
-   radeon_emit(cs, va >> 32);
-   radeon_emit(cs, va & 0xffffffff);
-   radeon_emit(cs, swizzle_mode);
-   radeon_emit(cs, pitch); //rec_luma_pitch
-   radeon_emit(cs, pitch); //rec_luma_pitch0); //rec_chromma_pitch
-   radeon_emit(cs, max_ref_slot_idx + 1); //num_reconstructed_pictures
-
-   int i;
-   uint32_t offset = 0;
-   uint32_t sdb_frame_offset = offset;
-
-   offset += RENCODE_AV1_SDB_FRAME_CONTEXT_SIZE;
-   for (i = 0; i < max_ref_slot_idx + 1; i++) {
-      radeon_emit(cs, offset);
-      offset += luma_size;
-      radeon_emit(cs, offset);
-      offset += chroma_size;
-
-      if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
-         radeon_emit(cs, offset); /* unused offset 1 */
-         offset += RENCODE_AV1_FRAME_CONTEXT_CDF_TABLE_SIZE;
-         radeon_emit(cs, offset); /* unused offset 2 */
-         offset += RENCODE_AV1_CDEF_ALGORITHM_FRAME_CONTEXT_SIZE;
-      }
-   }
-
-   for (; i < RENCODE_MAX_NUM_RECONSTRUCTED_PICTURES; i++) {
-      radeon_emit(cs, 0);
-      radeon_emit(cs, 0);
-      if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
-         radeon_emit(cs, 0); /* unused offset 1 */
-         radeon_emit(cs, 0); /* unused offset 2 */
-      }
-   }
-
-   if (pdev->enc_hw_ver == RADV_VIDEO_ENC_HW_3) {
-      radeon_emit(cs, 0); // colloc buffer offset
-   }
-   radeon_emit(cs, 0);// enc pic pre encode luma pitch
-   radeon_emit(cs, 0);// enc pic pre encode chroma pitch
-
-   for (i = 0; i < RENCODE_MAX_NUM_RECONSTRUCTED_PICTURES; i++) {
-      radeon_emit(cs, 0);// pre encode luma offset
-      radeon_emit(cs, 0);// pre encode chroma offset
-      if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_4) {
-         radeon_emit(cs, 0); /* unused offset 1 */
-         radeon_emit(cs, 0); /* unused offset 2 */
-      }
-   }
-
-   if (pdev->enc_hw_ver == RADV_VIDEO_ENC_HW_2) {
-      radeon_emit(cs, 0);// enc pic yuv luma offset
-      radeon_emit(cs, 0);// enc pic yuv chroma offset
-
-      radeon_emit(cs, 0); // two pass search center map offset
-
-      //rgboffsets
-      radeon_emit(cs, 0); //red
-      radeon_emit(cs, 0); //green
-      radeon_emit(cs, 0); //blue
-   } else if (pdev->enc_hw_ver >= RADV_VIDEO_ENC_HW_3) {
-      radeon_emit(cs, 0); //red
-      radeon_emit(cs, 0); //green
-      radeon_emit(cs, 0); //blue
-      radeon_emit(cs, 0); //v3 two pass search center map offset
-      radeon_emit(cs, sdb_frame_offset);
       if (pdev->enc_hw_ver == RADV_VIDEO_ENC_HW_3) {
          radeon_emit(cs, 0);
       }
@@ -2102,7 +1998,7 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
 
       if ((!frame_is_intra || av1_pic->refresh_frame_flags != 0xff) &&
                      error_resilient_mode && seq->flags.enable_order_hint)
-         for (i = 0; i < RENCDOE_AV1_NUM_REF_FRAMES; i++)
+         for (i = 0; i < RENCODE_AV1_NUM_REF_FRAMES; i++)
             /*  ref_order_hint  */
             radv_enc_code_fixed_bits(cmd_buffer, av1_pic->ref_order_hint[i], seq->order_hint_bits_minus_1 + 1);
 
@@ -2123,7 +2019,7 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
          if (seq->flags.enable_order_hint)
             /*  frame_refs_short_signaling  */
             radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
-         for (i = 0; i < RENCDOE_AV1_REFS_PER_FRAME; i++) {
+         for (i = 0; i < RENCODE_AV1_REFS_PER_FRAME; i++) {
             /*  ref_frame_idx  */
             radv_enc_code_fixed_bits(cmd_buffer, av1_pic->ref_frame_idx[i], 3);
             if (seq->flags.frame_id_numbers_present_flag)
@@ -2446,13 +2342,13 @@ radv_vcn_encode_video(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInf
    // ctx
    if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR) {
       radv_enc_headers_h264(cmd_buffer, enc_info);
-      radv_enc_ctx(cmd_buffer, enc_info);
+      radv_enc_ctx(cmd_buffer, false, enc_info);
    } else if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR) {
       radv_enc_headers_hevc(cmd_buffer, enc_info);
-      radv_enc_ctx(cmd_buffer, enc_info);
+      radv_enc_ctx(cmd_buffer, false, enc_info);
    } else if (vid->vk.op == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR){
       radv_enc_headers_av1(cmd_buffer, enc_info);
-      radv_enc_ctx_av1(cmd_buffer, enc_info);
+      radv_enc_ctx(cmd_buffer, true, enc_info);
    }
    // bitstream
    radv_enc_bitstream(cmd_buffer, dst_buffer, enc_info->dstBufferOffset);

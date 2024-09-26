@@ -551,6 +551,8 @@ tu_bo_init(struct tu_device *dev,
       .base = base,
    };
 
+   rb_tree_insert(&dev->bo_iova_map, &bo->node, tu_bo_insert_cmp);
+
    mtx_unlock(&dev->bo_mutex);
 
    TU_RMV(bo_allocate, dev, bo);
@@ -762,7 +764,6 @@ msm_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
    dev->bo_list[bo->bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
    mtx_unlock(&dev->bo_mutex);
 }
-
 
 static void
 msm_bo_set_metadata(struct tu_device *dev, struct tu_bo *bo,
@@ -1227,6 +1228,7 @@ static const struct tu_knl msm_knl_funcs = {
       .bo_export_dmabuf = tu_drm_export_dmabuf,
       .bo_map = msm_bo_map,
       .bo_allow_dump = msm_bo_allow_dump,
+      .iova_allow_dump = tu_drm_iova_allow_dump,
       .bo_finish = tu_drm_bo_finish,
       .bo_set_metadata = msm_bo_set_metadata,
       .bo_get_metadata = msm_bo_get_metadata,

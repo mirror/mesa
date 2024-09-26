@@ -209,6 +209,11 @@ void tu_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
    dev->instance->knl->bo_allow_dump(dev, bo);
 }
 
+void tu_iova_allow_dump(struct tu_device *dev, uint64_t iova, uint64_t range)
+{
+   dev->instance->knl->iova_allow_dump(dev, iova, range);
+}
+
 void
 tu_bo_set_metadata(struct tu_device *dev, struct tu_bo *bo,
                    void *metadata, uint32_t metadata_size)

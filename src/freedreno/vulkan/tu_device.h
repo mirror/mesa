@@ -25,6 +25,7 @@
 #include "common/freedreno_rd_output.h"
 #include "util/vma.h"
 #include "util/u_vector.h"
+#include "util/rb_tree.h"
 
 /* queue types */
 #define TU_QUEUE_GENERAL 0
@@ -365,6 +366,9 @@ struct tu_device
    mtx_t bo_mutex;
    /* protects imported BOs creation/freeing */
    struct u_rwlock dma_bo_lock;
+
+   /* Map of iova to BO */
+   struct rb_tree bo_iova_map;
 
    /* Tracking of name -> size allocated for TU_DEBUG_BOS */
    struct hash_table *bo_sizes;

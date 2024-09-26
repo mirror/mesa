@@ -22,6 +22,8 @@ VkResult tu_allocate_userspace_iova(struct tu_device *dev,
 int tu_drm_export_dmabuf(struct tu_device *dev, struct tu_bo *bo);
 void tu_drm_bo_finish(struct tu_device *dev, struct tu_bo *bo);
 
+void tu_drm_iova_allow_dump(struct tu_device *dev, uint64_t iova, uint64_t range);
+
 static inline void
 get_abs_timeout(struct drm_msm_timespec *tv, uint64_t ns)
 {

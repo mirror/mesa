@@ -1656,6 +1656,7 @@ radv_enc_params(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *
          break;
       default:
          pic_type = RENCODE_PICTURE_TYPE_P;
+         slot_idx = enc_info->pReferenceSlots[0].slotIndex;
          break;
       }
    } else {

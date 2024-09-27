@@ -2498,6 +2498,9 @@ CSMT_ITEM_NO_WAIT(nine_context_draw_indexed_primitive_from_vtxbuf_idxbuf,
     struct nine_context *context = &device->context;
     struct pipe_draw_info info;
     struct pipe_draw_start_count_bias draw;
+    uint32_t stream_instancedata_mask;
+    struct pipe_vertex_buffer vtxbuf[1];
+    UINT stream_freq[1];
 
     if (context->vs && context->vs->swvp_only && !context->swvp)
         return;
@@ -2507,9 +2510,19 @@ CSMT_ITEM_NO_WAIT(nine_context_draw_indexed_primitive_from_vtxbuf_idxbuf,
         /* force elements update for stride.
          * We don't need to restore the old value,
          * as the caller set its to 0 after the call */
-        context->changed.group |= NINE_STATE_VDECL;
     }
 
+    /* Save and Borrow */
+    stream_instancedata_mask = context->stream_instancedata_mask;
+    stream_freq[0] = context->stream_freq[0];
+    vtxbuf[0] = context->vtxbuf[0];
+
+    context->changed.group |= NINE_STATE_VDECL; /* force uve for dummy calc */
+    context->vtxbuf_mask |= 1; /* must prevent uninit of holes-map in uve */
+    context->changed.vtxbuf |= 1; /* must update buffers to copy given vbuf */
+    context->stream_instancedata_mask = 0; /* No instance-data for this call */
+    context->stream_freq[0] = 0; /* No instance-data for this call */
+    context->vtxbuf[0] = *vbuf;
     nine_update_state(device);
 
     init_draw_info(&info, &draw, device, PrimitiveType, PrimitiveCount);
@@ -2525,8 +2538,12 @@ CSMT_ITEM_NO_WAIT(nine_context_draw_indexed_primitive_from_vtxbuf_idxbuf,
     else
         info.index.user = user_ibuf;
 
-    util_set_vertex_buffers(context->pipe, 1, false, vbuf);
     context->changed.vtxbuf |= 1;
+
+    /* Restore */
+    context->stream_instancedata_mask = stream_instancedata_mask;
+    context->stream_freq[0] = stream_freq[0];
+    context->vtxbuf[0] = vtxbuf[0];
 
     context->pipe->draw_vbo(context->pipe, &info, 0, NULL, &draw, 1);
 }

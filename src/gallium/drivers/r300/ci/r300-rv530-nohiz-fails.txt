@@ -803,6 +803,7 @@ Xnine.clip_planes,Fail
 Xnine.depth_clamp,Fail
 Xnine.depthbias,Fail
 Xnine.dsy,Fail
+Xnine.fog,Fail
 Xnine.fp_special,Fail
 Xnine.fragment_coords,Fail
 Xnine.mvp_software_vertex_shaders,Fail
@@ -813,10 +814,3 @@ Xnine.srgbwrite_format,Fail
 Xnine.stream,Fail
 Xnine.texture_transform_flags,Fail
 Xnine.zenable,Fail
-
-# https://gitlab.freedesktop.org/mesa/mesa/-/issues/10557
-Xnine.drawindexedprimitiveup,Crash
-Xnine.fog,Crash
-Xnine.lighting,Crash
-Xnine.specular_lighting,Crash
-Xnine.stencil_cull,Crash

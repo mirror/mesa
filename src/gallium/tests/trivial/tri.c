@@ -198,6 +198,8 @@ static void init_prog(struct program *p)
 		p->viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
 		p->viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
 		p->viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+		p->viewport.min_depth_clamp = 0.0f;
+		p->viewport.max_depth_clamp = 1.0f;
 	}
 
 	/* vertex elements state */

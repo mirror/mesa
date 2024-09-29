@@ -566,6 +566,8 @@ vl_mc_init_buffer(struct vl_mc *renderer, struct vl_mc_buffer *buffer)
    buffer->viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    buffer->viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    buffer->viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   buffer->viewport.min_depth_clamp = 0.0f;
+   buffer->viewport.max_depth_clamp = 1.0f;
 
    buffer->fb_state.nr_cbufs = 1;
    buffer->fb_state.zsbuf = NULL;

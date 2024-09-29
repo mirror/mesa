@@ -56,6 +56,8 @@ lp_jit_create_types(struct lp_fragment_shader_variant *lp)
    {
       LLVMTypeRef elem_types[LP_JIT_VIEWPORT_NUM_FIELDS];
 
+      elem_types[LP_JIT_VIEWPORT_MIN_DEPTH_CLAMP] =
+      elem_types[LP_JIT_VIEWPORT_MAX_DEPTH_CLAMP] =
       elem_types[LP_JIT_VIEWPORT_MIN_DEPTH] =
       elem_types[LP_JIT_VIEWPORT_MAX_DEPTH] = LLVMFloatTypeInContext(lc);
 
@@ -68,6 +70,12 @@ lp_jit_create_types(struct lp_fragment_shader_variant *lp)
       LP_CHECK_MEMBER_OFFSET(struct lp_jit_viewport, max_depth,
                              gallivm->target, viewport_type,
                              LP_JIT_VIEWPORT_MAX_DEPTH);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_viewport, min_depth_clamp,
+                             gallivm->target, viewport_type,
+                             LP_JIT_VIEWPORT_MIN_DEPTH_CLAMP);
+      LP_CHECK_MEMBER_OFFSET(struct lp_jit_viewport, max_depth_clamp,
+                             gallivm->target, viewport_type,
+                             LP_JIT_VIEWPORT_MAX_DEPTH_CLAMP);
       LP_CHECK_STRUCT_SIZE(struct lp_jit_viewport,
                            gallivm->target, viewport_type);
    }

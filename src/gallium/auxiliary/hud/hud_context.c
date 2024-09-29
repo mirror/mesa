@@ -565,6 +565,8 @@ hud_draw_results(struct hud_context *hud, struct pipe_resource *tex)
    viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   viewport.min_depth_clamp = 0.0f;
+   viewport.max_depth_clamp = 1.0f;
 
    cso_set_framebuffer(cso, &fb);
    cso_set_sample_mask(cso, ~0);

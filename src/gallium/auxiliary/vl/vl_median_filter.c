@@ -409,6 +409,8 @@ vl_median_filter_render(struct vl_median_filter *filter,
    viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   viewport.min_depth_clamp = 0.0f;
+   viewport.max_depth_clamp = 1.0f;
 
    memset(&fb_state, 0, sizeof(fb_state));
    fb_state.width = dst->width;

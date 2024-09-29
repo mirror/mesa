@@ -71,6 +71,8 @@ st_update_viewport( struct st_context *st )
       st->state.viewport[i].swizzle_y = viewport_swizzle_from_glenum(ctx->ViewportArray[i].SwizzleY);
       st->state.viewport[i].swizzle_z = viewport_swizzle_from_glenum(ctx->ViewportArray[i].SwizzleZ);
       st->state.viewport[i].swizzle_w = viewport_swizzle_from_glenum(ctx->ViewportArray[i].SwizzleW);
+      st->state.viewport[i].min_depth_clamp = 0.0f;
+      st->state.viewport[i].max_depth_clamp = 1.0f;
    }
 
    cso_set_viewport(st->cso_context, &st->state.viewport[0]);

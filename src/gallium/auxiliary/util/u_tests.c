@@ -130,6 +130,8 @@ util_set_max_viewport(struct cso_context *cso, struct pipe_resource *tex)
    viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   viewport.min_depth_clamp = 0.0f;
+   viewport.max_depth_clamp = 1.0f;
 
    cso_set_viewport(cso, &viewport);
 }

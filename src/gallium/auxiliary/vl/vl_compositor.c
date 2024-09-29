@@ -471,6 +471,8 @@ vl_compositor_clear_layers(struct vl_compositor_state *s)
       s->layers[i].viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
       s->layers[i].viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
       s->layers[i].viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+      s->layers[i].viewport.min_depth_clamp = 0.0f;
+      s->layers[i].viewport.max_depth_clamp = 1.0f;
       s->layers[i].rotate = VL_COMPOSITOR_ROTATE_0;
 
       for ( j = 0; j < 3; j++)

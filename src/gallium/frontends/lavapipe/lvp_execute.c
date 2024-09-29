@@ -135,7 +135,7 @@ struct rendering_state {
    int num_viewports;
    struct pipe_viewport_state viewports[16];
    struct {
-      float min, max;
+      float min, max, min_clamp, max_clamp;
    } depth[16];
 
    uint8_t patch_vertices;
@@ -657,6 +657,31 @@ set_viewport_depth_xform(struct rendering_state *state, unsigned idx)
       state->viewports[idx].scale[2] = (f - n);
       state->viewports[idx].translate[2] = n;
    }
+   if (state->rs_state.depth_clamp && !state->rs_state.user_defined_depth_clamp_range) {
+      state->viewports[idx].min_depth_clamp = n < f ? n : f;
+      state->viewports[idx].max_depth_clamp = n > f ? n : f;
+   } else {
+      state->viewports[idx].min_depth_clamp = state->depth[idx].min_clamp;
+      state->viewports[idx].max_depth_clamp = state->depth[idx].max_clamp;
+   }
+}
+
+static void
+get_viewport_depth_clamp(struct rendering_state *state,
+                         const VkDepthClampRangeEXT *range,
+                         unsigned idx)
+{
+   if (state->rs_state.user_defined_depth_clamp_range) {
+      assert(range);
+      state->depth[idx].min_clamp = range->minDepthClamp;
+      state->depth[idx].max_clamp = range->maxDepthClamp;
+   } else if (state->rs_state.unclamped_fragment_depth_values) {
+      state->depth[idx].min_clamp = -INFINITY;
+      state->depth[idx].max_clamp = INFINITY;
+   } else {
+      state->depth[idx].min_clamp = 0.0f;
+      state->depth[idx].max_clamp = 1.0f;
+   }
 }
 
 static void
@@ -1092,6 +1117,15 @@ static void handle_graphics_pipeline(struct lvp_pipeline *pipeline,
       if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_VP_VIEWPORTS)) {
          for (uint32_t i = 0; i < ps->vp->viewport_count; i++) {
             get_viewport_xform(state, &ps->vp->viewports[i], i);
+            set_viewport_depth_xform(state, i);
+         }
+         state->vp_dirty = true;
+      }
+      if (!BITSET_TEST(ps->dynamic, MESA_VK_DYNAMIC_VP_DEPTH_CLAMP_RANGE)) {
+         state->rs_state.user_defined_depth_clamp_range = ps->vp->depth_clamp_mode;
+         state->rs_dirty = true;
+         for (uint32_t i = 0; i < PIPE_MAX_VIEWPORTS; i++) {
+            get_viewport_depth_clamp(state, &ps->vp->depth_clamp_range, i);
             set_viewport_depth_xform(state, i);
          }
          state->vp_dirty = true;
@@ -4918,6 +4952,18 @@ handle_trace_rays_indirect2(struct vk_cmd_queue_entry *cmd, struct rendering_sta
    state->pctx->launch_grid(state->pctx, &state->trace_rays_info);
 }
 
+static void handle_set_depth_clamp_range(struct vk_cmd_queue_entry *cmd,
+                                         struct rendering_state *state)
+{
+   state->rs_dirty |= state->rs_state.user_defined_depth_clamp_range != cmd->u.set_depth_clamp_range_ext.depth_clamp_mode;
+   state->rs_state.user_defined_depth_clamp_range = cmd->u.set_depth_clamp_range_ext.depth_clamp_mode;
+   for (uint32_t i = 0; i < PIPE_MAX_VIEWPORTS; i++) {
+      get_viewport_depth_clamp(state, cmd->u.set_depth_clamp_range_ext.depth_clamp_range, i);
+      set_viewport_depth_xform(state, i);
+   }
+   state->vp_dirty = true;
+}
+
 void lvp_add_enqueue_cmd_entrypoints(struct vk_device_dispatch_table *disp)
 {
    struct vk_device_dispatch_table cmd_enqueue_dispatch;
@@ -5074,6 +5120,8 @@ void lvp_add_enqueue_cmd_entrypoints(struct vk_device_dispatch_table *disp)
    ENQUEUE_CMD(CmdTraceRaysIndirect2KHR)
    ENQUEUE_CMD(CmdTraceRaysIndirectKHR)
    ENQUEUE_CMD(CmdTraceRaysKHR)
+
+   ENQUEUE_CMD(CmdSetDepthClampRangeEXT)
 
 #undef ENQUEUE_CMD
 }
@@ -5475,6 +5523,9 @@ static void lvp_execute_cmd_buffer(struct list_head *cmds,
       case VK_CMD_TRACE_RAYS_KHR:
          handle_trace_rays(cmd, state);
          break;
+      case VK_CMD_SET_DEPTH_CLAMP_RANGE_EXT:
+         handle_set_depth_clamp_range(cmd, state);
+         break;
       default:
          fprintf(stderr, "Unsupported command %s\n", vk_cmd_queue_type_names[cmd->type]);
          unreachable("Unsupported command");
@@ -5522,6 +5573,7 @@ VkResult lvp_execute_cmds(struct lvp_device *device,
    state->rs_state.half_pixel_center = true;
    state->rs_state.scissor = true;
    state->rs_state.no_ms_sample_mask_out = true;
+   state->rs_state.user_defined_depth_clamp_range = false;
    state->blend_state.independent_blend_enable = true;
 
    state->index_size = 4;

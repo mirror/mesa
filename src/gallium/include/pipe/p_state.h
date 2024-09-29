@@ -194,6 +194,13 @@ struct pipe_rasterizer_state
    unsigned unclamped_fragment_depth_values:1;
 
    /**
+    * The range used for depth clamping can be defined to range user defined
+    * range rather than the viewport depth range.
+    * This feature is only available on Vulkan through an extension.
+    */
+   unsigned user_defined_depth_clamp_range:1;
+
+   /**
     * Enable bits for clipping half-spaces.
     * This applies to both user clip planes and shader clip distances.
     * Note that if the bound shader exports any clip distances, these
@@ -236,6 +243,8 @@ struct pipe_viewport_state
    enum pipe_viewport_swizzle swizzle_y:8;
    enum pipe_viewport_swizzle swizzle_z:8;
    enum pipe_viewport_swizzle swizzle_w:8;
+   float min_depth_clamp;
+   float max_depth_clamp;
 };
 
 

@@ -612,6 +612,8 @@ init_source(struct vl_idct *idct, struct vl_idct_buffer *buffer)
    buffer->viewport_mismatch.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    buffer->viewport_mismatch.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    buffer->viewport_mismatch.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   buffer->viewport_mismatch.min_depth_clamp = 0.0f;
+   buffer->viewport_mismatch.max_depth_clamp = 1.0f;
 
    return true;
 }
@@ -659,6 +661,8 @@ init_intermediate(struct vl_idct *idct, struct vl_idct_buffer *buffer)
    buffer->viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    buffer->viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    buffer->viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   buffer->viewport.min_depth_clamp = 0.0f;
+   buffer->viewport.max_depth_clamp = 1.0f;
 
    return true;
 

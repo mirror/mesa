@@ -339,6 +339,8 @@ pp_init_fbos(struct pp_queue_t *ppq, unsigned int w,
    p->viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    p->viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    p->viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   p->viewport.min_depth_clamp = 0.0f;
+   p->viewport.max_depth_clamp = 1.0f;
 
    ppq->fbos_init = true;
 

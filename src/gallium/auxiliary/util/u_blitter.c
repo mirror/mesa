@@ -869,6 +869,8 @@ static void blitter_set_rectangle(struct blitter_context_priv *ctx,
    viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   viewport.min_depth_clamp = 0.0f;
+   viewport.max_depth_clamp = 1.0f;
    ctx->base.pipe->set_viewport_states(ctx->base.pipe, 0, 1, &viewport);
 }
 

@@ -807,6 +807,8 @@ update_viewport(struct NineDevice9 *device)
     pvport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
     pvport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
     pvport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+    pvport.min_depth_clamp = 0.0f;
+    pvport.max_depth_clamp = 1.0f;
 
     /* We found R600 and SI cards have some imprecision
      * on the barycentric coordinates used for interpolation.

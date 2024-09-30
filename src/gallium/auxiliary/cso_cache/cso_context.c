@@ -846,6 +846,8 @@ cso_set_viewport_dims(struct cso_context *ctx,
    vp.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    vp.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    vp.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   vp.min_depth_clamp = 0.0f;
+   vp.max_depth_clamp = 1.0f;
    cso_set_viewport(ctx, &vp);
 }
 

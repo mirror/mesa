@@ -348,6 +348,7 @@ static LLVMValueRef
 lp_build_depth_clamp(struct gallivm_state *gallivm,
                      LLVMBuilderRef builder,
                      bool depth_clamp,
+                     bool user_defined_clamp,
                      bool restrict_depth,
                      struct lp_type type,
                      LLVMTypeRef context_type,
@@ -387,13 +388,15 @@ lp_build_depth_clamp(struct gallivm_state *gallivm,
    viewport = lp_llvm_viewport(context_type, context_ptr, gallivm, viewport_index);
 
    /* viewports[viewport_index].min_depth */
-   min_depth = LLVMBuildExtractElement(builder, viewport,
-                  lp_build_const_int32(gallivm, LP_JIT_VIEWPORT_MIN_DEPTH), "");
+   min_depth = lp_build_const_int32(gallivm, user_defined_clamp ? LP_JIT_VIEWPORT_MIN_DEPTH_CLAMP
+                                                                : LP_JIT_VIEWPORT_MIN_DEPTH);
+   min_depth = LLVMBuildExtractElement(builder, viewport, min_depth, "");
    min_depth = lp_build_broadcast_scalar(&f32_bld, min_depth);
 
    /* viewports[viewport_index].max_depth */
-   max_depth = LLVMBuildExtractElement(builder, viewport,
-                  lp_build_const_int32(gallivm, LP_JIT_VIEWPORT_MAX_DEPTH), "");
+   max_depth = lp_build_const_int32(gallivm, user_defined_clamp ? LP_JIT_VIEWPORT_MAX_DEPTH_CLAMP
+                                                                : LP_JIT_VIEWPORT_MAX_DEPTH);
+   max_depth = LLVMBuildExtractElement(builder, viewport, max_depth, "");
    max_depth = lp_build_broadcast_scalar(&f32_bld, max_depth);
 
    /*
@@ -894,6 +897,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
 
    if (depth_mode & EARLY_DEPTH_TEST) {
       z = lp_build_depth_clamp(gallivm, builder, key->depth_clamp,
+                               key->user_defined_depth_clamp,
                                key->restrict_depth_values, type,
                                context_type, context_ptr,
                                thread_data_type, thread_data_ptr, z);
@@ -1300,6 +1304,7 @@ generate_fs_loop(struct gallivm_state *gallivm,
        * Clamp according to ARB_depth_clamp semantics.
        */
       z = lp_build_depth_clamp(gallivm, builder, key->depth_clamp,
+                               key->user_defined_depth_clamp,
                                key->restrict_depth_values, type,
                                context_type, context_ptr,
                                thread_data_type, thread_data_ptr, z);
@@ -3545,6 +3550,9 @@ dump_fs_variant_key(struct lp_fragment_shader_variant_key *key)
    if (key->restrict_depth_values)
       debug_printf("restrict_depth_values = 1\n");
 
+   if (key->user_defined_depth_clamp)
+      debug_printf("user_defined_depth_clamp = 1\n");
+
    if (key->multisample) {
       debug_printf("multisample = 1\n");
       debug_printf("coverage samples = %d\n", key->coverage_samples);
@@ -4419,6 +4427,7 @@ make_variant_key(struct llvmpipe_context *lp,
     * Propagate the depth clamp setting from the rasterizer state.
     */
    key->depth_clamp = lp->rasterizer->depth_clamp;
+   key->user_defined_depth_clamp = lp->rasterizer->user_defined_depth_clamp_range;
 
    /* alpha test only applies if render buffer 0 is non-integer
     * (or does not exist)

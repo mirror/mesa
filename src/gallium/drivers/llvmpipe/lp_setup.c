@@ -865,6 +865,12 @@ lp_setup_set_viewports(struct lp_setup_context *setup,
           setup->viewports[i].max_depth = max_depth;
           setup->dirty |= LP_SETUP_NEW_VIEWPORTS;
       }
+      if (setup->viewports[i].min_depth_clamp != viewports[i].min_depth_clamp ||
+          setup->viewports[i].min_depth_clamp != viewports[i].max_depth_clamp) {
+          setup->viewports[i].min_depth_clamp = viewports[i].min_depth_clamp;
+          setup->viewports[i].min_depth_clamp = viewports[i].max_depth_clamp;
+          setup->dirty |= LP_SETUP_NEW_VIEWPORTS;
+      }
    }
 }
 

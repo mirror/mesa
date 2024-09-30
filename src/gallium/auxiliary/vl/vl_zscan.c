@@ -434,6 +434,8 @@ vl_zscan_init_buffer(struct vl_zscan *zscan, struct vl_zscan_buffer *buffer,
    buffer->viewport.swizzle_y = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Y;
    buffer->viewport.swizzle_z = PIPE_VIEWPORT_SWIZZLE_POSITIVE_Z;
    buffer->viewport.swizzle_w = PIPE_VIEWPORT_SWIZZLE_POSITIVE_W;
+   buffer->viewport.min_depth_clamp = 0.0f;
+   buffer->viewport.max_depth_clamp = 1.0f;
 
    buffer->fb_state.width = dst->width;
    buffer->fb_state.height = dst->height;

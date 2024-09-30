@@ -55,11 +55,15 @@ struct lp_jit_viewport
 {
    float min_depth;
    float max_depth;
+   float min_depth_clamp;
+   float max_depth_clamp;
 };
 
 enum {
    LP_JIT_VIEWPORT_MIN_DEPTH,
    LP_JIT_VIEWPORT_MAX_DEPTH,
+   LP_JIT_VIEWPORT_MIN_DEPTH_CLAMP,
+   LP_JIT_VIEWPORT_MAX_DEPTH_CLAMP,
    LP_JIT_VIEWPORT_NUM_FIELDS /* number of fields above */
 };
 

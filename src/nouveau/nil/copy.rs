@@ -7,6 +7,9 @@ use crate::tiling::Tiling;
 use std::ffi::c_void;
 use std::ops::Range;
 
+#[cfg(any(target_arch = "x86_64"))]
+use std::arch::x86_64::__m128i;
+
 // This file is dedicated to the internal tiling layout, mainly in the context
 // of CPU-based tiled memcpy implementations (and helpers) for VK_EXT_host_image_copy
 //
@@ -149,9 +152,9 @@ trait Copy16B {
     const X_DIVISOR: u32;
 
     unsafe fn copy(tiled: *mut u8, linear: *mut u8, bytes: usize);
-    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
-        Self::copy(tiled as *mut _, linear as *mut _, 16);
-    }
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]);
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe fn copy_16b_SSE2(dst: *mut __m128i, data_ptr: *mut [u8; 16]);
 }
 
 struct CopyGOBTuring2D<C: Copy16B> {
@@ -516,6 +519,29 @@ impl Copy16B for RawCopyToTiled {
         // This is backwards from memcpy
         std::ptr::copy_nonoverlapping(linear, tiled, bytes);
     }
+
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
+        #[cfg(any(target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse2") {
+                return unsafe { Self::copy_16b_SSE2(tiled as *mut __m128i, linear); };
+            }
+        }
+
+        // Fallback without using SSE
+        Self::copy(tiled as *mut _, linear as *mut _, 16);
+    }
+
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse2")]
+    unsafe fn copy_16b_SSE2(dst: *mut __m128i, data_ptr: *mut [u8; 16]) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::_mm_loadu_si128;
+        use std::arch::x86_64::_mm_store_si128;
+        
+        let linear_data = _mm_loadu_si128(data_ptr as *mut __m128i);
+        _mm_store_si128(dst, linear_data);
+    }
 }
 
 struct RawCopyToLinear {}
@@ -526,6 +552,29 @@ impl Copy16B for RawCopyToLinear {
     unsafe fn copy(tiled: *mut u8, linear: *mut u8, bytes: usize) {
         // This is backwards from memcpy
         std::ptr::copy_nonoverlapping(tiled, linear, bytes);
+    }
+
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
+        #[cfg(any(target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse2") {
+                return unsafe { Self::copy_16b_SSE2(linear as *mut __m128i, tiled); };
+            }
+        }
+
+        // Fallback without using SSE
+        Self::copy(tiled as *mut _, linear as *mut _, 16);
+    }
+
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse2")]
+    unsafe fn copy_16b_SSE2(linear: *mut __m128i, tiled: *mut [u8; 16]) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::_mm_load_si128;
+        use std::arch::x86_64::_mm_storeu_si128;
+        
+        let tiled_data = _mm_load_si128(tiled as *mut __m128i);
+        _mm_storeu_si128(linear, tiled_data);
     }
 }
 

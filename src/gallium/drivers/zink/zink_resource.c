@@ -1415,7 +1415,7 @@ create_image(struct zink_screen *screen, struct zink_resource_object *obj,
       assert(num_dmabuf_planes <= 4);
    }
 
-   alloc_info->need_dedicated = get_image_memory_requirement(screen, obj, num_planes, &reqs);
+   alloc_info->need_dedicated = get_image_memory_requirement(screen, obj, (ici.flags & VK_IMAGE_CREATE_DISJOINT_BIT) ? num_planes : 1, &reqs);
    if (templ->usage == PIPE_USAGE_STAGING && ici.tiling == VK_IMAGE_TILING_LINEAR)
       alloc_info->flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT;
    else

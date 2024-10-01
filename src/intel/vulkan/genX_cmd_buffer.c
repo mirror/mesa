@@ -6170,10 +6170,18 @@ void genX(CmdEndRendering)(
           * the result of writes to the MSAA color attachments show up in the
           * sampler when we blit to the single-sampled resolve target.
           */
+#if GFX_VER >= 20
+         fill_access_mask_for_stage(cmd_buffer,
+                                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                    VK_PIPELINE_STAGE_2_RESOLVE_BIT,
+                                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT);
+#else
          anv_add_pending_pipe_bits(cmd_buffer,
                                    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
                                    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
                                    "MSAA resolve");
+#endif
       }
 
       const bool has_depth_resolve =

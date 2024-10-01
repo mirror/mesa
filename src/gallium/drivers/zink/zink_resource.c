@@ -546,7 +546,7 @@ find_good_mod(struct zink_screen *screen, VkImageCreateInfo *ici, const struct p
       if (!feats)
          continue;
 
-      if (feats & VK_FORMAT_FEATURE_DISJOINT_BIT && util_format_get_num_planes(templ->format))
+      if (feats & VK_FORMAT_FEATURE_DISJOINT_BIT && util_format_get_num_planes(templ->format) > 1)
          ici->flags |= VK_IMAGE_CREATE_DISJOINT_BIT;
       VkImageUsageFlags usage = get_image_usage_for_feats(screen, feats, templ, bind, &need_extended);
       assert(!need_extended);

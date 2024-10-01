@@ -399,7 +399,7 @@ get_image_usage_for_feats(struct zink_screen *screen, VkFormatFeatureFlags2 feat
          usage |= VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
       if (is_planar || (feats & VK_FORMAT_FEATURE_TRANSFER_DST_BIT))
          usage |= VK_IMAGE_USAGE_TRANSFER_DST_BIT;
-      if (feats & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT)
+      if (feats & VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT && !(bind & ZINK_BIND_VIDEO))
          usage |= VK_IMAGE_USAGE_SAMPLED_BIT;
 
       if ((is_planar || (feats & VK_FORMAT_FEATURE_STORAGE_IMAGE_BIT)) && (bind & PIPE_BIND_SHADER_IMAGE)) {

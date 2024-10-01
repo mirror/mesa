@@ -1808,6 +1808,39 @@ zink_resource_is_aux_plane(struct pipe_resource *pres)
    return rsc->obj->is_aux;
 }
 
+static void
+zink_resource_get_info(struct pipe_screen *pscreen, struct pipe_resource *pres, unsigned *stride, unsigned *offset)
+{
+   struct zink_screen *screen = zink_screen(pscreen);
+   struct zink_resource *res = zink_resource(pres);
+   struct zink_resource_object *obj = res->obj;
+
+   VkImageAspectFlags aspect;
+   switch (res->plane) {
+   case 0:
+      aspect = VK_IMAGE_ASPECT_MEMORY_PLANE_0_BIT_EXT;
+      break;
+   case 1:
+      aspect = VK_IMAGE_ASPECT_MEMORY_PLANE_1_BIT_EXT;
+      break;
+   case 2:
+      aspect = VK_IMAGE_ASPECT_MEMORY_PLANE_2_BIT_EXT;
+      break;
+   case 3:
+      aspect = VK_IMAGE_ASPECT_MEMORY_PLANE_3_BIT_EXT;
+      break;
+   default:
+      unreachable("how many planes you got in this thing?");
+   }
+   VkImageSubresource isr = {
+      aspect,
+   };
+   VkSubresourceLayout srl;
+   VKSCR(GetImageSubresourceLayout)(screen->dev, obj->image, &isr, &srl);
+   *offset = srl.offset;
+   *stride = srl.rowPitch;
+}
+
 static bool
 zink_resource_get_param(struct pipe_screen *pscreen, struct pipe_context *pctx,
                         struct pipe_resource *pres,
@@ -3253,6 +3286,7 @@ zink_screen_resource_init(struct pipe_screen *pscreen)
    if (screen->info.have_KHR_external_memory_fd || screen->info.have_KHR_external_memory_win32) {
       pscreen->resource_get_handle = zink_resource_get_handle;
       pscreen->resource_from_handle = zink_resource_from_handle;
+      pscreen->resource_get_info = zink_resource_get_info;
    }
    if (screen->info.have_EXT_external_memory_host) {
       pscreen->resource_from_user_memory = zink_resource_from_user_memory;

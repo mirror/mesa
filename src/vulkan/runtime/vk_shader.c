@@ -106,7 +106,8 @@ cmp_stage_idx(const void *_a, const void *_b)
 static nir_shader *
 vk_shader_to_nir(struct vk_device *device,
                  const VkShaderCreateInfoEXT *info,
-                 const struct vk_pipeline_robustness_state *rs)
+                 const struct vk_pipeline_robustness_state *rs,
+                 struct vk_shader_link_state *link_state)
 {
    const struct vk_device_shader_ops *ops = device->shader_ops;
 
@@ -133,7 +134,7 @@ vk_shader_to_nir(struct vk_device *device,
       return NULL;
 
    if (ops->preprocess_nir != NULL)
-      ops->preprocess_nir(device->physical, nir);
+      ops->preprocess_nir(device->physical, nir, link_state);
 
    return nir;
 }
@@ -147,6 +148,7 @@ vk_shader_compile_info_init(struct vk_shader_compile_info *info,
                             struct set_layouts *set_layouts,
                             const VkShaderCreateInfoEXT *vk_info,
                             const struct vk_pipeline_robustness_state *rs,
+                            const struct vk_shader_link_state *link_state,
                             nir_shader *nir)
 {
    for (uint32_t sl = 0; sl < vk_info->setLayoutCount; sl++) {
@@ -160,6 +162,7 @@ vk_shader_compile_info_init(struct vk_shader_compile_info *info,
       .next_stage_mask = vk_info->nextStage,
       .nir = nir,
       .robustness = rs,
+      .link_state = link_state,
       .set_layout_count = vk_info->setLayoutCount,
       .set_layouts = set_layouts->set_layouts,
       .push_constant_range_count = vk_info->pushConstantRangeCount,
@@ -463,7 +466,7 @@ vk_common_CreateShadersEXT(VkDevice _device,
                .idx = i,
             };
          } else {
-            nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs);
+            nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs, NULL);
             if (nir == NULL) {
                result = vk_errorf(device, VK_ERROR_UNKNOWN,
                                   "Failed to compile shader to NIR");
@@ -473,7 +476,7 @@ vk_common_CreateShadersEXT(VkDevice _device,
             struct vk_shader_compile_info info;
             struct set_layouts set_layouts;
             vk_shader_compile_info_init(&info, &set_layouts,
-                                        vk_info, &rs, nir);
+                                        vk_info, &rs, NULL, nir);
 
             struct vk_shader *shader;
             result = ops->compile(device, 1, &info, NULL /* state */,
@@ -505,18 +508,25 @@ vk_common_CreateShadersEXT(VkDevice _device,
       /* Memset for easy error handling */
       memset(infos, 0, sizeof(infos));
 
+      struct vk_shader_link_state link_state = { .data = { 0, } };
+
       for (uint32_t l = 0; l < linked_count; l++) {
          const VkShaderCreateInfoEXT *vk_info = &pCreateInfos[linked[l].idx];
 
-         nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs);
+         struct vk_shader_link_state shader_link_state = { .data = { 0, } };
+         nir_shader *nir = vk_shader_to_nir(device, vk_info, &rs,
+                                            &shader_link_state);
          if (nir == NULL) {
             result = vk_errorf(device, VK_ERROR_UNKNOWN,
                                "Failed to compile shader to NIR");
             break;
          }
 
+         for (uint32_t j = 0; j < ARRAY_SIZE(link_state.data); j++)
+            link_state.data[j] |= shader_link_state.data[j];
+
          vk_shader_compile_info_init(&infos[l], &set_layouts[l],
-                                     vk_info, &rs, nir);
+                                     vk_info, &rs, &link_state, nir);
       }
 
       if (result == VK_SUCCESS) {

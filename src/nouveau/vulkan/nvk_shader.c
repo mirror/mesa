@@ -178,7 +178,8 @@ nvk_get_spirv_options(struct vk_physical_device *vk_pdev,
 }
 
 static void
-nvk_preprocess_nir(struct vk_physical_device *vk_pdev, nir_shader *nir)
+nvk_preprocess_nir(struct vk_physical_device *vk_pdev, nir_shader *nir,
+                   UNUSED struct vk_shader_link_state *link_state)
 {
    const struct nvk_physical_device *pdev =
       container_of(vk_pdev, struct nvk_physical_device, vk);

@@ -49,6 +49,37 @@ int vk_shader_cmp_graphics_stages(gl_shader_stage a, gl_shader_stage b);
 
 #define VK_SHADER_CREATE_CAPTURE_INTERNAL_REPRESENTATIONS_BIT_MESA 0x1000
 
+/** Link state for shader compilation
+ *
+ * The vk_shader_link_state struct provides a very light-weight linking
+ * mechanism even when full linking isn't required or requested.  As part of
+ * the preprocess stage, the driver can output any state it wants to this
+ * opaque blob.  All of the vk_shader_link_states from all of the shaders
+ * involved in the pipeline are then ORed together to form the final link
+ * state that gets passed in via vk_shader_compile_info.
+ *
+ * The advantage of this sort of light-weight link over full linking is that
+ * light-weight linking is still fairly likely to hit the cache with different
+ * combinations of the same shaders.  For instance, if all a fragment shader
+ * needs to know is whether it is used with the classic 3D pipeline vs.
+ * task/mesh (as is the case on Intel), a single bit set by the vertex shader
+ * and a second bit set by the mesh shader are enough to communicate that.
+ * The fragment shader will then be re-usable with any set of legacy
+ * vertex/tessellation/geometry shaders.  A second example is AGX where the
+ * geometry pipeline needs to know the interpolation qualifiers used by the
+ * fragment shader.  In the common case where nothing is flat, the same vertex
+ * shader can be used with any number of fragment shaders.
+ *
+ * It is the responsibility of the driver to gracefully handle missing link
+ * state.  This can be accomplished, for instance, by adding a bitmask to the
+ * top of the link state that contains the set of stages whose data has been
+ * added to it.  If each stage sets its own bit, the final ORed state will
+ * contain a bitmask of available stages.
+ */
+struct vk_shader_link_state {
+   uint64_t data[2];
+};
+
 struct vk_shader_compile_info {
    gl_shader_stage stage;
    VkShaderCreateFlagsEXT flags;
@@ -56,6 +87,8 @@ struct vk_shader_compile_info {
    struct nir_shader *nir;
 
    const struct vk_pipeline_robustness_state *robustness;
+
+   const struct vk_shader_link_state *link_state;
 
    uint32_t set_layout_count;
    struct vk_descriptor_set_layout * const *set_layouts;
@@ -196,7 +229,8 @@ struct vk_device_shader_ops {
     * not any enabled device features or pipeline state.  This allows us to
     * potentially cache this shader and re-use it across pipelines.
     */
-   void (*preprocess_nir)(struct vk_physical_device *device, nir_shader *nir);
+   void (*preprocess_nir)(struct vk_physical_device *device, nir_shader *nir,
+                          struct vk_shader_link_state *link_state_out);
 
    /** True if the driver wants geometry stages linked
     *

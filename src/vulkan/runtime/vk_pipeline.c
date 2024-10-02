@@ -626,6 +626,8 @@ struct vk_pipeline_precomp_shader {
    /* Tessellation info if the shader is a tessellation shader */
    struct vk_pipeline_tess_info tess;
 
+   struct vk_shader_link_state link_state;
+
    /* Hash of the vk_pipeline_precomp_shader
     *
     * This is the hash of the final compiled NIR together with tess info and
@@ -666,6 +668,7 @@ static struct vk_pipeline_precomp_shader *
 vk_pipeline_precomp_shader_create(struct vk_device *device,
                                   const void *key_data, size_t key_size,
                                   const struct vk_pipeline_robustness_state *rs,
+                                  const struct vk_shader_link_state *link_state,
                                   nir_shader *nir)
 {
    struct blob blob;
@@ -692,6 +695,7 @@ vk_pipeline_precomp_shader_create(struct vk_device *device,
 
    shader->stage = nir->info.stage;
    shader->rs = *rs;
+   shader->link_state = *link_state;
 
    vk_pipeline_gather_nir_tess_info(nir, &shader->tess);
 
@@ -721,6 +725,7 @@ vk_pipeline_precomp_shader_serialize(struct vk_pipeline_cache_object *obj,
    blob_write_uint32(blob, shader->stage);
    blob_write_bytes(blob, &shader->rs, sizeof(shader->rs));
    blob_write_bytes(blob, &shader->tess, sizeof(shader->tess));
+   blob_write_bytes(blob, &shader->link_state, sizeof(shader->link_state));
    blob_write_bytes(blob, shader->blake3, sizeof(shader->blake3));
    blob_write_uint64(blob, shader->nir_blob.size);
    blob_write_bytes(blob, shader->nir_blob.data, shader->nir_blob.size);
@@ -752,6 +757,7 @@ vk_pipeline_precomp_shader_deserialize(struct vk_pipeline_cache *cache,
    shader->stage = blob_read_uint32(blob);
    blob_copy_bytes(blob, &shader->rs, sizeof(shader->rs));
    blob_copy_bytes(blob, &shader->tess, sizeof(shader->tess));
+   blob_copy_bytes(blob, &shader->link_state, sizeof(shader->link_state));
    blob_copy_bytes(blob, shader->blake3, sizeof(shader->blake3));
 
    uint64_t nir_size = blob_read_uint64(blob);
@@ -859,13 +865,14 @@ vk_pipeline_precompile_shader(struct vk_device *device,
    if (result != VK_SUCCESS)
       return result;
 
+   struct vk_shader_link_state link_state = { .data = { 0, } };
    if (ops->preprocess_nir != NULL)
-      ops->preprocess_nir(device->physical, nir);
+      ops->preprocess_nir(device->physical, nir, &link_state);
 
    struct vk_pipeline_precomp_shader *shader =
       vk_pipeline_precomp_shader_create(device, stage_sha1,
                                         sizeof(stage_sha1),
-                                        &rs, nir);
+                                        &rs, &link_state, nir);
    ralloc_free(nir);
    if (shader == NULL)
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
@@ -1137,6 +1144,13 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
       vk_pipeline_tess_info_merge(&tess_info, &tes_precomp->tess);
    }
 
+   struct vk_shader_link_state link_state = { .data = { 0, } };
+   for (uint32_t i = 0; i < stage_count; i++) {
+      struct vk_pipeline_precomp_shader *precomp = stages[i].precomp;
+      for (uint32_t j = 0; j < ARRAY_SIZE(link_state.data); j++)
+         link_state.data[j] |= precomp->link_state.data[j];
+   }
+
    struct mesa_blake3 blake3_ctx;
    _mesa_blake3_init(&blake3_ctx);
    for (uint32_t i = 0; i < pipeline->set_layout_count; i++) {
@@ -1220,6 +1234,8 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
       if (part_stages & (VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
                          VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT))
          _mesa_blake3_update(&blake3_ctx, &tess_info, sizeof(tess_info));
+
+      _mesa_blake3_update(&blake3_ctx, &link_state, sizeof(link_state));
 
       /* The set of geometry stages used together is used to generate the
        * nextStage mask as well as VK_SHADER_CREATE_NO_TASK_SHADER_BIT_EXT.
@@ -1380,6 +1396,7 @@ vk_graphics_pipeline_compile_shaders(struct vk_device *device,
             .next_stage_mask = next_stage,
             .nir = nir,
             .robustness = &stage->precomp->rs,
+            .link_state = &link_state,
             .set_layout_count = pipeline->set_layout_count,
             .set_layouts = pipeline->set_layouts,
             .push_constant_range_count = push_range != NULL,

@@ -6200,6 +6200,9 @@ void genX(batch_emit_secondary_call)(struct anv_batch *batch,
       bbs.AddressSpaceIndicator = ASI_PPGTT;
       bbs.SecondLevelBatchBuffer = Firstlevelbatch;
       bbs.BatchBufferStartAddress = secondary_addr;
+#if GFX_VERx10 >= 125
+      bbs.EnableCommandCache = true;
+#endif
    }
 
    /* Replace the return address written by the MI_STORE_DATA_IMM above with
@@ -6217,7 +6220,11 @@ genX(batch_emit_return)(struct anv_batch *batch)
                           GENX(MI_BATCH_BUFFER_START_length),
                           GENX(MI_BATCH_BUFFER_START),
                           .AddressSpaceIndicator = ASI_PPGTT,
-                          .SecondLevelBatchBuffer = Firstlevelbatch);
+                          .SecondLevelBatchBuffer = Firstlevelbatch,
+#if GFX_VERx10 >= 125
+                          .EnableCommandCache = true
+#endif
+                         );
 }
 
 /* Wa_16018063123 */

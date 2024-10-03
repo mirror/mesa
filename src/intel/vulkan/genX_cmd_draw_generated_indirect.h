@@ -122,6 +122,9 @@ genX(cmd_buffer_emit_indirect_generated_draws_init)(struct anv_cmd_buffer *cmd_b
       bbs.AddressSpaceIndicator = ASI_PPGTT;
       bbs.BatchBufferStartAddress =
          anv_batch_current_address(&cmd_buffer->generation.batch);
+#if GFX_VERx10 >= 125
+      bbs.EnableCommandCache = true;
+#endif
    }
 
    cmd_buffer->generation.return_addr = anv_batch_current_address(&cmd_buffer->batch);
@@ -518,7 +521,11 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
 #if GFX_VER == 9
                              ANV_PIPE_VF_CACHE_INVALIDATE_BIT |
 #endif
+#if GFX_VERx10 >= 125
+                             ANV_PIPE_HDC_PIPELINE_FLUSH_BIT |
+#else
                              ANV_PIPE_DATA_CACHE_FLUSH_BIT |
+#endif
                              ANV_PIPE_CS_STALL_BIT,
                              "after generation flush");
 
@@ -547,6 +554,9 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
          bbs.BatchBufferStartAddress = (struct anv_address) {
             .bo = cmd_buffer->generation.ring_bo,
          };
+#if GFX_VERx10 >= 125
+         bbs.EnableCommandCache = true;
+#endif
       }
 
       /***
@@ -597,6 +607,9 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
       anv_batch_emit(&cmd_buffer->batch, GENX(MI_BATCH_BUFFER_START), bbs) {
          bbs.AddressSpaceIndicator = ASI_PPGTT;
          bbs.BatchBufferStartAddress = gen_addr;
+#if GFX_VERx10 >= 125
+         bbs.EnableCommandCache = true;
+#endif
       }
 
       /***

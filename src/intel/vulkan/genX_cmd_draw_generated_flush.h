@@ -52,7 +52,11 @@ genX(cmd_buffer_flush_generated_draws)(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VER == 9
                                  ANV_PIPE_VF_CACHE_INVALIDATE_BIT |
 #endif
+#if GFX_VERx10 >= 125
+                                 ANV_PIPE_HDC_PIPELINE_FLUSH_BIT |
+#else
                                  ANV_PIPE_DATA_CACHE_FLUSH_BIT |
+#endif
                                  ANV_PIPE_CS_STALL_BIT,
                                  NULL /* emitted_bits */);
 
@@ -71,6 +75,9 @@ genX(cmd_buffer_flush_generated_draws)(struct anv_cmd_buffer *cmd_buffer)
    anv_batch_emit(batch, GENX(MI_BATCH_BUFFER_START), bbs) {
       bbs.AddressSpaceIndicator = ASI_PPGTT;
       bbs.BatchBufferStartAddress = cmd_buffer->generation.return_addr;
+#if GFX_VERx10 >= 125
+      bbs.EnableCommandCache = true;
+#endif
    }
 
    cmd_buffer->generation.return_addr = ANV_NULL_ADDRESS;

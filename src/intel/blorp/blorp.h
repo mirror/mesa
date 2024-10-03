@@ -290,6 +290,14 @@ blorp_copy_supports_blitter(struct blorp_context *blorp,
                             const struct isl_surf *dst_surf,
                             enum isl_aux_usage src_aux_usage,
                             enum isl_aux_usage dst_aux_usage);
+void
+blorp_clear_multi(struct blorp_batch *batch,
+                  const struct blorp_surf *surfaces,
+                  enum isl_format *formats,
+                  struct isl_swizzle *swizzles,
+                  union isl_color_value *clear_colors,
+                  uint32_t num_buffers,
+                  uint32_t x0, uint32_t y0, uint32_t x1, uint32_t y1);
 
 void
 blorp_clear(struct blorp_batch *batch,

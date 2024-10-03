@@ -31,6 +31,8 @@
 
 #include "blorp.h"
 
+#define MAX_RTS 8
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -162,7 +164,7 @@ struct blorp_surf_offset {
 
 struct blorp_wm_inputs
 {
-   uint32_t clear_color[4];
+   uint32_t clear_color[MAX_RTS][4];
 
    struct blorp_bounds_rect bounds_rect;
    struct blorp_rect_grid rect_grid;
@@ -245,7 +247,8 @@ struct blorp_params
    struct blorp_surface_info stencil;
    uint32_t depth_format;
    struct blorp_surface_info src;
-   struct blorp_surface_info dst;
+   struct blorp_surface_info dst[MAX_RTS];
+   uint32_t num_buffers;
    enum isl_aux_op hiz_op;
    bool full_surface_hiz_op;
    enum isl_aux_op fast_clear_op;

@@ -2264,6 +2264,40 @@ void anv_CmdResolveImage2(
 }
 
 void
+anv_image_clear_color_multi(struct anv_cmd_buffer *cmd_buffer,
+                            const struct anv_image **images,
+                            VkImageAspectFlagBits *aspects,
+                            enum isl_aux_usage *aux_usages,
+                            struct isl_swizzle *swizzles,
+                            enum isl_format *formats,
+                            union isl_color_value *clear_colors,
+                            uint32_t num_buffers,
+                            VkRect2D area)
+{
+   struct blorp_batch batch;
+   anv_blorp_batch_init(cmd_buffer, &batch, 0);
+
+   struct blorp_surf surfaces[MAX_RTS];
+   for (uint32_t i = 0; i < num_buffers; i++) {
+      assert(images[i]->vk.aspects == VK_IMAGE_ASPECT_COLOR_BIT);
+      assert(images[i]->n_planes == 1);
+      get_blorp_surf_for_anv_image(cmd_buffer, images[i], aspects[i],
+                                   VK_IMAGE_USAGE_TRANSFER_DST_BIT,
+                                   ANV_IMAGE_LAYOUT_EXPLICIT_AUX,
+                                   aux_usages[i], &surfaces[i]);
+      anv_cmd_buffer_mark_image_written(cmd_buffer, images[i], aspects[i], aux_usages[i],
+                                        0, 0, 1);
+   }
+
+   blorp_clear_multi(&batch, surfaces, formats, swizzles, clear_colors, num_buffers,
+                     area.offset.x, area.offset.y,
+                     area.offset.x + area.extent.width,
+                     area.offset.y + area.extent.height);
+
+   anv_blorp_batch_finish(&batch);
+}
+
+void
 anv_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
                       const struct anv_image *image,
                       VkImageAspectFlagBits aspect,

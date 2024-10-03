@@ -249,6 +249,7 @@ blorp_params_init(struct blorp_params *params)
    params->num_samples = 1;
    params->num_draw_buffers = 1;
    params->num_layers = 1;
+   params->num_buffers = 1;
 }
 
 void
@@ -358,8 +359,8 @@ blorp_hiz_op(struct blorp_batch *batch, struct blorp_surf *surf,
                          params.depth.view.base_level) == params.y1);
       }
 
-      params.dst.surf.samples = params.depth.surf.samples;
-      params.dst.surf.logical_level0_px = params.depth.surf.logical_level0_px;
+      params.dst[0].surf.samples = params.depth.surf.samples;
+      params.dst[0].surf.logical_level0_px = params.depth.surf.logical_level0_px;
       params.depth_format =
          isl_format_get_depth_format(surf->surf->format, false);
       params.num_samples = params.depth.surf.samples;

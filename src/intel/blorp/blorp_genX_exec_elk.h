@@ -402,7 +402,7 @@ blorp_emit_input_varying_data(struct blorp_batch *batch,
 
       const unsigned clear_color_size = batch->blorp->isl_dev->ss.clear_value_size;
       blorp_emit_memcpy(batch, clear_color_input_addr,
-                        params->dst.clear_color_addr,
+                        params->dst[0].clear_color_addr,
                         clear_color_size);
 #else
       unreachable("MCS partial resolve is not a thing on SNB and earlier");
@@ -929,10 +929,10 @@ blorp_emit_ps_config(struct blorp_batch *batch,
        * support CCS on 8 bpp surfaces. So, these unaligned fast clear
        * operations shouldn't be occurring prior to TGL as well.
        */
-      if (isl_format_get_layout(params->dst.surf.format)->bpb == 8 &&
-          params->dst.surf.logical_level0_px.width % 64 != 0 &&
-          params->dst.surf.levels >= 3 &&
-          params->dst.view.base_level >= 1) {
+      if (isl_format_get_layout(params->dst[0].surf.format)->bpb == 8 &&
+          params->dst[0].surf.logical_level0_px.width % 64 != 0 &&
+          params->dst[0].surf.levels >= 3 &&
+          params->dst[0].view.base_level >= 1) {
          assert(params->num_samples == 1);
          assert(!ps.RenderTargetFastClearEnable);
       }
@@ -1579,8 +1579,8 @@ blorp_setup_binding_table(struct blorp_batch *batch,
                                      &bind_offset, surface_offsets, surface_maps))
          return 0;
 
-      if (params->dst.enabled) {
-         blorp_emit_surface_state(batch, &params->dst,
+      if (params->dst[0].enabled) {
+         blorp_emit_surface_state(batch, &params->dst[0],
                                   params->fast_clear_op,
                                   surface_maps[BLORP_RENDERBUFFER_BT_INDEX],
                                   surface_offsets[BLORP_RENDERBUFFER_BT_INDEX],
@@ -1945,11 +1945,11 @@ blorp_exec_compute(struct blorp_batch *batch, const struct blorp_params *params)
 
    uint32_t group_x0 = params->x0 / cs_prog_data->local_size[0];
    uint32_t group_y0 = params->y0 / cs_prog_data->local_size[1];
-   uint32_t group_z0 = params->dst.z_offset;
+   uint32_t group_z0 = params->dst[0].z_offset;
    uint32_t group_x1 = DIV_ROUND_UP(params->x1, cs_prog_data->local_size[0]);
    uint32_t group_y1 = DIV_ROUND_UP(params->y1, cs_prog_data->local_size[1]);
    assert(params->num_layers >= 1);
-   uint32_t group_z1 = params->dst.z_offset + params->num_layers;
+   uint32_t group_z1 = params->dst[0].z_offset + params->num_layers;
    assert(cs_prog_data->local_size[2] == 1);
 
 #endif /* GFX_VER >= 7 */

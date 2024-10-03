@@ -57,35 +57,16 @@ u_vector_init_pow2(struct u_vector *vector,
 void *
 u_vector_add(struct u_vector *vector)
 {
-   uint32_t offset, size, split, src_tail, dst_tail;
+   uint32_t offset, size;
    void *data;
 
    if (vector->head - vector->tail == vector->size) {
       size = vector->size * 2;
-      data = malloc(size);
-      if (data == NULL)
+      data = realloc(vector->data, size);
+
+      if (!data)
          return NULL;
-      src_tail = vector->tail & (vector->size - 1);
-      dst_tail = vector->tail & (size - 1);
-      if (src_tail == 0) {
-         /* Since we know that the vector is full, this means that it's
-          * linear from start to end so we can do one copy.
-          */
-         memcpy((char *)data + dst_tail, vector->data, vector->size);
-      } else {
-         /* In this case, the vector is split into two pieces and we have
-          * to do two copies.  We have to be careful to make sure each
-          * piece goes to the right locations.  Thanks to the change in
-          * size, it may or may not still wrap around.
-          */
-         split = align(vector->tail, vector->size);
-         assert(vector->tail <= split && split < vector->head);
-         memcpy((char *)data + dst_tail, (char *)vector->data + src_tail,
-                split - vector->tail);
-         memcpy((char *)data + (split & (size - 1)), vector->data,
-                vector->head - split);
-      }
-      free(vector->data);
+
       vector->data = data;
       vector->size = size;
    }

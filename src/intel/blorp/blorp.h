@@ -133,12 +133,19 @@ enum blorp_batch_flags {
 
    /** Wa_18038825448 */
    BLORP_BATCH_FORCE_CPS_DEPENDENCY  = BITFIELD_BIT(4),
+
+   /** This flag indicates that render target used by blorp don't clash with
+    *  currently in-use binding table entries. Therefore render-target-cache
+    *  flush is unnecessary on Gfx11+.
+    */
+   BLORP_BATCH_NO_BT_REUSE           = BITFIELD_BIT(5),
 };
 
 struct blorp_batch {
    struct blorp_context *blorp;
    void *driver_batch;
    enum blorp_batch_flags flags;
+   uint32_t rt_index;
 };
 
 void blorp_batch_init(struct blorp_context *blorp, struct blorp_batch *batch,

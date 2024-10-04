@@ -880,9 +880,9 @@ blorp_emit_ps_config(struct blorp_batch *batch,
    blorp_emit(batch, GENX(3DSTATE_PS), ps) {
       if (params->src.enabled) {
          ps.SamplerCount = 1; /* Up to 4 samplers */
-         ps.BindingTableEntryCount = 2;
+         ps.BindingTableEntryCount = params->rt_index + 2;
       } else {
-         ps.BindingTableEntryCount = 1;
+         ps.BindingTableEntryCount = params->rt_index + 1;
       }
 
       /* SAMPLER_STATE prefetching is broken on Gfx11 - Wa_1606682166 */

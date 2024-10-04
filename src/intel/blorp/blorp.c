@@ -244,9 +244,12 @@ blorp_surface_info_init(struct blorp_batch *batch,
 
 
 void
-blorp_params_init(struct blorp_params *params)
+blorp_params_init(struct blorp_params *params,
+                  uint32_t rt_index)
 {
+   assert(rt_index < 8 /* max render targets */);
    memset(params, 0, sizeof(*params));
+   params->rt_index = rt_index;
    params->num_samples = 1;
    params->num_draw_buffers = 1;
    params->num_layers = 1;
@@ -260,7 +263,7 @@ blorp_hiz_op(struct blorp_batch *batch, struct blorp_surf *surf,
    const struct intel_device_info *devinfo = batch->blorp->isl_dev->info;
 
    struct blorp_params params;
-   blorp_params_init(&params);
+   blorp_params_init(&params, batch->rt_index);
 
    params.hiz_op = op;
    params.full_surface_hiz_op = true;

@@ -763,9 +763,9 @@ blorp_emit_ps_config(struct blorp_batch *batch,
    blorp_emit(batch, GENX(3DSTATE_PS), ps) {
       if (params->src.enabled) {
          ps.SamplerCount = 1; /* Up to 4 samplers */
-         ps.BindingTableEntryCount = 2;
+         ps.BindingTableEntryCount = params->rt_index + 2;
       } else {
-         ps.BindingTableEntryCount = 1;
+         ps.BindingTableEntryCount = params->rt_index + 1;
       }
 
       /* SAMPLER_STATE prefetching is broken on Gfx11 - Wa_1606682166 */
@@ -1270,11 +1270,14 @@ blorp_setup_binding_table(struct blorp_batch *batch,
                            const struct blorp_params *params)
 {
    const struct isl_device *isl_dev = batch->blorp->isl_dev;
-   uint32_t surface_offsets[2], bind_offset = 0;
-   void *surface_maps[2];
+   uint32_t surface_offsets[8], bind_offset = 0;
+   void *surface_maps[8];
+
+   assert(batch->rt_index == params->rt_index);
 
    if (params->use_pre_baked_binding_table) {
       bind_offset = params->pre_baked_binding_table_offset;
+      assert(params->rt_index == 0);
    } else {
       unsigned num_surfaces = 1 + params->src.enabled;
       if (!blorp_alloc_binding_table(batch, num_surfaces,

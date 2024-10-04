@@ -39,7 +39,8 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
    struct elk_wm_prog_key wm_key;
    memset(&wm_key, 0, sizeof(wm_key));
    wm_key.multisample_fbo = multisample_fbo ? ELK_ALWAYS : ELK_NEVER;
-   wm_key.nr_color_regions = 1;
+   wm_key.nr_color_regions = params->rt_index + 1;
+   wm_key.color_outputs_valid = 1 << params->rt_index;
 
    if (compiler->devinfo->ver < 6) {
       if (nir->info.fs.uses_discard)

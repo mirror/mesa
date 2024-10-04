@@ -270,6 +270,9 @@ struct blorp_params
    uint32_t pre_baked_binding_table_offset;
    enum blorp_shader_type shader_type;
    enum blorp_shader_pipeline shader_pipeline;
+
+   /* render index */
+   uint32_t rt_index;
 };
 
 enum intel_measure_snapshot_type
@@ -277,13 +280,16 @@ blorp_op_to_intel_measure_snapshot(enum blorp_op op);
 
 const char *blorp_op_to_name(enum blorp_op op);
 
-void blorp_params_init(struct blorp_params *params);
+void blorp_params_init(struct blorp_params *params,
+                       uint32_t rt_index);
 
 struct blorp_base_key
 {
    char name[8];
    enum blorp_shader_type shader_type;
    enum blorp_shader_pipeline shader_pipeline;
+   /* Base offset in the binding table */
+   uint32_t rt_index;
 };
 
 #define BLORP_BASE_KEY_INIT(_type)                      \

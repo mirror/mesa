@@ -19,6 +19,7 @@ blorp_nir_options_brw(struct blorp_context *blorp,
 
 static struct blorp_program
 blorp_compile_fs_brw(struct blorp_context *blorp, void *mem_ctx,
+                     const struct blorp_params *params,
                      struct nir_shader *nir,
                      bool multisample_fbo,
                      bool use_repclear)
@@ -39,7 +40,7 @@ blorp_compile_fs_brw(struct blorp_context *blorp, void *mem_ctx,
    wm_key.multisample_fbo = multisample_fbo ? BRW_ALWAYS : BRW_NEVER;
    wm_key.nr_color_regions = 1;
 
-   struct brw_compile_fs_params params = {
+   struct brw_compile_fs_params brw_params = {
       .base = {
          .mem_ctx = mem_ctx,
          .nir = nir,
@@ -53,7 +54,7 @@ blorp_compile_fs_brw(struct blorp_context *blorp, void *mem_ctx,
       .max_polygons = 1,
    };
 
-   const unsigned *kernel = brw_compile_fs(compiler, &params);
+   const unsigned *kernel = brw_compile_fs(compiler, &brw_params);
    return (struct blorp_program){
       .kernel         = kernel,
       .kernel_size    = wm_prog_data->base.program_size,

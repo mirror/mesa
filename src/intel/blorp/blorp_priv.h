@@ -46,6 +46,7 @@ struct blorp_compiler {
                                                      gl_shader_stage stage);
 
    struct blorp_program (*compile_fs)(struct blorp_context *blorp, void *mem_ctx,
+                                      const struct blorp_params *params,
                                       struct nir_shader *nir,
                                       bool multisample_fbo,
                                       bool use_repclear);
@@ -441,11 +442,12 @@ struct blorp_program {
 
 static inline struct blorp_program
 blorp_compile_fs(struct blorp_context *blorp, void *mem_ctx,
+                 const struct blorp_params *params,
                  struct nir_shader *nir,
                  bool multisample_fbo,
                  bool use_repclear)
 {
-   return blorp->compiler->compile_fs(blorp, mem_ctx, nir, multisample_fbo, use_repclear);
+   return blorp->compiler->compile_fs(blorp, mem_ctx, params, nir, multisample_fbo, use_repclear);
 }
 
 static inline struct blorp_program

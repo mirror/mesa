@@ -20,6 +20,7 @@ blorp_nir_options_elk(struct blorp_context *blorp,
 
 static struct blorp_program
 blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
+                     const struct blorp_params *params,
                      struct nir_shader *nir,
                      bool multisample_fbo,
                      bool use_repclear)
@@ -47,7 +48,7 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
       wm_key.input_slots_valid = nir->info.inputs_read | VARYING_BIT_POS;
    }
 
-   struct elk_compile_fs_params params = {
+   struct elk_compile_fs_params elk_params = {
       .base = {
          .mem_ctx = mem_ctx,
          .nir = nir,
@@ -61,7 +62,7 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
       .max_polygons = 1,
    };
 
-   const unsigned *kernel = elk_compile_fs(compiler, &params);
+   const unsigned *kernel = elk_compile_fs(compiler, &elk_params);
    return (struct blorp_program){
       .kernel         = kernel,
       .kernel_size    = wm_prog_data->base.program_size,

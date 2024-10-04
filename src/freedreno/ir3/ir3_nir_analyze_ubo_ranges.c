@@ -330,9 +330,9 @@ lower_ubo_load_to_uniform(nir_intrinsic_instr *instr, nir_builder *b,
       const_offset = 0;
    }
 
-   nir_def *uniform =
-      nir_load_const_ir3(b, instr->num_components, instr->def.bit_size,
-                         uniform_offset, .base = const_offset);
+   assert(instr->def.bit_size == 32);
+   nir_def *uniform = nir_load_const_ir3(b, instr->num_components,
+                                         uniform_offset, .base = const_offset);
 
    nir_def_replace(&instr->def, uniform);
 

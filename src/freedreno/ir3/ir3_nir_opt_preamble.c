@@ -744,7 +744,7 @@ ir3_nir_lower_preamble(nir_shader *nir, struct ir3_shader_variant *v)
          b->cursor = nir_before_instr(instr);
 
          nir_def *new_dest = nir_load_const_ir3(
-            b, dest->num_components, 32, nir_imm_int(b, 0), .base = offset);
+            b, dest->num_components, nir_imm_int(b, 0), .base = offset);
 
          if (dest->bit_size == 1) {
             new_dest = nir_i2b(b, new_dest);

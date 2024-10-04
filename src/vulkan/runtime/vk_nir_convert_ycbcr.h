@@ -45,9 +45,17 @@ typedef const struct vk_ycbcr_conversion_state *
    (*nir_vk_ycbcr_conversion_lookup_cb)(const void *data, uint32_t set,
                                         uint32_t binding, uint32_t array_index);
 
+struct nir_vk_lower_ycbcr_tex_options {
+   nir_vk_ycbcr_conversion_lookup_cb lookup_cb;
+   const void *lookup_cb_data;
+
+   /** Mask out the lower bits for R10X6 / R12X4 respectively */
+   bool mask_r10x6;
+   bool mask_r12x4;
+};
+
 bool nir_vk_lower_ycbcr_tex(nir_shader *nir,
-                            nir_vk_ycbcr_conversion_lookup_cb cb,
-                            const void *cb_data);
+                            const struct nir_vk_lower_ycbcr_tex_options *options);
 
 #ifdef __cplusplus
 } /* extern "C" */

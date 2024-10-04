@@ -1759,7 +1759,10 @@ pipeline_lower_nir(struct v3dv_pipeline *pipeline,
           pipeline->shared_data->maps[p_stage->stage]);
 
    NIR_PASS_V(p_stage->nir, nir_vk_lower_ycbcr_tex,
-              lookup_ycbcr_conversion, layout);
+              &(struct nir_vk_lower_ycbcr_tex_options){
+                 .lookup_cb = lookup_ycbcr_conversion,
+                 .lookup_cb_data = layout
+              });
 
    nir_shader_gather_info(p_stage->nir, nir_shader_get_entrypoint(p_stage->nir));
 

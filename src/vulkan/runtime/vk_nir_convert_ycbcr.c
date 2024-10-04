@@ -153,6 +153,7 @@ struct ycbcr_state {
    nir_deref_instr *tex_deref;
    const struct vk_ycbcr_conversion_state *conversion;
    const struct vk_format_ycbcr_info *format_ycbcr_info;
+   const struct nir_vk_lower_ycbcr_tex_options *options;
 };
 
 /* TODO: we should probably replace this with a push constant/uniform. */
@@ -228,6 +229,36 @@ implicit_downsampled_coords(struct ycbcr_state *state,
 }
 
 static nir_def *
+mask_plane_sample(const struct ycbcr_state *state, uint32_t plane, nir_def *sample)
+{
+   nir_builder *b = state->builder;
+   const double scale = 65535.0;
+   unsigned mask = 0;
+
+   switch (state->format_ycbcr_info->planes[plane].format) {
+   case VK_FORMAT_R10X6_UNORM_PACK16:
+   case VK_FORMAT_R10X6G10X6_UNORM_2PACK16:
+      if (state->options->mask_r10x6)
+         mask = 0xffc0;
+      break;
+   case VK_FORMAT_R12X4_UNORM_PACK16:
+   case VK_FORMAT_R12X4G12X4_UNORM_2PACK16:
+      if (state->options->mask_r12x4)
+         mask = 0xfff0;
+      break;
+   default:
+      break;
+   }
+
+   if (!mask)
+      return sample;
+
+   sample = nir_f2u32(b, nir_fmul_imm(b, sample, scale));
+   sample = nir_iand_imm(b, sample, mask);
+   return nir_fdiv_imm(b, nir_u2f32(b, sample), scale);
+}
+
+static nir_def *
 create_plane_tex_instr_implicit(struct ycbcr_state *state,
                                 uint32_t plane)
 {
@@ -274,7 +305,8 @@ create_plane_tex_instr_implicit(struct ycbcr_state *state,
                 old_tex->def.bit_size);
    nir_builder_instr_insert(b, &tex->instr);
 
-   return &tex->def;
+   /* TODO gather, mask and filter manually instead */
+   return mask_plane_sample(state, plane, &tex->def);
 }
 
 static unsigned
@@ -296,8 +328,7 @@ swizzle_to_component(VkComponentSwizzle swizzle)
 }
 
 struct lower_ycbcr_tex_state {
-   nir_vk_ycbcr_conversion_lookup_cb cb;
-   const void *cb_data;
+   const struct nir_vk_lower_ycbcr_tex_options *options;
 };
 
 static bool
@@ -336,7 +367,7 @@ lower_ycbcr_tex_instr(nir_builder *b, nir_instr *instr, void *_state)
    }
 
    const struct vk_ycbcr_conversion_state *conversion =
-      state->cb(state->cb_data, set, binding, array_index);
+      state->options->lookup_cb(state->options->lookup_cb_data, set, binding, array_index);
    if (conversion == NULL)
       return false;
 
@@ -386,6 +417,7 @@ lower_ycbcr_tex_instr(nir_builder *b, nir_instr *instr, void *_state)
          .tex_deref = deref,
          .conversion = conversion,
          .format_ycbcr_info = format_ycbcr_info,
+         .options = state->options,
       };
       nir_def *plane_sample = create_plane_tex_instr_implicit(&tex_state, p);
 
@@ -443,12 +475,10 @@ lower_ycbcr_tex_instr(nir_builder *b, nir_instr *instr, void *_state)
 }
 
 bool nir_vk_lower_ycbcr_tex(nir_shader *nir,
-                            nir_vk_ycbcr_conversion_lookup_cb cb,
-                            const void *cb_data)
+                            const struct nir_vk_lower_ycbcr_tex_options *options)
 {
    struct lower_ycbcr_tex_state state = {
-      .cb = cb,
-      .cb_data = cb_data,
+      .options = options,
    };
 
    return nir_shader_instructions_pass(nir, lower_ycbcr_tex_instr,

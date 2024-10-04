@@ -423,7 +423,10 @@ nvk_lower_nir(struct nvk_device *dev, nir_shader *nir,
       .set_layouts = set_layouts,
    };
    NIR_PASS(_, nir, nir_vk_lower_ycbcr_tex,
-            lookup_ycbcr_conversion, &ycbcr_state);
+            &(struct nir_vk_lower_ycbcr_tex_options){
+               .lookup_cb = lookup_ycbcr_conversion,
+               .lookup_cb_data = &ycbcr_state
+            });
 
    nir_lower_compute_system_values_options csv_options = {
       .has_base_workgroup_id = true,

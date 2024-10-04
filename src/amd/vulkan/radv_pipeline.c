@@ -439,7 +439,11 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_stat
                                       .modes_N_comps = nir_var_mem_ubo | nir_var_mem_push_const | nir_var_mem_ssbo});
 
    progress = false;
-   NIR_PASS(progress, stage->nir, nir_vk_lower_ycbcr_tex, ycbcr_conversion_lookup, &stage->layout);
+   NIR_PASS(progress, stage->nir, nir_vk_lower_ycbcr_tex,
+            &(struct nir_vk_lower_ycbcr_tex_options){
+               .lookup_cb = ycbcr_conversion_lookup,
+               .lookup_cb_data = &stage->layout,
+            });
    /* Gather info in the case that nir_vk_lower_ycbcr_tex might have emitted resinfo instructions. */
    if (progress)
       nir_shader_gather_info(stage->nir, nir_shader_get_entrypoint(stage->nir));

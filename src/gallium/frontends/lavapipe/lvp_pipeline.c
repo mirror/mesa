@@ -402,7 +402,11 @@ lvp_shader_lower(struct lvp_device *pdevice, struct lvp_pipeline *pipeline, nir_
    if (nir->info.stage == MESA_SHADER_COMPUTE)
       lvp_lower_exec_graph(pipeline, nir);
 
-   NIR_PASS(_, nir, nir_vk_lower_ycbcr_tex, lvp_ycbcr_conversion_lookup, layout);
+   NIR_PASS(_, nir, nir_vk_lower_ycbcr_tex,
+            &(struct nir_vk_lower_ycbcr_tex_options){
+               .lookup_cb = lvp_ycbcr_conversion_lookup,
+               .lookup_cb_data = layout
+            });
 
    nir_lower_non_uniform_access_options options = {
       .types = nir_lower_non_uniform_ubo_access | nir_lower_non_uniform_texture_access | nir_lower_non_uniform_image_access,

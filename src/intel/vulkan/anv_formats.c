@@ -365,7 +365,7 @@ static const struct anv_format ycbcr_formats[] = {
    fmt_unsupported(VK_FORMAT_G10X6B10X6G10X6R10X6_422_UNORM_4PACK16),
    fmt_unsupported(VK_FORMAT_B10X6G10X6R10X6G10X6_422_UNORM_4PACK16),
    fmt_unsupported(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_420_UNORM_3PACK16),
-   ycbcr_fmt(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, 2, false, true,
+   ycbcr_fmt(VK_FORMAT_G10X6_B10X6R10X6_2PLANE_420_UNORM_3PACK16, 2, true, true,
              ycbcr_plane(0, ISL_FORMAT_R16_UNORM, RGBA),
              ycbcr_plane(1, ISL_FORMAT_R16G16_UNORM, RGBA)),
    fmt_unsupported(VK_FORMAT_G10X6_B10X6_R10X6_3PLANE_422_UNORM_3PACK16),
@@ -799,18 +799,6 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
       if (anv_format->n_planes > 1) {
          /* For simplicity, keep DISJOINT disabled for multi-planar format. */
          flags &= ~VK_FORMAT_FEATURE_2_DISJOINT_BIT;
-
-         /* VK_ANDROID_external_memory_android_hardware_buffer in Virtio-GPU
-          * Venus driver layers on top of VK_EXT_image_drm_format_modifier of
-          * the host Vulkan driver, and both VK_FORMAT_G8_B8R8_2PLANE_420_UNORM
-          * and VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM and required to support
-          * camera/media interop in Android.
-          */
-         if (vk_format != VK_FORMAT_G8_B8R8_2PLANE_420_UNORM &&
-             vk_format != VK_FORMAT_G8_B8_R8_3PLANE_420_UNORM) {
-            anv_finishme("support more multi-planar formats with DRM modifiers");
-            return 0;
-         }
 
          /* Currently there is no way to properly map memory planes to format
           * planes and aux planes due to the lack of defined ABI for external

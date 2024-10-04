@@ -212,7 +212,7 @@ vl_kopper_screen_create_x11(Display *display, int screen)
       success = pipe_loader_vk_probe_dri(&scrn->base.dev);
 
    if (success)
-      pipe_loader_create_screen_vk(scrn->base.dev, false, false);
+      scrn->base.pscreen = pipe_loader_create_screen_vk(scrn->base.dev, false, false);
    if (!scrn->base.pscreen)
       goto error;
 

@@ -32,6 +32,7 @@
 #define ZINK_BIND_DMABUF (1u << 29)
 #define ZINK_BIND_TRANSIENT (1u << 30) //transient fb attachment
 #define ZINK_BIND_VIDEO (1u << 31)
+#define ZINK_RESOURCE_FLAG_INTERNAL_ONLY (PIPE_RESOURCE_FLAG_DRV_PRIV << 2)
 
 #ifdef __cplusplus
 extern "C" {

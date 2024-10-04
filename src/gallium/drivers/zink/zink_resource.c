@@ -887,7 +887,7 @@ struct mem_alloc_info {
 static inline bool
 get_export_flags(struct zink_screen *screen, const struct pipe_resource *templ, struct mem_alloc_info *alloc_info)
 {
-   bool needs_export = (templ->bind & (ZINK_BIND_VIDEO | ZINK_BIND_DMABUF)) != 0;
+   bool needs_export = templ->flags & ZINK_RESOURCE_FLAG_INTERNAL_ONLY ? false : (templ->bind & (ZINK_BIND_VIDEO | ZINK_BIND_DMABUF)) != 0;
    if (alloc_info->whandle) {
       if (alloc_info->whandle->type == WINSYS_HANDLE_TYPE_FD ||
           alloc_info->whandle->type == ZINK_EXTERNAL_MEMORY_HANDLE)
@@ -1479,7 +1479,7 @@ resource_object_create(struct zink_screen *screen, const struct pipe_resource *t
    struct mem_alloc_info alloc_info = {
       .whandle = whandle,
       .need_dedicated = false,
-      .export_types = ZINK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_BIT,
+      .export_types = templ->flags & ZINK_RESOURCE_FLAG_INTERNAL_ONLY ? 0 : ZINK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_BIT,
       .shared = templ->bind & PIPE_BIND_SHARED,
       .user_mem = user_mem
    };

@@ -131,6 +131,7 @@ blorp_batch_init(struct blorp_context *blorp,
                  struct blorp_batch *batch, void *driver_batch,
                  enum blorp_batch_flags flags)
 {
+   memset(batch, 0, sizeof(*batch));
    batch->blorp = blorp;
    batch->driver_batch = driver_batch;
    batch->flags = flags;

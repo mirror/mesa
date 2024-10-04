@@ -447,8 +447,9 @@ get_image_usage_for_feats(struct zink_screen *screen, VkFormatFeatureFlags2 feat
    if (bind & PIPE_BIND_STREAM_OUTPUT)
       usage |= VK_IMAGE_USAGE_INPUT_ATTACHMENT_BIT;
 
-   /* Add host transfer if not sparse */
+   /* Add host transfer if not sparse or video */
    if (!(templ->flags & PIPE_RESOURCE_FLAG_SPARSE) &&
+       !(bind & ZINK_BIND_VIDEO) &&
        screen->info.have_EXT_host_image_copy &&
        feats & VK_FORMAT_FEATURE_2_HOST_IMAGE_TRANSFER_BIT_EXT)
       usage |= VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT;

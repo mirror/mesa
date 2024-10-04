@@ -510,6 +510,9 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
       unreachable("Invalid provoking vertex mode");                    \
    }                                                                   \
 
+   if (gfx->dirty & ANV_CMD_DIRTY_PIPELINE)
+      cmd_buffer->state.gfx.active_color_outputs |= pipeline->active_color_outputs;
+
    UNUSED bool fs_msaa_changed = false;
    if ((gfx->dirty & ANV_CMD_DIRTY_PIPELINE) ||
        BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_MS_ALPHA_TO_COVERAGE_ENABLE) ||

@@ -1857,6 +1857,16 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
                                     &emitted_bits);
    anv_cmd_buffer_update_pending_query_bits(cmd_buffer, emitted_bits);
 
+   /* If we've flushed the render target cache with a pss-stall,
+    * stall-at-pixel-scoreboard or cs-stall, no more color output is active in
+    * the render target cache.
+    */
+   if ((bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT) &&
+       (bits & (ANV_PIPE_PSS_STALL_SYNC_BIT |
+                ANV_PIPE_STALL_AT_SCOREBOARD_BIT))) {
+      cmd_buffer->state.gfx.active_color_outputs = 0;
+   }
+
 #if INTEL_NEEDS_WA_1508744258
    if (rhwo_opt_change) {
       anv_batch_write_reg(&cmd_buffer->batch, GENX(COMMON_SLICE_CHICKEN1), c1) {

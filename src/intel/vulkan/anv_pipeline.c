@@ -2999,11 +2999,19 @@ anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
                break;
 
             uint32_t index = bind_map->surface_to_descriptor[i].index;
-            if (index >= MAX_RTS) {
-               assert(index <= 0xff);
+            switch (index) {
+            case ANV_COLOR_OUTPUT_DISABLED:
                pipeline->color_output_mapping[i] = index;
-            } else {
-               pipeline->color_output_mapping[i] = rt_to_att[i];
+               pipeline->active_color_outputs |= BITFIELD_BIT(i);
+               break;
+            case ANV_COLOR_OUTPUT_UNUSED:
+               pipeline->color_output_mapping[i] = index;
+               break;
+            default:
+               assert(index < MAX_RTS);
+               pipeline->color_output_mapping[i] = rt_to_att[index];
+               pipeline->active_color_outputs |= BITFIELD_BIT(index);
+               break;
             }
          }
          pipeline->num_color_outputs = i;

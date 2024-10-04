@@ -3829,6 +3829,9 @@ struct anv_cmd_graphics_state {
    struct anv_attachment stencil_att;
    struct anv_state null_surface_state;
 
+   /* Render targets currently active in the render target cache */
+   uint8_t active_color_outputs;
+
    /* Map of color output from the last dispatched fragment shader to color
     * attachments in the render pass.
     */
@@ -4788,6 +4791,8 @@ struct anv_graphics_pipeline {
    uint32_t                                     vertex_input_elems;
    uint32_t                                     vertex_input_data[2 * 31 /* MAX_VES + 2 internal */];
 
+   /* A bitmask of written color ouputs */
+   uint8_t                                      active_color_outputs;
    /* Number of color outputs used by the fragment shader. */
    uint8_t                                      num_color_outputs;
    /* Map of color output of the fragment shader to color attachments in the

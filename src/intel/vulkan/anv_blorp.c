@@ -141,7 +141,8 @@ anv_device_finish_blorp(struct anv_device *device)
 
 static void
 anv_blorp_batch_init(struct anv_cmd_buffer *cmd_buffer,
-                     struct blorp_batch *batch, enum blorp_batch_flags flags)
+                     struct blorp_batch *batch,
+                     enum blorp_batch_flags flags)
 {
    VkQueueFlags queue_flags = cmd_buffer->queue_family->queueFlags;
 
@@ -160,6 +161,37 @@ anv_blorp_batch_init(struct anv_cmd_buffer *cmd_buffer,
           (flags & BLORP_BATCH_USE_COMPUTE) == 0);
 
    blorp_batch_init(&cmd_buffer->device->blorp.context, batch, cmd_buffer, flags);
+}
+
+static void
+anv_blorp_batch_update_rt(struct anv_cmd_buffer *cmd_buffer,
+                          struct blorp_batch *batch)
+{
+   /* No using the render target cache */
+   if (batch->flags & (BLORP_BATCH_USE_BLITTER |
+                       BLORP_BATCH_USE_COMPUTE))
+      return;
+
+   /* Prior to Gfx11, we don't have to flush the render target cache to change
+    * a BTI.
+    */
+   if (cmd_buffer->device->info->ver < 11)
+      return;
+
+   uint32_t unused_bt_entries = ~cmd_buffer->state.gfx.active_color_outputs & 0xff;
+   int first_unused_bt = ffs(unused_bt_entries);
+   if (first_unused_bt != 0) {
+      batch->flags |= BLORP_BATCH_NO_BT_REUSE;
+      batch->rt_index = first_unused_bt - 1;
+   } else {
+      batch->flags &= ~BLORP_BATCH_NO_BT_REUSE;
+      batch->rt_index = 0;
+
+      anv_add_pending_pipe_bits(cmd_buffer,
+                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                                ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
+                                "before anv/blorp BTI change");
+   }
 }
 
 static void
@@ -391,6 +423,8 @@ copy_image(struct anv_cmd_buffer *cmd_buffer,
                                            dst_base_layer, layer_count);
 
          for (unsigned i = 0; i < layer_count; i++) {
+            anv_blorp_batch_update_rt(cmd_buffer, batch);
+
             blorp_copy(batch, &src_surf, src_level, src_base_layer + i,
                        &dst_surf, dst_level, dst_base_layer + i,
                        srcOffset.x, srcOffset.y,
@@ -416,6 +450,8 @@ copy_image(struct anv_cmd_buffer *cmd_buffer,
                                         dst_base_layer, layer_count);
 
       for (unsigned i = 0; i < layer_count; i++) {
+         anv_blorp_batch_update_rt(cmd_buffer, batch);
+
          blorp_copy(batch, &src_surf, src_level, src_base_layer + i,
                     &dst_surf, dst_level, dst_base_layer + i,
                     srcOffset.x, srcOffset.y,
@@ -672,6 +708,8 @@ copy_buffer_to_image(struct anv_cmd_buffer *cmd_buffer,
    }
 
    for (unsigned z = 0; z < extent.depth; z++) {
+      anv_blorp_batch_update_rt(cmd_buffer, batch);
+
       blorp_copy(batch, &src->surf, src->level, src->offset.z,
                  &dst->surf, dst->level, dst->offset.z,
                  src->offset.x, src->offset.y, dst->offset.x, dst->offset.y,
@@ -950,6 +988,8 @@ blit_image(struct anv_cmd_buffer *cmd_buffer,
          unsigned dst_z = dst_start + i;
          float src_z = src_start + i * src_z_step + depth_center_offset;
 
+         anv_blorp_batch_update_rt(cmd_buffer, batch);
+
          blorp_blit(batch, &src, src_res->mipLevel, src_z,
                     src_format.isl_format, src_format.swizzle,
                     &dst, dst_res->mipLevel, dst_z,
@@ -1004,12 +1044,13 @@ gcd_pow2_u64(uint64_t a, uint64_t b)
 #define MAX_SURFACE_DIM (1ull << 14)
 
 static void
-copy_buffer(struct anv_device *device,
+copy_buffer(struct anv_cmd_buffer *cmd_buffer,
             struct blorp_batch *batch,
             struct anv_buffer *src_buffer,
             struct anv_buffer *dst_buffer,
             const VkBufferCopy2 *region)
 {
+   struct anv_device *device = cmd_buffer->device;
    struct blorp_address src = {
       .buffer = src_buffer->address.bo,
       .offset = src_buffer->address.offset + region->srcOffset,
@@ -1024,6 +1065,8 @@ copy_buffer(struct anv_device *device,
                        blorp_batch_isl_copy_usage(batch, true /* is_dest */,
                                                   anv_buffer_is_protected(dst_buffer))),
    };
+
+   anv_blorp_batch_update_rt(cmd_buffer, batch);
 
    blorp_buffer_copy(batch, src, dst, region->size);
 }
@@ -1043,7 +1086,7 @@ void anv_CmdCopyBuffer2(
                         BLORP_BATCH_USE_COMPUTE : 0);
 
    for (unsigned r = 0; r < pCopyBufferInfo->regionCount; r++) {
-      copy_buffer(cmd_buffer->device, &batch, src_buffer, dst_buffer,
+      copy_buffer(cmd_buffer, &batch, src_buffer, dst_buffer,
                   &pCopyBufferInfo->pRegions[r]);
    }
 
@@ -1112,6 +1155,8 @@ void anv_CmdUpdateBuffer(
                              anv_buffer_is_protected(dst_buffer))),
       };
 
+      anv_blorp_batch_update_rt(cmd_buffer, &batch);
+
       blorp_buffer_copy(&batch, src, dst, copy_size);
 
       dataSize -= copy_size;
@@ -1164,6 +1209,8 @@ anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
                                      true /* is_dest */, protected,
                                      &surf, &isl_surf);
 
+      anv_blorp_batch_update_rt(cmd_buffer, &batch);
+
       blorp_clear(&batch, &surf, isl_format, ISL_SWIZZLE_IDENTITY,
                   0, 0, 1, 0, 0, MAX_SURFACE_DIM, MAX_SURFACE_DIM,
                   color, 0 /* color_write_disable */);
@@ -1184,6 +1231,8 @@ anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
                                      true /* is_dest */, protected,
                                      &surf, &isl_surf);
 
+      anv_blorp_batch_update_rt(cmd_buffer, &batch);
+
       blorp_clear(&batch, &surf, isl_format, ISL_SWIZZLE_IDENTITY,
                   0, 0, 1, 0, 0, MAX_SURFACE_DIM, height,
                   color, 0 /* color_write_disable */);
@@ -1201,6 +1250,8 @@ anv_cmd_buffer_fill_area(struct anv_cmd_buffer *cmd_buffer,
                                      width * bs, isl_format,
                                      true /* is_dest */, protected,
                                      &surf, &isl_surf);
+
+      anv_blorp_batch_update_rt(cmd_buffer, &batch);
 
       blorp_clear(&batch, &surf, isl_format, ISL_SWIZZLE_IDENTITY,
                   0, 0, 1, 0, 0, width, 1,
@@ -1445,6 +1496,8 @@ void anv_CmdClearColorImage(
                                            surf.aux_usage, level,
                                            clear_rect.baseArrayLayer,
                                            clear_rect.layerCount);
+
+         anv_blorp_batch_update_rt(cmd_buffer, &batch);
 
          blorp_clear(&batch, &surf,
                      src_format.isl_format, src_format.swizzle, level,
@@ -2065,6 +2118,8 @@ anv_image_msaa_resolve(struct anv_cmd_buffer *cmd_buffer,
    }
 
    for (uint32_t l = 0; l < layer_count; l++) {
+      anv_blorp_batch_update_rt(cmd_buffer, &batch);
+
       blorp_blit(&batch,
                  &src_surf, src_level, src_base_layer + l,
                  src_format_override, ISL_SWIZZLE_IDENTITY,
@@ -2256,6 +2311,8 @@ anv_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
                                 aux_usage, &surf);
    anv_cmd_buffer_mark_image_written(cmd_buffer, image, aspect, aux_usage,
                                      level, base_layer, layer_count);
+
+   anv_blorp_batch_update_rt(cmd_buffer, &batch);
 
    blorp_clear(&batch, &surf, format, anv_swizzle_for_render(swizzle),
                level, base_layer, layer_count,

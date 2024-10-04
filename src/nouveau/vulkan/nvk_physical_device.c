@@ -215,6 +215,7 @@ nvk_get_device_extensions(const struct nvk_instance *instance,
       .EXT_depth_range_unrestricted = info->cls_eng3d >= VOLTA_A,
       .EXT_descriptor_buffer = true,
       .EXT_descriptor_indexing = true,
+      .EXT_device_address_binding_report = true,
       .EXT_device_generated_commands = true,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
@@ -693,6 +694,9 @@ nvk_get_device_features(const struct nv_device_info *info,
 
       /* VK_NV_shader_sm_builtins */
       .shaderSMBuiltins = true,
+
+      /* VK_EXT_device_address_binding_report */
+      .reportAddressBinding = true,
    };
 }
 

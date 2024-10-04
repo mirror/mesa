@@ -8,16 +8,17 @@
 #include "nvk_device_memory.h"
 #include "nvk_entrypoints.h"
 #include "nvk_format.h"
+#include "nvk_instance.h"
 #include "nvk_physical_device.h"
 #include "nvkmd/nvkmd.h"
 
 #include "util/detect_os.h"
 #include "vk_android.h"
+#include "vk_debug_utils.h"
 #include "vk_enum_to_str.h"
-#include "vk_format.h"
-#include "nil.h"
 #include "vk_enum_defines.h"
 #include "vk_format.h"
+#include "nil.h"
 
 #include "clb097.h"
 #include "clb197.h"
@@ -900,6 +901,8 @@ nvk_image_plane_alloc_va(struct nvk_device *dev,
                          struct nvk_image_plane *plane)
 {
    VkResult result;
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
 
    const bool sparse_bound =
       image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT;
@@ -919,10 +922,16 @@ nvk_image_plane_alloc_va(struct nvk_device *dev,
                                   va_flags, plane->nil.pte_kind,
                                   va_size_B, va_align_B,
                                   0 /* fixed_addr */, &plane->va);
+
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                plane->va->addr, va_size_B,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT);
+
       if (result != VK_SUCCESS)
          return result;
 
       plane->addr = plane->va->addr;
+      plane->size = va_size_B;
    }
 
    return VK_SUCCESS;
@@ -934,8 +943,15 @@ nvk_image_plane_finish(struct nvk_device *dev,
                        VkImageCreateFlags create_flags,
                        const VkAllocationCallbacks *pAllocator)
 {
-   if (plane->va != NULL)
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
+
+   if (plane->va != NULL) {
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                plane->va->addr, plane->size,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_UNBIND_EXT);
       nvkmd_va_free(plane->va);
+   }
 }
 
 static void

@@ -5,8 +5,10 @@
 #include "nvk_heap.h"
 
 #include "nvk_device.h"
+#include "nvk_instance.h"
 #include "nvk_physical_device.h"
 #include "nvk_queue.h"
+#include "vk_debug_utils.h"
 
 #include "util/macros.h"
 
@@ -20,6 +22,8 @@ nvk_heap_init(struct nvk_device *dev, struct nvk_heap *heap,
               uint32_t overalloc, bool contiguous)
 {
    VkResult result;
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
 
    memset(heap, 0, sizeof(*heap));
 
@@ -35,6 +39,11 @@ nvk_heap_init(struct nvk_device *dev, struct nvk_heap *heap,
                                   NVK_HEAP_MAX_SIZE, 0 /* align_B */,
                                   0 /* fixed_addr */,
                                   &heap->contig_va);
+
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                heap->contig_va->addr, NVK_HEAP_MAX_SIZE,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT);
+
       if (result != VK_SUCCESS)
          return result;
    }
@@ -51,9 +60,16 @@ nvk_heap_init(struct nvk_device *dev, struct nvk_heap *heap,
 void
 nvk_heap_finish(struct nvk_device *dev, struct nvk_heap *heap)
 {
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
+
    /* Freeing the VA will unbind all the memory */
-   if (heap->contig_va)
+   if (heap->contig_va){
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                heap->contig_va->addr, heap->total_size,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_UNBIND_EXT);
       nvkmd_va_free(heap->contig_va);
+   }
 
    for (uint32_t mem_idx = 0; mem_idx < heap->mem_count; mem_idx++)
       nvkmd_mem_unref(heap->mem[mem_idx].mem);

@@ -58,6 +58,7 @@ nvk_image_max_dimension(const struct nv_device_info *info,
 struct nvk_image_plane {
    struct nil_image nil;
    uint64_t addr;
+   uint64_t size;
 
    /** Reserved VA for sparse images, NULL otherwise. */
    struct nvkmd_va *va;

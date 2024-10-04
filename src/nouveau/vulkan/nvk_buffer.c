@@ -7,9 +7,12 @@
 #include "nvk_entrypoints.h"
 #include "nvk_device.h"
 #include "nvk_device_memory.h"
+#include "nvk_instance.h"
 #include "nvk_physical_device.h"
 #include "nvk_queue.h"
 #include "nvkmd/nvkmd.h"
+
+#include "vk_debug_utils.h"
 
 static uint32_t
 nvk_get_buffer_alignment(const struct nvk_physical_device *pdev,
@@ -83,6 +86,8 @@ nvk_CreateBuffer(VkDevice device,
 {
    VK_FROM_HANDLE(nvk_device, dev, device);
    struct nvk_buffer *buffer;
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
    VkResult result;
 
    if (pCreateInfo->size > NVK_MAX_BUFFER_SIZE)
@@ -120,7 +125,16 @@ nvk_CreateBuffer(VkDevice device,
                                   va_flags, 0 /* pte_kind */,
                                   va_size_B, alignment, fixed_addr,
                                   &buffer->va);
+
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                fixed_addr, va_size_B,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT);
+
       if (result != VK_SUCCESS) {
+         vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                   fixed_addr, va_size_B,
+                                   VK_DEVICE_ADDRESS_BINDING_TYPE_UNBIND_EXT);
+
          vk_buffer_destroy(&dev->vk, pAllocator, &buffer->vk);
          return result;
       }
@@ -140,12 +154,18 @@ nvk_DestroyBuffer(VkDevice device,
 {
    VK_FROM_HANDLE(nvk_device, dev, device);
    VK_FROM_HANDLE(nvk_buffer, buffer, _buffer);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+   struct nvk_instance *instance = nvk_physical_device_instance(pdev);
 
    if (!buffer)
       return;
 
-   if (buffer->va != NULL)
+   if (buffer->va != NULL) {
+      vk_address_binding_report(&instance->vk, &dev->vk.base,
+                                buffer->addr, buffer->vk.size,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_UNBIND_EXT);
       nvkmd_va_free(buffer->va);
+   }
 
    vk_buffer_destroy(&dev->vk, pAllocator, &buffer->vk);
 }

@@ -101,6 +101,7 @@ static const driOptionDescription nvk_dri_options[] = {
       DRI_CONF_VK_X11_ENSURE_MIN_IMAGE_COUNT(false)
       DRI_CONF_VK_KHR_PRESENT_WAIT(false)
       DRI_CONF_VK_XWAYLAND_WAIT_READY(false)
+      DRI_CONF_VK_XWAYLAND_IMMEDIATE_EXTRA_IMAGE(false)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG

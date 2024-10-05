@@ -1675,7 +1675,9 @@ x11_requires_mailbox_image_count(const struct wsi_device *device,
     *   and potentially disastrous for latency unless KHR_present_wait is used.
     */
    return x11_needs_wait_for_fences(device, wsi_conn, present_mode) ||
-          present_mode == VK_PRESENT_MODE_MAILBOX_KHR;
+          present_mode == VK_PRESENT_MODE_MAILBOX_KHR ||
+          (present_mode == VK_PRESENT_MODE_IMMEDIATE_KHR && wsi_conn->is_xwayland &&
+           device->x11.xwayland_immediate_extra_image);
 }
 
 /**
@@ -2883,6 +2885,12 @@ wsi_x11_init_wsi(struct wsi_device *wsi_device,
       if (driCheckOption(dri_options, "vk_x11_ignore_suboptimal", DRI_BOOL)) {
          wsi_device->x11.ignore_suboptimal =
             driQueryOptionb(dri_options, "vk_x11_ignore_suboptimal");
+      }
+
+      wsi_device->x11.xwayland_immediate_extra_image = false;
+      if (driCheckOption(dri_options, "vk_xwayland_immediate_extra_image", DRI_BOOL)) {
+         wsi_device->x11.xwayland_immediate_extra_image =
+               driQueryOptionb(dri_options, "vk_xwayland_immediate_extra_image");
       }
    }
 

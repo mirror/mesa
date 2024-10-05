@@ -441,6 +441,10 @@
    DRI_CONF_OPT_B(vk_xwayland_wait_ready, def, \
                   "Wait for fences before submitting buffers to Xwayland")
 
+#define DRI_CONF_VK_XWAYLAND_IMMEDIATE_EXTRA_IMAGE(def) \
+   DRI_CONF_OPT_B(vk_xwayland_immediate_extra_image, def, \
+                  "In X11 WSI, bump VkSurfaceCapabilitiesKHR::minImageCount for IMMEDIATE in Xwayland")
+
 #define DRI_CONF_MESA_GLTHREAD_DRIVER(def) \
    DRI_CONF_OPT_B(mesa_glthread_driver, def, \
                   "Enable offloading GL driver work to a separate thread")

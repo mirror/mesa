@@ -166,6 +166,10 @@ struct wsi_device {
       /* Never report VK_SUBOPTIMAL_KHR. Used to workaround
        * games that cannot handle SUBOPTIMAL correctly. */
       bool ignore_suboptimal;
+
+      /* For purposes of minImageCount calculation on Xwayland, assume that
+       * IMMEDIATE is implemented as MAILBOX (no-tear) and bump image counts accordingly. */
+      bool xwayland_immediate_extra_image;
    } x11;
 
    struct {

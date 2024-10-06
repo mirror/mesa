@@ -452,9 +452,10 @@ static constexpr PhysReg scc{253};
 class Operand final {
 public:
    constexpr Operand()
-       : reg_(PhysReg{128}), isTemp_(false), isFixed_(true), isConstant_(false), isKill_(false),
-         isUndef_(true), isFirstKill_(false), constSize(0), isLateKill_(false), isClobbered_(false),
-         isCopyKill_(false), is16bit_(false), is24bit_(false), signext(false)
+       : reg_(PhysReg{128}), isTemp_(false), isFixed_(true), isPrecolored_(false),
+         isConstant_(false), isKill_(false), isUndef_(true), isFirstKill_(false),
+         isLateKill_(false), isClobbered_(false), isCopyKill_(false), is16bit_(false),
+         is24bit_(false), signext(false), constSize(0)
    {}
 
    explicit Operand(Temp r) noexcept
@@ -472,7 +473,7 @@ public:
       assert(r.id()); /* Don't allow fixing an undef to a register */
       data_.temp = r;
       isTemp_ = true;
-      setFixed(reg);
+      setPrecolored(reg);
    };
 
    /* 8-bit constant */
@@ -734,6 +735,13 @@ public:
       reg_ = reg;
    }
 
+   constexpr bool isPrecolored() const noexcept { return isPrecolored_; }
+   constexpr void setPrecolored(PhysReg reg) noexcept
+   {
+      setFixed(reg);
+      isPrecolored_ = isFixed_;
+   }
+
    constexpr bool isConstant() const noexcept { return isConstant_; }
 
    constexpr bool isLiteral() const noexcept { return isConstant() && reg_ == 255; }
@@ -879,17 +887,18 @@ private:
       struct {
          uint8_t isTemp_ : 1;
          uint8_t isFixed_ : 1;
+         uint8_t isPrecolored_ : 1;
          uint8_t isConstant_ : 1;
          uint8_t isKill_ : 1;
          uint8_t isUndef_ : 1;
          uint8_t isFirstKill_ : 1;
-         uint8_t constSize : 2;
          uint8_t isLateKill_ : 1;
          uint8_t isClobbered_ : 1;
          uint8_t isCopyKill_ : 1;
          uint8_t is16bit_ : 1;
          uint8_t is24bit_ : 1;
          uint8_t signext : 1;
+         uint8_t constSize : 2;
       };
       /* can't initialize bit-fields in c++11, so work around using a union */
       uint16_t control_ = 0;
@@ -905,16 +914,12 @@ private:
 class Definition final {
 public:
    constexpr Definition()
-       : temp(Temp(0, s1)), reg_(0), isFixed_(0), isKill_(0), isPrecise_(0), isInfPreserve_(0),
-         isNaNPreserve_(0), isSZPreserve_(0), isNUW_(0), isNoCSE_(0)
+       : temp(Temp(0, s1)), reg_(0), isFixed_(0), isPrecolored_(0), isKill_(0), isPrecise_(0),
+         isInfPreserve_(0), isNaNPreserve_(0), isSZPreserve_(0), isNUW_(0), isNoCSE_(0)
    {}
-   Definition(uint32_t index, RegClass type) noexcept : temp(index, type) {}
    explicit Definition(Temp tmp) noexcept : temp(tmp) {}
-   Definition(PhysReg reg, RegClass type) noexcept : temp(Temp(0, type)) { setFixed(reg); }
-   Definition(uint32_t tmpId, PhysReg reg, RegClass type) noexcept : temp(Temp(tmpId, type))
-   {
-      setFixed(reg);
-   }
+   explicit Definition(PhysReg reg, RegClass type) noexcept : temp(Temp(0, type)) { setFixed(reg); }
+   explicit Definition(Temp tmp, PhysReg reg) noexcept : temp(tmp) { setPrecolored(reg); }
 
    constexpr bool isTemp() const noexcept { return tempId() > 0; }
 
@@ -940,6 +945,13 @@ public:
    {
       isFixed_ = 1;
       reg_ = reg;
+   }
+
+   constexpr bool isPrecolored() const noexcept { return isPrecolored_; }
+   constexpr void setPrecolored(PhysReg reg) noexcept
+   {
+      setFixed(reg);
+      isPrecolored_ = isFixed_;
    }
 
    constexpr void setKill(bool flag) noexcept { isKill_ = flag; }
@@ -977,6 +989,7 @@ private:
    union {
       struct {
          uint8_t isFixed_ : 1;
+         uint8_t isPrecolored_ : 1;
          uint8_t isKill_ : 1;
          uint8_t isPrecise_ : 1;
          uint8_t isInfPreserve_ : 1;
@@ -986,7 +999,7 @@ private:
          uint8_t isNoCSE_ : 1;
       };
       /* can't initialize bit-fields in c++11, so work around using a union */
-      uint8_t control_ = 0;
+      uint16_t control_ = 0;
    };
 };
 
@@ -2119,25 +2132,15 @@ public:
       void* private_data;
    } debug;
 
-   uint32_t allocateId(RegClass rc)
-   {
-      assert(allocationID <= 16777215);
-      temp_rc.push_back(rc);
-      return allocationID++;
-   }
-
    void allocateRange(unsigned amount)
    {
-      assert(allocationID + amount <= 16777216);
+      assert(temp_rc.size() + amount <= 16777216);
       temp_rc.resize(temp_rc.size() + amount);
-      allocationID += amount;
    }
 
    Temp allocateTmp(RegClass rc) { return Temp(allocateId(rc), rc); }
 
-   uint32_t peekAllocationId() { return allocationID; }
-
-   friend void reindex_ssa(Program* program, bool update_live_out);
+   uint32_t peekAllocationId() { return temp_rc.size(); }
 
    Block* create_and_insert_block()
    {
@@ -2157,7 +2160,12 @@ public:
    }
 
 private:
-   uint32_t allocationID = 1;
+   uint32_t allocateId(RegClass rc)
+   {
+      assert(temp_rc.size() <= 16777215);
+      temp_rc.push_back(rc);
+      return temp_rc.size() - 1;
+   }
 };
 
 struct ra_test_policy {
@@ -2209,6 +2217,7 @@ void optimize_postRA(Program* program);
 void setup_reduce_temp(Program* program);
 void lower_to_cssa(Program* program);
 void register_allocation(Program* program, ra_test_policy = {});
+void reindex_ssa(Program* program, bool update_live_out = false);
 void ssa_elimination(Program* program);
 void lower_to_hw_instr(Program* program);
 void schedule_program(Program* program);

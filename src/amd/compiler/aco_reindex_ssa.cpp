@@ -79,7 +79,7 @@ reindex_program(idx_ctx& ctx, Program* program)
 } /* end namespace */
 
 void
-reindex_ssa(Program* program, bool update_live_out = false)
+reindex_ssa(Program* program, bool update_live_out)
 {
    idx_ctx ctx;
    reindex_program(ctx, program);
@@ -92,8 +92,6 @@ reindex_ssa(Program* program, bool update_live_out = false)
          set = std::move(new_set);
       }
    }
-
-   program->allocationID = program->temp_rc.size();
 }
 
 } // namespace aco

@@ -281,8 +281,9 @@ brw_reg::is_contiguous() const
    switch (file) {
    case ARF:
    case FIXED_GRF:
-      return hstride == BRW_HORIZONTAL_STRIDE_1 &&
-             vstride == width + hstride;
+      return (hstride == 0 && vstride == 0) ||
+         (hstride == BRW_HORIZONTAL_STRIDE_1 &&
+          vstride == width + hstride);
    case VGRF:
    case ATTR:
       return stride == 1;
@@ -312,4 +313,3 @@ brw_reg::component_size(unsigned width) const
       return MAX2(width * stride, 1) * brw_type_size_bytes(type);
    }
 }
-

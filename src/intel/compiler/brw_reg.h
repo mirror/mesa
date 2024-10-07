@@ -420,7 +420,7 @@ brw_make_reg(enum brw_reg_file file,
    reg.is_scalar = 0;
 
    reg.offset = 0;
-   reg.stride = 1;
+   reg.stride = hstride == 0 && vstride == 0 ? 0 : 1;
    if (file == IMM &&
        type != BRW_TYPE_V &&
        type != BRW_TYPE_UV &&

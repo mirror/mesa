@@ -66,7 +66,7 @@
 
 #define LP_MAX_SAMPLES 4
 
-#define LP_MAX_THREADS 32
+#define LP_MAX_THREADS sysconf(_SC_NPROCESSORS_CONF)
 
 
 /**

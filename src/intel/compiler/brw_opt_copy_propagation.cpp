@@ -639,6 +639,14 @@ can_take_stride(fs_inst *inst, brw_reg_type dst_type,
       return stride == inst->dst.stride || stride == 0;
    }
 
+   /* The payload register should have a stride of 1 since the HW will pull a
+    * value per lane.
+    */
+   if (inst->opcode == SHADER_OPCODE_SEND) {
+      if (arg >= 2 && stride != 1)
+         return false;
+   }
+
    return true;
 }
 

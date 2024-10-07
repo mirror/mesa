@@ -761,8 +761,7 @@ try_copy_propagate(const brw_compiler *compiler, fs_inst *inst,
     * derivatives, assume that their operands are packed so we can't
     * generally propagate strided regions to them.
     */
-   const unsigned entry_stride = (entry->src.file == FIXED_GRF ? 1 :
-                                  entry->src.stride);
+   const unsigned entry_stride = entry->src.stride;
    if (instruction_requires_packed_data(inst) && entry_stride != 1)
       return false;
 
@@ -889,7 +888,7 @@ try_copy_propagate(const brw_compiler *compiler, fs_inst *inst,
    inst->src[arg].offset = entry->src.offset;
 
    /* Compose the strides of both regions. */
-   if (entry->src.file == FIXED_GRF) {
+   if (entry->src.file == FIXED_GRF && entry->src.stride) {
       if (inst->src[arg].stride) {
          const unsigned orig_width = 1 << entry->src.width;
          const unsigned reg_width =
@@ -1579,7 +1578,7 @@ try_copy_propagate_def(const brw_compiler *compiler,
     * derivatives, assume that their operands are packed so we can't
     * generally propagate strided regions to them.
     */
-   const unsigned entry_stride = val.file == FIXED_GRF ? 1 : val.stride;
+   const unsigned entry_stride = val.stride;
    if (instruction_requires_packed_data(inst) && entry_stride != 1)
       return false;
 
@@ -1665,7 +1664,7 @@ try_copy_propagate_def(const brw_compiler *compiler,
    inst->src[arg].offset = val.offset;
 
    /* Compose the strides of both regions. */
-   if (val.file == FIXED_GRF) {
+   if (val.file == FIXED_GRF && val.stride) {
       if (inst->src[arg].stride) {
          const unsigned orig_width = 1 << val.width;
          const unsigned reg_width =

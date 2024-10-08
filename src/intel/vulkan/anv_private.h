@@ -1110,6 +1110,11 @@ struct anv_physical_device {
     /** Can the platform support cooperative matrices and is it enabled? */
     bool                                        has_cooperative_matrix;
 
+    /** Whether the device uploads the shader with device copies (rather than
+     * host memcpy)
+     */
+    bool                                        use_shader_upload;
+
     struct {
       uint32_t                                  family_count;
       struct anv_queue_family                   families[ANV_MAX_QUEUE_FAMILIES];
@@ -1908,6 +1913,9 @@ struct anv_device {
     uint32_t                                    queue_count;
     struct anv_queue  *                         queues;
 
+    struct anv_queue                            internal_queue;
+    enum intel_engine_class                     internal_queue_class;
+
     struct anv_scratch_pool                     scratch_pool;
     struct anv_scratch_pool                     protected_scratch_pool;
     struct anv_bo                              *rt_scratch_bos[16];
@@ -2205,6 +2213,11 @@ VkResult anv_queue_init(struct anv_device *device, struct anv_queue *queue,
                         const VkDeviceQueueCreateInfo *pCreateInfo,
                         uint32_t index_in_family);
 void anv_queue_finish(struct anv_queue *queue);
+
+VkResult anv_internal_queue_init(struct anv_device *device,
+                                 struct anv_queue *queue,
+                                 enum intel_engine_class engine_class);
+void anv_internal_queue_finish(struct anv_queue *queue);
 
 VkResult anv_queue_submit(struct vk_queue *queue,
                           struct vk_queue_submit *submit);

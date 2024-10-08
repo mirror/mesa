@@ -905,7 +905,7 @@ init_queue(struct anv_queue *queue)
 VkResult
 genX(init_device_state)(struct anv_device *device)
 {
-   VkResult res;
+   VkResult res = VK_SUCCESS;
 
    device->slice_hash = (struct anv_state) { 0 };
    for (uint32_t i = 0; i < device->queue_count; i++) {
@@ -915,10 +915,13 @@ genX(init_device_state)(struct anv_device *device)
       if (res != VK_SUCCESS)
          return res;
 
-      if (!device->trtt.queue &&
+      if (!device->trtt.queue && queue->family &&
           queue->family->queueFlags & VK_QUEUE_SPARSE_BINDING_BIT)
          device->trtt.queue = queue;
    }
+
+   if (device->physical->use_shader_upload)
+      res = init_queue(&device->internal_queue);
 
    return res;
 }

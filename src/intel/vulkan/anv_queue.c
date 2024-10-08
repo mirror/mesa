@@ -32,6 +32,62 @@
 #include "vk_common_entrypoints.h"
 
 VkResult
+anv_internal_queue_init(struct anv_device *device,
+                        struct anv_queue *queue,
+                        enum intel_engine_class engine_class)
+{
+   struct anv_physical_device *pdevice = device->physical;
+   VkResult result;
+
+   queue->device = device;
+   queue->engine_class = engine_class;
+
+   uint32_t family_index =
+      anv_get_first_queue_index(pdevice, engine_class);
+   struct anv_queue_family *queue_family =
+      &device->physical->queue.families[family_index];
+   queue->family = queue_family;
+   queue->decoder = &device->decoder[family_index];
+
+   result = device->kmd_backend->engine_create(
+      device, queue, engine_class,
+      VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR, false /* protected */);
+   if (result != VK_SUCCESS) {
+      vk_queue_finish(&queue->vk);
+      return result;
+   }
+
+   /* Add a debug fence to wait on submissions if we're using the synchronized
+    * submission feature or the shader-print feature.
+    */
+   if (INTEL_DEBUG(DEBUG_SYNC | DEBUG_SHADER_PRINT)) {
+      result = vk_sync_create(&device->vk,
+                              &pdevice->sync_syncobj_type,
+                              0, 0, &queue->sync);
+      if (result != VK_SUCCESS) {
+         anv_queue_finish(queue);
+         return result;
+      }
+   }
+
+   return VK_SUCCESS;
+}
+
+void
+anv_internal_queue_finish(struct anv_queue *queue)
+{
+   if (queue->init_submit) {
+      anv_async_submit_wait(queue->init_submit);
+      anv_async_submit_destroy(queue->init_submit);
+   }
+
+   if (queue->sync)
+      vk_sync_destroy(&queue->device->vk, queue->sync);
+
+   queue->device->kmd_backend->engine_destroy(queue->device, queue);
+}
+
+VkResult
 anv_queue_init(struct anv_device *device, struct anv_queue *queue,
                const VkDeviceQueueCreateInfo *pCreateInfo,
                uint32_t index_in_family)

@@ -426,6 +426,12 @@ VkResult anv_CreateDevice(
    for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
       num_queues += pCreateInfo->pQueueCreateInfos[i].queueCount;
 
+   /* TODO: select a better engine based on already used engines, for example
+    *       if compute is unused, pick compute
+    */
+   /* device->internal_queue_class = physical_device->needs_internal_queue ? */
+   /*    INTEL_ENGINE_CLASS_RENDER : INTEL_ENGINE_CLASS_INVALID; */
+
    result = anv_device_setup_context_or_vm(device, pCreateInfo, num_queues);
    if (result != VK_SUCCESS)
       goto fail_fd;
@@ -966,6 +972,13 @@ VkResult anv_CreateDevice(
       }
    }
 
+   if (physical_device->use_shader_upload) {
+      result = anv_internal_queue_init(device, &device->internal_queue,
+                                       INTEL_ENGINE_CLASS_RENDER);
+      if (result != VK_SUCCESS)
+         goto fail_queues;
+   }
+
    anv_device_utrace_init(device);
 
    result = anv_genX(device->info, init_device_state)(device);
@@ -978,6 +991,8 @@ VkResult anv_CreateDevice(
 
  fail_utrace:
    anv_device_utrace_finish(device);
+   if (physical_device->use_shader_upload)
+      anv_internal_queue_finish(&device->internal_queue);
  fail_queues:
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);
@@ -1102,6 +1117,8 @@ void anv_DestroyDevice(
    /* Do TRTT batch garbage collection before destroying queues. */
    anv_device_finish_trtt(device);
 
+   if (device->physical->use_shader_upload)
+      anv_internal_queue_finish(&device->internal_queue);
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);
    vk_free(&device->vk.alloc, device->queues);

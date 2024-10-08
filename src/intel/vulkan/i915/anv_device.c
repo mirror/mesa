@@ -270,7 +270,7 @@ anv_i915_device_setup_context(struct anv_device *device,
 
    if (device->physical->engine_info) {
       /* The kernel API supports at most 64 engines */
-      assert(num_queues <= 64);
+      assert((num_queues + device->physical->use_shader_upload) <= 64);
       enum intel_engine_class engine_classes[64];
       int engine_count = 0;
       enum intel_gem_create_context_flags flags = 0;
@@ -290,6 +290,8 @@ anv_i915_device_setup_context(struct anv_device *device,
              VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT)
             flags |= INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG;
       }
+      if (device->physical->use_shader_upload)
+         engine_classes[engine_count++] = device->internal_queue_class;
       if (!intel_gem_create_context_engines(device->fd, flags,
                                             physical_device->engine_info,
                                             engine_count, engine_classes,

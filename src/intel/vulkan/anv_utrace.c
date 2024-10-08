@@ -479,6 +479,9 @@ anv_device_utrace_init(struct anv_device *device)
                                  intel_engines_class_to_string(queue->family->engine_class),
                                  queue->vk.index_in_family);
    }
+
+   if (device->physical->use_shader_upload)
+      intel_ds_device_init_queue(&device->ds, &device->internal_queue.ds, "internal");
 }
 
 void

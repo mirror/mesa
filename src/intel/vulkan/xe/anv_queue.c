@@ -52,24 +52,19 @@ anv_vk_priority_to_drm_sched_priority(VkQueueGlobalPriorityKHR vk_priority)
 static VkResult
 create_engine(struct anv_device *device,
               struct anv_queue *queue,
-              const VkDeviceQueueCreateInfo *pCreateInfo,
+              enum intel_engine_class engine_class,
+              VkQueueGlobalPriorityKHR priority,
               bool create_companion_rcs_engine)
 {
    struct anv_physical_device *physical = device->physical;
    uint32_t queue_family_index =
-      create_companion_rcs_engine ?
-      anv_get_first_queue_index(physical, INTEL_ENGINE_CLASS_RENDER) :
-      pCreateInfo->queueFamilyIndex;
+      anv_get_first_queue_index(physical,
+                                create_companion_rcs_engine ?
+                                INTEL_ENGINE_CLASS_RENDER : engine_class);
    struct anv_queue_family *queue_family =
       &physical->queue.families[queue_family_index];
    const struct intel_query_engine_info *engines = physical->engine_info;
    struct drm_xe_engine_class_instance *instances;
-   const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
-      vk_find_struct_const(pCreateInfo->pNext,
-                           DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
-   const VkQueueGlobalPriorityKHR priority = queue_priority ?
-                                             queue_priority->globalPriority :
-                                             VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
 
    /* As per spec, the driver implementation may deny requests to acquire
     * a priority above the default priority (MEDIUM) if the caller does not
@@ -129,17 +124,19 @@ create_engine(struct anv_device *device,
 VkResult
 anv_xe_create_engine(struct anv_device *device,
                      struct anv_queue *queue,
-                     const VkDeviceQueueCreateInfo *pCreateInfo)
+                     enum intel_engine_class engine_class,
+                     VkQueueGlobalPriorityKHR priority,
+                     bool protected)
 {
-   VkResult result = create_engine(device, queue, pCreateInfo,
+   VkResult result = create_engine(device, queue, engine_class, priority,
                                    false /* create_companion_rcs_engine */);
 
    if (result != VK_SUCCESS)
       return result;
 
-   if (queue->family->engine_class == INTEL_ENGINE_CLASS_COPY ||
-       queue->family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
-      result = create_engine(device, queue, pCreateInfo,
+   if (engine_class == INTEL_ENGINE_CLASS_COPY ||
+       engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      result = create_engine(device, queue, engine_class, priority,
                              true /* create_companion_rcs_engine */);
    }
 

@@ -73,6 +73,17 @@ enum anv_vm_bind_flags {
 };
 
 struct anv_kmd_backend {
+   /* Create an engine for anv_queue */
+   VkResult (*engine_create)(struct anv_device *device,
+                             struct anv_queue *queue,
+                             enum intel_engine_class engine_class,
+                             VkQueueGlobalPriorityKHR priority,
+                             bool protected);
+
+   /* Destroy the engine of anv_queue */
+   void (*engine_destroy)(struct anv_device *device,
+                          struct anv_queue *queue);
+
    /*
     * Create a gem buffer.
     * Return the gem handle in case of success otherwise returns 0.

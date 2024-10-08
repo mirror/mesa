@@ -27,42 +27,9 @@
 
 #include "anv_private.h"
 
-#include "i915/anv_queue.h"
 #include "xe/anv_queue.h"
 
 #include "vk_common_entrypoints.h"
-
-static VkResult
-anv_create_engine(struct anv_device *device,
-                  struct anv_queue *queue,
-                  const VkDeviceQueueCreateInfo *pCreateInfo)
-{
-   switch (device->info->kmd_type) {
-   case INTEL_KMD_TYPE_I915:
-      return anv_i915_create_engine(device, queue, pCreateInfo);
-   case INTEL_KMD_TYPE_XE:
-      return anv_xe_create_engine(device, queue, pCreateInfo);
-   default:
-      unreachable("Missing");
-      return VK_ERROR_UNKNOWN;
-   }
-}
-
-static void
-anv_destroy_engine(struct anv_queue *queue)
-{
-   struct anv_device *device = queue->device;
-   switch (device->info->kmd_type) {
-   case INTEL_KMD_TYPE_I915:
-      anv_i915_destroy_engine(device, queue);
-      break;
-   case INTEL_KMD_TYPE_XE:
-      anv_xe_destroy_engine(device, queue);
-      break;
-   default:
-      unreachable("Missing");
-   }
-}
 
 VkResult
 anv_queue_init(struct anv_device *device, struct anv_queue *queue,
@@ -85,7 +52,16 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
    queue->family = queue_family;
    queue->decoder = &device->decoder[queue->vk.queue_family_index];
 
-   result = anv_create_engine(device, queue, pCreateInfo);
+   const VkDeviceQueueGlobalPriorityCreateInfoKHR *priority =
+      vk_find_struct_const(pCreateInfo->pNext,
+                           DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
+
+   result = device->kmd_backend->engine_create(
+      device, queue,
+      queue_family->engine_class,
+      priority ? priority->globalPriority :
+      VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
+      pCreateInfo->flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT);
    if (result != VK_SUCCESS) {
       vk_queue_finish(&queue->vk);
       return result;
@@ -136,7 +112,7 @@ anv_queue_finish(struct anv_queue *queue)
    if (queue->companion_sync)
       vk_sync_destroy(&queue->device->vk, queue->companion_sync);
 
-   anv_destroy_engine(queue);
+   queue->device->kmd_backend->engine_destroy(queue->device, queue);
    vk_queue_finish(&queue->vk);
 }
 

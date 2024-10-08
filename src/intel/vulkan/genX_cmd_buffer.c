@@ -6379,17 +6379,14 @@ genX(cmd_buffer_end_companion_rcs_syncpoint)(struct anv_cmd_buffer *cmd_buffer,
 }
 
 void
-genX(write_trtt_entries)(struct anv_async_submit *submit,
-                         struct anv_trtt_bind *l3l2_binds,
-                         uint32_t n_l3l2_binds,
-                         struct anv_trtt_bind *l1_binds,
-                         uint32_t n_l1_binds)
+genX(batch_write_trtt_entries)(struct anv_batch *batch,
+                               const struct intel_device_info *devinfo,
+                               struct anv_trtt_bind *l3l2_binds,
+                               uint32_t n_l3l2_binds,
+                               struct anv_trtt_bind *l1_binds,
+                               uint32_t n_l1_binds)
 {
 #if GFX_VER >= 12
-   const struct intel_device_info *devinfo =
-      submit->queue->device->info;
-   struct anv_batch *batch = &submit->batch;
-
    /* BSpec says:
     *   "DWord Length programmed must not exceed 0x3FE."
     * For a single dword write the programmed length is 2, and for a single

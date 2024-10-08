@@ -386,11 +386,12 @@ genX(emit_simple_shader_end)(struct anv_simple_shader *state);
 
 VkResult genX(init_trtt_context_state)(struct anv_async_submit *submit);
 
-void genX(write_trtt_entries)(struct anv_async_submit *submit,
-                              struct anv_trtt_bind *l3l2_binds,
-                              uint32_t n_l3l2_binds,
-                              struct anv_trtt_bind *l1_binds,
-                              uint32_t n_l1_binds);
+void genX(batch_write_trtt_entries)(struct anv_batch *batch,
+                                    const struct intel_device_info *devinfo,
+                                    struct anv_trtt_bind *l3l2_binds,
+                                    uint32_t n_l3l2_binds,
+                                    struct anv_trtt_bind *l1_binds,
+                                    uint32_t n_l1_binds);
 
 void genX(async_submit_end)(struct anv_async_submit *submit);
 

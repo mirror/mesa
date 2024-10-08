@@ -735,12 +735,15 @@ anv_sparse_bind_trtt(struct anv_device *device,
     * into MI commands.
     */
    if (result == VK_SUCCESS) {
+      struct anv_batch *batch = &submit->base.batch;
+
       sparse_debug("trtt_binds: num_vm_binds:%02d l3l2:%04d l1:%04d\n",
                    sparse_submit->binds_len, n_l3l2_binds, n_l1_binds);
 
       if (n_l3l2_binds || n_l1_binds) {
-         anv_genX(device->info, write_trtt_entries)(
-            &submit->base, l3l2_binds, n_l3l2_binds, l1_binds, n_l1_binds);
+         anv_genX(device->info, batch_write_trtt_entries)(
+            batch, device->info,
+            l3l2_binds, n_l3l2_binds, l1_binds, n_l1_binds);
       }
    }
 

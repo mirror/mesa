@@ -1231,7 +1231,8 @@ anv_print_batch(struct anv_device *device,
 
    if (cmd_buffer->is_companion_rcs_cmd_buffer) {
       int render_queue_idx =
-         anv_get_first_render_queue_index(device->physical);
+         anv_get_first_queue_index(device->physical,
+                                   INTEL_ENGINE_CLASS_RENDER);
       ctx = &device->decoder[render_queue_idx];
    }
 

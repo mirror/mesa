@@ -2065,17 +2065,18 @@ struct anv_device {
 };
 
 static inline uint32_t
-anv_get_first_render_queue_index(struct anv_physical_device *pdevice)
+anv_get_first_queue_index(struct anv_physical_device *pdevice,
+                          enum intel_engine_class engine_class)
 {
    assert(pdevice != NULL);
 
    for (uint32_t i = 0; i < pdevice->queue.family_count; i++) {
-      if (pdevice->queue.families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      if (pdevice->queue.families[i].engine_class == engine_class) {
          return i;
       }
    }
 
-   unreachable("Graphics capable queue family not found");
+   unreachable("Capable queue family not found");
 }
 
 static inline struct anv_state

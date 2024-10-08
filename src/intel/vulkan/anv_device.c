@@ -887,8 +887,8 @@ VkResult anv_CreateDevice(
    if (device->info->verx10 >= 125) {
       VkCommandPoolCreateInfo pool_info = {
          .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-         .queueFamilyIndex =
-             anv_get_first_render_queue_index(device->physical),
+         .queueFamilyIndex = anv_get_first_queue_index(
+            device->physical, INTEL_ENGINE_CLASS_RENDER),
       };
 
       result = vk_common_CreateCommandPool(anv_device_to_handle(device),

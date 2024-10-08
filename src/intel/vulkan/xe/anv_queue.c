@@ -58,7 +58,7 @@ create_engine(struct anv_device *device,
    struct anv_physical_device *physical = device->physical;
    uint32_t queue_family_index =
       create_companion_rcs_engine ?
-      anv_get_first_render_queue_index(physical) :
+      anv_get_first_queue_index(physical, INTEL_ENGINE_CLASS_RENDER) :
       pCreateInfo->queueFamilyIndex;
    struct anv_queue_family *queue_family =
       &physical->queue.families[queue_family_index];

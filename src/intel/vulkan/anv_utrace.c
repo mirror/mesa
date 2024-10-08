@@ -158,7 +158,7 @@ VkResult
 anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
                                     uint32_t cmd_buffer_count,
                                     struct anv_cmd_buffer **cmd_buffers,
-                                    struct anv_utrace_submit **out_submit)
+                                    struct anv_async_submit **out_submit)
 {
    struct anv_device *device = queue->device;
    uint32_t utrace_copies = 0;
@@ -283,7 +283,7 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
       }
    }
 
-   *out_submit = submit;
+   *out_submit = &submit->base;
 
    return VK_SUCCESS;
 

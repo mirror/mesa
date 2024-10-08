@@ -6270,7 +6270,7 @@ VkResult
 anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
                                     uint32_t cmd_buffer_count,
                                     struct anv_cmd_buffer **cmd_buffers,
-                                    struct anv_utrace_submit **out_submit);
+                                    struct anv_async_submit **out_submit);
 
 void
 anv_device_utrace_emit_gfx_copy_buffer(struct u_trace_context *utctx,

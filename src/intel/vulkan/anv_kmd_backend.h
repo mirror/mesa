@@ -117,7 +117,7 @@ struct anv_kmd_backend {
                                  const struct vk_sync_signal *signals,
                                  struct anv_query_pool *perf_query_pool,
                                  uint32_t perf_query_pass,
-                                 struct anv_utrace_submit *utrace_submit);
+                                 struct anv_async_submit *utrace_submit);
    /* The caller is not expected to hold device->mutex when calling this
     * vfunc.
     */

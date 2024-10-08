@@ -1315,7 +1315,7 @@ anv_queue_exec_locked(struct anv_queue *queue,
                       const struct vk_sync_signal *signals,
                       struct anv_query_pool *perf_query_pool,
                       uint32_t perf_query_pass,
-                      struct anv_utrace_submit *utrace_submit)
+                      struct anv_async_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
    VkResult result = VK_SUCCESS;
@@ -1474,7 +1474,7 @@ out_free_submit:
 static VkResult
 anv_queue_submit_cmd_buffers_locked(struct anv_queue *queue,
                                     struct vk_queue_submit *submit,
-                                    struct anv_utrace_submit *utrace_submit)
+                                    struct anv_async_submit *utrace_submit)
 {
    VkResult result;
 
@@ -1599,7 +1599,7 @@ anv_queue_submit(struct vk_queue *vk_queue,
    /* Flush the trace points first before taking the lock as the flushing
     * might try to take that same lock.
     */
-   struct anv_utrace_submit *utrace_submit = NULL;
+   struct anv_async_submit *utrace_submit = NULL;
    result = anv_device_utrace_flush_cmd_buffers(
       queue,
       submit->command_buffer_count,

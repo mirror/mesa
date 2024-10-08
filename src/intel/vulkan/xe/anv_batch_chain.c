@@ -55,7 +55,7 @@ xe_exec_process_syncs(struct anv_queue *queue,
                       uint32_t wait_count, const struct vk_sync_wait *waits,
                       uint32_t signal_count, const struct vk_sync_signal *signals,
                       uint32_t extra_sync_count, const struct drm_xe_sync *extra_syncs,
-                      struct anv_utrace_submit *utrace_submit,
+                      struct anv_async_submit *utrace_submit,
                       bool is_companion_rcs_queue,
                       struct drm_xe_sync **ret, uint32_t *ret_count)
 {
@@ -65,7 +65,7 @@ xe_exec_process_syncs(struct anv_queue *queue,
     */
    const bool has_utrace_sync =
       utrace_submit &&
-      util_dynarray_num_elements(&utrace_submit->base.batch_bos, struct anv_bo *) == 0;
+      util_dynarray_num_elements(&utrace_submit->batch_bos, struct anv_bo *) == 0;
    const uint32_t num_syncs = wait_count + signal_count + extra_sync_count +
                               (has_utrace_sync ? 1 : 0) +
                               ((queue->sync && !is_companion_rcs_queue) ? 1 : 0) +
@@ -79,8 +79,8 @@ xe_exec_process_syncs(struct anv_queue *queue,
    uint32_t count = 0;
 
    if (has_utrace_sync) {
-      xe_syncs[count++] = vk_sync_to_drm_xe_sync(utrace_submit->base.signal.sync,
-                                                 utrace_submit->base.signal.signal_value,
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(utrace_submit->signal.sync,
+                                                 utrace_submit->signal.signal_value,
                                                  TYPE_SIGNAL);
    }
 
@@ -258,7 +258,7 @@ xe_queue_exec_locked(struct anv_queue *queue,
                      const struct vk_sync_signal *signals,
                      struct anv_query_pool *perf_query_pool,
                      uint32_t perf_query_pass,
-                     struct anv_utrace_submit *utrace_submit)
+                     struct anv_async_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
    VkResult result;
@@ -278,7 +278,7 @@ xe_queue_exec_locked(struct anv_queue *queue,
     * commands to run for utrace so ignore the submission.
     */
    if (utrace_submit &&
-       util_dynarray_num_elements(&utrace_submit->base.batch_bos,
+       util_dynarray_num_elements(&utrace_submit->batch_bos,
                                   struct anv_bo *) == 0)
       utrace_submit = NULL;
 
@@ -372,11 +372,10 @@ xe_queue_exec_locked(struct anv_queue *queue,
 
    if (result == VK_SUCCESS && utrace_submit) {
       struct vk_sync_signal signal = {
-         .sync = utrace_submit->base.signal.sync,
-         .signal_value = utrace_submit->base.signal.signal_value,
+         .sync = utrace_submit->signal.sync,
+         .signal_value = utrace_submit->signal.signal_value,
       };
-      result = xe_queue_exec_async(&utrace_submit->base,
-                                   0, NULL, 1, &signal);
+      result = xe_queue_exec_async(utrace_submit, 0, NULL, 1, &signal);
    }
 
    return result;

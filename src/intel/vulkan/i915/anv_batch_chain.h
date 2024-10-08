@@ -52,4 +52,4 @@ i915_queue_exec_locked(struct anv_queue *queue,
                        const struct vk_sync_signal *signals,
                        struct anv_query_pool *perf_query_pool,
                        uint32_t perf_query_pass,
-                       struct anv_utrace_submit *utrace_submit);
+                       struct anv_async_submit *utrace_submit);

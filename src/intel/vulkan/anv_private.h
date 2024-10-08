@@ -6262,12 +6262,6 @@ struct anv_utrace_submit {
     * timestamps)
     */
    uint64_t last_full_timestamp;
-
-   /* Memcpy state tracking (only used for timestamp copies on render engine) */
-   struct anv_memcpy_state memcpy_state;
-
-   /* Memcpy state tracking (only used for timestamp copies on compute engine) */
-   struct anv_simple_shader simple_state;
 };
 
 void anv_device_utrace_init(struct anv_device *device);

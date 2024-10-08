@@ -4016,7 +4016,8 @@ uint64_t ac_surface_get_plane_size(const struct radeon_surf *surf,
 uint64_t
 ac_surface_addr_from_coord(struct ac_addrlib *addrlib, const struct radeon_info *info,
                            const struct radeon_surf *surf, const struct ac_surf_info *surf_info,
-                           unsigned level, unsigned x, unsigned y, unsigned layer, bool is_3d)
+                           unsigned level, unsigned x, unsigned y, unsigned layer, bool is_3d,
+                           bool stencil)
 {
    /* Only implemented for GFX9+ */
    assert(info->gfx_level >= GFX9);
@@ -4031,16 +4032,24 @@ ac_surface_addr_from_coord(struct ac_addrlib *addrlib, const struct radeon_info 
    input.numMipLevels = surf_info->levels;
    input.numSamples = surf_info->samples;
    input.numFrags = surf_info->samples;
-   input.swizzleMode = surf->u.gfx9.swizzle_mode;
+   input.swizzleMode = stencil ? surf->u.gfx9.zs.stencil_swizzle_mode :
+                                 surf->u.gfx9.swizzle_mode;
    input.resourceType = (AddrResourceType)surf->u.gfx9.resource_type;
    input.pipeBankXor = surf->tile_swizzle;
    input.bpp = surf->bpe * 8;
    input.x = x;
    input.y = y;
 
+   if (stencil)
+      input.bpp = 8;
+
    ADDR2_COMPUTE_SURFACE_ADDRFROMCOORD_OUTPUT output = {0};
    output.size = sizeof(ADDR2_COMPUTE_SURFACE_ADDRFROMCOORD_OUTPUT);
    Addr2ComputeSurfaceAddrFromCoord(addrlib->handle, &input, &output);
+
+   if (stencil)
+      output.addr += surf->u.gfx9.zs.stencil_offset;
+
    return output.addr;
 }
 

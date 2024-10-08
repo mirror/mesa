@@ -2520,6 +2520,18 @@ struct anv_async_submit {
    struct anv_reloc_list relocs;
    struct anv_batch batch;
    struct util_dynarray batch_bos;
+
+   /* structure used by the perfetto glue */
+   struct intel_ds_flush_data ds;
+
+   /* Stream for temporary allocations */
+   struct anv_state_stream dynamic_state_stream;
+   struct anv_state_stream general_state_stream;
+
+   /* Last fully read 64bit timestamp (used to rebuild the upper bits of 32bit
+    * timestamps)
+    */
+   uint64_t last_full_timestamp;
 };
 
 VkResult
@@ -6238,31 +6250,6 @@ void anv_astc_emu_process(struct anv_cmd_buffer *cmd_buffer,
                           const VkImageSubresourceLayers *subresource,
                           VkOffset3D block_offset,
                           VkExtent3D block_extent);
-
-/* This structure is used in 2 scenarios :
- *
- *    - copy utrace timestamps from command buffer so that command buffer can
- *      be resubmitted multiple times without the recorded timestamps being
- *      overwritten before they're read back
- *
- *    - emit trace points for queue debug tagging
- *      (vkQueueBeginDebugUtilsLabelEXT/vkQueueEndDebugUtilsLabelEXT)
- */
-struct anv_utrace_submit {
-   struct anv_async_submit base;
-
-   /* structure used by the perfetto glue */
-   struct intel_ds_flush_data ds;
-
-   /* Stream for temporary allocations */
-   struct anv_state_stream dynamic_state_stream;
-   struct anv_state_stream general_state_stream;
-
-   /* Last fully read 64bit timestamp (used to rebuild the upper bits of 32bit
-    * timestamps)
-    */
-   uint64_t last_full_timestamp;
-};
 
 void anv_device_utrace_init(struct anv_device *device);
 void anv_device_utrace_finish(struct anv_device *device);

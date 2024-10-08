@@ -89,19 +89,10 @@ command_buffers_count_utraces(struct anv_device *device,
 static void
 anv_utrace_delete_submit(struct u_trace_context *utctx, void *submit_data)
 {
-   struct anv_device *device =
-      container_of(utctx, struct anv_device, ds.trace_context);
-   struct anv_utrace_submit *submit =
-      container_of(submit_data, struct anv_utrace_submit, ds);
+   struct anv_async_submit *submit =
+      container_of(submit_data, struct anv_async_submit, ds);
 
-   intel_ds_flush_data_fini(&submit->ds);
-
-   anv_state_stream_finish(&submit->dynamic_state_stream);
-   anv_state_stream_finish(&submit->general_state_stream);
-
-   anv_async_submit_fini(&submit->base);
-
-   vk_free(&device->vk.alloc, submit);
+   anv_async_submit_destroy(submit);
 }
 
 void
@@ -171,28 +162,16 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
       return VK_SUCCESS;
    }
 
-   VkResult result;
-   struct anv_utrace_submit *submit =
-      vk_zalloc(&device->vk.alloc, sizeof(struct anv_utrace_submit),
-                8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   if (!submit)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   result = anv_async_submit_init(&submit->base, queue,
-                                  &device->batch_bo_pool,
-                                  false, true);
+   struct anv_async_submit *submit;
+   VkResult result = anv_async_submit_create(queue,
+                                             &device->batch_bo_pool,
+                                             false, true,
+                                             &submit);
    if (result != VK_SUCCESS)
-      goto error_async;
+      return result;
 
-   intel_ds_flush_data_init(&submit->ds, &queue->ds, queue->ds.submission_id);
-
-   struct anv_batch *batch = &submit->base.batch;
+   struct anv_batch *batch = &submit->batch;
    if (utrace_copies > 0) {
-      anv_state_stream_init(&submit->dynamic_state_stream,
-                            &device->dynamic_state_pool, 16384);
-      anv_state_stream_init(&submit->general_state_stream,
-                            &device->general_state_pool, 16384);
-
       /* Only engine class where we support timestamp copies
        *
        * TODO: add INTEL_ENGINE_CLASS_COPY support (should be trivial ;)
@@ -283,15 +262,12 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
       }
    }
 
-   *out_submit = &submit->base;
+   *out_submit = submit;
 
    return VK_SUCCESS;
 
  error_sync:
-   intel_ds_flush_data_fini(&submit->ds);
-   anv_async_submit_fini(&submit->base);
- error_async:
-   vk_free(&device->vk.alloc, submit);
+   anv_async_submit_destroy(submit);
    return result;
 }
 
@@ -388,16 +364,16 @@ anv_utrace_read_ts(struct u_trace_context *utctx,
    struct anv_device *device =
       container_of(utctx, struct anv_device, ds.trace_context);
    struct anv_bo *bo = timestamps;
-   struct anv_utrace_submit *submit =
-      container_of(flush_data, struct anv_utrace_submit, ds);
+   struct anv_async_submit *submit =
+      container_of(flush_data, struct anv_async_submit, ds);
 
    /* Only need to stall on results for the first entry: */
    if (offset_B == 0) {
       MESA_TRACE_SCOPE("anv utrace wait timestamps");
       UNUSED VkResult result =
          vk_sync_wait(&device->vk,
-                      submit->base.signal.sync,
-                      submit->base.signal.signal_value,
+                      submit->signal.sync,
+                      submit->signal.signal_value,
                       VK_SYNC_WAIT_COMPLETE,
                       os_time_get_absolute_timeout(OS_TIMEOUT_INFINITE));
       assert(result == VK_SUCCESS);
@@ -581,22 +557,15 @@ anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool beg
 {
    struct anv_device *device = queue->device;
 
-   VkResult result;
-   struct anv_utrace_submit *submit =
-      vk_zalloc(&device->vk.alloc, sizeof(struct anv_utrace_submit),
-                8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   if (!submit)
+   struct anv_async_submit *submit;
+   VkResult result = anv_async_submit_create(queue,
+                                             &device->batch_bo_pool,
+                                             false, true,
+                                             &submit);
+   if (result != VK_SUCCESS)
       return;
 
-   result = anv_async_submit_init(&submit->base, queue,
-                                  &device->batch_bo_pool,
-                                  false, true);
-   if (result != VK_SUCCESS)
-      goto error_async;
-
-   intel_ds_flush_data_init(&submit->ds, &queue->ds, queue->ds.submission_id);
-
-   struct anv_batch *batch = &submit->base.batch;
+   struct anv_batch *batch = &submit->batch;
    if (frame) {
       if (begin)
          trace_intel_begin_frame(&submit->ds.trace, batch);
@@ -624,8 +593,7 @@ anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool beg
                              device->vk.current_frame, true);
 
    result =
-      device->kmd_backend->queue_exec_async(&submit->base,
-                                            0, NULL, 0, NULL);
+      device->kmd_backend->queue_exec_async(submit, 0, NULL, 0, NULL);
    if (result != VK_SUCCESS)
       goto error_batch;
 
@@ -635,10 +603,7 @@ anv_queue_trace(struct anv_queue *queue, const char *label, bool frame, bool beg
    return;
 
  error_batch:
-   intel_ds_flush_data_fini(&submit->ds);
-   anv_async_submit_fini(&submit->base);
- error_async:
-   vk_free(&device->vk.alloc, submit);
+   anv_async_submit_destroy(submit);
 }
 
 void

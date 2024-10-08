@@ -1733,6 +1733,13 @@ anv_async_submit_init(struct anv_async_submit *submit,
       submit->owns_sync = true;
    }
 
+   anv_state_stream_init(&submit->dynamic_state_stream,
+                         &device->dynamic_state_pool, 16384);
+   anv_state_stream_init(&submit->general_state_stream,
+                         &device->general_state_pool, 16384);
+
+   intel_ds_flush_data_init(&submit->ds, &queue->ds, queue->ds.submission_id);
+
    return VK_SUCCESS;
 }
 
@@ -1740,6 +1747,11 @@ void
 anv_async_submit_fini(struct anv_async_submit *submit)
 {
    struct anv_device *device = submit->queue->device;
+
+   intel_ds_flush_data_fini(&submit->ds);
+
+   anv_state_stream_finish(&submit->dynamic_state_stream);
+   anv_state_stream_finish(&submit->general_state_stream);
 
    if (submit->owns_sync)
       vk_sync_destroy(&device->vk, submit->signal.sync);

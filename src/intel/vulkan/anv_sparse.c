@@ -23,6 +23,8 @@
 
 #include <anv_private.h>
 
+#include "ds/intel_tracepoints.h"
+
 /* Sparse binding handling.
  *
  * There is one main structure passed around all over this file:
@@ -591,8 +593,7 @@ anv_sparse_trtt_garbage_collect_batches(struct anv_device *device,
                             &trtt->in_flight_batches, link) {
       if (submit->base.signal.signal_value <= last_value) {
          list_del(&submit->link);
-         anv_async_submit_fini(&submit->base);
-         vk_free(&device->vk.alloc, submit);
+         anv_async_submit_destroy(&submit->base);
          continue;
       }
 
@@ -607,8 +608,7 @@ anv_sparse_trtt_garbage_collect_batches(struct anv_device *device,
          os_time_get_absolute_timeout(OS_TIMEOUT_INFINITE));
       if (result == VK_SUCCESS) {
          list_del(&submit->link);
-         anv_async_submit_fini(&submit->base);
-         vk_free(&device->vk.alloc, submit);
+         anv_async_submit_destroy(&submit->base);
          continue;
       }
 
@@ -736,15 +736,20 @@ anv_sparse_bind_trtt(struct anv_device *device,
     */
    if (result == VK_SUCCESS) {
       struct anv_batch *batch = &submit->base.batch;
+      struct u_trace *trace = &submit->base.ds.trace;
 
       sparse_debug("trtt_binds: num_vm_binds:%02d l3l2:%04d l1:%04d\n",
                    sparse_submit->binds_len, n_l3l2_binds, n_l1_binds);
+
+      trace_intel_begin_update_trtt(trace, batch);
 
       if (n_l3l2_binds || n_l1_binds) {
          anv_genX(device->info, batch_write_trtt_entries)(
             batch, device->info,
             l3l2_binds, n_l3l2_binds, l1_binds, n_l1_binds);
       }
+
+      trace_intel_end_update_trtt(trace, batch, n_l3l2_binds + n_l1_binds);
    }
 
    STACK_ARRAY_FINISH(l1_binds);
@@ -780,8 +785,18 @@ anv_sparse_bind_trtt(struct anv_device *device,
    if (result != VK_SUCCESS)
       goto error_add_bind;
 
-
-   list_addtail(&submit->link, &trtt->in_flight_batches);
+   /* If u_trace is active, flush the data into the utrace thead and it'll do
+    * the free on completion, otherwise add it to the in-flight queue to be
+    * garbage collected later.
+    */
+   if (u_trace_should_process(&device->ds.trace_context)) {
+      intel_ds_queue_flush_data(&submit->base.queue->ds,
+                                &submit->base.ds.trace,
+                                &submit->base.ds, device->vk.current_frame,
+                                true);
+   } else {
+      list_addtail(&submit->link, &trtt->in_flight_batches);
+   }
 
    simple_mtx_unlock(&trtt->mutex);
 

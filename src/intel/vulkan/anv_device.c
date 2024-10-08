@@ -1096,10 +1096,11 @@ void anv_DestroyDevice(
 
    struct anv_physical_device *pdevice = device->physical;
 
+   /* Finish utrace first as it might access TRTT resources, queues, etc... */
+   anv_device_utrace_finish(device);
+
    /* Do TRTT batch garbage collection before destroying queues. */
    anv_device_finish_trtt(device);
-
-   anv_device_utrace_finish(device);
 
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);

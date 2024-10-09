@@ -589,11 +589,11 @@ anv_sparse_trtt_garbage_collect_batches(struct anv_device *device,
       last_value = trtt->timeline_val;
    }
 
-   list_for_each_entry_safe(struct anv_trtt_submission, submit,
+   list_for_each_entry_safe(struct anv_async_submit, submit,
                             &trtt->in_flight_batches, link) {
-      if (submit->base.signal.signal_value <= last_value) {
+      if (submit->signal.signal_value <= last_value) {
          list_del(&submit->link);
-         anv_async_submit_destroy(&submit->base);
+         anv_async_submit_destroy(submit);
          continue;
       }
 
@@ -602,13 +602,13 @@ anv_sparse_trtt_garbage_collect_batches(struct anv_device *device,
 
       VkResult result = vk_sync_wait(
          &device->vk,
-         submit->base.signal.sync,
-         submit->base.signal.signal_value,
+         submit->signal.sync,
+         submit->signal.signal_value,
          VK_SYNC_WAIT_COMPLETE,
          os_time_get_absolute_timeout(OS_TIMEOUT_INFINITE));
       if (result == VK_SUCCESS) {
          list_del(&submit->link);
-         anv_async_submit_destroy(&submit->base);
+         anv_async_submit_destroy(submit);
          continue;
       }
 
@@ -660,26 +660,19 @@ anv_sparse_bind_trtt(struct anv_device *device,
    if (!sparse_submit->queue)
       sparse_submit->queue = trtt->queue;
 
-   struct anv_trtt_submission *submit =
-      vk_zalloc(&device->vk.alloc, sizeof(*submit), 8,
-                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-   if (submit == NULL)
-      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-
-   result = anv_async_submit_init(&submit->base, sparse_submit->queue,
-                                  &device->batch_bo_pool,
-                                  false, false);
+   struct anv_async_submit *submit;
+   result = anv_async_submit_create(sparse_submit->queue,
+                                    &device->batch_bo_pool,
+                                    false, false,
+                                    &submit);
    if (result != VK_SUCCESS)
-      goto error_async;
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 
    simple_mtx_lock(&trtt->mutex);
 
    anv_sparse_trtt_garbage_collect_batches(device, false);
 
-   submit->base.signal = (struct vk_sync_signal) {
-      .sync = trtt->timeline,
-      .signal_value = ++trtt->timeline_val,
-   };
+   anv_async_submit_set_signal(submit, trtt->timeline, ++trtt->timeline_val);
 
    /* If the TRTT L3 table was never set, initialize it as part of this
     * submission.
@@ -735,8 +728,8 @@ anv_sparse_bind_trtt(struct anv_device *device,
     * into MI commands.
     */
    if (result == VK_SUCCESS) {
-      struct anv_batch *batch = &submit->base.batch;
-      struct u_trace *trace = &submit->base.ds.trace;
+      struct anv_batch *batch = &submit->batch;
+      struct u_trace *trace = &submit->ds.trace;
 
       sparse_debug("trtt_binds: num_vm_binds:%02d l3l2:%04d l1:%04d\n",
                    sparse_submit->binds_len, n_l3l2_binds, n_l1_binds);
@@ -745,7 +738,7 @@ anv_sparse_bind_trtt(struct anv_device *device,
 
       if (n_l3l2_binds || n_l1_binds) {
          anv_genX(device->info, batch_write_trtt_entries)(
-            batch, device->info,
+            &submit->batch, device->info,
             l3l2_binds, n_l3l2_binds, l1_binds, n_l1_binds);
       }
 
@@ -755,10 +748,10 @@ anv_sparse_bind_trtt(struct anv_device *device,
    STACK_ARRAY_FINISH(l1_binds);
    STACK_ARRAY_FINISH(l3l2_binds);
 
-   anv_genX(device->info, async_submit_end)(&submit->base);
+   anv_genX(device->info, async_submit_end)(submit);
 
-   if (submit->base.batch.status != VK_SUCCESS) {
-      result = submit->base.batch.status;
+   if (submit->batch.status != VK_SUCCESS) {
+      result = submit->batch.status;
       goto error_add_bind;
    }
 
@@ -769,7 +762,7 @@ anv_sparse_bind_trtt(struct anv_device *device,
     */
    if (device->physical->uses_relocs) {
       for (int i = 0; i < trtt->num_page_table_bos; i++) {
-         result = anv_reloc_list_add_bo(&submit->base.relocs,
+         result = anv_reloc_list_add_bo(&submit->relocs,
                                         trtt->page_table_bos[i]);
          if (result != VK_SUCCESS)
             goto error_add_bind;
@@ -777,7 +770,7 @@ anv_sparse_bind_trtt(struct anv_device *device,
    }
 
    result =
-      device->kmd_backend->queue_exec_async(&submit->base,
+      device->kmd_backend->queue_exec_async(submit,
                                             sparse_submit->wait_count,
                                             sparse_submit->waits,
                                             sparse_submit->signal_count,
@@ -790,9 +783,9 @@ anv_sparse_bind_trtt(struct anv_device *device,
     * garbage collected later.
     */
    if (u_trace_should_process(&device->ds.trace_context)) {
-      intel_ds_queue_flush_data(&submit->base.queue->ds,
-                                &submit->base.ds.trace,
-                                &submit->base.ds, device->vk.current_frame,
+      intel_ds_queue_flush_data(&submit->queue->ds,
+                                &submit->ds.trace,
+                                &submit->ds, device->vk.current_frame,
                                 true);
    } else {
       list_addtail(&submit->link, &trtt->in_flight_batches);
@@ -806,9 +799,7 @@ anv_sparse_bind_trtt(struct anv_device *device,
 
  error_add_bind:
    simple_mtx_unlock(&trtt->mutex);
-   anv_async_submit_fini(&submit->base);
- error_async:
-   vk_free(&device->vk.alloc, submit);
+   anv_async_submit_destroy(submit);
    return result;
 }
 

@@ -2653,6 +2653,9 @@ struct anv_async_submit {
     * timestamps)
     */
    uint64_t last_full_timestamp;
+
+   /* Link if the submission is to be added to a queue for later freeing */
+   struct list_head link;
 };
 
 VkResult
@@ -2703,14 +2706,6 @@ struct anv_sparse_submission {
 struct anv_trtt_bind {
    uint64_t pte_addr;
    uint64_t entry_addr;
-};
-
-struct anv_trtt_submission {
-   struct anv_async_submit base;
-
-   struct anv_sparse_submission *sparse;
-
-   struct list_head link;
 };
 
 struct anv_device_memory {

@@ -42,6 +42,7 @@ static const struct debug_control tu_debug_options[] = {
    { "fdm", TU_DEBUG_FDM },
    { "noconform", TU_DEBUG_NOCONFORM },
    { "rd", TU_DEBUG_RD },
+   { "nofsdt", TU_DEBUG_NOFSDT },
    { NULL, 0 }
 };
 

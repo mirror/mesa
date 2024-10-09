@@ -206,6 +206,7 @@ struct fd_dev_info {
 
       float line_width_min;
       float line_width_max;
+      bool has_fsdt;
    } a6xx;
 
    struct {

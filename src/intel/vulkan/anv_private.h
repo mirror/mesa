@@ -4600,6 +4600,8 @@ struct anv_shader_bin {
    gl_shader_stage stage;
 
    struct anv_state kernel;
+
+   void *kernel_code;
    uint32_t kernel_size;
 
    const struct brw_stage_prog_data *prog_data;

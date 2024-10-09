@@ -921,12 +921,6 @@ VkResult anv_CreateDevice(
    if (result != VK_SUCCESS)
       goto fail_companion_cmd_pool;
 
-   result = anv_device_init_rt_shaders(device);
-   if (result != VK_SUCCESS) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto fail_trtt;
-   }
-
    anv_device_init_blorp(device);
 
    anv_device_init_border_colors(device);
@@ -993,14 +987,28 @@ VkResult anv_CreateDevice(
 
    anv_device_utrace_init(device);
 
-   result = anv_genX(device->info, init_device_state)(device);
+   result = anv_device_upload_init(device);
    if (result != VK_SUCCESS)
       goto fail_utrace;
+
+   result = anv_device_init_rt_shaders(device);
+   if (result != VK_SUCCESS) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto fail_upload;
+   }
+
+   result = anv_genX(device->info, init_device_state)(device);
+   if (result != VK_SUCCESS)
+      goto fail_rt_shaders;
 
    *pDevice = anv_device_to_handle(device);
 
    return VK_SUCCESS;
 
+ fail_rt_shaders:
+   anv_device_finish_rt_shaders(device);
+ fail_upload:
+   anv_device_upload_finish(device);
  fail_utrace:
    anv_device_utrace_finish(device);
    if (physical_device->use_shader_upload)
@@ -1012,8 +1020,6 @@ VkResult anv_CreateDevice(
    anv_device_finish_blorp(device);
    anv_device_finish_astc_emu(device);
    anv_device_finish_internal_kernels(device);
-   anv_device_finish_rt_shaders(device);
- fail_trtt:
    anv_device_finish_trtt(device);
  fail_companion_cmd_pool:
    if (device->info->verx10 >= 125) {
@@ -1126,7 +1132,10 @@ void anv_DestroyDevice(
    /* Finish utrace first as it might access TRTT resources, queues, etc... */
    anv_device_utrace_finish(device);
 
-   /* Do TRTT batch garbage collection before destroying queues. */
+   /* Do upload queue & TRTT batch garbage collection before destroying
+    * queues.
+    */
+   anv_device_upload_finish(device);
    anv_device_finish_trtt(device);
 
    if (device->physical->use_shader_upload)

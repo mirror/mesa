@@ -60,6 +60,11 @@ xe_exec_process_syncs(struct anv_queue *queue,
                       struct drm_xe_sync **ret, uint32_t *ret_count)
 {
    struct anv_device *device = queue->device;
+   uint64_t upload_timeline_value;
+   VkResult result = anv_device_upload_flush(device, &upload_timeline_value);
+   if (result != VK_SUCCESS)
+      return result;
+
    /* Signal the utrace sync only if it doesn't have a batch. Otherwise the
     * it's the utrace batch that should signal its own sync.
     */
@@ -68,6 +73,7 @@ xe_exec_process_syncs(struct anv_queue *queue,
       util_dynarray_num_elements(&utrace_submit->batch_bos, struct anv_bo *) == 0;
    const uint32_t num_syncs = wait_count + signal_count + extra_sync_count +
                               (has_utrace_sync ? 1 : 0) +
+                              (upload_timeline_value > 0 ? 1 : 0) +
                               ((queue->sync && !is_companion_rcs_queue) ? 1 : 0) +
                               1 /* vm bind sync */;
    struct drm_xe_sync *xe_syncs = vk_zalloc(&device->vk.alloc,
@@ -82,6 +88,12 @@ xe_exec_process_syncs(struct anv_queue *queue,
       xe_syncs[count++] = vk_sync_to_drm_xe_sync(utrace_submit->signal.sync,
                                                  utrace_submit->signal.signal_value,
                                                  TYPE_SIGNAL);
+   }
+
+   if (upload_timeline_value > 0) {
+      xe_syncs[count++] = vk_sync_to_drm_xe_sync(device->upload.timeline,
+                                                 upload_timeline_value,
+                                                 TYPE_WAIT);
    }
 
    for (uint32_t i = 0; i < wait_count; i++) {

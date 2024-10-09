@@ -1597,6 +1597,12 @@ anv_queue_submit(struct vk_queue *vk_queue,
       return VK_SUCCESS;
    }
 
+   /* Flush shader uploads so that it appears in order the u_trace prints. */
+   uint64_t upload_timeline_val;
+   result = anv_device_upload_flush(device, &upload_timeline_val);
+   if (result != VK_SUCCESS)
+      return result;
+
    /* Flush the trace points first before taking the lock as the flushing
     * might try to take that same lock.
     */

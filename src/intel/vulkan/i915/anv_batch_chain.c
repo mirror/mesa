@@ -852,6 +852,11 @@ i915_queue_exec_locked(struct anv_queue *queue,
    };
    VkResult result;
 
+   uint64_t upload_timeline_val;
+   result = anv_device_upload_flush(device, &upload_timeline_val);
+   if (result != VK_SUCCESS)
+      goto error;
+
    /* If there is a utrace submission but no batch, it means there are no
     * commands to run for utrace. But we still have to signal the associated
     * syncs, so add them to the submission.
@@ -901,6 +906,15 @@ i915_queue_exec_locked(struct anv_queue *queue,
                                     signals[i].sync,
                                     true /* is_signal */,
                                     signals[i].signal_value);
+      if (result != VK_SUCCESS)
+         goto error;
+   }
+
+   if (cmd_buffer_count > 0 && upload_timeline_val) {
+      result = anv_execbuf_add_sync(device, &execbuf,
+                                    device->upload.timeline,
+                                    false /* is_signal */,
+                                    upload_timeline_val);
       if (result != VK_SUCCESS)
          goto error;
    }

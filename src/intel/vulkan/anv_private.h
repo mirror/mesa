@@ -1920,6 +1920,20 @@ struct anv_device_astc_emu {
     VkPipeline pipeline;
 };
 
+struct anv_device_upload {
+   simple_mtx_t mutex;
+
+   struct list_head in_flight_uploads;
+
+   struct vk_sync *timeline;
+   uint64_t timeline_val;
+
+   struct anv_async_submit *submit;
+
+   struct anv_memcpy_state memcpy_state;
+   struct anv_simple_shader simple_state;
+};
+
 struct anv_device {
     struct vk_device                            vk;
 
@@ -2163,6 +2177,8 @@ struct anv_device {
 
     struct anv_device_astc_emu                   astc_emu;
 
+    struct anv_device_upload                     upload;
+
     struct intel_bind_timeline bind_timeline; /* Xe only */
 
     struct {
@@ -2374,6 +2390,17 @@ anv_gem_import_bo_alloc_flags_to_bo_flags(struct anv_device *device,
 const struct intel_device_info_pat_entry *
 anv_device_get_pat_entry(struct anv_device *device,
                          enum anv_bo_alloc_flags alloc_flags);
+
+VkResult anv_device_upload_init(struct anv_device *device);
+void anv_device_upload_finish(struct anv_device *device);
+VkResult anv_device_upload_data(struct anv_device *device,
+                                struct anv_address dst_addr,
+                                const void *data,
+                                size_t size);
+VkResult anv_device_upload_flush(struct anv_device *device,
+                                 uint64_t *timeline_val_out);
+VkResult anv_device_upload_sync(struct anv_device *device);
+
 
 uint64_t anv_vma_alloc(struct anv_device *device,
                        uint64_t size, uint64_t align,

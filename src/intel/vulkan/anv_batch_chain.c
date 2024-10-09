@@ -1710,6 +1710,9 @@ anv_async_submit_init(struct anv_async_submit *submit,
       return result;
 
    submit->batch = (struct anv_batch) {
+      .engine_class = use_companion_rcs ?
+                      INTEL_ENGINE_CLASS_RENDER :
+                      queue->family->engine_class,
       .alloc = &device->vk.alloc,
       .relocs = &submit->relocs,
       .user_data = submit,

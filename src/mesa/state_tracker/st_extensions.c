@@ -53,17 +53,22 @@
  * avoid evaluating arguments (which are often function calls) more than once.
  */
 
-static unsigned _min(unsigned a, unsigned b)
+ALWAYS_INLINE static unsigned _min(unsigned a, unsigned b)
 {
    return (a < b) ? a : b;
 }
 
-static float _maxf(float a, float b)
+ALWAYS_INLINE static unsigned _max(unsigned a, unsigned b)
 {
    return (a > b) ? a : b;
 }
 
-static int _clamp(int a, int min, int max)
+ALWAYS_INLINE static float _maxf(float a, float b)
+{
+   return (a > b) ? a : b;
+}
+
+ALWAYS_INLINE static int _clamp(int a, int min, int max)
 {
    if (a < min)
       return min;
@@ -111,8 +116,8 @@ void st_init_limits(struct pipe_screen *screen,
    int temp;
 
    c->MaxTextureSize = screen->get_param(screen, PIPE_CAP_MAX_TEXTURE_2D_SIZE);
-   c->MaxTextureSize = MIN2(c->MaxTextureSize, 1 << (MAX_TEXTURE_LEVELS - 1));
-   c->MaxTextureMbytes = MAX2(c->MaxTextureMbytes,
+   c->MaxTextureSize = _min(c->MaxTextureSize, 1 << (MAX_TEXTURE_LEVELS - 1));
+   c->MaxTextureMbytes = _max(c->MaxTextureMbytes,
                               screen->get_param(screen, PIPE_CAP_MAX_TEXTURE_MB));
 
    c->Max3DTextureLevels
@@ -165,8 +170,8 @@ void st_init_limits(struct pipe_screen *screen,
    c->MaxPointSizeAA =
       _maxf(1.0f, screen->get_paramf(screen, PIPE_CAPF_MAX_POINT_SIZE_AA));
 
-   c->MinPointSize = MAX2(screen->get_paramf(screen, PIPE_CAPF_MIN_POINT_SIZE), 0.01);
-   c->MinPointSizeAA = MAX2(screen->get_paramf(screen, PIPE_CAPF_MIN_POINT_SIZE_AA), 0.01);
+   c->MinPointSize = _maxf(screen->get_paramf(screen, PIPE_CAPF_MIN_POINT_SIZE), 0.01);
+   c->MinPointSizeAA = _maxf(screen->get_paramf(screen, PIPE_CAPF_MIN_POINT_SIZE_AA), 0.01);
    c->PointSizeGranularity = screen->get_paramf(screen, PIPE_CAPF_POINT_SIZE_GRANULARITY);
 
    c->MaxTextureMaxAnisotropy =
@@ -266,7 +271,7 @@ void st_init_limits(struct pipe_screen *screen,
       }
 
 
-      pc->MaxUniformComponents = MIN2(pc->MaxUniformComponents,
+      pc->MaxUniformComponents = _min(pc->MaxUniformComponents,
                                       MAX_UNIFORMS * 4);
 
       /* For ARB programs, prog_src_register::Index is a signed 13-bit number.
@@ -275,7 +280,7 @@ void st_init_limits(struct pipe_screen *screen,
        * drop the limit one step lower, to 2048, to be safe.
        */
       pc->MaxParameters =
-      pc->MaxNativeParameters = MIN2(pc->MaxUniformComponents / 4, 2048);
+      pc->MaxNativeParameters = _min(pc->MaxUniformComponents / 4, 2048);
       pc->MaxInputComponents =
          screen->get_shader_param(screen, sh, PIPE_SHADER_CAP_MAX_INPUTS) * 4;
       pc->MaxOutputComponents =
@@ -322,8 +327,8 @@ void st_init_limits(struct pipe_screen *screen,
       /* Gallium doesn't really care about local vs. env parameters so use the
        * same limits.
        */
-      pc->MaxLocalParams = MIN2(pc->MaxParameters, MAX_PROGRAM_LOCAL_PARAMS);
-      pc->MaxEnvParams = MIN2(pc->MaxParameters, MAX_PROGRAM_ENV_PARAMS);
+      pc->MaxLocalParams = _min(pc->MaxParameters, MAX_PROGRAM_LOCAL_PARAMS);
+      pc->MaxEnvParams = _min(pc->MaxParameters, MAX_PROGRAM_ENV_PARAMS);
 
       if (screen->get_shader_param(screen, sh, PIPE_SHADER_CAP_INTEGERS)) {
          pc->LowInt.RangeMin = 31;
@@ -426,10 +431,10 @@ void st_init_limits(struct pipe_screen *screen,
            c->MaxTextureCoordUnits);
 
    c->Program[MESA_SHADER_VERTEX].MaxAttribs =
-      MIN2(c->Program[MESA_SHADER_VERTEX].MaxAttribs, 16);
+      _min(c->Program[MESA_SHADER_VERTEX].MaxAttribs, 16);
 
    c->MaxVarying = screen->get_param(screen, PIPE_CAP_MAX_VARYINGS);
-   c->MaxVarying = MIN2(c->MaxVarying, MAX_VARYING);
+   c->MaxVarying = _min(c->MaxVarying, MAX_VARYING);
    c->MaxGeometryOutputVertices =
       screen->get_param(screen, PIPE_CAP_MAX_GEOMETRY_OUTPUT_VERTICES);
    c->MaxGeometryTotalOutputComponents =
@@ -437,7 +442,7 @@ void st_init_limits(struct pipe_screen *screen,
    c->MaxGeometryShaderInvocations =
       screen->get_param(screen, PIPE_CAP_MAX_GS_INVOCATIONS);
    c->MaxTessPatchComponents =
-      MIN2(screen->get_param(screen, PIPE_CAP_MAX_SHADER_PATCH_VARYINGS),
+      _min(screen->get_param(screen, PIPE_CAP_MAX_SHADER_PATCH_VARYINGS),
            MAX_VARYING) * 4;
 
    c->MinProgramTexelOffset =
@@ -454,7 +459,7 @@ void st_init_limits(struct pipe_screen *screen,
 
    c->MaxTransformFeedbackBuffers =
       screen->get_param(screen, PIPE_CAP_MAX_STREAM_OUTPUT_BUFFERS);
-   c->MaxTransformFeedbackBuffers = MIN2(c->MaxTransformFeedbackBuffers,
+   c->MaxTransformFeedbackBuffers = _min(c->MaxTransformFeedbackBuffers,
                                          MAX_FEEDBACK_BUFFERS);
    c->MaxTransformFeedbackSeparateComponents =
       screen->get_param(screen, PIPE_CAP_MAX_STREAM_OUTPUT_SEPARATE_COMPONENTS);
@@ -462,7 +467,7 @@ void st_init_limits(struct pipe_screen *screen,
       screen->get_param(screen,
                         PIPE_CAP_MAX_STREAM_OUTPUT_INTERLEAVED_COMPONENTS);
    c->MaxVertexStreams =
-      MAX2(1, screen->get_param(screen, PIPE_CAP_MAX_VERTEX_STREAMS));
+      _max(1, screen->get_param(screen, PIPE_CAP_MAX_VERTEX_STREAMS));
 
    /* The vertex stream must fit into pipe_stream_output_info::stream */
    assert(c->MaxVertexStreams <= 4);
@@ -474,7 +479,7 @@ void st_init_limits(struct pipe_screen *screen,
     * is only 16 bits.
     */
    temp = screen->get_param(screen, PIPE_CAP_MAX_VERTEX_ELEMENT_SRC_OFFSET);
-   c->MaxVertexAttribRelativeOffset = MIN2(0xffff, temp);
+   c->MaxVertexAttribRelativeOffset = _min(0xffff, temp);
 
    c->GLSLSkipStrictMaxUniformLimitCheck =
       screen->get_param(screen, PIPE_CAP_TGSI_CAN_COMPACT_CONSTANTS);
@@ -510,18 +515,18 @@ void st_init_limits(struct pipe_screen *screen,
       c->NumShaderBinaryFormats = 1;
 
    c->MaxAtomicBufferBindings =
-      MAX2(c->Program[MESA_SHADER_FRAGMENT].MaxAtomicBuffers,
+      _max(c->Program[MESA_SHADER_FRAGMENT].MaxAtomicBuffers,
            c->Program[MESA_SHADER_COMPUTE].MaxAtomicBuffers);
    c->MaxAtomicBufferSize = ATOMIC_COUNTER_SIZE *
-      MAX2(c->Program[MESA_SHADER_FRAGMENT].MaxAtomicCounters,
+      _max(c->Program[MESA_SHADER_FRAGMENT].MaxAtomicCounters,
            c->Program[MESA_SHADER_COMPUTE].MaxAtomicCounters);
 
    c->MaxCombinedAtomicBuffers =
-      MIN2(screen->get_param(screen,
+      _min(screen->get_param(screen,
                              PIPE_CAP_MAX_COMBINED_HW_ATOMIC_COUNTER_BUFFERS),
            MAX_COMBINED_ATOMIC_BUFFERS);
    if (!c->MaxCombinedAtomicBuffers) {
-      c->MaxCombinedAtomicBuffers = MAX2(
+      c->MaxCombinedAtomicBuffers = _max(
          c->Program[MESA_SHADER_VERTEX].MaxAtomicBuffers +
          c->Program[MESA_SHADER_TESS_CTRL].MaxAtomicBuffers +
          c->Program[MESA_SHADER_TESS_EVAL].MaxAtomicBuffers +
@@ -546,10 +551,10 @@ void st_init_limits(struct pipe_screen *screen,
       screen->get_param(screen, PIPE_CAP_SHADER_BUFFER_OFFSET_ALIGNMENT);
    if (c->ShaderStorageBufferOffsetAlignment) {
       c->MaxCombinedShaderStorageBlocks =
-         MIN2(screen->get_param(screen, PIPE_CAP_MAX_COMBINED_SHADER_BUFFERS),
+         _min(screen->get_param(screen, PIPE_CAP_MAX_COMBINED_SHADER_BUFFERS),
               MAX_COMBINED_SHADER_STORAGE_BUFFERS);
       if (!c->MaxCombinedShaderStorageBlocks) {
-         c->MaxCombinedShaderStorageBlocks = MAX2(
+         c->MaxCombinedShaderStorageBlocks = _max(
             c->Program[MESA_SHADER_VERTEX].MaxShaderStorageBlocks +
             c->Program[MESA_SHADER_TESS_CTRL].MaxShaderStorageBlocks +
             c->Program[MESA_SHADER_TESS_EVAL].MaxShaderStorageBlocks +
@@ -1710,7 +1715,7 @@ void st_init_extensions(struct pipe_screen *screen,
 
       for (i = 0; i < 3; i++) {
          /* There are tests that fail if we report more that INT_MAX - 1. */
-         consts->MaxComputeWorkGroupCount[i] = MIN2(grid_size[i], INT_MAX - 1);
+         consts->MaxComputeWorkGroupCount[i] = _min(grid_size[i], INT_MAX - 1);
          consts->MaxComputeWorkGroupSize[i] = block_size[i];
       }
 
@@ -1731,7 +1736,7 @@ void st_init_extensions(struct pipe_screen *screen,
                * greater than the maximum number of invocations.
                */
             consts->MaxComputeVariableGroupSize[i] =
-               MIN2(consts->MaxComputeWorkGroupSize[i],
+               _min(consts->MaxComputeWorkGroupSize[i],
                      max_variable_threads_per_block);
          }
          consts->MaxComputeVariableGroupInvocations =

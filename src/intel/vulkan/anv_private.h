@@ -2681,6 +2681,11 @@ anv_async_submit_done(struct anv_async_submit *submit);
 bool
 anv_async_submit_wait(struct anv_async_submit *submit);
 
+void
+anv_async_submit_set_signal(struct anv_async_submit *submit,
+                            struct vk_sync *sync,
+                            uint64_t value);
+
 struct anv_sparse_submission {
    struct anv_queue *queue;
 

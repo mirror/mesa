@@ -1789,6 +1789,20 @@ anv_async_submit_create(struct anv_queue *queue,
 }
 
 void
+anv_async_submit_set_signal(struct anv_async_submit *submit,
+                            struct vk_sync *sync,
+                            uint64_t value)
+{
+   /* Should not be set */
+   assert(submit->signal.sync == NULL);
+
+   submit->signal = (struct vk_sync_signal) {
+      .sync = sync,
+      .signal_value = value,
+   };
+}
+
+void
 anv_async_submit_destroy(struct anv_async_submit *submit)
 {
    struct anv_device *device = submit->queue->device;

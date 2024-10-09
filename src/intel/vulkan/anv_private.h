@@ -1412,6 +1412,67 @@ anv_device_upload_nir(struct anv_device *device,
 void
 anv_load_fp64_shader(struct anv_device *device);
 
+/** State tracking for vertex buffer flushes
+ *
+ * On Gfx8-9, the VF cache only considers the bottom 32 bits of memory
+ * addresses.  If you happen to have two vertex buffers which get placed
+ * exactly 4 GiB apart and use them in back-to-back draw calls, you can get
+ * collisions.  In order to solve this problem, we track vertex address ranges
+ * which are live in the cache and invalidate the cache if one ever exceeds 32
+ * bits.
+ */
+struct anv_vb_cache_range {
+   /* Virtual address at which the live vertex buffer cache range starts for
+    * this vertex buffer index.
+    */
+   uint64_t start;
+
+   /* Virtual address of the byte after where vertex buffer cache range ends.
+    * This is exclusive such that end - start is the size of the range.
+    */
+   uint64_t end;
+};
+
+static inline void
+anv_merge_vb_cache_range(struct anv_vb_cache_range *dirty,
+                         const struct anv_vb_cache_range *bound)
+{
+   if (dirty->start == dirty->end) {
+      *dirty = *bound;
+   } else if (bound->start != bound->end) {
+      dirty->start = MIN2(dirty->start, bound->start);
+      dirty->end = MAX2(dirty->end, bound->end);
+   }
+}
+
+/* Check whether we need to apply the Gfx8-9 vertex buffer workaround*/
+static inline bool
+anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
+                                           struct anv_vb_cache_range *dirty,
+                                           struct anv_address vb_address,
+                                           uint32_t vb_size)
+{
+   if (vb_size == 0) {
+      bound->start = 0;
+      bound->end = 0;
+      return false;
+   }
+
+   bound->start = intel_48b_address(anv_address_physical(vb_address));
+   bound->end = bound->start + vb_size;
+   assert(bound->end > bound->start); /* No overflow */
+
+   /* Align everything to a cache line */
+   bound->start &= ~(64ull - 1ull);
+   bound->end = align64(bound->end, 64);
+
+   anv_merge_vb_cache_range(dirty, bound);
+
+   /* If our range is larger than 32 bits, we have to flush */
+   assert(bound->end - bound->start <= (1ull << 32));
+   return (dirty->end - dirty->start) > (1ull << 32);
+}
+
 /**
  * This enum tracks the various HW instructions that hold graphics state
  * needing to be reprogrammed. Some instructions are grouped together as they
@@ -1795,6 +1856,51 @@ enum anv_internal_kernel_name {
 enum anv_rt_bvh_build_method {
    ANV_BVH_BUILD_METHOD_TRIVIAL,
    ANV_BVH_BUILD_METHOD_NEW_SAH,
+};
+
+/**
+ * State tracking for simple internal shaders
+ */
+struct anv_simple_shader {
+   /* The device associated with this emission */
+   struct anv_device *device;
+   /* The command buffer associated with this emission (can be NULL) */
+   struct anv_cmd_buffer *cmd_buffer;
+   /* State stream used for various internal allocations */
+   struct anv_state_stream *dynamic_state_stream;
+   struct anv_state_stream *general_state_stream;
+   /* Where to emit the commands (can be different from cmd_buffer->batch) */
+   struct anv_batch *batch;
+   /* Shader to use */
+   struct anv_shader_bin *kernel;
+   /* L3 config used by the shader */
+   const struct intel_l3_config *l3_config;
+   /* Current URB config */
+   const struct intel_urb_config *urb_cfg;
+
+   /* Managed by the simpler shader helper*/
+   struct anv_state bt_state;
+};
+
+/* Use to emit a series of memcpy operations */
+struct anv_memcpy_state {
+   struct anv_device *device;
+   struct anv_cmd_buffer *cmd_buffer;
+   struct anv_batch *batch;
+
+   union {
+      struct {
+         /* Configuration programmed by the memcpy operation */
+         struct intel_urb_config urb_cfg;
+
+         struct anv_vb_cache_range vb_bound;
+         struct anv_vb_cache_range vb_dirty;
+      } gfx;
+
+      struct {
+         struct anv_simple_shader simple_state;
+      } cs;
+   };
 };
 
 struct anv_device_astc_emu {
@@ -3680,91 +3786,6 @@ struct anv_attachment {
    VkResolveModeFlagBits resolve_mode;
    const struct anv_image_view *resolve_iview;
    VkImageLayout resolve_layout;
-};
-
-/** State tracking for vertex buffer flushes
- *
- * On Gfx8-9, the VF cache only considers the bottom 32 bits of memory
- * addresses.  If you happen to have two vertex buffers which get placed
- * exactly 4 GiB apart and use them in back-to-back draw calls, you can get
- * collisions.  In order to solve this problem, we track vertex address ranges
- * which are live in the cache and invalidate the cache if one ever exceeds 32
- * bits.
- */
-struct anv_vb_cache_range {
-   /* Virtual address at which the live vertex buffer cache range starts for
-    * this vertex buffer index.
-    */
-   uint64_t start;
-
-   /* Virtual address of the byte after where vertex buffer cache range ends.
-    * This is exclusive such that end - start is the size of the range.
-    */
-   uint64_t end;
-};
-
-static inline void
-anv_merge_vb_cache_range(struct anv_vb_cache_range *dirty,
-                         const struct anv_vb_cache_range *bound)
-{
-   if (dirty->start == dirty->end) {
-      *dirty = *bound;
-   } else if (bound->start != bound->end) {
-      dirty->start = MIN2(dirty->start, bound->start);
-      dirty->end = MAX2(dirty->end, bound->end);
-   }
-}
-
-/* Check whether we need to apply the Gfx8-9 vertex buffer workaround*/
-static inline bool
-anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
-                                           struct anv_vb_cache_range *dirty,
-                                           struct anv_address vb_address,
-                                           uint32_t vb_size)
-{
-   if (vb_size == 0) {
-      bound->start = 0;
-      bound->end = 0;
-      return false;
-   }
-
-   bound->start = intel_48b_address(anv_address_physical(vb_address));
-   bound->end = bound->start + vb_size;
-   assert(bound->end > bound->start); /* No overflow */
-
-   /* Align everything to a cache line */
-   bound->start &= ~(64ull - 1ull);
-   bound->end = align64(bound->end, 64);
-
-   anv_merge_vb_cache_range(dirty, bound);
-
-   /* If our range is larger than 32 bits, we have to flush */
-   assert(bound->end - bound->start <= (1ull << 32));
-   return (dirty->end - dirty->start) > (1ull << 32);
-}
-
-/**
- * State tracking for simple internal shaders
- */
-struct anv_simple_shader {
-   /* The device associated with this emission */
-   struct anv_device *device;
-   /* The command buffer associated with this emission (can be NULL) */
-   struct anv_cmd_buffer *cmd_buffer;
-   /* State stream used for various internal allocations */
-   struct anv_state_stream *dynamic_state_stream;
-   struct anv_state_stream *general_state_stream;
-   /* Where to emit the commands (can be different from cmd_buffer->batch) */
-   struct anv_batch *batch;
-   /* Shader to use */
-   struct anv_shader_bin *kernel;
-   /* L3 config used by the shader */
-   const struct intel_l3_config *l3_config;
-   /* Current URB config */
-   const struct intel_urb_config *urb_cfg;
-
-   /* Managed by the simpler shader helper*/
-   struct anv_state bt_state;
 };
 
 /** State tracking for particular pipeline bind point
@@ -6240,19 +6261,6 @@ void anv_apply_per_prim_attr_wa(struct nir_shader *ms_nir,
                                 struct anv_device *device,
                                 const VkGraphicsPipelineCreateInfo *info);
 
-/* Use to emit a series of memcpy operations */
-struct anv_memcpy_state {
-   struct anv_device *device;
-   struct anv_cmd_buffer *cmd_buffer;
-   struct anv_batch *batch;
-
-   /* Configuration programmed by the memcpy operation */
-   struct intel_urb_config urb_cfg;
-
-   struct anv_vb_cache_range vb_bound;
-   struct anv_vb_cache_range vb_dirty;
-};
-
 VkResult anv_device_init_internal_kernels(struct anv_device *device);
 void anv_device_finish_internal_kernels(struct anv_device *device);
 VkResult anv_device_get_internal_shader(struct anv_device *device,
@@ -6277,11 +6285,11 @@ anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
                                     struct anv_async_submit **out_submit);
 
 void
-anv_device_utrace_emit_gfx_copy_buffer(struct u_trace_context *utctx,
-                                       void *cmdstream,
-                                       void *ts_from, uint64_t from_offset_B,
-                                       void *ts_to, uint64_t to_offset_B,
-                                       uint64_t size_B);
+anv_device_utrace_emit_copy_buffer(struct u_trace_context *utctx,
+                                   void *cmdstream,
+                                   void *ts_from, uint64_t from_offset_B,
+                                   void *ts_to, uint64_t to_offset_B,
+                                   uint64_t size_B);
 
 static bool
 anv_has_cooperative_matrix(const struct anv_physical_device *device)

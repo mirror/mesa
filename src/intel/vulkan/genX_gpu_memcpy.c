@@ -22,9 +22,11 @@
  */
 
 #include "anv_private.h"
+#include "anv_internal_kernels.h"
 
 #include "genxml/gen_macros.h"
 #include "genxml/genX_pack.h"
+#include "genxml/genX_bits.h"
 
 #include "common/intel_l3_config.h"
 
@@ -122,10 +124,10 @@ emit_common_so_memcpy(struct anv_memcpy_state *state,
     * store the data that VF is going to pass to SOL.
     */
    const unsigned entry_size[4] = { DIV_ROUND_UP(32, 64), 1, 1, 1 };
-   memcpy(state->urb_cfg.size, &entry_size, sizeof(entry_size));
+   memcpy(state->gfx.urb_cfg.size, &entry_size, sizeof(entry_size));
 
    genX(emit_urb_setup)(device, batch, l3_config,
-                        VK_SHADER_STAGE_VERTEX_BIT, urb_cfg_in, &state->urb_cfg,
+                        VK_SHADER_STAGE_VERTEX_BIT, urb_cfg_in, &state->gfx.urb_cfg,
                         NULL);
 
 #if GFX_VER >= 12
@@ -149,6 +151,17 @@ emit_so_memcpy(struct anv_memcpy_state *state,
 {
    struct anv_batch *batch = state->batch;
    struct anv_device *device = state->device;
+
+   if (GFX_VER == 9 &&
+       anv_gfx8_9_vb_cache_range_needs_workaround(&state->gfx.vb_bound,
+                                                  &state->gfx.vb_dirty,
+                                                  src, size)) {
+      genX(emit_apply_pipe_flushes)(state->batch, state->device, _3D,
+                                    ANV_PIPE_CS_STALL_BIT |
+                                    ANV_PIPE_VF_CACHE_INVALIDATE_BIT,
+                                    NULL);
+      memset(&state->gfx.vb_dirty, 0, sizeof(state->gfx.vb_dirty));
+   }
 
    /* The maximum copy block size is 4 32-bit components at a time. */
    assert(size % 4 == 0);
@@ -270,10 +283,12 @@ emit_so_memcpy(struct anv_memcpy_state *state,
 }
 
 void
-genX(emit_so_memcpy_init)(struct anv_memcpy_state *state,
-                          struct anv_device *device,
-                          struct anv_cmd_buffer *cmd_buffer,
-                          struct anv_batch *batch)
+genX(emit_memcpy_init)(struct anv_memcpy_state *state,
+                       struct anv_device *device,
+                       struct anv_cmd_buffer *cmd_buffer,
+                       struct anv_batch *batch,
+                       struct anv_state_stream *dynamic_stream,
+                       struct anv_state_stream *general_stream)
 {
    memset(state, 0, sizeof(*state));
 
@@ -281,83 +296,145 @@ genX(emit_so_memcpy_init)(struct anv_memcpy_state *state,
    state->batch = batch;
    state->device = device;
 
-   if (state->cmd_buffer) {
-      if (!cmd_buffer->state.current_l3_config) {
-         genX(cmd_buffer_config_l3)(cmd_buffer,
-                                    intel_get_default_l3_config(device->info));
-      }
-      emit_common_so_memcpy(state,
-                            &state->cmd_buffer->state.gfx.urb_cfg,
-                            cmd_buffer->state.current_l3_config);
-   } else {
-      const struct intel_l3_config *cfg = intel_get_default_l3_config(device->info);
-      genX(emit_l3_config)(batch, device, cfg);
-      genX(emit_pipeline_select)(batch, _3D, device);
+   switch (state->batch->engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      if (state->cmd_buffer) {
+         if (!cmd_buffer->state.current_l3_config) {
+            genX(cmd_buffer_config_l3)(cmd_buffer,
+                                       intel_get_default_l3_config(device->info));
+         }
+         emit_common_so_memcpy(state,
+                               &state->cmd_buffer->state.gfx.urb_cfg,
+                               cmd_buffer->state.current_l3_config);
+      } else {
+         const struct intel_l3_config *cfg = intel_get_default_l3_config(device->info);
+         genX(emit_l3_config)(batch, device, cfg);
+         genX(emit_pipeline_select)(batch, _3D, device);
 
-      /* Dummy URB config, will trigger URB reemission */
-      struct intel_urb_config urb_cfg_in = { 0 };
-      emit_common_so_memcpy(state, &urb_cfg_in, cfg);
+         /* Dummy URB config, will trigger URB reemission */
+         struct intel_urb_config urb_cfg_in = { 0 };
+         emit_common_so_memcpy(state, &urb_cfg_in, cfg);
+      }
+      break;
+
+   case INTEL_ENGINE_CLASS_COMPUTE: {
+      struct anv_shader_bin *copy_kernel;
+      VkResult ret =
+         anv_device_get_internal_shader(device,
+                                        ANV_INTERNAL_KERNEL_MEMCPY_COMPUTE,
+                                        &copy_kernel);
+      if (ret != VK_SUCCESS) {
+         anv_batch_set_error(batch, ret);
+         return;
+      }
+
+      state->cs.simple_state = (struct anv_simple_shader) {
+         .device               = device,
+         .dynamic_state_stream = dynamic_stream,
+         .general_state_stream = general_stream,
+         .batch                = batch,
+         .kernel               = copy_kernel,
+         .l3_config            = device->internal_kernels_l3_config,
+      };
+      genX(emit_simple_shader_init)(&state->cs.simple_state);
+      break;
+   }
+
+   case INTEL_ENGINE_CLASS_COPY:
+      /* Nothing to do */
+      break;
+
+   default:
+      unreachable("Unsupported engine class");
    }
 }
 
 void
-genX(emit_so_memcpy_fini)(struct anv_memcpy_state *state)
+genX(emit_memcpy_fini)(struct anv_memcpy_state *state)
 {
-   genX(emit_apply_pipe_flushes)(state->batch, state->device, _3D,
-                                 ANV_PIPE_END_OF_PIPE_SYNC_BIT,
-                                 NULL);
+   switch (state->batch->engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      genX(emit_apply_pipe_flushes)(state->batch, state->device, _3D,
+                                    ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                                    NULL);
 
-   if (state->cmd_buffer) {
-      /* Flag all the instructions emitted by the memcpy. */
-      struct anv_gfx_dynamic_state *hw_state =
-         &state->cmd_buffer->state.gfx.dyn_state;
+      if (state->cmd_buffer) {
+         /* Flag all the instructions emitted by the memcpy. */
+         struct anv_gfx_dynamic_state *hw_state =
+            &state->cmd_buffer->state.gfx.dyn_state;
 
 #if INTEL_WA_14018283232_GFX_VER
-      genX(cmd_buffer_ensure_wa_14018283232)(state->cmd_buffer, false);
+         genX(cmd_buffer_ensure_wa_14018283232)(state->cmd_buffer, false);
 #endif
 
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_URB);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_STATISTICS);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_TOPOLOGY);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VERTEX_INPUT);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_SGVS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_URB);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_STATISTICS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_TOPOLOGY);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VERTEX_INPUT);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_SGVS);
 #if GFX_VER >= 11
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_SGVS_2);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VF_SGVS_2);
 #endif
 #if GFX_VER >= 12
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_PRIMITIVE_REPLICATION);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_PRIMITIVE_REPLICATION);
 #endif
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SO_DECL_LIST);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_STREAMOUT);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SAMPLE_MASK);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_MULTISAMPLE);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SF);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SBE);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VS);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_HS);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_DS);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_TE);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_GS);
-      BITSET_SET(hw_state->dirty, ANV_GFX_STATE_PS);
-      if (state->cmd_buffer->device->vk.enabled_extensions.EXT_mesh_shader) {
-         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL);
-         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_TASK_CONTROL);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SO_DECL_LIST);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_STREAMOUT);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SAMPLE_MASK);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_MULTISAMPLE);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SF);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_SBE);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_VS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_HS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_DS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_TE);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_GS);
+         BITSET_SET(hw_state->dirty, ANV_GFX_STATE_PS);
+         if (state->cmd_buffer->device->vk.enabled_extensions.EXT_mesh_shader) {
+            BITSET_SET(hw_state->dirty, ANV_GFX_STATE_MESH_CONTROL);
+            BITSET_SET(hw_state->dirty, ANV_GFX_STATE_TASK_CONTROL);
+         }
+
+         state->cmd_buffer->state.gfx.dirty |= ~(ANV_CMD_DIRTY_PIPELINE |
+                                                 ANV_CMD_DIRTY_INDEX_BUFFER);
+
+         memcpy(&state->cmd_buffer->state.gfx.urb_cfg, &state->gfx.urb_cfg,
+                sizeof(struct intel_urb_config));
       }
+      break;
 
-      state->cmd_buffer->state.gfx.dirty |= ~(ANV_CMD_DIRTY_PIPELINE |
-                                              ANV_CMD_DIRTY_INDEX_BUFFER);
+   case INTEL_ENGINE_CLASS_COMPUTE:
+      genX(emit_apply_pipe_flushes)(state->batch, state->device, GPGPU,
+                                    ANV_PIPE_END_OF_PIPE_SYNC_BIT,
+                                    NULL);
+      break;
 
-      memcpy(&state->cmd_buffer->state.gfx.urb_cfg, &state->urb_cfg,
-             sizeof(struct intel_urb_config));
+   case INTEL_ENGINE_CLASS_COPY:
+      /* TODO: MI_FLUSH_DW? */
+      break;
+
+   default:
+      unreachable("Unsupported engine class");
    }
 }
 
 void
-genX(emit_so_memcpy_end)(struct anv_memcpy_state *state)
+genX(emit_memcpy_end)(struct anv_memcpy_state *state)
 {
-   if (intel_needs_workaround(state->device->info, 16013994831))
-      genX(batch_set_preemption)(state->batch, state->device->info, _3D, true);
+   switch (state->batch->engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      if (intel_needs_workaround(state->device->info, 16013994831))
+         genX(batch_set_preemption)(state->batch, state->device->info, _3D, true);
+      break;
+
+   case INTEL_ENGINE_CLASS_COMPUTE:
+   case INTEL_ENGINE_CLASS_COPY:
+      break;
+
+   default:
+      unreachable("Unsupported engine class");
+   }
 
    anv_batch_emit(state->batch, GENX(MI_BATCH_BUFFER_END), end);
 
@@ -366,37 +443,75 @@ genX(emit_so_memcpy_end)(struct anv_memcpy_state *state)
 }
 
 void
-genX(emit_so_memcpy)(struct anv_memcpy_state *state,
-                     struct anv_address dst, struct anv_address src,
-                     uint32_t size)
+genX(emit_memcpy)(struct anv_memcpy_state *state,
+                  struct anv_address dst, struct anv_address src,
+                  uint32_t size)
 {
-   if (GFX_VER == 9 &&
-       anv_gfx8_9_vb_cache_range_needs_workaround(&state->vb_bound,
-                                                  &state->vb_dirty,
-                                                  src, size)) {
-      genX(emit_apply_pipe_flushes)(state->batch, state->device, _3D,
-                                    ANV_PIPE_CS_STALL_BIT |
-                                    ANV_PIPE_VF_CACHE_INVALIDATE_BIT,
-                                    NULL);
-      memset(&state->vb_dirty, 0, sizeof(state->vb_dirty));
+   switch (state->batch->engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      emit_so_memcpy(state, dst, src, size);
+      break;
+
+   case INTEL_ENGINE_CLASS_COMPUTE: {
+      struct anv_state push_data_state =
+         genX(simple_shader_alloc_push)(
+            &state->cs.simple_state, sizeof(struct anv_memcpy_params));
+      struct anv_memcpy_params *params = push_data_state.map;
+
+      *params = (struct anv_memcpy_params) {
+         .num_dwords = size / 4,
+         .src_addr   = anv_address_physical(src),
+         .dst_addr   = anv_address_physical(dst),
+      };
+
+      genX(emit_simple_shader_dispatch)(
+         &state->cs.simple_state, DIV_ROUND_UP(params->num_dwords, 4),
+         push_data_state);
+      break;
    }
 
-   emit_so_memcpy(state, dst, src, size);
-}
+#if GFX_VERx10 >= 125
+   case INTEL_ENGINE_CLASS_COPY: {
+      const uint32_t max_length =
+         MIN2(1 << GENX(XY_BLOCK_COPY_BLT_DestinationSurfaceWidth_bits),
+              1 << GENX(XY_BLOCK_COPY_BLT_DestinationX2_bits));
+      for (uint32_t offset = 0; offset < size; offset += max_length) {
+         uint32_t copy_size = MIN2(offset - size, max_length);
 
-void
-genX(cmd_buffer_so_memcpy)(struct anv_cmd_buffer *cmd_buffer,
-                           struct anv_address dst, struct anv_address src,
-                           uint32_t size)
-{
-   if (size == 0)
-      return;
+         anv_batch_emit(state->batch, GENX(XY_BLOCK_COPY_BLT), blt) {
+            blt.DestinationX1 = 0;
+            blt.DestinationY1 = 0;
+            blt.DestinationX2 = copy_size;
+            blt.DestinationY2 = 1;
 
-   struct anv_memcpy_state state;
-   genX(emit_so_memcpy_init)(&state,
-                             cmd_buffer->device,
-                             cmd_buffer,
-                             &cmd_buffer->batch);
-   emit_so_memcpy(&state, dst, src, size);
-   genX(emit_so_memcpy_fini)(&state);
+            blt.DestinationMOCS = state->device->isl_dev.mocs.blitter_dst;
+            blt.DestinationTiling = XY_TILE_LINEAR;
+            blt.DestinationBaseAddress = anv_address_add(dst, offset);
+            blt.DestinationSurfaceType = XY_SURFTYPE_1D;
+            blt.DestinationSurfaceWidth = copy_size - 1;
+            blt.DestinationSurfaceHeight = 1 - 1;
+            blt.DestinationSurfaceDepth = 1 - 1;
+            blt.DestinationTargetMemory =
+               (dst.bo->flags & ANV_BO_ALLOC_NO_LOCAL_MEM) ?
+               XY_MEM_SYSTEM : XY_MEM_LOCAL;
+
+            blt.SourceMOCS = state->device->isl_dev.mocs.blitter_src;
+            blt.SourceTiling = XY_TILE_LINEAR;
+            blt.SourceBaseAddress = anv_address_add(src, offset);
+            blt.SourceSurfaceType = XY_SURFTYPE_1D;
+            blt.SourceSurfaceWidth = copy_size - 1;
+            blt.SourceSurfaceHeight = 1 - 1;
+            blt.SourceSurfaceDepth = 1 - 1;
+            blt.SourceTargetMemory =
+               (src.bo->flags & ANV_BO_ALLOC_NO_LOCAL_MEM) ?
+               XY_MEM_LOCAL : XY_MEM_SYSTEM;
+         }
+      }
+      break;
+   }
+#endif
+
+   default:
+      unreachable("Unsupported engine class");
+   }
 }

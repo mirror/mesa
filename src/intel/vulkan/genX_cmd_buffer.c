@@ -3532,8 +3532,10 @@ genX(CmdExecuteCommands)(
 
       /* The memcpy will take care of the 3D preemption requirements. */
       struct anv_memcpy_state memcpy_state;
-      genX(emit_so_memcpy_init)(&memcpy_state, device,
-                                container, &container->batch);
+      genX(emit_memcpy_init)(&memcpy_state, device,
+                             container, &container->batch,
+                             &container->dynamic_state_stream,
+                             &container->general_state_stream);
 
       for (uint32_t i = 0; i < commandBufferCount; i++) {
          ANV_FROM_HANDLE(anv_cmd_buffer, secondary, pCmdBuffers[i]);
@@ -3551,7 +3553,7 @@ genX(CmdExecuteCommands)(
             struct anv_state dst_state = secondary->state.gfx.att_states;
             assert(src_state.alloc_size == dst_state.alloc_size);
 
-            genX(emit_so_memcpy)(
+            genX(emit_memcpy)(
                &memcpy_state,
                anv_state_pool_state_address(&device->internal_surface_state_pool,
                                             dst_state),
@@ -3560,7 +3562,7 @@ genX(CmdExecuteCommands)(
                src_state.alloc_size);
          }
       }
-      genX(emit_so_memcpy_fini)(&memcpy_state);
+      genX(emit_memcpy_fini)(&memcpy_state);
 
       anv_add_pending_pipe_bits(container,
                                 ANV_PIPE_CS_STALL_BIT | ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
@@ -3690,8 +3692,10 @@ genX(CmdExecuteCommands)(
       trace_intel_begin_trace_copy(&container->trace);
 
       struct anv_memcpy_state memcpy_state;
-      genX(emit_so_memcpy_init)(&memcpy_state, device,
-                                container, &container->batch);
+      genX(emit_memcpy_init)(&memcpy_state, device,
+                             container, &container->batch,
+                             &container->dynamic_state_stream,
+                             &container->general_state_stream);
       uint32_t num_traces = 0;
       for (uint32_t i = 0; i < commandBufferCount; i++) {
          ANV_FROM_HANDLE(anv_cmd_buffer, secondary, pCmdBuffers[i]);
@@ -3701,9 +3705,9 @@ genX(CmdExecuteCommands)(
                               u_trace_end_iterator(&secondary->trace),
                               &container->trace,
                               &memcpy_state,
-                              anv_device_utrace_emit_gfx_copy_buffer);
+                              anv_device_utrace_emit_copy_buffer);
       }
-      genX(emit_so_memcpy_fini)(&memcpy_state);
+      genX(emit_memcpy_fini)(&memcpy_state);
 
       trace_intel_end_trace_copy(&container->trace, num_traces);
 

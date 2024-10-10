@@ -350,6 +350,22 @@ fn enqueue_ndrange_kernel(
     // CL_INVALID_WORK_DIMENSION if work_dim is not a valid value (i.e. a value between 1 and
     // CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS).
 
+    let global_work_offset_dim = if global_work_offset.is_null() {
+        0
+    } else {
+        work_dim
+    };
+    let global_work_size_dim = if global_work_size.is_null() {
+        0
+    } else {
+        work_dim
+    };
+    let local_work_size_dim = if local_work_size.is_null() {
+        0
+    } else {
+        work_dim
+    };
+
     // we assume the application gets it right and doesn't pass shorter arrays then actually needed.
     let global_work_size = unsafe { kernel_work_arr_or_default(global_work_size, work_dim) };
     let local_work_size = unsafe { kernel_work_arr_or_default(local_work_size, work_dim) };
@@ -400,12 +416,15 @@ fn enqueue_ndrange_kernel(
         &mut ev_handle
     };
 
-    Vcl::get().call_clEnqueueNDRangeKernel(
+    Vcl::get().call_clEnqueueNDRangeKernelMESA(
         queue.get_handle(),
         kernel.get_handle(),
         work_dim,
+        global_work_offset_dim,
         global_work_offset.as_ptr(),
+        global_work_size_dim,
         global_work_size.as_ptr(),
+        local_work_size_dim,
         local_work_size.as_ptr(),
         num_events_in_wait_list,
         event_wait_list,

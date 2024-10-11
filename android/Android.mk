@@ -96,6 +96,13 @@ MESON_LLVM_VERSION := $(LLVM_VERSION_MAJOR).0.0
 LOCAL_SHARED_LIBRARIES += libLLVM$(LLVM_VERSION_MAJOR)
 endif
 
+ifneq ($(strip $(BOARD_MESA3D_GALLIUM_VA)),)
+LIBVA_MAJOR_VERSION = $(shell cat external/libva/meson.build | grep -o 'va_api_major_version = [0-9]\+' | grep -o '[0-9]*')
+LIBVA_MINOR_VERSION = $(shell cat external/libva/meson.build | grep -o 'va_api_minor_version = [0-9]\+' | grep -o '[0-9]*')
+LOCAL_SHARED_LIBRARIES += libva
+MESON_GEN_PKGCONFIGS += libva:$(LIBVA_MAJOR_VERSION).$(LIBVA_MINOR_VERSION)
+endif
+
 ifeq ($(shell test $(PLATFORM_SDK_VERSION) -ge 30; echo $$?), 0)
 LOCAL_SHARED_LIBRARIES += \
     android.hardware.graphics.mapper@4.0 \
@@ -132,6 +139,7 @@ endif
 # $2: subdir
 # $3: source prebuilt
 # $4: export headers
+# $5: depend libs
 define mesa3d-lib
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
@@ -142,9 +150,9 @@ LOCAL_PREBUILT_MODULE_FILE := $($3)
 LOCAL_MULTILIB := first
 LOCAL_CHECK_ELF_FILES := false
 LOCAL_MODULE_SUFFIX := .so
-LOCAL_SHARED_LIBRARIES := $(__MY_SHARED_LIBRARIES)
 LOCAL_EXPORT_C_INCLUDE_DIRS := $4
-include $(BUILD_PREBUILT)
+LOCAL_SHARED_LIBRARIES := $(__MY_SHARED_LIBRARIES) $5
+include $(BUILD_SHARED_LIBRARY)
 
 ifdef TARGET_2ND_ARCH
 include $(CLEAR_VARS)
@@ -156,9 +164,9 @@ LOCAL_PREBUILT_MODULE_FILE := $(2ND_$3)
 LOCAL_MULTILIB := 32
 LOCAL_CHECK_ELF_FILES := false
 LOCAL_MODULE_SUFFIX := .so
-LOCAL_SHARED_LIBRARIES := $(__MY_SHARED_LIBRARIES)
 LOCAL_EXPORT_C_INCLUDE_DIRS := $4
-include $(BUILD_PREBUILT)
+LOCAL_SHARED_LIBRARIES := $(__MY_SHARED_LIBRARIES) $5
+include $(BUILD_SHARED_LIBRARY)
 endif
 endef
 
@@ -168,7 +176,11 @@ ifneq ($(strip $(BOARD_MESA3D_GALLIUM_DRIVERS)),)
 $(eval $(call mesa3d-lib,libgallium_dri,,MESA3D_GALLIUM_BIN))
 # Module 'libglapi', produces '/vendor/lib{64}/libglapi.so'
 $(eval $(call mesa3d-lib,libglapi,,MESA3D_LIBGLAPI_BIN))
-
+# Module 'libgallium_dri', produces '/vendor/lib{64}/dri/{driver_name}_drv_video.so'
+ifneq ($(strip $(BOARD_MESA3D_GALLIUM_VA)),)
+$(foreach driver,$(BOARD_MESA3D_GALLIUM_DRIVERS), \
+    $(eval $(call mesa3d-lib,$(subst virgl,virtio_gpu,$(driver))_drv_video,dri,,,libgallium_dri)))
+endif
 # Module 'libEGL_mesa', produces '/vendor/lib{64}/egl/libEGL_mesa.so'
 $(eval $(call mesa3d-lib,libEGL_mesa,egl,MESA3D_LIBEGL_BIN))
 # Module 'libGLESv1_CM_mesa', produces '/vendor/lib{64}/egl/libGLESv1_CM_mesa.so'

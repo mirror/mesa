@@ -114,7 +114,6 @@ debian-testing:
     EXTRA_OPTION: >
       -D spirv-to-dxil=true
       -D valgrind=disabled
-      -D perfetto=true
       -D tools=drm-shim
     S3_ARTIFACT_NAME: mesa-x86_64-default-${BUILDTYPE}
     LLVM_VERSION: 15
@@ -539,7 +538,6 @@ debian-arm64:
     EXTRA_OPTION: >
       -D valgrind=disabled
       -D imagination-srv=true
-      -D perfetto=true
       -D freedreno-kmds=msm,virtio
       -D teflon=true
     GALLIUM_ST:
@@ -661,6 +659,7 @@ debian-clang:
     EXTRA_OPTION:
       -D spirv-to-dxil=true
       -D osmesa=true
+      -D perfetto=true
       -D imagination-srv=true
       -D tools=drm-shim,etnaviv,freedreno,glsl,intel,intel-ui,nir,nouveau,lima,panfrost,asahi,imagination
       -D vulkan-layers=device-select,overlay

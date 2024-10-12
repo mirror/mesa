@@ -95,6 +95,10 @@ debian-testing:
     - .ci-deqp-artifacts
   stage: build-for-tests
   variables:
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
     UNWIND: "enabled"
     DRI_LOADERS: >
       -D glx=dri
@@ -262,6 +266,12 @@ debian-release:
     LLVM_VERSION: 15
     UNWIND: "enabled"
     C_ARGS: >
+      -Wno-error=stringop-overread
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
       -Wno-error=stringop-overread
     DRI_LOADERS: >
       -D glx=dri
@@ -524,6 +534,12 @@ debian-arm64:
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
     VULKAN_DRIVERS: "asahi,freedreno,broadcom,panfrost,imagination-experimental"
     DRI_LOADERS:
       -D glvnd=disabled
@@ -601,6 +617,12 @@ debian-no-libdrm:
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
+      -Wno-error=stringop-overread
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
       -Wno-error=stringop-overread
     EXTRA_OPTION: >
       -D freedreno-kmds=kgsl

@@ -150,6 +150,8 @@ debian-testing-asan:
       -D platforms=
       -D intel-clc=enabled
       -D install-intel-clc=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-testing-msan:
   # https://github.com/google/sanitizers/wiki/MemorySanitizerLibcxxHowTo
@@ -184,6 +186,8 @@ debian-testing-msan:
       -D platforms=
       -D intel-clc=enabled
       -D install-intel-clc=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-build-testing:
   extends: .meson-build
@@ -729,6 +733,8 @@ debian-vulkan:
       -D build-aco-tests=true
       -D intel-rt=disabled
       -D imagination-srv=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-x86_32:
   extends:

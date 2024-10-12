@@ -615,14 +615,23 @@ brw_emit_repclear_shader(fs_visitor &s)
    const fs_builder bld = fs_builder(&s).at_end();
    bld.exec_all().group(4, 0).MOV(color_output, color_input);
 
-   if (key->nr_color_regions > 1) {
+   /* Most callers don't bother to set the color_outputs_valid field, so
+    * sanitize it.
+    */
+   uint32_t color_outputs_valid = key->color_outputs_valid != 0 ?
+      key->color_outputs_valid : ((1u << key->nr_color_regions) - 1);
+
+   if (util_bitcount(color_outputs_valid) > 1) {
       /* Copy g0..g1 as the message header */
       bld.exec_all().group(16, 0)
          .MOV(header, retype(brw_vec8_grf(0, 0), BRW_TYPE_UD));
    }
 
-   for (int i = 0; i < key->nr_color_regions; ++i) {
-      if (i > 0)
+   for (int i = 0, idx = 0; i < key->nr_color_regions; ++i) {
+      if ((BITFIELD_BIT(i) & color_outputs_valid) == 0)
+         continue;
+
+      if (idx > 0)
          bld.exec_all().group(1, 0).MOV(component(header, 2), brw_imm_ud(i));
 
       write = bld.emit(SHADER_OPCODE_SEND);
@@ -630,16 +639,18 @@ brw_emit_repclear_shader(fs_visitor &s)
       write->sfid = GFX6_SFID_DATAPORT_RENDER_CACHE;
       write->src[0] = brw_imm_ud(0);
       write->src[1] = brw_imm_ud(0);
-      write->src[2] = i == 0 ? color_output : header;
+      write->src[2] = idx == 0 ? color_output : header;
       write->check_tdr = true;
       write->send_has_side_effects = true;
       write->desc = brw_fb_write_desc(s.devinfo, i,
          BRW_DATAPORT_RENDER_TARGET_WRITE_SIMD16_SINGLE_SOURCE_REPLICATED,
-         i == key->nr_color_regions - 1, false);
+         idx == (int)util_bitcount(color_outputs_valid) - 1, false);
 
       /* We can use a headerless message for the first render target */
-      write->header_size = i == 0 ? 0 : 2;
+      write->header_size = idx == 0 ? 0 : 2;
       write->mlen = 1 + write->header_size;
+
+      idx++;
    }
    write->eot = true;
    write->last_rt = true;

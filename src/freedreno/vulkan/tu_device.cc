@@ -270,8 +270,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_external_memory_dma_buf = true,
       .EXT_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
       .EXT_fragment_density_map = true,
-      .EXT_global_priority = true,
-      .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = true,
       .EXT_host_image_copy = true,
       .EXT_host_query_reset = true,
@@ -638,7 +636,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->fragmentDensityMapDynamic = false;
    features->fragmentDensityMapNonSubsampledImages = true;
 
-   /* VK_EXT_global_priority_query */
+   /* VK_KHR_global_priority */
    features->globalPriorityQuery = true;
 
    /* VK_EXT_graphics_pipeline_library */

@@ -681,8 +681,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_external_memory_dma_buf = true,
       .EXT_external_memory_host = pdev->info.has_userptr,
       .EXT_fragment_shader_interlock = radv_has_pops(pdev),
-      .EXT_global_priority = true,
-      .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = !pdev->use_llvm && !(instance->debug_flags & RADV_DEBUG_NO_GPL),
       .EXT_host_query_reset = true,
       .EXT_image_2d_view_of_3d = true,
@@ -1051,7 +1049,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdev, struc
       .extendedDynamicState2LogicOp = true,
       .extendedDynamicState2PatchControlPoints = true,
 
-      /* VK_EXT_global_priority_query */
+      /* VK_KHR_global_priority */
       .globalPriorityQuery = true,
 
       /* VK_KHR_acceleration_structure */

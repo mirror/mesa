@@ -222,6 +222,8 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_external_semaphore_fd             = true,
       .KHR_format_feature_flags2             = true,
       .KHR_get_memory_requirements2          = true,
+      .KHR_global_priority                   = device->max_context_priority >=
+                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
       .KHR_image_format_list                 = true,
       .KHR_imageless_framebuffer             = true,
 #ifdef ANV_USE_WSI_PLATFORM
@@ -295,10 +297,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_extended_dynamic_state2           = true,
       .EXT_external_memory_dma_buf           = true,
       .EXT_external_memory_host              = true,
-      .EXT_global_priority                   = device->max_context_priority >=
-                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
-      .EXT_global_priority_query             = device->max_context_priority >=
-                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
       .EXT_host_query_reset                  = true,
       .EXT_image_2d_view_of_3d               = true,
       .EXT_image_robustness                  = true,

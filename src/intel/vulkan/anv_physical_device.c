@@ -276,10 +276,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_external_memory_dma_buf           = true,
       .EXT_external_memory_host              = true,
       .EXT_fragment_shader_interlock         = true,
-      .EXT_global_priority                   = device->max_context_priority >=
-                                               VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
-      .EXT_global_priority_query             = device->max_context_priority >=
-                                               VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
       .EXT_graphics_pipeline_library         = !debug_get_bool_option("ANV_NO_GPL", false),
       .EXT_host_image_copy                   = !device->emu_astc_ldr,
       .EXT_host_query_reset                  = true,
@@ -580,7 +576,7 @@ get_features(const struct anv_physical_device *pdevice,
       .fragmentShaderPixelInterlock = true,
       .fragmentShaderShadingRateInterlock = false,
 
-      /* VK_EXT_global_priority_query */
+      /* VK_KHR_global_priority */
       .globalPriorityQuery = true,
 
       /* VK_EXT_graphics_pipeline_library */

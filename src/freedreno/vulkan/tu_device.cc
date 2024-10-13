@@ -316,7 +316,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_texel_buffer_alignment = true,
       .EXT_tooling_info = true,
       .EXT_transform_feedback = true,
-      .EXT_vertex_attribute_divisor = true,
       .EXT_vertex_input_dynamic_state = true,
 
       /* For Graphics Flight Recorder (GFR) */

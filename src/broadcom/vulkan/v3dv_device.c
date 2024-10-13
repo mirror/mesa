@@ -235,7 +235,6 @@ get_device_extensions(const struct v3dv_physical_device *device,
 #endif
       .EXT_texel_buffer_alignment           = true,
       .EXT_tooling_info                     = true,
-      .EXT_vertex_attribute_divisor         = true,
    };
 #if DETECT_OS_ANDROID
    if (vk_android_get_ugralloc() != NULL) {

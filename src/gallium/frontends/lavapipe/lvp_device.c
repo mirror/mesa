@@ -262,7 +262,6 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
 #endif
    .EXT_texel_buffer_alignment            = true,
    .EXT_transform_feedback                = true,
-   .EXT_vertex_attribute_divisor          = true,
    .EXT_vertex_input_dynamic_state        = true,
    .EXT_ycbcr_image_arrays                = true,
    .EXT_ycbcr_2plane_444_formats          = true,

@@ -334,7 +334,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_texel_buffer_alignment            = true,
       .EXT_tooling_info                      = true,
       .EXT_transform_feedback                = true,
-      .EXT_vertex_attribute_divisor          = true,
       .EXT_ycbcr_image_arrays                = true,
 #if DETECT_OS_ANDROID
       .ANDROID_external_memory_android_hardware_buffer = true,
@@ -617,7 +616,7 @@ get_features(const struct anv_physical_device *pdevice,
       .transformFeedback = true,
       .geometryStreams = true,
 
-      /* VK_EXT_vertex_attribute_divisor */
+      /* VK_KHR_vertex_attribute_divisor */
       .vertexAttributeInstanceRateDivisor = true,
       .vertexAttributeInstanceRateZeroDivisor = true,
 

@@ -90,7 +90,18 @@ vk_common_EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
    VK_OUTARRAY_MAKE_TYPED(VkExtensionProperties, out, pProperties, pPropertyCount);
 
    for (int i = 0; i < VK_DEVICE_EXTENSION_COUNT; i++) {
-      if (!pdevice->supported_extensions.extensions[i])
+      bool supported = pdevice->supported_extensions.extensions[i];
+
+      uint32_t promotion = i;
+      while (true) {
+         promotion = vk_device_extension_promotions[promotion];
+         if (promotion == VK_EXTENSION_PROMOTION_NONE)
+            break;
+
+         supported |= pdevice->supported_extensions.extensions[promotion];
+      }
+
+      if (!supported)
          continue;
 
 #ifdef ANDROID_STRICT

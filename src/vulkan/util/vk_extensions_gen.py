@@ -32,6 +32,8 @@ from mako.template import Template
 # '{file_without_suffix}_depend_files'.
 from vk_extensions import get_all_exts_from_xml, init_exts_from_xml
 
+MAX_PROMOTIONS_PER_EXTENSION = 1
+
 _TEMPLATE_H = Template(COPYRIGHT + """
 
 #ifndef VK_EXTENSIONS_H
@@ -39,10 +41,13 @@ _TEMPLATE_H = Template(COPYRIGHT + """
 
 #include <stdbool.h>
 
+#define VK_EXTENSION_PROMOTION_NONE UINT32_MAX
+
 <%def name="extension_table(type, extensions)">
 #define VK_${type.upper()}_EXTENSION_COUNT ${len(extensions)}
 
 extern const VkExtensionProperties vk_${type}_extensions[];
+extern const uint32_t vk_${type}_extension_promotions[];
 
 struct vk_${type}_extension_table {
    union {
@@ -87,9 +92,21 @@ const VkExtensionProperties vk_instance_extensions[VK_INSTANCE_EXTENSION_COUNT] 
 %endfor
 };
 
+const uint32_t vk_instance_extension_promotions[VK_INSTANCE_EXTENSION_COUNT] = {
+%for ext in instance_extensions:
+   ${f"{extenstion_promotion_to_str(instance_extension_names, ext.promotion)}"},
+%endfor
+};
+
 const VkExtensionProperties vk_device_extensions[VK_DEVICE_EXTENSION_COUNT] = {
 %for ext in device_extensions:
    {"${ext.name}", ${ext.ext_version}},
+%endfor
+};
+
+const uint32_t vk_device_extension_promotions[VK_DEVICE_EXTENSION_COUNT] = {
+%for ext in device_extensions:
+   ${f"{extenstion_promotion_to_str(device_extension_names, ext.promotion)}"},
 %endfor
 };
 
@@ -108,6 +125,12 @@ const struct vk_device_extension_table vk_android_allowed_device_extensions = {
 #endif
 """)
 
+def extenstion_promotion_to_str(extensions, promotion):
+    if promotion in extensions:
+        return extensions.index(promotion)
+
+    return "VK_EXTENSION_PROMOTION_NONE"
+
 def gen_extensions(xml_files, extensions, out_c, out_h):
     platform_defines = []
     for filename in xml_files:
@@ -118,8 +141,11 @@ def gen_extensions(xml_files, extensions, out_c, out_h):
 
     template_env = {
         'instance_extensions': [e for e in extensions if e.type == 'instance'],
+        'instance_extension_names': [e.name for e in extensions if e.type == 'instance'],
         'device_extensions': [e for e in extensions if e.type == 'device'],
+        'device_extension_names': [e.name for e in extensions if e.type == 'device'],
         'platform_defines': platform_defines,
+        'extenstion_promotion_to_str': extenstion_promotion_to_str,
     }
 
     if out_h:

@@ -20,6 +20,7 @@ class Extension:
         self.provisional = False
         self.ext_version = int(ext_version)
         self.supported = []
+        self.promotion = None
 
     def from_xml(ext_elem):
         name = ext_elem.attrib['name']
@@ -46,6 +47,7 @@ class Extension:
         ext.platform = ext_elem.attrib.get('platform', None)
         ext.provisional = ext_elem.attrib.get('provisional', False)
         ext.supported = supported
+        ext.promotion = ext_elem.attrib.get('promotedto', None)
 
         return ext
 

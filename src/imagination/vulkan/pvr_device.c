@@ -192,7 +192,6 @@ static void pvr_physical_device_get_supported_extensions(
       .KHR_uniform_buffer_standard_layout = true,
       .EXT_external_memory_dma_buf = true,
       .EXT_host_query_reset = true,
-      .EXT_index_type_uint8 = true,
       .EXT_memory_budget = true,
       .EXT_private_data = true,
       .EXT_scalar_block_layout = true,

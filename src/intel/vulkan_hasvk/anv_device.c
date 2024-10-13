@@ -230,6 +230,7 @@ get_device_extensions(const struct anv_physical_device *device,
 #ifdef ANV_USE_WSI_PLATFORM
       .KHR_incremental_present               = true,
 #endif
+      .KHR_index_type_uint8                  = true,
       .KHR_line_rasterization                = true,
       .KHR_maintenance1                      = true,
       .KHR_maintenance2                      = true,
@@ -304,7 +305,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_image_robustness                  = true,
       .EXT_image_drm_format_modifier         = true,
       .EXT_image_view_min_lod                = true,
-      .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
       /* Enable the extension only if we have support on both the local &
        * system memory
@@ -530,7 +530,7 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_image_view_min_lod */
       .minLod = true,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
       /* VK_KHR_line_rasterization */

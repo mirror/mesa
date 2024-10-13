@@ -290,7 +290,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_image_robustness                  = true,
       .EXT_image_sliced_view_of_3d           = true,
       .EXT_image_view_min_lod                = true,
-      .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
       .EXT_legacy_dithering                  = true,
       .EXT_legacy_vertex_attributes          = true,
@@ -590,7 +589,7 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_image_view_min_lod */
       .minLod = true,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
       /* VK_KHR_line_rasterization */

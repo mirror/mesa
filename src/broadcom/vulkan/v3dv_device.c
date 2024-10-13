@@ -214,7 +214,6 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_host_query_reset                 = true,
       .EXT_image_drm_format_modifier        = true,
       .EXT_image_robustness                 = true,
-      .EXT_index_type_uint8                 = true,
       .EXT_memory_budget                    = true,
       .EXT_multi_draw                       = true,
       .EXT_physical_device_drm              = true,
@@ -404,7 +403,7 @@ get_features(const struct v3dv_physical_device *physical_device,
       .customBorderColors = true,
       .customBorderColorWithoutFormat = false,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
       /* VK_KHR_line_rasterization */

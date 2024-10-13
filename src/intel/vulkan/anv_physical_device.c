@@ -294,7 +294,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_inline_uniform_block              = true,
       .EXT_legacy_dithering                  = true,
       .EXT_legacy_vertex_attributes          = true,
-      .EXT_line_rasterization                = true,
       .EXT_load_store_op_none                = true,
       .EXT_map_memory_placed                 = device->info.has_mmap_offset,
       /* Enable the extension only if we have support on both the local &
@@ -594,7 +593,7 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_index_type_uint8 */
       .indexTypeUint8 = true,
 
-      /* VK_EXT_line_rasterization */
+      /* VK_KHR_line_rasterization */
       /* Rectangular lines must use the strict algorithm, which is not
        * supported for wide lines prior to ICL.  See rasterization_mode for
        * details and how the HW states are programmed.
@@ -1661,7 +1660,7 @@ get_properties(const struct anv_physical_device *pdevice,
       props->nativeUnalignedPerformance = true;
    }
 
-   /* VK_EXT_line_rasterization */
+   /* VK_KHR_line_rasterization */
    {
       /* In the Skylake PRM Vol. 7, subsection titled "GIQ (Diamond) Sampling
        * Rules - Legacy Mode", it says the following:

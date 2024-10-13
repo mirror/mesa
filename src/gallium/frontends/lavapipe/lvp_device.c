@@ -267,7 +267,6 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_ycbcr_2plane_444_formats          = true,
    .EXT_custom_border_color               = true,
    .EXT_provoking_vertex                  = true,
-   .EXT_line_rasterization                = true,
    .EXT_robustness2                       = true,
    .AMDX_shader_enqueue                   = true,
 #if DETECT_OS_ANDROID

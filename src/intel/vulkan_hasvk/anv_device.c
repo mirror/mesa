@@ -230,6 +230,7 @@ get_device_extensions(const struct anv_physical_device *device,
 #ifdef ANV_USE_WSI_PLATFORM
       .KHR_incremental_present               = true,
 #endif
+      .KHR_line_rasterization                = true,
       .KHR_maintenance1                      = true,
       .KHR_maintenance2                      = true,
       .KHR_maintenance3                      = true,
@@ -305,7 +306,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_image_view_min_lod                = true,
       .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
-      .EXT_line_rasterization                = true,
       /* Enable the extension only if we have support on both the local &
        * system memory
        */
@@ -533,7 +533,7 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_index_type_uint8 */
       .indexTypeUint8 = true,
 
-      /* VK_EXT_line_rasterization */
+      /* VK_KHR_line_rasterization */
       /* Rectangular lines must use the strict algorithm, which is not
        * supported for wide lines prior to ICL.  See rasterization_mode for
        * details and how the HW states are programmed.
@@ -1155,7 +1155,7 @@ get_properties(const struct anv_physical_device *pdevice,
       props->minImportedHostPointerAlignment = 4096;
    }
 
-   /* VK_EXT_line_rasterization */
+   /* VK_KHR_line_rasterization */
    {
       /* In the Skylake PRM Vol. 7, subsection titled "GIQ (Diamond) Sampling
        * Rules - Legacy Mode", it says the following:

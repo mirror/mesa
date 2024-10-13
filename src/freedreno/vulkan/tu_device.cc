@@ -318,7 +318,6 @@ get_device_extensions(const struct tu_physical_device *device,
 
       /* For Graphics Flight Recorder (GFR) */
       .AMD_buffer_marker = true,
-      .ARM_rasterization_order_attachment_access = true,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,

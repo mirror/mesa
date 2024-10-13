@@ -192,7 +192,6 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_vertex_attribute_divisor          = true,
    .KHR_vulkan_memory_model               = true,
    .KHR_zero_initialize_workgroup_memory  = true,
-   .ARM_rasterization_order_attachment_access = true,
    .EXT_4444_formats                      = true,
    .EXT_attachment_feedback_loop_layout   = true,
    .EXT_attachment_feedback_loop_dynamic_state = true,

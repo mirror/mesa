@@ -200,7 +200,6 @@ hk_get_device_extensions(const struct hk_instance *instance,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
-      .VALVE_mutable_descriptor_type = true,
    };
 }
 

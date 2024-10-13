@@ -310,6 +310,7 @@ get_device_extensions(const struct anv_physical_device *device,
        * system memory
        */
       .EXT_memory_budget                     = device->sys.available,
+      .EXT_mutable_descriptor_type           = true,
       .EXT_non_seamless_cube_map             = true,
       .EXT_pci_bus_info                      = true,
       .EXT_physical_device_drm               = true,
@@ -347,7 +348,6 @@ get_device_extensions(const struct anv_physical_device *device,
                                                intel_perf_has_hold_preemption(device->perf),
       .INTEL_shader_integer_functions2       = device->info.ver >= 8,
       .EXT_multi_draw                        = true,
-      .VALVE_mutable_descriptor_type         = true,
    };
 }
 

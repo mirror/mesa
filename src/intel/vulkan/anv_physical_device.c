@@ -356,7 +356,6 @@ get_device_extensions(const struct anv_physical_device *device,
                                                intel_perf_has_hold_preemption(device->perf),
       .INTEL_shader_integer_functions2       = true,
       .MESA_image_alignment_control          = true,
-      .VALVE_mutable_descriptor_type         = true,
    };
 }
 

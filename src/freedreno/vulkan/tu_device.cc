@@ -322,7 +322,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .IMG_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
-      .VALVE_mutable_descriptor_type = true,
    } };
 
 #if DETECT_OS_ANDROID

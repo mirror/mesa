@@ -697,7 +697,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_memory_priority = true,
       .EXT_mesh_shader = radv_taskmesh_enabled(pdev),
       .EXT_multi_draw = true,
-      .EXT_mutable_descriptor_type = true, /* Trivial promotion from VALVE. */
+      .EXT_mutable_descriptor_type = true,
       .EXT_nested_command_buffer = true,
       .EXT_non_seamless_cube_map = true,
       .EXT_pci_bus_info = true,
@@ -765,7 +765,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .GOOGLE_user_type = true,
       .INTEL_shader_integer_functions2 = true,
       .MESA_image_alignment_control = pdev->info.gfx_level >= GFX9,
-      .VALVE_mutable_descriptor_type = true,
    };
    *out_ext = ext;
 }

@@ -204,6 +204,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = device->has_a64_buffer_access,
       .KHR_calibrated_timestamps             = device->has_reg_timestamp,
+      .KHR_compute_shader_derivatives        = true,
       .KHR_copy_commands2                    = true,
       .KHR_create_renderpass2                = true,
       .KHR_dedicated_allocation              = true,
@@ -346,7 +347,6 @@ get_device_extensions(const struct anv_physical_device *device,
                                                intel_perf_has_hold_preemption(device->perf),
       .INTEL_shader_integer_functions2       = device->info.ver >= 8,
       .EXT_multi_draw                        = true,
-      .NV_compute_shader_derivatives         = true,
       .VALVE_mutable_descriptor_type         = true,
    };
 }
@@ -506,7 +506,7 @@ get_features(const struct anv_physical_device *pdevice,
       .image2DViewOf3D = true,
       .sampler2DViewOf3D = false,
 
-      /* VK_NV_compute_shader_derivatives */
+      /* VK_KHR_compute_shader_derivatives */
       .computeDerivativeGroupQuads = true,
       .computeDerivativeGroupLinear = true,
 

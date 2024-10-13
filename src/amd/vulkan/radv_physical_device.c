@@ -767,7 +767,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .GOOGLE_user_type = true,
       .INTEL_shader_integer_functions2 = true,
       .MESA_image_alignment_control = pdev->info.gfx_level >= GFX9,
-      .NV_compute_shader_derivatives = true,
       .VALVE_mutable_descriptor_type = true,
    };
    *out_ext = ext;

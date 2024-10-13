@@ -285,7 +285,6 @@ nvk_get_device_extensions(const struct nvk_instance *instance,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
-      .NV_compute_shader_derivatives = nvk_use_nak(info),
       .NV_shader_sm_builtins = true,
       .VALVE_mutable_descriptor_type = true,
    };

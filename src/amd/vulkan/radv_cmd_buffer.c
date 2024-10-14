@@ -10924,9 +10924,6 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
    if (ps_epilog)
       radv_emit_ps_epilog_state(cmd_buffer, ps_epilog);
 
-   if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_CB_RENDER_STATE)
-      radv_emit_cb_render_state(cmd_buffer);
-
    if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_FRAMEBUFFER)
       radv_emit_framebuffer_state(cmd_buffer);
 
@@ -10953,6 +10950,9 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
 
       radv_handle_dirty_shaders_state(cmd_buffer, dynamic_states);
    }
+
+   if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_CB_RENDER_STATE)
+      radv_emit_cb_render_state(cmd_buffer);
 
    radv_emit_shaders_state(cmd_buffer);
 

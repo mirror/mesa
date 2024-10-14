@@ -2553,7 +2553,7 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
 
    anv_genX(&device->info, init_physical_device_state)(device);
 
-   device->use_shader_upload = device->has_small_bar ||
+   device->use_shader_upload = true || device->has_small_bar ||
       debug_get_bool_option("ANV_SHADER_UPLOAD", false);
 
    *out = &device->vk;

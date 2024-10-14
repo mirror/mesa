@@ -10838,10 +10838,12 @@ radv_emit_cb_render_state(struct radv_cmd_buffer *cmd_buffer)
 
    if (pdev->info.gfx_level >= GFX12) {
       radeon_set_context_reg(cmd_buffer->cs, R_028854_CB_SHADER_MASK, cmd_buffer->state.cb_shader_mask);
-      radeon_set_context_reg(cmd_buffer->cs, R_028654_SPI_SHADER_COL_FORMAT, col_format_compacted);
+      radeon_opt_set_context_reg(cmd_buffer, R_028654_SPI_SHADER_COL_FORMAT, RADV_TRACKED_SPI_SHADER_COL_FORMAT,
+                                 col_format_compacted);
    } else {
       radeon_set_context_reg(cmd_buffer->cs, R_02823C_CB_SHADER_MASK, cmd_buffer->state.cb_shader_mask);
-      radeon_set_context_reg(cmd_buffer->cs, R_028714_SPI_SHADER_COL_FORMAT, col_format_compacted);
+      radeon_opt_set_context_reg(cmd_buffer, R_028714_SPI_SHADER_COL_FORMAT, RADV_TRACKED_SPI_SHADER_COL_FORMAT,
+                                 col_format_compacted);
    }
 
    cmd_buffer->state.dirty &= ~RADV_CMD_DIRTY_CB_RENDER_STATE;

@@ -45,6 +45,7 @@ void state_pool_padding_test(void)
                           .start_offset = 0,
                           .block_size   = 4096,
                           .max_size     = _1Gb,
+                          .host_mapped  = true,
                        });
 
    /* Get the size of the underlying block_pool */

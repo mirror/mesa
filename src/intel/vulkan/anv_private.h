@@ -792,7 +792,8 @@ VkResult anv_block_pool_init(struct anv_block_pool *pool,
                              const char *name,
                              uint64_t start_address,
                              uint32_t initial_size,
-                             uint32_t max_size);
+                             uint32_t max_size,
+                             bool host_mapped);
 void anv_block_pool_finish(struct anv_block_pool *pool);
 VkResult anv_block_pool_alloc(struct anv_block_pool *pool,
                               uint32_t block_size,
@@ -807,6 +808,7 @@ struct anv_state_pool_params {
    int64_t     start_offset;
    uint32_t    block_size;
    uint32_t    max_size;
+   bool        host_mapped;
 };
 
 VkResult anv_state_pool_init(struct anv_state_pool *pool,

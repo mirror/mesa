@@ -44,7 +44,7 @@ void block_pool_grow_first_test(void)
    device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);
    anv_bo_cache_init(&device.bo_cache, &device);
-   anv_block_pool_init(&pool, &device, "test", 4096, initial_size, _1Gb);
+   anv_block_pool_init(&pool, &device, "test", 4096, initial_size, _1Gb, true);
    ASSERT(pool.size == initial_size);
 
    uint32_t padding;

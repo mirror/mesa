@@ -352,7 +352,8 @@ anv_block_pool_init(struct anv_block_pool *pool,
                     const char *name,
                     uint64_t start_address,
                     uint32_t initial_size,
-                    uint32_t max_size)
+                    uint32_t max_size,
+                    bool host_mapped)
 {
    VkResult result;
 
@@ -376,10 +377,13 @@ anv_block_pool_init(struct anv_block_pool *pool,
 
    pool->bo_alloc_flags =
       ANV_BO_ALLOC_FIXED_ADDRESS |
-      ANV_BO_ALLOC_MAPPED |
-      ANV_BO_ALLOC_HOST_CACHED_COHERENT |
       ANV_BO_ALLOC_CAPTURE |
       ANV_BO_ALLOC_INTERNAL;
+
+   if (host_mapped) {
+      pool->bo_alloc_flags |= ANV_BO_ALLOC_MAPPED |
+                              ANV_BO_ALLOC_HOST_CACHED_COHERENT;
+   }
 
    result = anv_block_pool_expand_range(pool, initial_size);
    if (result != VK_SUCCESS)
@@ -466,6 +470,9 @@ anv_block_pool_expand_range(struct anv_block_pool *pool, uint32_t size)
 void*
 anv_block_pool_map(struct anv_block_pool *pool, int32_t offset, uint32_t size)
 {
+   if (!(pool->bo_alloc_flags & ANV_BO_ALLOC_MAPPED))
+      return NULL;
+
    struct anv_bo *bo = NULL;
    int32_t bo_offset = 0;
    anv_block_pool_foreach_bo(iter_bo, pool) {
@@ -651,7 +658,8 @@ anv_state_pool_init(struct anv_state_pool *pool,
                                          params->name,
                                          params->base_address + params->start_offset,
                                          initial_size,
-                                         params->max_size);
+                                         params->max_size,
+                                         params->host_mapped);
    if (result != VK_SUCCESS)
       return result;
 
@@ -944,7 +952,10 @@ anv_state_pool_alloc(struct anv_state_pool *pool, uint32_t size, uint32_t align)
       return ANV_STATE_NULL;
 
    struct anv_state state = anv_state_pool_alloc_no_vg(pool, size, align);
-   VG(VALGRIND_MEMPOOL_ALLOC(pool, state.map, size));
+
+   if (pool->block_pool.bo_alloc_flags & ANV_BO_ALLOC_MAPPED)
+      VG(VALGRIND_MEMPOOL_ALLOC(pool, state.map, size));
+
    return state;
 }
 
@@ -969,7 +980,8 @@ anv_state_pool_free(struct anv_state_pool *pool, struct anv_state state)
    if (state.alloc_size == 0)
       return;
 
-   VG(VALGRIND_MEMPOOL_FREE(pool, state.map));
+   if (pool->block_pool.bo_alloc_flags & ANV_BO_ALLOC_MAPPED)
+      VG(VALGRIND_MEMPOOL_FREE(pool, state.map));
    anv_state_pool_free_no_vg(pool, state);
 }
 

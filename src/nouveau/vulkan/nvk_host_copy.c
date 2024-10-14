@@ -11,6 +11,8 @@
 
 #include "vk_format.h"
 
+#include "pthread.h"
+
 static struct nil_Offset4D_Pixels
 vk_to_nil_offset(const struct vk_image *image, VkOffset3D offset,
                  uint32_t base_array_layer)
@@ -53,6 +55,26 @@ memcpy2d(void *dst, size_t dst_stride_B,
          src += src_stride_B;
       }
    }
+}
+
+static uint32_t
+get_cpu_count()
+{
+   cpu_set_t cpu_set;
+   if (sched_getaffinity(0, sizeof(cpu_set), &cpu_set) == 0) {
+      uint32_t thread_count = 0;
+      for (int i = 0; i < (__CPU_SETSIZE / __NCPUBITS); i++) {
+         __cpu_mask mask = cpu_set.__bits[i];
+         for (int j = 0; j < __NCPUBITS; j++) {
+            if ((mask & ((__cpu_mask)1 << j)) != 0) {
+               thread_count++;
+            }
+         }
+      }
+      return thread_count;
+    } else {
+        return 1;
+    }
 }
 
 static VkResult

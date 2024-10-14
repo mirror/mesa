@@ -33,13 +33,6 @@
 
 #if DETECT_ARCH_SSE
 #include <emmintrin.h>
-#elif defined(_ARCH_PWR8) && UTIL_ARCH_LITTLE_ENDIAN
-#include <altivec.h>
-/*
-altivec.h inclusion in -std=c++98..11 causes bool to be redefined
- https://gcc.gnu.org/bugzilla/show_bug.cgi?id=58241
-*/
-#undef bool
 #endif
 
 #include <stdbool.h>
@@ -56,10 +49,6 @@ altivec.h inclusion in -std=c++98..11 causes bool to be redefined
 #include "lp_context.h"
 
 #include <inttypes.h>
-
-#if defined(_ARCH_PWR8) && UTIL_ARCH_LITTLE_ENDIAN
-#include "util/u_pwr8.h"
-#endif
 
 #if !DETECT_ARCH_SSE
 
@@ -332,10 +321,6 @@ do_triangle_ccw(struct lp_setup_context *setup,
    int max_szorig = ((bbox.x1 - (bbox.x0 & ~3)) |
                      (bbox.y1 - (bbox.y0 & ~3)));
    bool use_32bits = max_szorig <= MAX_FIXED_LENGTH32;
-#if defined(_ARCH_PWR8) && UTIL_ARCH_LITTLE_ENDIAN
-   bool pwr8_limit_check = (bbox.x1 - bbox.x0) <= MAX_FIXED_LENGTH32 &&
-      (bbox.y1 - bbox.y0) <= MAX_FIXED_LENGTH32;
-#endif
 
    /* Can safely discard negative regions, but need to keep hold of
     * information about when the triangle extends past screen
@@ -568,102 +553,6 @@ do_triangle_ccw(struct lp_setup_context *setup,
       _mm_storeu_si128((__m128i *)&plane[2], p2);
       eo = _mm_shuffle_epi32(eo, _MM_SHUFFLE(0,0,0,2));
       plane[2].eo = (uint32_t)_mm_cvtsi128_si32(eo);
-   } else
-#elif defined(_ARCH_PWR8) && UTIL_ARCH_LITTLE_ENDIAN
-   /*
-    * XXX this code is effectively disabled for all practical purposes,
-    * as the allowed fb size is tiny if FIXED_ORDER is 8.
-    */
-   if (setup->fb.width <= MAX_FIXED_LENGTH32 &&
-       setup->fb.height <= MAX_FIXED_LENGTH32 &&
-       pwr8_limit_check) {
-      unsigned int bottom_edge;
-      __m128i vertx, verty;
-      __m128i shufx, shufy;
-      __m128i dcdx, dcdy, c;
-      __m128i unused;
-      __m128i dcdx_neg_mask;
-      __m128i dcdy_neg_mask;
-      __m128i dcdx_zero_mask;
-      __m128i top_left_flag;
-      __m128i c_inc_mask, c_inc;
-      __m128i eo, p0, p1, p2;
-      __m128i_union vshuf_mask;
-      __m128i zero = vec_splats((unsigned char) 0);
-      alignas(16) int32_t temp_vec[4];
-
-#if UTIL_ARCH_LITTLE_ENDIAN
-      vshuf_mask.i[0] = 0x07060504;
-      vshuf_mask.i[1] = 0x0B0A0908;
-      vshuf_mask.i[2] = 0x03020100;
-      vshuf_mask.i[3] = 0x0F0E0D0C;
-#else
-      vshuf_mask.i[0] = 0x00010203;
-      vshuf_mask.i[1] = 0x0C0D0E0F;
-      vshuf_mask.i[2] = 0x04050607;
-      vshuf_mask.i[3] = 0x08090A0B;
-#endif
-
-      /* vertex x coords */
-      vertx = vec_load_si128((const uint32_t *) position->x);
-      /* vertex y coords */
-      verty = vec_load_si128((const uint32_t *) position->y);
-
-      shufx = vec_perm (vertx, vertx, vshuf_mask.m128i);
-      shufy = vec_perm (verty, verty, vshuf_mask.m128i);
-
-      dcdx = vec_sub_epi32(verty, shufy);
-      dcdy = vec_sub_epi32(vertx, shufx);
-
-      dcdx_neg_mask = vec_srai_epi32(dcdx, 31);
-      dcdx_zero_mask = vec_cmpeq_epi32(dcdx, zero);
-      dcdy_neg_mask = vec_srai_epi32(dcdy, 31);
-
-      bottom_edge = (setup->bottom_edge_rule == 0) ? ~0 : 0;
-      top_left_flag = (__m128i) vec_splats(bottom_edge);
-
-      c_inc_mask = vec_or(dcdx_neg_mask,
-                                vec_and(dcdx_zero_mask,
-                                              vec_xor(dcdy_neg_mask,
-                                                            top_left_flag)));
-
-      c_inc = vec_srli_epi32(c_inc_mask, 31);
-
-      c = vec_sub_epi32(vec_mullo_epi32(dcdx, vertx),
-                        vec_mullo_epi32(dcdy, verty));
-
-      c = vec_add_epi32(c, c_inc);
-
-      /* Scale up to match c:
-       */
-      dcdx = vec_slli_epi32(dcdx, FIXED_ORDER);
-      dcdy = vec_slli_epi32(dcdy, FIXED_ORDER);
-
-      /* Calculate trivial reject values:
-       */
-      eo = vec_sub_epi32(vec_andnot_si128(dcdy_neg_mask, dcdy),
-                         vec_and(dcdx_neg_mask, dcdx));
-
-      /* ei = _mm_sub_epi32(_mm_sub_epi32(dcdy, dcdx), eo); */
-
-      /* Pointless transpose which gets undone immediately in
-       * rasterization:
-       */
-      transpose4_epi32(&c, &dcdx, &dcdy, &eo,
-                       &p0, &p1, &p2, &unused);
-
-#define STORE_PLANE(plane, vec) do {                  \
-         vec_store_si128((uint32_t *)&temp_vec, vec); \
-         plane.c    = (int64_t)temp_vec[0];           \
-         plane.dcdx = temp_vec[1];                    \
-         plane.dcdy = temp_vec[2];                    \
-         plane.eo   = temp_vec[3];                    \
-      } while(0)
-
-      STORE_PLANE(plane[0], p0);
-      STORE_PLANE(plane[1], p1);
-      STORE_PLANE(plane[2], p2);
-#undef STORE_PLANE
    } else
 #endif
    {

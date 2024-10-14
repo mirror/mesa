@@ -726,7 +726,7 @@ init_compute_queue_state(struct anv_queue *queue)
     * STATE_COMPUTE_MODE.
     */
    if (intel_needs_workaround(devinfo, 14015782607) &&
-       queue->family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+       queue->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
       genx_batch_emit_pipe_control(batch, devinfo, GPGPU,
                                    ANV_PIPE_CS_STALL_BIT |
                                    ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT |
@@ -738,7 +738,7 @@ init_compute_queue_state(struct anv_queue *queue)
     * emitting NP state commands with ATS-M in compute mode.
     */
    if (intel_device_info_is_atsm(devinfo) &&
-       queue->family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+       queue->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
       genx_batch_emit_pipe_control
          (batch, devinfo, GPGPU,
           ANV_PIPE_CS_STALL_BIT |
@@ -805,7 +805,7 @@ init_copy_video_queue_state(struct anv_queue *queue)
 
       uint64_t reg = GENX(VD0_AUX_TABLE_BASE_ADDR_num);
 
-      if (queue->family->engine_class == INTEL_ENGINE_CLASS_COPY) {
+      if (queue->engine_class == INTEL_ENGINE_CLASS_COPY) {
 #if GFX_VERx10 >= 125
          reg = GENX(BCS_AUX_TABLE_BASE_ADDR_num);
 #endif
@@ -870,6 +870,38 @@ genX(init_physical_device_state)(ASSERTED struct anv_physical_device *pdevice)
    GENX(VERTEX_ELEMENT_STATE_pack)(NULL, pdevice->empty_vs_input, &empty_ve);
 }
 
+static VkResult
+init_queue(struct anv_queue *queue)
+{
+   VkResult res;
+
+   switch (queue->engine_class) {
+   case INTEL_ENGINE_CLASS_RENDER:
+      res = init_render_queue_state(queue, false /* is_companion_rcs_batch */);
+      break;
+   case INTEL_ENGINE_CLASS_COMPUTE:
+      res = init_compute_queue_state(queue);
+      break;
+   case INTEL_ENGINE_CLASS_VIDEO:
+      res = init_copy_video_queue_state(queue);
+      break;
+   case INTEL_ENGINE_CLASS_COPY:
+      res = init_copy_video_queue_state(queue);
+      break;
+   default:
+      res = vk_error(queue->device, VK_ERROR_INITIALIZATION_FAILED);
+      break;
+   }
+   if (res != VK_SUCCESS)
+      return res;
+
+   /* If the queue has companion context, initialize it too */
+   if (queue->companion_sync)
+      res = init_render_queue_state(queue, true /* is_companion_rcs_batch */);
+
+   return res;
+}
+
 VkResult
 genX(init_device_state)(struct anv_device *device)
 {
@@ -878,40 +910,8 @@ genX(init_device_state)(struct anv_device *device)
    device->slice_hash = (struct anv_state) { 0 };
    for (uint32_t i = 0; i < device->queue_count; i++) {
       struct anv_queue *queue = &device->queues[i];
-      switch (queue->family->engine_class) {
-      case INTEL_ENGINE_CLASS_RENDER:
-         res = init_render_queue_state(queue, false /* is_companion_rcs_batch */);
-         break;
-      case INTEL_ENGINE_CLASS_COMPUTE: {
-         res = init_compute_queue_state(queue);
-         if (res != VK_SUCCESS)
-            return res;
 
-         /**
-          * Execute RCS init batch by default on the companion RCS command buffer in
-          * order to support MSAA copy/clear operations on compute queue.
-          */
-         res = init_render_queue_state(queue, true /* is_companion_rcs_batch */);
-         break;
-      }
-      case INTEL_ENGINE_CLASS_VIDEO:
-         res = init_copy_video_queue_state(queue);
-         break;
-      case INTEL_ENGINE_CLASS_COPY:
-         res = init_copy_video_queue_state(queue);
-         if (res != VK_SUCCESS)
-            return res;
-
-         /**
-          * Execute RCS init batch by default on the companion RCS command buffer in
-          * order to support MSAA copy/clear operations on copy queue.
-          */
-         res = init_render_queue_state(queue, true /* is_companion_rcs_batch */);
-         break;
-      default:
-         res = vk_error(device, VK_ERROR_INITIALIZATION_FAILED);
-         break;
-      }
+      res = init_queue(queue);
       if (res != VK_SUCCESS)
          return res;
 
@@ -1527,7 +1527,7 @@ genX(init_trtt_context_state)(struct anv_async_submit *submit)
    anv_batch_write_reg(batch, GENX(COMP_CTX0_TRTT_CR), trtt_cr)
       trtt_cr.TRTTEnable = true;
 
-   if (queue->family->engine_class != INTEL_ENGINE_CLASS_COPY) {
+   if (queue->engine_class != INTEL_ENGINE_CLASS_COPY) {
       genx_batch_emit_pipe_control(batch, device->info, _3D,
                                    ANV_PIPE_CS_STALL_BIT |
                                    ANV_PIPE_TLB_INVALIDATE_BIT);

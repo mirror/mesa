@@ -50,6 +50,7 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
    queue->vk.driver_submit = anv_queue_submit;
    queue->device = device;
    queue->family = queue_family;
+   queue->engine_class = queue_family->engine_class;
    queue->decoder = &device->decoder[queue->vk.queue_family_index];
 
    const VkDeviceQueueGlobalPriorityCreateInfoKHR *priority =
@@ -57,8 +58,7 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
                            DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
 
    result = device->kmd_backend->engine_create(
-      device, queue,
-      queue_family->engine_class,
+      device, queue, queue->engine_class,
       priority ? priority->globalPriority :
       VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
       pCreateInfo->flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT);
@@ -80,8 +80,8 @@ anv_queue_init(struct anv_device *device, struct anv_queue *queue,
       }
    }
 
-   if (queue_family->engine_class == INTEL_ENGINE_CLASS_COPY ||
-       queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+   if (queue->engine_class == INTEL_ENGINE_CLASS_COPY ||
+       queue->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
       result = vk_sync_create(&device->vk,
                               &device->physical->sync_syncobj_type,
                               0, 0, &queue->companion_sync);

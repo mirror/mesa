@@ -1319,6 +1319,7 @@ struct anv_queue {
    struct anv_device *                       device;
 
    const struct anv_queue_family *           family;
+   enum intel_engine_class                   engine_class;
 
    struct intel_batch_decode_ctx *           decoder;
 

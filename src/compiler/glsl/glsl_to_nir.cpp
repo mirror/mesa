@@ -1298,6 +1298,7 @@ nir_visitor::visit(ir_call *ir)
 
          /* Atomic result */
          assert(ir->return_deref);
+         instr->num_components = 1;
          if (glsl_type_is_integer_64(ir->return_deref->type)) {
             nir_def_init(&instr->instr, &instr->def,
                          ir->return_deref->type->vector_elements, 64);

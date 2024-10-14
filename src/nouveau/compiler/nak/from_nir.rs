@@ -1869,6 +1869,7 @@ impl<'a> ShaderFromNir<'a> {
 
     fn get_atomic_type(&self, intrin: &nir_intrinsic_instr) -> AtomType {
         let bit_size = intrin.def.bit_size();
+        let num_comps = intrin.def.num_components();
         match intrin.atomic_op() {
             nir_atomic_op_iadd => AtomType::U(bit_size),
             nir_atomic_op_imin => AtomType::I(bit_size),
@@ -1878,10 +1879,12 @@ impl<'a> ShaderFromNir<'a> {
             nir_atomic_op_iand => AtomType::U(bit_size),
             nir_atomic_op_ior => AtomType::U(bit_size),
             nir_atomic_op_ixor => AtomType::U(bit_size),
-            nir_atomic_op_xchg => AtomType::U(bit_size),
-            nir_atomic_op_fadd => AtomType::F(bit_size),
-            nir_atomic_op_fmin => AtomType::F(bit_size),
-            nir_atomic_op_fmax => AtomType::F(bit_size),
+            // Because no comparison is happening, it's safe to use a U32 type
+            // for xchg of F16v2 data.
+            nir_atomic_op_xchg => AtomType::U(bit_size * num_comps),
+            nir_atomic_op_fadd => AtomType::F(bit_size, num_comps),
+            nir_atomic_op_fmin => AtomType::F(bit_size, num_comps),
+            nir_atomic_op_fmax => AtomType::F(bit_size, num_comps),
             nir_atomic_op_cmpxchg => AtomType::U(bit_size),
             _ => panic!("Unsupported NIR atomic op"),
         }
@@ -2226,11 +2229,9 @@ impl<'a> ShaderFromNir<'a> {
                 let atom_type = self.get_atomic_type(intrin);
                 let atom_op = self.get_atomic_op(intrin, AtomCmpSrc::Packed);
 
-                assert!(
-                    intrin.def.bit_size() == 32 || intrin.def.bit_size() == 64
-                );
-                assert!(intrin.def.num_components() == 1);
-                let dst = b.alloc_ssa(RegFile::GPR, intrin.def.bit_size() / 32);
+                let bits = intrin.def.bit_size() * intrin.def.num_components();
+                assert!(bits % 32 == 0);
+                let dst = b.alloc_ssa(RegFile::GPR, bits / 32);
 
                 let data = if intrin.intrinsic
                     == nir_intrinsic_bindless_image_atomic_swap
@@ -2421,14 +2422,14 @@ impl<'a> ShaderFromNir<'a> {
                 b.predicate(cond.into()).push_op(OpKill {});
             }
             nir_intrinsic_global_atomic => {
-                let bit_size = intrin.def.bit_size();
                 let (addr, offset) = self.get_io_addr_offset(&srcs[0], 24);
                 let data = self.get_src(&srcs[1]);
                 let atom_type = self.get_atomic_type(intrin);
                 let atom_op = self.get_atomic_op(intrin, AtomCmpSrc::Separate);
 
-                assert!(intrin.def.num_components() == 1);
-                let dst = b.alloc_ssa(RegFile::GPR, bit_size.div_ceil(32));
+                let bits = intrin.def.bit_size() * intrin.def.num_components();
+                assert!(bits % 32 == 0);
+                let dst = b.alloc_ssa(RegFile::GPR, bits / 32);
 
                 let is_reduction =
                     atom_op.is_reduction() && intrin.def.components_read() == 0;
@@ -2934,14 +2935,14 @@ impl<'a> ShaderFromNir<'a> {
                 self.set_dst(&intrin.def, dst);
             }
             nir_intrinsic_shared_atomic => {
-                let bit_size = intrin.def.bit_size();
                 let (addr, offset) = self.get_io_addr_offset(&srcs[0], 24);
                 let data = self.get_src(&srcs[1]);
                 let atom_type = self.get_atomic_type(intrin);
                 let atom_op = self.get_atomic_op(intrin, AtomCmpSrc::Separate);
 
-                assert!(intrin.def.num_components() == 1);
-                let dst = b.alloc_ssa(RegFile::GPR, bit_size.div_ceil(32));
+                let bits = intrin.def.bit_size() * intrin.def.num_components();
+                assert!(bits % 32 == 0);
+                let dst = b.alloc_ssa(RegFile::GPR, bits / 32);
 
                 b.push_op(OpAtom {
                     dst: dst.into(),

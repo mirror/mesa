@@ -2420,11 +2420,11 @@ pub enum AtomType {
 }
 
 impl AtomType {
-    pub fn F(bits: u8) -> AtomType {
-        match bits {
-            16 => panic!("16-bit float atomics not yet supported"),
-            32 => AtomType::F32,
-            64 => AtomType::F64,
+    pub fn F(bits: u8, comps: u8) -> AtomType {
+        match (bits, comps) {
+            (16, 2) => AtomType::F16v2,
+            (32, 1) => AtomType::F32,
+            (64, 1) => AtomType::F64,
             _ => panic!("Invalid float atomic type"),
         }
     }

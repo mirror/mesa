@@ -410,7 +410,15 @@ anv_shader_bin_create(struct anv_device *device,
                                             bind_map, prog_data_in);
 
    /* Now that the data is relocated, copy it over to the instruction pool */
-   memcpy(shader->kernel.map, shader->kernel_code, shader->kernel_size);
+   if (device->physical->use_shader_upload) {
+      anv_device_upload_data(device,
+                             anv_state_pool_state_address(
+                                &device->instruction_state_pool,
+                                shader->kernel),
+                             shader->kernel_code, shader->kernel_size);
+   } else {
+      memcpy(shader->kernel.map, shader->kernel_code, shader->kernel_size);
+   }
 
    memcpy(prog_data, prog_data_in, prog_data_size);
    typed_memcpy(prog_data_relocs, prog_data_in->relocs,

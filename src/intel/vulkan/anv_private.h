@@ -2399,8 +2399,6 @@ VkResult anv_device_upload_data(struct anv_device *device,
                                 size_t size);
 VkResult anv_device_upload_flush(struct anv_device *device,
                                  uint64_t *timeline_val_out);
-VkResult anv_device_upload_sync(struct anv_device *device);
-
 
 uint64_t anv_vma_alloc(struct anv_device *device,
                        uint64_t size, uint64_t align,

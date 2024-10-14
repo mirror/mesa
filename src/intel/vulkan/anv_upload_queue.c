@@ -131,35 +131,6 @@ anv_device_upload_flush(struct anv_device *device,
    return result;
 }
 
-static VkResult
-anv_device_upload_sync_locked(struct anv_device *device)
-{
-   uint64_t timeline_val;
-   VkResult result = anv_device_upload_flush_locked(device, &timeline_val);
-   if (result != VK_SUCCESS)
-      return result;
-
-   if (timeline_val == 0)
-      return VK_SUCCESS;
-
-   return vk_sync_wait(&device->vk, device->upload.timeline, timeline_val,
-                       VK_SYNC_WAIT_COMPLETE, UINT64_MAX);
-}
-
-VkResult
-anv_device_upload_sync(struct anv_device *device)
-{
-   assert(device->physical->use_shader_upload);
-
-   VkResult result;
-
-   simple_mtx_lock(&device->upload.mutex);
-   result = anv_device_upload_sync_locked(device);
-   simple_mtx_unlock(&device->upload.mutex);
-
-   return result;
-}
-
 VkResult
 anv_device_upload_data(struct anv_device *device,
                        struct anv_address dst_addr,

@@ -565,7 +565,7 @@ VkResult anv_CreateDevice(
                                    .base_address = device->physical->va.instruction_state_pool.addr,
                                    .block_size   = 16384,
                                    .max_size     = device->physical->va.instruction_state_pool.size,
-                                   .host_mapped  = true,
+                                   .host_mapped  = !device->physical->use_shader_upload,
                                 });
    if (result != VK_SUCCESS)
       goto fail_custom_border_color_pool;

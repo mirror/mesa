@@ -682,6 +682,8 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
 
          switch (format) {
          case PIPE_FORMAT_R32_FLOAT:
+         case PIPE_FORMAT_R16G16_FLOAT:
+         case PIPE_FORMAT_R16G16B16A16_FLOAT:
             allowed = is_float || op == nir_atomic_op_xchg;
             break;
          case PIPE_FORMAT_R16_FLOAT:
@@ -699,8 +701,10 @@ validate_intrinsic_instr(nir_intrinsic_instr *instr, validate_state *state)
          }
 
          validate_assert(state, allowed);
+         const struct util_format_description *fmt_desc =
+            util_format_description(format);
          validate_assert(state, instr->def.bit_size ==
-                                   util_format_get_blocksizebits(format));
+                                fmt_desc->channel[0].size);
       }
       break;
    }

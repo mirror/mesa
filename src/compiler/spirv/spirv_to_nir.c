@@ -53,6 +53,7 @@ static const struct spirv_capabilities implemented_capabilities = {
    .AtomicFloat32AddEXT = true,
    .AtomicFloat64AddEXT = true,
    .AtomicFloat16MinMaxEXT = true,
+   .AtomicFloat16VectorNV = true,
    .AtomicFloat32MinMaxEXT = true,
    .AtomicFloat64MinMaxEXT = true,
    .AtomicStorage = true,

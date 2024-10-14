@@ -3618,41 +3618,6 @@ radv_emit_logic_op(struct radv_cmd_buffer *cmd_buffer)
 }
 
 static void
-radv_emit_color_write(struct radv_cmd_buffer *cmd_buffer)
-{
-   struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
-   const struct radv_physical_device *pdev = radv_device_physical(device);
-   const struct radv_binning_settings *settings = &pdev->binning_settings;
-   const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
-   uint32_t color_write_enable = 0, color_write_mask = 0;
-
-   u_foreach_bit (i, d->vk.cb.color_write_enables) {
-      color_write_enable |= 0xfu << (i * 4);
-   }
-
-   for (unsigned i = 0; i < MAX_RTS; i++) {
-      color_write_mask |= d->vk.cb.attachments[i].write_mask << (4 * i);
-   }
-
-   const uint32_t cb_target_mask = color_write_enable & color_write_mask;
-
-   if (device->pbb_allowed && settings->context_states_per_bin > 1 &&
-       cmd_buffer->state.last_cb_target_mask != cb_target_mask) {
-      /* Flush DFSM on CB_TARGET_MASK changes. */
-      radeon_emit(cmd_buffer->cs, PKT3(PKT3_EVENT_WRITE, 0, 0));
-      radeon_emit(cmd_buffer->cs, EVENT_TYPE(V_028A90_BREAK_BATCH) | EVENT_INDEX(0));
-
-      cmd_buffer->state.last_cb_target_mask = cb_target_mask;
-   }
-
-   if (pdev->info.gfx_level >= GFX12) {
-      radeon_set_context_reg(cmd_buffer->cs, R_028850_CB_TARGET_MASK, cb_target_mask);
-   } else {
-      radeon_set_context_reg(cmd_buffer->cs, R_028238_CB_TARGET_MASK, cb_target_mask);
-   }
-}
-
-static void
 radv_emit_patch_control_points(struct radv_cmd_buffer *cmd_buffer)
 {
    struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
@@ -5748,9 +5713,6 @@ radv_cmd_buffer_flush_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const ui
    if (states & (RADV_DYNAMIC_LOGIC_OP | RADV_DYNAMIC_LOGIC_OP_ENABLE | RADV_DYNAMIC_COLOR_WRITE_MASK |
                  RADV_DYNAMIC_COLOR_BLEND_ENABLE | RADV_DYNAMIC_COLOR_BLEND_EQUATION))
       radv_emit_logic_op(cmd_buffer);
-
-   if (states & (RADV_DYNAMIC_COLOR_WRITE_ENABLE | RADV_DYNAMIC_COLOR_WRITE_MASK))
-      radv_emit_color_write(cmd_buffer);
 
    if (states & RADV_DYNAMIC_VERTEX_INPUT)
       radv_emit_vertex_input(cmd_buffer);
@@ -10833,15 +10795,37 @@ radv_emit_cb_render_state(struct radv_cmd_buffer *cmd_buffer)
 {
    const struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
    const struct radv_physical_device *pdev = radv_device_physical(device);
-
+   const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
+   uint32_t color_write_enable = 0, color_write_mask = 0;
    uint32_t col_format_compacted = radv_compact_spi_shader_col_format(cmd_buffer->state.spi_shader_col_format);
 
+   u_foreach_bit (i, d->vk.cb.color_write_enables) {
+      color_write_enable |= 0xfu << (i * 4);
+   }
+
+   for (unsigned i = 0; i < MAX_RTS; i++) {
+      color_write_mask |= d->vk.cb.attachments[i].write_mask << (4 * i);
+   }
+
+   const uint32_t cb_target_mask = color_write_enable & color_write_mask;
+
+   if (device->pbb_allowed && pdev->binning_settings.context_states_per_bin > 1 &&
+       cmd_buffer->state.last_cb_target_mask != cb_target_mask) {
+      /* Flush DFSM on CB_TARGET_MASK changes. */
+      radeon_emit(cmd_buffer->cs, PKT3(PKT3_EVENT_WRITE, 0, 0));
+      radeon_emit(cmd_buffer->cs, EVENT_TYPE(V_028A90_BREAK_BATCH) | EVENT_INDEX(0));
+
+      cmd_buffer->state.last_cb_target_mask = cb_target_mask;
+   }
+
    if (pdev->info.gfx_level >= GFX12) {
-      radeon_set_context_reg(cmd_buffer->cs, R_028854_CB_SHADER_MASK, cmd_buffer->state.cb_shader_mask);
+      radeon_opt_set_context_reg2(cmd_buffer, R_028850_CB_TARGET_MASK, RADV_TRACKED_CB_TARGET_MASK, cb_target_mask,
+                                  cmd_buffer->state.cb_shader_mask);
       radeon_opt_set_context_reg(cmd_buffer, R_028654_SPI_SHADER_COL_FORMAT, RADV_TRACKED_SPI_SHADER_COL_FORMAT,
                                  col_format_compacted);
    } else {
-      radeon_set_context_reg(cmd_buffer->cs, R_02823C_CB_SHADER_MASK, cmd_buffer->state.cb_shader_mask);
+      radeon_opt_set_context_reg2(cmd_buffer, R_028238_CB_TARGET_MASK, RADV_TRACKED_CB_TARGET_MASK, cb_target_mask,
+                                  cmd_buffer->state.cb_shader_mask);
       radeon_opt_set_context_reg(cmd_buffer, R_028714_SPI_SHADER_COL_FORMAT, RADV_TRACKED_SPI_SHADER_COL_FORMAT,
                                  col_format_compacted);
    }
@@ -10850,7 +10834,7 @@ radv_emit_cb_render_state(struct radv_cmd_buffer *cmd_buffer)
 }
 
 static void
-radv_handle_dirty_shaders_state(struct radv_cmd_buffer *cmd_buffer, uint64_t dynamic_states)
+radv_validate_dynamic_states(struct radv_cmd_buffer *cmd_buffer, uint64_t dynamic_states)
 {
    if (dynamic_states & (RADV_DYNAMIC_RASTERIZATION_SAMPLES | RADV_DYNAMIC_LINE_RASTERIZATION_MODE |
                          RADV_DYNAMIC_PRIMITIVE_TOPOLOGY | RADV_DYNAMIC_POLYGON_MODE))
@@ -10858,6 +10842,9 @@ radv_handle_dirty_shaders_state(struct radv_cmd_buffer *cmd_buffer, uint64_t dyn
 
    if (dynamic_states & (RADV_DYNAMIC_PRIMITIVE_TOPOLOGY | RADV_DYNAMIC_PROVOKING_VERTEX_MODE))
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_NGG_STATE;
+
+   if (dynamic_states & (RADV_DYNAMIC_COLOR_WRITE_ENABLE | RADV_DYNAMIC_COLOR_WRITE_MASK))
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_CB_RENDER_STATE;
 }
 
 static void
@@ -10948,7 +10935,7 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
    if (dynamic_states) {
       radv_cmd_buffer_flush_dynamic_state(cmd_buffer, dynamic_states);
 
-      radv_handle_dirty_shaders_state(cmd_buffer, dynamic_states);
+      radv_validate_dynamic_states(cmd_buffer, dynamic_states);
    }
 
    if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_CB_RENDER_STATE)

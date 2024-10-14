@@ -362,29 +362,10 @@ out:
 }
 
 static VkResult
-setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
-                              struct anv_queue *queue,
-                              struct anv_cmd_buffer **cmd_buffers,
-                              uint32_t num_cmd_buffers)
+setup_execbuf_device_pools(struct anv_execbuf *execbuf,
+                           struct anv_device *device)
 {
-   struct anv_device *device = queue->device;
    VkResult result;
-
-   if (unlikely(device->physical->measure_device.config)) {
-      for (uint32_t i = 0; i < num_cmd_buffers; i++)
-         anv_measure_submit(cmd_buffers[i]);
-   }
-
-   /* Edit the tail of the command buffers to chain them all together if they
-    * can be.
-    */
-   anv_cmd_buffer_chain_command_buffers(cmd_buffers, num_cmd_buffers);
-
-   for (uint32_t i = 0; i < num_cmd_buffers; i++) {
-      result = setup_execbuf_for_cmd_buffer(execbuf, cmd_buffers[i]);
-      if (result != VK_SUCCESS)
-         return result;
-   }
 
    /* Add all the global BOs to the object list for softpin case. */
    result = pin_state_pool(device, execbuf, &device->scratch_surface_state_pool);
@@ -446,10 +427,6 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
          return result;
    }
 
-   result = anv_execbuf_add_trtt_bos(device, execbuf);
-   if (result != VK_SUCCESS)
-      return result;
-
    /* Add all the private BOs from images because we can't track after binding
     * updates of VK_EXT_descriptor_indexing.
     */
@@ -461,6 +438,42 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
       if (result != VK_SUCCESS)
          return result;
    }
+
+   return VK_SUCCESS;
+ }
+
+static VkResult
+setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
+                              struct anv_queue *queue,
+                              struct anv_cmd_buffer **cmd_buffers,
+                              uint32_t num_cmd_buffers)
+{
+   struct anv_device *device = queue->device;
+   VkResult result;
+
+   if (unlikely(device->physical->measure_device.config)) {
+      for (uint32_t i = 0; i < num_cmd_buffers; i++)
+         anv_measure_submit(cmd_buffers[i]);
+   }
+
+   /* Edit the tail of the command buffers to chain them all together if they
+    * can be.
+    */
+   anv_cmd_buffer_chain_command_buffers(cmd_buffers, num_cmd_buffers);
+
+   for (uint32_t i = 0; i < num_cmd_buffers; i++) {
+      result = setup_execbuf_for_cmd_buffer(execbuf, cmd_buffers[i]);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   result = setup_execbuf_device_pools(execbuf, device);
+   if (result != VK_SUCCESS)
+      return result;
+
+   result = anv_execbuf_add_trtt_bos(device, execbuf);
+   if (result != VK_SUCCESS)
+      return result;
 
    struct list_head *batch_bo = &cmd_buffers[0]->batch_bos;
    struct anv_batch_bo *first_batch_bo =
@@ -596,6 +609,11 @@ setup_async_execbuf(struct anv_execbuf *execbuf,
          intel_flush_range(bo->map, bo->size);
 #endif
    }
+
+
+   result = setup_execbuf_device_pools(execbuf, device);
+   if (result != VK_SUCCESS)
+      return result;
 
    for (uint32_t i = 0; i < wait_count; i++) {
       result = anv_execbuf_add_sync(device, execbuf,

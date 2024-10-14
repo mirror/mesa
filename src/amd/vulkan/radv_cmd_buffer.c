@@ -7102,7 +7102,7 @@ radv_BeginCommandBuffer(VkCommandBuffer commandBuffer, const VkCommandBufferBegi
    cmd_buffer->usage_flags = pBeginInfo->flags;
 
    cmd_buffer->state.dirty |= RADV_CMD_DIRTY_GUARDBAND | RADV_CMD_DIRTY_OCCLUSION_QUERY |
-                              RADV_CMD_DIRTY_DB_SHADER_CONTROL | RADV_CMD_DIRTY_COLOR_OUTPUT;
+                              RADV_CMD_DIRTY_DB_SHADER_CONTROL | RADV_CMD_DIRTY_CB_RENDER_STATE;
    if (pdev->info.rbplus_allowed)
       cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
 
@@ -8042,14 +8042,14 @@ radv_bind_color_output_state(struct radv_cmd_buffer *cmd_buffer, const struct ra
 
    if (cmd_buffer->state.spi_shader_col_format != col_format) {
       cmd_buffer->state.spi_shader_col_format = col_format;
-      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_COLOR_OUTPUT;
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_CB_RENDER_STATE;
       if (pdev->info.rbplus_allowed)
          cmd_buffer->state.dirty |= RADV_CMD_DIRTY_RBPLUS;
    }
 
    if (cmd_buffer->state.cb_shader_mask != cb_shader_mask) {
       cmd_buffer->state.cb_shader_mask = cb_shader_mask;
-      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_COLOR_OUTPUT;
+      cmd_buffer->state.dirty |= RADV_CMD_DIRTY_CB_RENDER_STATE;
    }
 }
 
@@ -9331,7 +9331,7 @@ radv_CmdExecuteCommands(VkCommandBuffer commandBuffer, uint32_t commandBufferCou
    primary->state.dirty_dynamic |= RADV_DYNAMIC_ALL;
    primary->state.dirty |= RADV_CMD_DIRTY_PIPELINE | RADV_CMD_DIRTY_INDEX_BUFFER | RADV_CMD_DIRTY_GUARDBAND |
                            RADV_CMD_DIRTY_SHADER_QUERY | RADV_CMD_DIRTY_OCCLUSION_QUERY |
-                           RADV_CMD_DIRTY_DB_SHADER_CONTROL | RADV_CMD_DIRTY_COLOR_OUTPUT;
+                           RADV_CMD_DIRTY_DB_SHADER_CONTROL | RADV_CMD_DIRTY_CB_RENDER_STATE;
    radv_mark_descriptor_sets_dirty(primary, VK_PIPELINE_BIND_POINT_GRAPHICS);
    radv_mark_descriptor_sets_dirty(primary, VK_PIPELINE_BIND_POINT_COMPUTE);
 
@@ -10829,7 +10829,7 @@ radv_compact_spi_shader_col_format(uint32_t spi_shader_col_format)
 }
 
 static void
-radv_emit_color_output_state(struct radv_cmd_buffer *cmd_buffer)
+radv_emit_cb_render_state(struct radv_cmd_buffer *cmd_buffer)
 {
    const struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
    const struct radv_physical_device *pdev = radv_device_physical(device);
@@ -10844,7 +10844,7 @@ radv_emit_color_output_state(struct radv_cmd_buffer *cmd_buffer)
       radeon_set_context_reg(cmd_buffer->cs, R_028714_SPI_SHADER_COL_FORMAT, col_format_compacted);
    }
 
-   cmd_buffer->state.dirty &= ~RADV_CMD_DIRTY_COLOR_OUTPUT;
+   cmd_buffer->state.dirty &= ~RADV_CMD_DIRTY_CB_RENDER_STATE;
 }
 
 static void
@@ -10922,8 +10922,8 @@ radv_emit_all_graphics_states(struct radv_cmd_buffer *cmd_buffer, const struct r
    if (ps_epilog)
       radv_emit_ps_epilog_state(cmd_buffer, ps_epilog);
 
-   if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_COLOR_OUTPUT)
-      radv_emit_color_output_state(cmd_buffer);
+   if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_CB_RENDER_STATE)
+      radv_emit_cb_render_state(cmd_buffer);
 
    if (cmd_buffer->state.dirty & RADV_CMD_DIRTY_FRAMEBUFFER)
       radv_emit_framebuffer_state(cmd_buffer);

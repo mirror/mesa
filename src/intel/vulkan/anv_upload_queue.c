@@ -4,6 +4,8 @@
 
 #include "anv_private.h"
 
+#include "ds/intel_tracepoints.h"
+
 static VkResult
 anv_device_upload_garbage_collect_locked(struct anv_device *device,
                                          bool wait_completion)
@@ -70,7 +72,13 @@ anv_device_upload_flush_locked(struct anv_device *device,
       return VK_SUCCESS;
    }
 
+   trace_intel_end_upload_shader(&submit->ds.trace, &submit->batch,
+                                 device->upload.count,
+                                 device->upload.size);
+
    device->upload.submit = NULL;
+   device->upload.count = 0;
+   device->upload.size = 0;
 
    anv_genX(device->info, emit_memcpy_end)(
       &device->upload.memcpy_state);
@@ -152,6 +160,8 @@ anv_device_upload_data(struct anv_device *device,
                                        false, false, &submit);
       if (result != VK_SUCCESS)
          goto unlock;
+
+      trace_intel_begin_upload_shader(&submit->ds.trace, &submit->batch);
    } else {
       /* Append to the existing batch */
       submit = device->upload.submit;
@@ -164,6 +174,9 @@ anv_device_upload_data(struct anv_device *device,
    }
 
    assert(size % 4 == 0);
+
+   device->upload.size += size;
+   device->upload.count++;
 
    while (size > 0) {
       uint32_t cp_size = MIN2(size, submit->general_state_stream.block_size);

@@ -1929,6 +1929,8 @@ struct anv_device_upload {
    uint64_t timeline_val;
 
    struct anv_async_submit *submit;
+   uint32_t count;
+   uint64_t size;
 
    struct anv_memcpy_state memcpy_state;
    struct anv_simple_shader simple_state;

@@ -36,6 +36,7 @@ struct radv_dynamic_state {
    uint64_t mask;
 
    uint32_t color_write_enable;
+   uint32_t color_write_mask;
 
    struct {
       struct {

@@ -5732,6 +5732,9 @@ void genX(CmdEndRendering)(
           */
          anv_add_pending_pipe_bits(cmd_buffer,
                                    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
+                                   (GFX_VERx10 >= 125 ?
+                                    ANV_PIPE_PSS_STALL_SYNC_BIT :
+                                    ANV_PIPE_STALL_AT_SCOREBOARD_BIT) |
                                    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
                                    "MSAA resolve");
       }
@@ -5764,7 +5767,11 @@ void genX(CmdEndRendering)(
           * sure unbound regions read 0, as residencyNonResidentStrict
           * mandates.
           */
-         anv_add_pending_pipe_bits(cmd_buffer, ANV_PIPE_TILE_CACHE_FLUSH_BIT,
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   (GFX_VERx10 >= 125 ?
+                                    ANV_PIPE_PSS_STALL_SYNC_BIT :
+                                    ANV_PIPE_STALL_AT_SCOREBOARD_BIT) |
+                                   ANV_PIPE_TILE_CACHE_FLUSH_BIT,
                                    "sparse MSAA resolve");
       }
 

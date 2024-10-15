@@ -55,6 +55,7 @@ void state_pool_test(void)
                              .start_offset = 0,
                              .block_size   = 256,
                              .max_size     = _1Gb,
+                             .host_mapped  = true,
                           });
 
       /* Grab one so a zero offset is impossible */

@@ -41,7 +41,7 @@ void block_pool_max_size(void)
    device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);
    anv_bo_cache_init(&device.bo_cache, &device);
-   anv_block_pool_init(&pool, &device, "test", 4096, initial_size, _1Mb);
+   anv_block_pool_init(&pool, &device, "test", 4096, initial_size, _1Mb, true);
    ASSERT(pool.size == initial_size);
 
    for (uint32_t i = 0; i < _1Mb / block_size; i++) {

@@ -72,6 +72,7 @@ static void run_test()
                           .start_offset = 0,
                           .block_size   = 64,
                           .max_size     = _1Gb,
+                          .host_mapped  = true,
                        });
 
    pthread_barrier_init(&barrier, NULL, NUM_THREADS);

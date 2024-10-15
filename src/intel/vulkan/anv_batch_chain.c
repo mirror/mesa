@@ -1231,7 +1231,8 @@ anv_print_batch(struct anv_device *device,
 
    if (cmd_buffer->is_companion_rcs_cmd_buffer) {
       int render_queue_idx =
-         anv_get_first_render_queue_index(device->physical);
+         anv_get_first_queue_index(device->physical,
+                                   INTEL_ENGINE_CLASS_RENDER);
       ctx = &device->decoder[render_queue_idx];
    }
 
@@ -1315,7 +1316,7 @@ anv_queue_exec_locked(struct anv_queue *queue,
                       const struct vk_sync_signal *signals,
                       struct anv_query_pool *perf_query_pool,
                       uint32_t perf_query_pass,
-                      struct anv_utrace_submit *utrace_submit)
+                      struct anv_async_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
    VkResult result = VK_SUCCESS;
@@ -1474,7 +1475,7 @@ out_free_submit:
 static VkResult
 anv_queue_submit_cmd_buffers_locked(struct anv_queue *queue,
                                     struct vk_queue_submit *submit,
-                                    struct anv_utrace_submit *utrace_submit)
+                                    struct anv_async_submit *utrace_submit)
 {
    VkResult result;
 
@@ -1596,10 +1597,16 @@ anv_queue_submit(struct vk_queue *vk_queue,
       return VK_SUCCESS;
    }
 
+   /* Flush shader uploads so that it appears in order the u_trace prints. */
+   uint64_t upload_timeline_val;
+   result = anv_device_upload_flush(device, &upload_timeline_val);
+   if (result != VK_SUCCESS)
+      return result;
+
    /* Flush the trace points first before taking the lock as the flushing
     * might try to take that same lock.
     */
-   struct anv_utrace_submit *utrace_submit = NULL;
+   struct anv_async_submit *utrace_submit = NULL;
    result = anv_device_utrace_flush_cmd_buffers(
       queue,
       submit->command_buffer_count,
@@ -1710,6 +1717,9 @@ anv_async_submit_init(struct anv_async_submit *submit,
       return result;
 
    submit->batch = (struct anv_batch) {
+      .engine_class = use_companion_rcs ?
+                      INTEL_ENGINE_CLASS_RENDER :
+                      queue->engine_class,
       .alloc = &device->vk.alloc,
       .relocs = &submit->relocs,
       .user_data = submit,
@@ -1730,6 +1740,13 @@ anv_async_submit_init(struct anv_async_submit *submit,
       submit->owns_sync = true;
    }
 
+   anv_state_stream_init(&submit->dynamic_state_stream,
+                         &device->dynamic_state_pool, 16384);
+   anv_state_stream_init(&submit->general_state_stream,
+                         &device->general_state_pool, 16384);
+
+   intel_ds_flush_data_init(&submit->ds, &queue->ds, queue->ds.submission_id);
+
    return VK_SUCCESS;
 }
 
@@ -1737,6 +1754,11 @@ void
 anv_async_submit_fini(struct anv_async_submit *submit)
 {
    struct anv_device *device = submit->queue->device;
+
+   intel_ds_flush_data_fini(&submit->ds);
+
+   anv_state_stream_finish(&submit->dynamic_state_stream);
+   anv_state_stream_finish(&submit->general_state_stream);
 
    if (submit->owns_sync)
       vk_sync_destroy(&device->vk, submit->signal.sync);
@@ -1770,6 +1792,20 @@ anv_async_submit_create(struct anv_queue *queue,
       vk_free(&device->vk.alloc, *out_submit);
 
    return result;
+}
+
+void
+anv_async_submit_set_signal(struct anv_async_submit *submit,
+                            struct vk_sync *sync,
+                            uint64_t value)
+{
+   /* Should not be set */
+   assert(submit->signal.sync == NULL);
+
+   submit->signal = (struct vk_sync_signal) {
+      .sync = sync,
+      .signal_value = value,
+   };
 }
 
 void

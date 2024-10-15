@@ -172,18 +172,20 @@ genX(cmd_buffer_set_coarse_pixel_active)(struct anv_cmd_buffer *cmd_buffer,
 #endif
 }
 
-void genX(emit_so_memcpy_init)(struct anv_memcpy_state *state,
-                               struct anv_device *device,
-                               struct anv_cmd_buffer *cmd_buffer,
-                               struct anv_batch *batch);
+void genX(emit_memcpy_init)(struct anv_memcpy_state *state,
+                            struct anv_device *device,
+                            struct anv_cmd_buffer *cmd_buffer,
+                            struct anv_batch *batch,
+                            struct anv_state_stream *dynamic_stream,
+                            struct anv_state_stream *general_stream);
 
-void genX(emit_so_memcpy_fini)(struct anv_memcpy_state *state);
+void genX(emit_memcpy_fini)(struct anv_memcpy_state *state);
 
-void genX(emit_so_memcpy_end)(struct anv_memcpy_state *state);
+void genX(emit_memcpy_end)(struct anv_memcpy_state *state);
 
-void genX(emit_so_memcpy)(struct anv_memcpy_state *state,
-                          struct anv_address dst, struct anv_address src,
-                          uint32_t size);
+void genX(emit_memcpy)(struct anv_memcpy_state *state,
+                       struct anv_address dst, struct anv_address src,
+                       uint32_t size);
 
 void genX(emit_l3_config)(struct anv_batch *batch,
                           const struct anv_device *device,
@@ -237,10 +239,6 @@ genX(emit_urb_setup)(struct anv_device *device, struct anv_batch *batch,
 
 void genX(emit_sample_pattern)(struct anv_batch *batch,
                                const struct vk_sample_locations_state *sl);
-
-void genX(cmd_buffer_so_memcpy)(struct anv_cmd_buffer *cmd_buffer,
-                                struct anv_address dst, struct anv_address src,
-                                uint32_t size);
 
 void genX(cmd_buffer_dispatch_kernel)(struct anv_cmd_buffer *cmd_buffer,
                                       struct anv_kernel *kernel,
@@ -386,11 +384,12 @@ genX(emit_simple_shader_end)(struct anv_simple_shader *state);
 
 VkResult genX(init_trtt_context_state)(struct anv_async_submit *submit);
 
-void genX(write_trtt_entries)(struct anv_async_submit *submit,
-                              struct anv_trtt_bind *l3l2_binds,
-                              uint32_t n_l3l2_binds,
-                              struct anv_trtt_bind *l1_binds,
-                              uint32_t n_l1_binds);
+void genX(batch_write_trtt_entries)(struct anv_batch *batch,
+                                    const struct intel_device_info *devinfo,
+                                    struct anv_trtt_bind *l3l2_binds,
+                                    uint32_t n_l3l2_binds,
+                                    struct anv_trtt_bind *l1_binds,
+                                    uint32_t n_l1_binds);
 
 void genX(async_submit_end)(struct anv_async_submit *submit);
 

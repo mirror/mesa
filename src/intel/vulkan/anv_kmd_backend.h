@@ -73,6 +73,17 @@ enum anv_vm_bind_flags {
 };
 
 struct anv_kmd_backend {
+   /* Create an engine for anv_queue */
+   VkResult (*engine_create)(struct anv_device *device,
+                             struct anv_queue *queue,
+                             enum intel_engine_class engine_class,
+                             VkQueueGlobalPriorityKHR priority,
+                             bool protected);
+
+   /* Destroy the engine of anv_queue */
+   void (*engine_destroy)(struct anv_device *device,
+                          struct anv_queue *queue);
+
    /*
     * Create a gem buffer.
     * Return the gem handle in case of success otherwise returns 0.
@@ -117,7 +128,7 @@ struct anv_kmd_backend {
                                  const struct vk_sync_signal *signals,
                                  struct anv_query_pool *perf_query_pool,
                                  uint32_t perf_query_pass,
-                                 struct anv_utrace_submit *utrace_submit);
+                                 struct anv_async_submit *utrace_submit);
    /* The caller is not expected to hold device->mutex when calling this
     * vfunc.
     */

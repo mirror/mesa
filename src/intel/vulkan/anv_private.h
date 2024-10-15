@@ -792,7 +792,8 @@ VkResult anv_block_pool_init(struct anv_block_pool *pool,
                              const char *name,
                              uint64_t start_address,
                              uint32_t initial_size,
-                             uint32_t max_size);
+                             uint32_t max_size,
+                             bool host_mapped);
 void anv_block_pool_finish(struct anv_block_pool *pool);
 VkResult anv_block_pool_alloc(struct anv_block_pool *pool,
                               uint32_t block_size,
@@ -807,6 +808,7 @@ struct anv_state_pool_params {
    int64_t     start_offset;
    uint32_t    block_size;
    uint32_t    max_size;
+   bool        host_mapped;
 };
 
 VkResult anv_state_pool_init(struct anv_state_pool *pool,
@@ -1044,6 +1046,11 @@ struct anv_physical_device {
     /** Whether KMD has the ability to create VM objects */
     bool                                        has_vm_control;
 
+    /** Whether the device is not able map all the device local memory on the
+     * host
+     */
+    bool                                        has_small_bar;
+
     /** True if we have the means to do sparse binding (e.g., a Kernel driver
      * a vm_bind ioctl).
      */
@@ -1109,6 +1116,11 @@ struct anv_physical_device {
 
     /** Can the platform support cooperative matrices and is it enabled? */
     bool                                        has_cooperative_matrix;
+
+    /** Whether the device uploads the shader with device copies (rather than
+     * host memcpy)
+     */
+    bool                                        use_shader_upload;
 
     struct {
       uint32_t                                  family_count;
@@ -1319,6 +1331,7 @@ struct anv_queue {
    struct anv_device *                       device;
 
    const struct anv_queue_family *           family;
+   enum intel_engine_class                   engine_class;
 
    struct intel_batch_decode_ctx *           decoder;
 
@@ -1405,6 +1418,67 @@ anv_device_upload_nir(struct anv_device *device,
 
 void
 anv_load_fp64_shader(struct anv_device *device);
+
+/** State tracking for vertex buffer flushes
+ *
+ * On Gfx8-9, the VF cache only considers the bottom 32 bits of memory
+ * addresses.  If you happen to have two vertex buffers which get placed
+ * exactly 4 GiB apart and use them in back-to-back draw calls, you can get
+ * collisions.  In order to solve this problem, we track vertex address ranges
+ * which are live in the cache and invalidate the cache if one ever exceeds 32
+ * bits.
+ */
+struct anv_vb_cache_range {
+   /* Virtual address at which the live vertex buffer cache range starts for
+    * this vertex buffer index.
+    */
+   uint64_t start;
+
+   /* Virtual address of the byte after where vertex buffer cache range ends.
+    * This is exclusive such that end - start is the size of the range.
+    */
+   uint64_t end;
+};
+
+static inline void
+anv_merge_vb_cache_range(struct anv_vb_cache_range *dirty,
+                         const struct anv_vb_cache_range *bound)
+{
+   if (dirty->start == dirty->end) {
+      *dirty = *bound;
+   } else if (bound->start != bound->end) {
+      dirty->start = MIN2(dirty->start, bound->start);
+      dirty->end = MAX2(dirty->end, bound->end);
+   }
+}
+
+/* Check whether we need to apply the Gfx8-9 vertex buffer workaround*/
+static inline bool
+anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
+                                           struct anv_vb_cache_range *dirty,
+                                           struct anv_address vb_address,
+                                           uint32_t vb_size)
+{
+   if (vb_size == 0) {
+      bound->start = 0;
+      bound->end = 0;
+      return false;
+   }
+
+   bound->start = intel_48b_address(anv_address_physical(vb_address));
+   bound->end = bound->start + vb_size;
+   assert(bound->end > bound->start); /* No overflow */
+
+   /* Align everything to a cache line */
+   bound->start &= ~(64ull - 1ull);
+   bound->end = align64(bound->end, 64);
+
+   anv_merge_vb_cache_range(dirty, bound);
+
+   /* If our range is larger than 32 bits, we have to flush */
+   assert(bound->end - bound->start <= (1ull << 32));
+   return (dirty->end - dirty->start) > (1ull << 32);
+}
 
 /**
  * This enum tracks the various HW instructions that hold graphics state
@@ -1791,6 +1865,51 @@ enum anv_rt_bvh_build_method {
    ANV_BVH_BUILD_METHOD_NEW_SAH,
 };
 
+/**
+ * State tracking for simple internal shaders
+ */
+struct anv_simple_shader {
+   /* The device associated with this emission */
+   struct anv_device *device;
+   /* The command buffer associated with this emission (can be NULL) */
+   struct anv_cmd_buffer *cmd_buffer;
+   /* State stream used for various internal allocations */
+   struct anv_state_stream *dynamic_state_stream;
+   struct anv_state_stream *general_state_stream;
+   /* Where to emit the commands (can be different from cmd_buffer->batch) */
+   struct anv_batch *batch;
+   /* Shader to use */
+   struct anv_shader_bin *kernel;
+   /* L3 config used by the shader */
+   const struct intel_l3_config *l3_config;
+   /* Current URB config */
+   const struct intel_urb_config *urb_cfg;
+
+   /* Managed by the simpler shader helper*/
+   struct anv_state bt_state;
+};
+
+/* Use to emit a series of memcpy operations */
+struct anv_memcpy_state {
+   struct anv_device *device;
+   struct anv_cmd_buffer *cmd_buffer;
+   struct anv_batch *batch;
+
+   union {
+      struct {
+         /* Configuration programmed by the memcpy operation */
+         struct intel_urb_config urb_cfg;
+
+         struct anv_vb_cache_range vb_bound;
+         struct anv_vb_cache_range vb_dirty;
+      } gfx;
+
+      struct {
+         struct anv_simple_shader simple_state;
+      } cs;
+   };
+};
+
 struct anv_device_astc_emu {
     struct vk_texcompress_astc_state           *texcompress;
 
@@ -1799,6 +1918,22 @@ struct anv_device_astc_emu {
     VkDescriptorSetLayout ds_layout;
     VkPipelineLayout pipeline_layout;
     VkPipeline pipeline;
+};
+
+struct anv_device_upload {
+   simple_mtx_t mutex;
+
+   struct list_head in_flight_uploads;
+
+   struct vk_sync *timeline;
+   uint64_t timeline_val;
+
+   struct anv_async_submit *submit;
+   uint32_t count;
+   uint64_t size;
+
+   struct anv_memcpy_state memcpy_state;
+   struct anv_simple_shader simple_state;
 };
 
 struct anv_device {
@@ -1906,6 +2041,9 @@ struct anv_device {
 
     uint32_t                                    queue_count;
     struct anv_queue  *                         queues;
+
+    struct anv_queue                            internal_queue;
+    enum intel_engine_class                     internal_queue_class;
 
     struct anv_scratch_pool                     scratch_pool;
     struct anv_scratch_pool                     protected_scratch_pool;
@@ -2041,6 +2179,8 @@ struct anv_device {
 
     struct anv_device_astc_emu                   astc_emu;
 
+    struct anv_device_upload                     upload;
+
     struct intel_bind_timeline bind_timeline; /* Xe only */
 
     struct {
@@ -2065,17 +2205,18 @@ struct anv_device {
 };
 
 static inline uint32_t
-anv_get_first_render_queue_index(struct anv_physical_device *pdevice)
+anv_get_first_queue_index(struct anv_physical_device *pdevice,
+                          enum intel_engine_class engine_class)
 {
    assert(pdevice != NULL);
 
    for (uint32_t i = 0; i < pdevice->queue.family_count; i++) {
-      if (pdevice->queue.families[i].queueFlags & VK_QUEUE_GRAPHICS_BIT) {
+      if (pdevice->queue.families[i].engine_class == engine_class) {
          return i;
       }
    }
 
-   unreachable("Graphics capable queue family not found");
+   unreachable("Capable queue family not found");
 }
 
 static inline struct anv_state
@@ -2204,6 +2345,11 @@ VkResult anv_queue_init(struct anv_device *device, struct anv_queue *queue,
                         uint32_t index_in_family);
 void anv_queue_finish(struct anv_queue *queue);
 
+VkResult anv_internal_queue_init(struct anv_device *device,
+                                 struct anv_queue *queue,
+                                 enum intel_engine_class engine_class);
+void anv_internal_queue_finish(struct anv_queue *queue);
+
 VkResult anv_queue_submit(struct vk_queue *queue,
                           struct vk_queue_submit *submit);
 
@@ -2246,6 +2392,15 @@ anv_gem_import_bo_alloc_flags_to_bo_flags(struct anv_device *device,
 const struct intel_device_info_pat_entry *
 anv_device_get_pat_entry(struct anv_device *device,
                          enum anv_bo_alloc_flags alloc_flags);
+
+VkResult anv_device_upload_init(struct anv_device *device);
+void anv_device_upload_finish(struct anv_device *device);
+VkResult anv_device_upload_data(struct anv_device *device,
+                                struct anv_address dst_addr,
+                                const void *data,
+                                size_t size);
+VkResult anv_device_upload_flush(struct anv_device *device,
+                                 uint64_t *timeline_val_out);
 
 uint64_t anv_vma_alloc(struct anv_device *device,
                        uint64_t size, uint64_t align,
@@ -2520,6 +2675,21 @@ struct anv_async_submit {
    struct anv_reloc_list relocs;
    struct anv_batch batch;
    struct util_dynarray batch_bos;
+
+   /* structure used by the perfetto glue */
+   struct intel_ds_flush_data ds;
+
+   /* Stream for temporary allocations */
+   struct anv_state_stream dynamic_state_stream;
+   struct anv_state_stream general_state_stream;
+
+   /* Last fully read 64bit timestamp (used to rebuild the upper bits of 32bit
+    * timestamps)
+    */
+   uint64_t last_full_timestamp;
+
+   /* Link if the submission is to be added to a queue for later freeing */
+   struct list_head link;
 };
 
 VkResult
@@ -2548,6 +2718,11 @@ anv_async_submit_done(struct anv_async_submit *submit);
 bool
 anv_async_submit_wait(struct anv_async_submit *submit);
 
+void
+anv_async_submit_set_signal(struct anv_async_submit *submit,
+                            struct vk_sync *sync,
+                            uint64_t value);
+
 struct anv_sparse_submission {
    struct anv_queue *queue;
 
@@ -2565,14 +2740,6 @@ struct anv_sparse_submission {
 struct anv_trtt_bind {
    uint64_t pte_addr;
    uint64_t entry_addr;
-};
-
-struct anv_trtt_submission {
-   struct anv_async_submit base;
-
-   struct anv_sparse_submission *sparse;
-
-   struct list_head link;
 };
 
 struct anv_device_memory {
@@ -3655,91 +3822,6 @@ struct anv_attachment {
    VkImageLayout resolve_layout;
 };
 
-/** State tracking for vertex buffer flushes
- *
- * On Gfx8-9, the VF cache only considers the bottom 32 bits of memory
- * addresses.  If you happen to have two vertex buffers which get placed
- * exactly 4 GiB apart and use them in back-to-back draw calls, you can get
- * collisions.  In order to solve this problem, we track vertex address ranges
- * which are live in the cache and invalidate the cache if one ever exceeds 32
- * bits.
- */
-struct anv_vb_cache_range {
-   /* Virtual address at which the live vertex buffer cache range starts for
-    * this vertex buffer index.
-    */
-   uint64_t start;
-
-   /* Virtual address of the byte after where vertex buffer cache range ends.
-    * This is exclusive such that end - start is the size of the range.
-    */
-   uint64_t end;
-};
-
-static inline void
-anv_merge_vb_cache_range(struct anv_vb_cache_range *dirty,
-                         const struct anv_vb_cache_range *bound)
-{
-   if (dirty->start == dirty->end) {
-      *dirty = *bound;
-   } else if (bound->start != bound->end) {
-      dirty->start = MIN2(dirty->start, bound->start);
-      dirty->end = MAX2(dirty->end, bound->end);
-   }
-}
-
-/* Check whether we need to apply the Gfx8-9 vertex buffer workaround*/
-static inline bool
-anv_gfx8_9_vb_cache_range_needs_workaround(struct anv_vb_cache_range *bound,
-                                           struct anv_vb_cache_range *dirty,
-                                           struct anv_address vb_address,
-                                           uint32_t vb_size)
-{
-   if (vb_size == 0) {
-      bound->start = 0;
-      bound->end = 0;
-      return false;
-   }
-
-   bound->start = intel_48b_address(anv_address_physical(vb_address));
-   bound->end = bound->start + vb_size;
-   assert(bound->end > bound->start); /* No overflow */
-
-   /* Align everything to a cache line */
-   bound->start &= ~(64ull - 1ull);
-   bound->end = align64(bound->end, 64);
-
-   anv_merge_vb_cache_range(dirty, bound);
-
-   /* If our range is larger than 32 bits, we have to flush */
-   assert(bound->end - bound->start <= (1ull << 32));
-   return (dirty->end - dirty->start) > (1ull << 32);
-}
-
-/**
- * State tracking for simple internal shaders
- */
-struct anv_simple_shader {
-   /* The device associated with this emission */
-   struct anv_device *device;
-   /* The command buffer associated with this emission (can be NULL) */
-   struct anv_cmd_buffer *cmd_buffer;
-   /* State stream used for various internal allocations */
-   struct anv_state_stream *dynamic_state_stream;
-   struct anv_state_stream *general_state_stream;
-   /* Where to emit the commands (can be different from cmd_buffer->batch) */
-   struct anv_batch *batch;
-   /* Shader to use */
-   struct anv_shader_bin *kernel;
-   /* L3 config used by the shader */
-   const struct intel_l3_config *l3_config;
-   /* Current URB config */
-   const struct intel_urb_config *urb_cfg;
-
-   /* Managed by the simpler shader helper*/
-   struct anv_state bt_state;
-};
-
 /** State tracking for particular pipeline bind point
  *
  * This struct is the base struct for anv_cmd_graphics_state and
@@ -4573,6 +4655,8 @@ struct anv_shader_bin {
    gl_shader_stage stage;
 
    struct anv_state kernel;
+
+   void *kernel_code;
    uint32_t kernel_size;
 
    const struct brw_stage_prog_data *prog_data;
@@ -6211,19 +6295,6 @@ void anv_apply_per_prim_attr_wa(struct nir_shader *ms_nir,
                                 struct anv_device *device,
                                 const VkGraphicsPipelineCreateInfo *info);
 
-/* Use to emit a series of memcpy operations */
-struct anv_memcpy_state {
-   struct anv_device *device;
-   struct anv_cmd_buffer *cmd_buffer;
-   struct anv_batch *batch;
-
-   /* Configuration programmed by the memcpy operation */
-   struct intel_urb_config urb_cfg;
-
-   struct anv_vb_cache_range vb_bound;
-   struct anv_vb_cache_range vb_dirty;
-};
-
 VkResult anv_device_init_internal_kernels(struct anv_device *device);
 void anv_device_finish_internal_kernels(struct anv_device *device);
 VkResult anv_device_get_internal_shader(struct anv_device *device,
@@ -6239,51 +6310,20 @@ void anv_astc_emu_process(struct anv_cmd_buffer *cmd_buffer,
                           VkOffset3D block_offset,
                           VkExtent3D block_extent);
 
-/* This structure is used in 2 scenarios :
- *
- *    - copy utrace timestamps from command buffer so that command buffer can
- *      be resubmitted multiple times without the recorded timestamps being
- *      overwritten before they're read back
- *
- *    - emit trace points for queue debug tagging
- *      (vkQueueBeginDebugUtilsLabelEXT/vkQueueEndDebugUtilsLabelEXT)
- */
-struct anv_utrace_submit {
-   struct anv_async_submit base;
-
-   /* structure used by the perfetto glue */
-   struct intel_ds_flush_data ds;
-
-   /* Stream for temporary allocations */
-   struct anv_state_stream dynamic_state_stream;
-   struct anv_state_stream general_state_stream;
-
-   /* Last fully read 64bit timestamp (used to rebuild the upper bits of 32bit
-    * timestamps)
-    */
-   uint64_t last_full_timestamp;
-
-   /* Memcpy state tracking (only used for timestamp copies on render engine) */
-   struct anv_memcpy_state memcpy_state;
-
-   /* Memcpy state tracking (only used for timestamp copies on compute engine) */
-   struct anv_simple_shader simple_state;
-};
-
 void anv_device_utrace_init(struct anv_device *device);
 void anv_device_utrace_finish(struct anv_device *device);
 VkResult
 anv_device_utrace_flush_cmd_buffers(struct anv_queue *queue,
                                     uint32_t cmd_buffer_count,
                                     struct anv_cmd_buffer **cmd_buffers,
-                                    struct anv_utrace_submit **out_submit);
+                                    struct anv_async_submit **out_submit);
 
 void
-anv_device_utrace_emit_gfx_copy_buffer(struct u_trace_context *utctx,
-                                       void *cmdstream,
-                                       void *ts_from, uint64_t from_offset_B,
-                                       void *ts_to, uint64_t to_offset_B,
-                                       uint64_t size_B);
+anv_device_utrace_emit_copy_buffer(struct u_trace_context *utctx,
+                                   void *cmdstream,
+                                   void *ts_from, uint64_t from_offset_B,
+                                   void *ts_to, uint64_t to_offset_B,
+                                   uint64_t size_B);
 
 static bool
 anv_has_cooperative_matrix(const struct anv_physical_device *device)

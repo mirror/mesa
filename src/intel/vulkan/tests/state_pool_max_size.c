@@ -77,6 +77,7 @@ static void run_test(uint32_t state_size,
                           .start_offset = 0,
                           .block_size   = block_size,
                           .max_size     = pool_max_size,
+                          .host_mapped  = true,
                        });
 
    pthread_barrier_init(&barrier, NULL, NUM_THREADS);

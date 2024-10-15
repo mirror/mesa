@@ -52,6 +52,8 @@ genX_bits_included_symbols = [
   '3DSTATE_SO_BUFFER::Stream Offset',
   '3DSTATE_CPSIZE_CONTROL_BUFFER::Surface Base Address',
   '3DSTATE_CPSIZE_CONTROL_BUFFER::Surface Pitch',
+  'XY_BLOCK_COPY_BLT::Destination Surface Width',
+  'XY_BLOCK_COPY_BLT::Destination X2',
   # structures
   'RENDER_SURFACE_STATE::Surface Base Address',
   'RENDER_SURFACE_STATE::Surface Pitch',
@@ -83,7 +85,8 @@ genX_bits_h = custom_target(
   input : ['gen_bits_header.py', gen_xml_files, gen_xml_rt_files],
   output : 'genX_bits.h',
   command : [prog_python, '@INPUT@', '-o', '@OUTPUT@',
-             '--include-symbols', ','.join(genX_bits_included_symbols)],
+             '--include-symbols', ','.join(genX_bits_included_symbols),
+             '--engines=render,blitter'],
   depend_files: gen_pack_header_deps
 )
 

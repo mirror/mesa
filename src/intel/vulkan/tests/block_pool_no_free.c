@@ -113,7 +113,7 @@ static void run_test()
    device.kmd_backend = anv_kmd_backend_get(INTEL_KMD_TYPE_STUB);
    pthread_mutex_init(&device.mutex, NULL);
    anv_bo_cache_init(&device.bo_cache, &device);
-   anv_block_pool_init(&pool, &device, "test", 4096, 4096, _1Gb);
+   anv_block_pool_init(&pool, &device, "test", 4096, 4096, _1Gb, true);
 
    for (unsigned i = 0; i < NUM_THREADS; i++) {
       jobs[i].pool = &pool;

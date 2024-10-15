@@ -181,7 +181,8 @@ const struct vk_pipeline_cache_object_ops *const anv_cache_import_ops[2] = {
 
 static void
 anv_shader_bin_rewrite_embedded_samplers(struct anv_device *device,
-                                         struct anv_shader_bin *shader,
+                                         void *kernel_data,
+                                         struct anv_embedded_sampler **embedded_samplers,
                                          const struct anv_pipeline_bind_map *bind_map,
                                          const struct brw_stage_prog_data *prog_data_in)
 {
@@ -191,12 +192,12 @@ anv_shader_bin_rewrite_embedded_samplers(struct anv_device *device,
    for (uint32_t i = 0; i < bind_map->embedded_sampler_count; i++) {
       reloc_values[rv_count++] = (struct brw_shader_reloc_value) {
          .id = BRW_SHADER_RELOC_EMBEDDED_SAMPLER_HANDLE + i,
-         .value = shader->embedded_samplers[i]->sampler_state.offset,
+         .value = embedded_samplers[i]->sampler_state.offset,
       };
    }
 
    brw_write_shader_relocs(&device->physical->compiler->isa,
-                           shader->kernel.map, prog_data_in,
+                           kernel_data, prog_data_in,
                            reloc_values, rv_count);
 }
 
@@ -286,6 +287,7 @@ anv_shader_bin_create(struct anv_device *device,
    VK_MULTIALLOC_DECL(&ma, char, strings,
                       INTEL_DEBUG(DEBUG_SHADER_PRINT) ?
                       brw_stage_prog_data_printf_string_size(prog_data_in) : 0);
+   VK_MULTIALLOC_DECL(&ma, uint8_t, kernel_code, kernel_size);
 
    if (!vk_multialloc_alloc(&ma, &device->vk.alloc,
                             VK_SYSTEM_ALLOCATION_SCOPE_DEVICE))
@@ -297,10 +299,13 @@ anv_shader_bin_create(struct anv_device *device,
 
    shader->stage = stage;
 
-   shader->kernel =
-      anv_state_pool_alloc(&device->instruction_state_pool, kernel_size, 64);
-   memcpy(shader->kernel.map, kernel_data, kernel_size);
+   shader->kernel_code = kernel_code;
    shader->kernel_size = kernel_size;
+   memcpy(shader->kernel_code, kernel_data, kernel_size);
+
+   shader->kernel =
+      anv_state_pool_alloc(&device->instruction_state_pool,
+                           shader->kernel_size, 64);
 
    if (bind_map->embedded_sampler_count > 0) {
       shader->embedded_samplers = embedded_samplers;
@@ -397,10 +402,23 @@ anv_shader_bin_create(struct anv_device *device,
    }
 
    brw_write_shader_relocs(&device->physical->compiler->isa,
-                           shader->kernel.map, prog_data_in,
+                           shader->kernel_code, prog_data_in,
                            reloc_values, rv_count);
 
-   anv_shader_bin_rewrite_embedded_samplers(device, shader, bind_map, prog_data_in);
+   anv_shader_bin_rewrite_embedded_samplers(device, shader->kernel_code,
+                                            embedded_samplers,
+                                            bind_map, prog_data_in);
+
+   /* Now that the data is relocated, copy it over to the instruction pool */
+   if (device->physical->use_shader_upload) {
+      anv_device_upload_data(device,
+                             anv_state_pool_state_address(
+                                &device->instruction_state_pool,
+                                shader->kernel),
+                             shader->kernel_code, shader->kernel_size);
+   } else {
+      memcpy(shader->kernel.map, shader->kernel_code, shader->kernel_size);
+   }
 
    memcpy(prog_data, prog_data_in, prog_data_size);
    typed_memcpy(prog_data_relocs, prog_data_in->relocs,
@@ -461,7 +479,7 @@ anv_shader_bin_serialize(struct vk_pipeline_cache_object *object,
    blob_write_uint32(blob, shader->stage);
 
    blob_write_uint32(blob, shader->kernel_size);
-   blob_write_bytes(blob, shader->kernel.map, shader->kernel_size);
+   blob_write_bytes(blob, shader->kernel_code, shader->kernel_size);
 
    blob_write_uint32(blob, shader->prog_data_size);
 

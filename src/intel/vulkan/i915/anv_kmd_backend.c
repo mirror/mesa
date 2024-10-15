@@ -26,6 +26,7 @@
 #include "anv_private.h"
 
 #include "i915/anv_batch_chain.h"
+#include "i915/anv_queue.h"
 
 #include "drm-uapi/i915_drm.h"
 #include "intel/common/i915/intel_gem.h"
@@ -289,6 +290,8 @@ const struct anv_kmd_backend *
 anv_i915_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend i915_backend = {
+      .engine_create = anv_i915_create_engine,
+      .engine_destroy = anv_i915_destroy_engine,
       .gem_create = i915_gem_create,
       .gem_create_userptr = i915_gem_create_userptr,
       .gem_close = i915_gem_close,

@@ -426,6 +426,12 @@ VkResult anv_CreateDevice(
    for (uint32_t i = 0; i < pCreateInfo->queueCreateInfoCount; i++)
       num_queues += pCreateInfo->pQueueCreateInfos[i].queueCount;
 
+   /* TODO: select a better engine based on already used engines, for example
+    *       if compute is unused, pick compute
+    */
+   /* device->internal_queue_class = physical_device->needs_internal_queue ? */
+   /*    INTEL_ENGINE_CLASS_RENDER : INTEL_ENGINE_CLASS_INVALID; */
+
    result = anv_device_setup_context_or_vm(device, pCreateInfo, num_queues);
    if (result != VK_SUCCESS)
       goto fail_fd;
@@ -523,7 +529,8 @@ VkResult anv_CreateDevice(
                                    .base_address = 0,
                                    .start_offset = device->physical->va.general_state_pool.addr,
                                    .block_size   = 16384,
-                                   .max_size     = device->physical->va.general_state_pool.size
+                                   .max_size     = device->physical->va.general_state_pool.size,
+                                   .host_mapped  = true,
                                 });
    if (result != VK_SUCCESS)
       goto fail_batch_bo_pool;
@@ -534,6 +541,7 @@ VkResult anv_CreateDevice(
                                    .base_address = device->physical->va.dynamic_state_pool.addr,
                                    .block_size   = 16384,
                                    .max_size     = device->physical->va.dynamic_state_pool.size,
+                                   .host_mapped  = true,
                                 });
    if (result != VK_SUCCESS)
       goto fail_general_state_pool;
@@ -557,6 +565,7 @@ VkResult anv_CreateDevice(
                                    .base_address = device->physical->va.instruction_state_pool.addr,
                                    .block_size   = 16384,
                                    .max_size     = device->physical->va.instruction_state_pool.size,
+                                   .host_mapped  = !device->physical->use_shader_upload,
                                 });
    if (result != VK_SUCCESS)
       goto fail_custom_border_color_pool;
@@ -571,6 +580,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.scratch_surface_state_pool.addr,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.scratch_surface_state_pool.size,
+                                      .host_mapped  = true,
                                    });
       if (result != VK_SUCCESS)
          goto fail_instruction_state_pool;
@@ -582,6 +592,7 @@ VkResult anv_CreateDevice(
                                       .start_offset = device->physical->va.scratch_surface_state_pool.size,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                      .host_mapped  = true,
                                    });
    } else {
       result = anv_state_pool_init(&device->internal_surface_state_pool, device,
@@ -590,6 +601,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.internal_surface_state_pool.addr,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                      .host_mapped  = true,
                                    });
    }
    if (result != VK_SUCCESS)
@@ -602,6 +614,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.bindless_surface_state_pool.addr,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.bindless_surface_state_pool.size,
+                                      .host_mapped  = true,
                                    });
       if (result != VK_SUCCESS)
          goto fail_internal_surface_state_pool;
@@ -617,6 +630,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.binding_table_pool.addr,
                                       .block_size   = BINDING_TABLE_POOL_BLOCK_SIZE,
                                       .max_size     = device->physical->va.binding_table_pool.size,
+                                      .host_mapped  = true,
                                    });
    } else {
       /* The binding table should be in front of the surface states in virtual
@@ -635,6 +649,7 @@ VkResult anv_CreateDevice(
                                       .start_offset = bt_pool_offset,
                                       .block_size   = BINDING_TABLE_POOL_BLOCK_SIZE,
                                       .max_size     = device->physical->va.internal_surface_state_pool.size,
+                                      .host_mapped  = true,
                                    });
    }
    if (result != VK_SUCCESS)
@@ -647,6 +662,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.indirect_push_descriptor_pool.addr,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.indirect_push_descriptor_pool.size,
+                                      .host_mapped  = true,
                                    });
       if (result != VK_SUCCESS)
          goto fail_binding_table_pool;
@@ -664,6 +680,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.push_descriptor_buffer_pool.addr,
                                       .block_size   = 4096,
                                       .max_size     = device->physical->va.push_descriptor_buffer_pool.size,
+                                      .host_mapped  = true,
                                    });
       if (result != VK_SUCCESS)
          goto fail_indirect_push_descriptor_pool;
@@ -676,6 +693,7 @@ VkResult anv_CreateDevice(
                                       .base_address = device->physical->va.aux_tt_pool.addr,
                                       .block_size   = 16384,
                                       .max_size     = device->physical->va.aux_tt_pool.size,
+                                      .host_mapped  = true,
                                    });
       if (result != VK_SUCCESS)
          goto fail_push_descriptor_buffer_pool;
@@ -887,8 +905,8 @@ VkResult anv_CreateDevice(
    if (device->info->verx10 >= 125) {
       VkCommandPoolCreateInfo pool_info = {
          .sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO,
-         .queueFamilyIndex =
-             anv_get_first_render_queue_index(device->physical),
+         .queueFamilyIndex = anv_get_first_queue_index(
+            device->physical, INTEL_ENGINE_CLASS_RENDER),
       };
 
       result = vk_common_CreateCommandPool(anv_device_to_handle(device),
@@ -902,12 +920,6 @@ VkResult anv_CreateDevice(
    result = anv_device_init_trtt(device);
    if (result != VK_SUCCESS)
       goto fail_companion_cmd_pool;
-
-   result = anv_device_init_rt_shaders(device);
-   if (result != VK_SUCCESS) {
-      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
-      goto fail_trtt;
-   }
 
    anv_device_init_blorp(device);
 
@@ -966,18 +978,41 @@ VkResult anv_CreateDevice(
       }
    }
 
+   if (physical_device->use_shader_upload) {
+      result = anv_internal_queue_init(device, &device->internal_queue,
+                                       INTEL_ENGINE_CLASS_RENDER);
+      if (result != VK_SUCCESS)
+         goto fail_queues;
+   }
+
    anv_device_utrace_init(device);
+
+   result = anv_device_upload_init(device);
+   if (result != VK_SUCCESS)
+      goto fail_utrace;
+
+   result = anv_device_init_rt_shaders(device);
+   if (result != VK_SUCCESS) {
+      result = vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+      goto fail_upload;
+   }
 
    result = anv_genX(device->info, init_device_state)(device);
    if (result != VK_SUCCESS)
-      goto fail_utrace;
+      goto fail_rt_shaders;
 
    *pDevice = anv_device_to_handle(device);
 
    return VK_SUCCESS;
 
+ fail_rt_shaders:
+   anv_device_finish_rt_shaders(device);
+ fail_upload:
+   anv_device_upload_finish(device);
  fail_utrace:
    anv_device_utrace_finish(device);
+   if (physical_device->use_shader_upload)
+      anv_internal_queue_finish(&device->internal_queue);
  fail_queues:
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);
@@ -985,8 +1020,6 @@ VkResult anv_CreateDevice(
    anv_device_finish_blorp(device);
    anv_device_finish_astc_emu(device);
    anv_device_finish_internal_kernels(device);
-   anv_device_finish_rt_shaders(device);
- fail_trtt:
    anv_device_finish_trtt(device);
  fail_companion_cmd_pool:
    if (device->info->verx10 >= 125) {
@@ -1096,11 +1129,17 @@ void anv_DestroyDevice(
 
    struct anv_physical_device *pdevice = device->physical;
 
-   /* Do TRTT batch garbage collection before destroying queues. */
-   anv_device_finish_trtt(device);
-
+   /* Finish utrace first as it might access TRTT resources, queues, etc... */
    anv_device_utrace_finish(device);
 
+   /* Do upload queue & TRTT batch garbage collection before destroying
+    * queues.
+    */
+   anv_device_upload_finish(device);
+   anv_device_finish_trtt(device);
+
+   if (device->physical->use_shader_upload)
+      anv_internal_queue_finish(&device->internal_queue);
    for (uint32_t i = 0; i < device->queue_count; i++)
       anv_queue_finish(&device->queues[i]);
    vk_free(&device->vk.alloc, device->queues);

@@ -28,6 +28,7 @@
 #include "anv_private.h"
 
 #include "xe/anv_batch_chain.h"
+#include "xe/anv_queue.h"
 
 #include "drm-uapi/gpu_scheduler.h"
 #include "drm-uapi/xe_drm.h"
@@ -352,6 +353,8 @@ const struct anv_kmd_backend *
 anv_xe_kmd_backend_get(void)
 {
    static const struct anv_kmd_backend xe_backend = {
+      .engine_create = anv_xe_create_engine,
+      .engine_destroy = anv_xe_destroy_engine,
       .gem_create = xe_gem_create,
       .gem_create_userptr = xe_gem_create_userptr,
       .gem_close = xe_gem_close,

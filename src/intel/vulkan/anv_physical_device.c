@@ -2538,6 +2538,9 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       device->local_minor = 0;
    }
 
+   device->has_small_bar = anv_physical_device_has_vram(device) &&
+                           device->vram_non_mappable.size != 0;
+
    get_device_extensions(device, &device->vk.supported_extensions);
    get_features(device, &device->vk.supported_features);
    get_properties(device, &device->vk.properties);
@@ -2549,6 +2552,9 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    anv_measure_device_init(device);
 
    anv_genX(&device->info, init_physical_device_state)(device);
+
+   device->use_shader_upload = true || device->has_small_bar ||
+      debug_get_bool_option("ANV_SHADER_UPLOAD", false);
 
    *out = &device->vk;
 

@@ -362,29 +362,10 @@ out:
 }
 
 static VkResult
-setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
-                              struct anv_queue *queue,
-                              struct anv_cmd_buffer **cmd_buffers,
-                              uint32_t num_cmd_buffers)
+setup_execbuf_device_pools(struct anv_execbuf *execbuf,
+                           struct anv_device *device)
 {
-   struct anv_device *device = queue->device;
    VkResult result;
-
-   if (unlikely(device->physical->measure_device.config)) {
-      for (uint32_t i = 0; i < num_cmd_buffers; i++)
-         anv_measure_submit(cmd_buffers[i]);
-   }
-
-   /* Edit the tail of the command buffers to chain them all together if they
-    * can be.
-    */
-   anv_cmd_buffer_chain_command_buffers(cmd_buffers, num_cmd_buffers);
-
-   for (uint32_t i = 0; i < num_cmd_buffers; i++) {
-      result = setup_execbuf_for_cmd_buffer(execbuf, cmd_buffers[i]);
-      if (result != VK_SUCCESS)
-         return result;
-   }
 
    /* Add all the global BOs to the object list for softpin case. */
    result = pin_state_pool(device, execbuf, &device->scratch_surface_state_pool);
@@ -446,10 +427,6 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
          return result;
    }
 
-   result = anv_execbuf_add_trtt_bos(device, execbuf);
-   if (result != VK_SUCCESS)
-      return result;
-
    /* Add all the private BOs from images because we can't track after binding
     * updates of VK_EXT_descriptor_indexing.
     */
@@ -461,6 +438,42 @@ setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
       if (result != VK_SUCCESS)
          return result;
    }
+
+   return VK_SUCCESS;
+ }
+
+static VkResult
+setup_execbuf_for_cmd_buffers(struct anv_execbuf *execbuf,
+                              struct anv_queue *queue,
+                              struct anv_cmd_buffer **cmd_buffers,
+                              uint32_t num_cmd_buffers)
+{
+   struct anv_device *device = queue->device;
+   VkResult result;
+
+   if (unlikely(device->physical->measure_device.config)) {
+      for (uint32_t i = 0; i < num_cmd_buffers; i++)
+         anv_measure_submit(cmd_buffers[i]);
+   }
+
+   /* Edit the tail of the command buffers to chain them all together if they
+    * can be.
+    */
+   anv_cmd_buffer_chain_command_buffers(cmd_buffers, num_cmd_buffers);
+
+   for (uint32_t i = 0; i < num_cmd_buffers; i++) {
+      result = setup_execbuf_for_cmd_buffer(execbuf, cmd_buffers[i]);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   result = setup_execbuf_device_pools(execbuf, device);
+   if (result != VK_SUCCESS)
+      return result;
+
+   result = anv_execbuf_add_trtt_bos(device, execbuf);
+   if (result != VK_SUCCESS)
+      return result;
 
    struct list_head *batch_bo = &cmd_buffers[0]->batch_bos;
    struct anv_batch_bo *first_batch_bo =
@@ -596,6 +609,11 @@ setup_async_execbuf(struct anv_execbuf *execbuf,
          intel_flush_range(bo->map, bo->size);
 #endif
    }
+
+
+   result = setup_execbuf_device_pools(execbuf, device);
+   if (result != VK_SUCCESS)
+      return result;
 
    for (uint32_t i = 0; i < wait_count; i++) {
       result = anv_execbuf_add_sync(device, execbuf,
@@ -825,7 +843,7 @@ i915_queue_exec_locked(struct anv_queue *queue,
                        const struct vk_sync_signal *signals,
                        struct anv_query_pool *perf_query_pool,
                        uint32_t perf_query_pass,
-                       struct anv_utrace_submit *utrace_submit)
+                       struct anv_async_submit *utrace_submit)
 {
    struct anv_device *device = queue->device;
    struct anv_execbuf execbuf = {
@@ -834,17 +852,22 @@ i915_queue_exec_locked(struct anv_queue *queue,
    };
    VkResult result;
 
+   uint64_t upload_timeline_val;
+   result = anv_device_upload_flush(device, &upload_timeline_val);
+   if (result != VK_SUCCESS)
+      goto error;
+
    /* If there is a utrace submission but no batch, it means there are no
     * commands to run for utrace. But we still have to signal the associated
     * syncs, so add them to the submission.
     */
    if (utrace_submit &&
-       util_dynarray_num_elements(&utrace_submit->base.batch_bos,
+       util_dynarray_num_elements(&utrace_submit->batch_bos,
                                   struct anv_bo *) == 0) {
       result = anv_execbuf_add_sync(device, &execbuf,
-                                    utrace_submit->base.signal.sync,
+                                    utrace_submit->signal.sync,
                                     true /* is_signal */,
-                                    utrace_submit->base.signal.signal_value);
+                                    utrace_submit->signal.signal_value);
       if (result != VK_SUCCESS)
          goto error;
 
@@ -883,6 +906,15 @@ i915_queue_exec_locked(struct anv_queue *queue,
                                     signals[i].sync,
                                     true /* is_signal */,
                                     signals[i].signal_value);
+      if (result != VK_SUCCESS)
+         goto error;
+   }
+
+   if (cmd_buffer_count > 0 && upload_timeline_val) {
+      result = anv_execbuf_add_sync(device, &execbuf,
+                                    device->upload.timeline,
+                                    false /* is_signal */,
+                                    upload_timeline_val);
       if (result != VK_SUCCESS)
          goto error;
    }
@@ -990,10 +1022,10 @@ i915_queue_exec_locked(struct anv_queue *queue,
 
    if (result == VK_SUCCESS && utrace_submit) {
       struct vk_sync_signal signal = {
-         .sync = utrace_submit->base.signal.sync,
-         .signal_value = utrace_submit->base.signal.signal_value,
+         .sync = utrace_submit->signal.sync,
+         .signal_value = utrace_submit->signal.signal_value,
       };
-      result = i915_queue_exec_async(&utrace_submit->base, 0, NULL, 1, &signal);
+      result = i915_queue_exec_async(utrace_submit, 0, NULL, 1, &signal);
    }
 
    return result;

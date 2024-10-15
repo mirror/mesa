@@ -35,14 +35,14 @@
 VkResult
 anv_i915_create_engine(struct anv_device *device,
                        struct anv_queue *queue,
-                       const VkDeviceQueueCreateInfo *pCreateInfo)
+                       enum intel_engine_class engine_class,
+                       VkQueueGlobalPriorityKHR priority,
+                       bool protected)
 {
    struct anv_physical_device *physical = device->physical;
-   struct anv_queue_family *queue_family =
-      &physical->queue.families[pCreateInfo->queueFamilyIndex];
 
    if (device->physical->engine_info == NULL) {
-      switch (queue_family->engine_class) {
+      switch (engine_class) {
       case INTEL_ENGINE_CLASS_COPY:
          queue->exec_flags = I915_EXEC_BLT;
          break;
@@ -57,13 +57,12 @@ anv_i915_create_engine(struct anv_device *device,
          unreachable("Unsupported legacy engine");
       }
    } else if (device->physical->has_vm_control) {
-      assert(pCreateInfo->queueFamilyIndex < physical->queue.family_count);
       enum intel_engine_class engine_classes[1];
       enum intel_gem_create_context_flags flags = 0;
       int val = 0;
 
-      engine_classes[0] = queue_family->engine_class;
-      if (pCreateInfo->flags & VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT)
+      engine_classes[0] = engine_class;
+      if (protected)
          flags |= INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG;
 
       if (device->physical->instance->force_guc_low_latency &&
@@ -82,8 +81,8 @@ anv_i915_create_engine(struct anv_device *device,
       /* Create a companion RCS logical engine to support MSAA copy/clear
        * operation on compute/copy engine.
        */
-      if (queue_family->engine_class == INTEL_ENGINE_CLASS_COPY ||
-          queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
+      if (engine_class == INTEL_ENGINE_CLASS_COPY ||
+          engine_class == INTEL_ENGINE_CLASS_COMPUTE) {
          uint32_t *context_id = (uint32_t *)&queue->companion_rcs_id;
          engine_classes[0] = INTEL_ENGINE_CLASS_RENDER;
          if (!intel_gem_create_context_engines(device->fd, flags,
@@ -95,14 +94,9 @@ anv_i915_create_engine(struct anv_device *device,
                              "companion RCS engine creation failed");
       }
 
-      /* Check if client specified queue priority. */
-      const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
-         vk_find_struct_const(pCreateInfo->pNext,
-                              DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
-
       VkResult result = anv_i915_set_queue_parameters(device,
                                                       queue->context_id,
-                                                      queue_priority);
+                                                      priority);
       if (result != VK_SUCCESS) {
          intel_gem_destroy_context(device->fd, queue->context_id);
          if (queue->companion_rcs_id != 0) {

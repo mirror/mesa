@@ -225,7 +225,7 @@ VkResult
 anv_i915_set_queue_parameters(
       struct anv_device *device,
       uint32_t context_id,
-      const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority)
+      VkQueueGlobalPriorityKHR priority)
 {
    struct anv_physical_device *physical_device = device->physical;
 
@@ -237,10 +237,6 @@ anv_i915_set_queue_parameters(
     */
    anv_gem_set_context_param(device->fd, context_id,
                              I915_CONTEXT_PARAM_RECOVERABLE, false);
-
-   VkQueueGlobalPriorityKHR priority =
-      queue_priority ? queue_priority->globalPriority :
-         VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
 
    /* As per spec, the driver implementation may deny requests to acquire
     * a priority above the default priority (MEDIUM) if the caller does not
@@ -274,7 +270,7 @@ anv_i915_device_setup_context(struct anv_device *device,
 
    if (device->physical->engine_info) {
       /* The kernel API supports at most 64 engines */
-      assert(num_queues <= 64);
+      assert((num_queues + device->physical->use_shader_upload) <= 64);
       enum intel_engine_class engine_classes[64];
       int engine_count = 0;
       enum intel_gem_create_context_flags flags = 0;
@@ -294,6 +290,8 @@ anv_i915_device_setup_context(struct anv_device *device,
              VK_DEVICE_QUEUE_CREATE_PROTECTED_BIT)
             flags |= INTEL_GEM_CREATE_CONTEXT_EXT_PROTECTED_FLAG;
       }
+      if (device->physical->use_shader_upload)
+         engine_classes[engine_count++] = device->internal_queue_class;
       if (!intel_gem_create_context_engines(device->fd, flags,
                                             physical_device->engine_info,
                                             engine_count, engine_classes,
@@ -311,12 +309,14 @@ anv_i915_device_setup_context(struct anv_device *device,
       return result;
 
    /* Check if client specified queue priority. */
-   const VkDeviceQueueGlobalPriorityCreateInfoKHR *queue_priority =
+   const VkDeviceQueueGlobalPriorityCreateInfoKHR *priority =
       vk_find_struct_const(pCreateInfo->pQueueCreateInfos[0].pNext,
                            DEVICE_QUEUE_GLOBAL_PRIORITY_CREATE_INFO_KHR);
 
    result = anv_i915_set_queue_parameters(device, device->context_id,
-                                          queue_priority);
+                                          priority ?
+                                          priority->globalPriority :
+                                          VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR);
    if (result != VK_SUCCESS)
       goto fail_context;
 

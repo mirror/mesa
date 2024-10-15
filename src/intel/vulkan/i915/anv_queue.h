@@ -22,7 +22,11 @@
 
 #pragma once
 
+#include <stdbool.h>
+
 #include "vulkan/vulkan_core.h"
+
+enum intel_engine_class;
 
 struct anv_device;
 struct anv_queue;
@@ -30,6 +34,8 @@ struct anv_queue;
 VkResult
 anv_i915_create_engine(struct anv_device *device,
                        struct anv_queue *queue,
-                       const VkDeviceQueueCreateInfo *pCreateInfo);
+                       enum intel_engine_class engine_class,
+                       VkQueueGlobalPriorityKHR priority,
+                       bool protected);
 void
 anv_i915_destroy_engine(struct anv_device *device, struct anv_queue *queue);

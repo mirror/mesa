@@ -122,15 +122,6 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
       }
    }
 
-   if (copy_mask & RADV_DYNAMIC_COLOR_BLEND_ENABLE) {
-      for (uint32_t i = 0; i < MAX_RTS; i++) {
-         if (dest->vk.cb.attachments[i].blend_enable != src->vk.cb.attachments[i].blend_enable) {
-            dest->vk.cb.attachments[i].blend_enable = src->vk.cb.attachments[i].blend_enable;
-            dest_mask |= RADV_DYNAMIC_COLOR_BLEND_ENABLE;
-         }
-      }
-   }
-
    if (copy_mask & RADV_DYNAMIC_COLOR_BLEND_EQUATION) {
       for (uint32_t i = 0; i < MAX_RTS; i++) {
          if (dest->cb_att[i].cb_blend_control != src->cb_att[i].cb_blend_control ||
@@ -228,6 +219,7 @@ radv_bind_dynamic_state(struct radv_cmd_buffer *cmd_buffer, const struct radv_dy
    RADV_CMP_COPY(vk.cb.logic_op, RADV_DYNAMIC_LOGIC_OP);
    RADV_CMP_COPY(color_write_enable, RADV_DYNAMIC_COLOR_WRITE_ENABLE);
    RADV_CMP_COPY(color_write_mask, RADV_DYNAMIC_COLOR_WRITE_MASK);
+   RADV_CMP_COPY(color_blend_enable, RADV_DYNAMIC_COLOR_BLEND_ENABLE);
    RADV_CMP_COPY(vk.cb.logic_op_enable, RADV_DYNAMIC_LOGIC_OP_ENABLE);
 
    RADV_CMP_COPY(vk.fsr.fragment_size.width, RADV_DYNAMIC_FRAGMENT_SHADING_RATE);
@@ -3560,7 +3552,7 @@ radv_is_mrt0_dual_src(struct radv_cmd_buffer *cmd_buffer)
 {
    const struct radv_dynamic_state *d = &cmd_buffer->state.dynamic;
 
-   if (!(d->color_write_mask & 0xfu) || !d->vk.cb.attachments[0].blend_enable)
+   if (!(d->color_write_mask & 0xfu) || !(d->color_blend_enable & 0x1u))
       return false;
 
    return d->mrt0_is_dual_src;
@@ -5322,13 +5314,12 @@ lookup_ps_epilog(struct radv_cmd_buffer *cmd_buffer)
    }
 
    state.color_write_mask = d->color_write_mask;
+   state.color_blend_enable = d->color_blend_enable;
 
    for (unsigned i = 0; i < MAX_RTS; i++) {
       const uint32_t cb_blend_control = d->cb_att[i].cb_blend_control;
       const uint32_t src_blend = G_028780_COLOR_SRCBLEND(cb_blend_control);
       const uint32_t dst_blend = G_028780_COLOR_DESTBLEND(cb_blend_control);
-
-      state.color_blend_enable |= d->vk.cb.attachments[i].blend_enable << (4 * i);
 
       if (src_blend == V_028780_BLEND_SRC_ALPHA || src_blend == V_028780_BLEND_ONE_MINUS_SRC_ALPHA ||
           src_blend == V_028780_BLEND_SRC_ALPHA_SATURATE || dst_blend == V_028780_BLEND_SRC_ALPHA ||
@@ -8683,7 +8674,8 @@ radv_CmdSetColorBlendEnableEXT(VkCommandBuffer commandBuffer, uint32_t firstAtta
    for (uint32_t i = 0; i < attachmentCount; i++) {
       uint32_t idx = firstAttachment + i;
 
-      state->dynamic.vk.cb.attachments[idx].blend_enable = pColorBlendEnables[i];
+      state->dynamic.color_blend_enable &= ~BITFIELD_BIT(idx);
+      state->dynamic.color_blend_enable |= pColorBlendEnables[i] << idx;
    }
 
    state->dirty_dynamic |= RADV_DYNAMIC_COLOR_BLEND_ENABLE;
@@ -10568,7 +10560,7 @@ radv_emit_db_shader_control(struct radv_cmd_buffer *cmd_buffer)
       }
    } else if (gpu_info->has_export_conflict_bug && rasterization_samples == 1) {
       for (uint32_t i = 0; i < MAX_RTS; i++) {
-         if (((d->color_write_mask >> (4 * i)) & 0xfu) && d->vk.cb.attachments[i].blend_enable) {
+         if (((d->color_write_mask >> (4 * i)) & 0xfu) && ((d->color_blend_enable >> i) & 1u)) {
             db_shader_control |= S_02880C_OVERRIDE_INTRINSIC_RATE_ENABLE(1) | S_02880C_OVERRIDE_INTRINSIC_RATE(2);
             break;
          }
@@ -10684,7 +10676,7 @@ radv_emit_cb_render_state(struct radv_cmd_buffer *cmd_buffer)
       if (i > 0 && mrt0_is_dual_src)
          continue;
 
-      if (!d->vk.cb.attachments[i].blend_enable) {
+      if (!((d->color_blend_enable >> i) & 0x1u)) {
          sx_mrt_blend_opt[i] |= S_028760_COLOR_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED) |
                                 S_028760_ALPHA_COMB_FCN(V_028760_OPT_COMB_BLEND_DISABLED);
          continue;

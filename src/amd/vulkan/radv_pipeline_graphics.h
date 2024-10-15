@@ -35,6 +35,8 @@ struct radv_dynamic_state {
     */
    uint64_t mask;
 
+   uint32_t color_write_enable;
+
    struct {
       struct {
          float scale[3];

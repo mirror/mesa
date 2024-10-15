@@ -315,6 +315,8 @@ struct radv_tracked_regs {
    BITSET_DECLARE(reg_saved_mask, RADV_NUM_ALL_TRACKED_REGS);
    uint32_t reg_value[RADV_NUM_ALL_TRACKED_REGS];
    uint32_t spi_ps_input_cntl[32];
+   uint32_t cb_blend_control[MAX_RTS];
+   uint32_t sx_mrt_blend_opt[MAX_RTS];
 };
 
 struct radv_cmd_state {

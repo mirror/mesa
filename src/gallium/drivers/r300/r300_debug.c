@@ -34,6 +34,7 @@ static const struct debug_named_value r300_debug_options[] = {
     { "nohiz", DBG_NO_HIZ, "Disable hierarchical zbuffer" },
     { "nocmask", DBG_NO_CMASK, "Disable AA compression and fast AA clear" },
     { "notcl", DBG_NO_TCL, "Disable hardware accelerated Transform/Clip/Lighting" },
+    { "nolinkfail", DBG_NO_LINK_FAIL, "Use dummy shaders instead of failing linking" },
 
     /* must be last */
     DEBUG_NAMED_VALUE_END

@@ -1850,6 +1850,8 @@ r300 driver environment variables
       Disable AA compression and fast AA clear
    ``notcl``
       Disable hardware accelerated Transform/Clip/Lighting
+   ``nolinkfail``
+      Use dummy shaders instead of failing linking
 
 Asahi driver environment variables
 ----------------------------------

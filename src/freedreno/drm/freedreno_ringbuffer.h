@@ -52,8 +52,13 @@ enum fd_ringbuffer_flags {
     */
    FD_RINGBUFFER_GROWABLE = 0x4,
 
+   /* Hint that the stateobj is for user consts.  When suballocating, we can
+    * choose an alignment smaller than SUBALLOC_ALIGNMENT.
+    */
+   FD_RINGBUFFER_USER_CONSTS = 0x8,
+
    /* Internal use only: */
-   _FD_RINGBUFFER_OBJECT = 0x8,
+   _FD_RINGBUFFER_OBJECT = 0x10,
 };
 
 /* A submit object manages/tracks all the state buildup for a "submit"

@@ -248,7 +248,8 @@ fd6_build_user_consts(struct fd6_emit *emit)
    unsigned sz = emit->prog->user_consts_cmdstream_size;
 
    struct fd_ringbuffer *constobj =
-      fd_submit_new_ringbuffer(ctx->batch->submit, sz, FD_RINGBUFFER_STREAMING);
+      fd_submit_new_ringbuffer(ctx->batch->submit, sz,
+            FD_RINGBUFFER_STREAMING | FD_RINGBUFFER_USER_CONSTS);
 
    emit_user_consts(emit->vs, constobj, &ctx->constbuf[PIPE_SHADER_VERTEX]);
    if (PIPELINE == HAS_TESS_GS) {

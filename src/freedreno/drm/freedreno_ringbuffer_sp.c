@@ -116,7 +116,8 @@ fd_submit_append_bo(struct fd_submit_sp *submit, struct fd_bo *bo)
 
 static void
 fd_submit_suballoc_ring_bo(struct fd_submit *submit,
-                           struct fd_ringbuffer_sp *fd_ring, uint32_t size)
+                           struct fd_ringbuffer_sp *fd_ring,
+                           uint32_t alignment, uint32_t size)
 {
    struct fd_submit_sp *fd_submit = to_fd_submit_sp(submit);
    unsigned suballoc_offset = 0;
@@ -130,7 +131,7 @@ fd_submit_suballoc_ring_bo(struct fd_submit *submit,
       suballoc_offset =
          fd_ringbuffer_size(fd_submit->suballoc_ring) + suballoc_ring->offset;
 
-      suballoc_offset = align(suballoc_offset, SUBALLOC_ALIGNMENT);
+      suballoc_offset = align(suballoc_offset, alignment);
 
       if ((size + suballoc_offset) > suballoc_bo->size) {
          suballoc_bo = NULL;
@@ -171,7 +172,9 @@ fd_submit_sp_new_ringbuffer(struct fd_submit *submit, uint32_t size,
    fd_ring->base.refcnt = 1;
 
    if (flags & FD_RINGBUFFER_STREAMING) {
-      fd_submit_suballoc_ring_bo(submit, fd_ring, size);
+      const uint32_t alignment = flags & FD_RINGBUFFER_USER_CONSTS ?
+         16 : SUBALLOC_ALIGNMENT;
+      fd_submit_suballoc_ring_bo(submit, fd_ring, alignment, size);
    } else {
       if (flags & FD_RINGBUFFER_GROWABLE)
          size = SUBALLOC_SIZE;

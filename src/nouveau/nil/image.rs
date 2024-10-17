@@ -250,7 +250,7 @@ impl Image {
             array_stride_B: 0,
             align_B: 0,
             size_B: 0,
-            compressed: false,
+            compressed: true,
             tile_mode: 0,
             pte_kind: 0,
             mip_tail_first_lod: 0,
@@ -677,7 +677,7 @@ impl Image {
                     NV_MMU_PTE_KIND_ZF32_X24S8
                 }
             }
-            PIPE_FORMAT_Z32_FLOAT => NV_MMU_PTE_KIND_GENERIC_MEMORY,
+            PIPE_FORMAT_Z32_FLOAT => NV_MMU_PTE_KIND_GENERIC_MEMORY_COMPRESSIBLE,
             PIPE_FORMAT_S8_UINT => {
                 if compressed {
                     NV_MMU_PTE_KIND_S8_COMPRESSIBLE_DISABLE_PLC
@@ -685,7 +685,7 @@ impl Image {
                     NV_MMU_PTE_KIND_S8
                 }
             }
-            _ => NV_MMU_PTE_KIND_GENERIC_MEMORY,
+            _ => NV_MMU_PTE_KIND_GENERIC_MEMORY_COMPRESSIBLE,
         }
         .try_into()
         .unwrap()

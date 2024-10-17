@@ -20,6 +20,7 @@ blorp_nir_options_elk(struct blorp_context *blorp,
 
 static struct blorp_program
 blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
+                     const struct blorp_params *params,
                      struct nir_shader *nir,
                      bool multisample_fbo,
                      bool use_repclear)
@@ -38,7 +39,8 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
    struct elk_wm_prog_key wm_key;
    memset(&wm_key, 0, sizeof(wm_key));
    wm_key.multisample_fbo = multisample_fbo ? ELK_ALWAYS : ELK_NEVER;
-   wm_key.nr_color_regions = 1;
+   wm_key.nr_color_regions = params->rt_index + 1;
+   wm_key.color_outputs_valid = 1 << params->rt_index;
 
    if (compiler->devinfo->ver < 6) {
       if (nir->info.fs.uses_discard)
@@ -47,7 +49,7 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
       wm_key.input_slots_valid = nir->info.inputs_read | VARYING_BIT_POS;
    }
 
-   struct elk_compile_fs_params params = {
+   struct elk_compile_fs_params elk_params = {
       .base = {
          .mem_ctx = mem_ctx,
          .nir = nir,
@@ -61,7 +63,7 @@ blorp_compile_fs_elk(struct blorp_context *blorp, void *mem_ctx,
       .max_polygons = 1,
    };
 
-   const unsigned *kernel = elk_compile_fs(compiler, &params);
+   const unsigned *kernel = elk_compile_fs(compiler, &elk_params);
    return (struct blorp_program){
       .kernel         = kernel,
       .kernel_size    = wm_prog_data->base.program_size,

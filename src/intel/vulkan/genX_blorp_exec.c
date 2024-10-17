@@ -166,7 +166,8 @@ blorp_alloc_binding_table(struct blorp_batch *batch, unsigned num_entries,
    struct anv_state bt_state;
 
    VkResult result =
-      anv_cmd_buffer_alloc_blorp_binding_table(cmd_buffer, num_entries,
+      anv_cmd_buffer_alloc_blorp_binding_table(cmd_buffer,
+                                               batch->rt_index + num_entries,
                                                &state_offset, &bt_state);
    if (result != VK_SUCCESS)
       return false;
@@ -180,7 +181,7 @@ blorp_alloc_binding_table(struct blorp_batch *batch, unsigned num_entries,
       if (surface_state.map == NULL)
          return false;
 
-      bt_map[i] = surface_state.offset + state_offset;
+      bt_map[batch->rt_index + i] = surface_state.offset + state_offset;
       surface_offsets[i] = surface_state.offset;
       surface_maps[i] = surface_state.map;
    }
@@ -298,15 +299,16 @@ blorp_exec_on_render(struct blorp_batch *batch,
                                       params->y1 - params->y0, scale);
 
 #if GFX_VER >= 11
-   /* The PIPE_CONTROL command description says:
-    *
-    *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
-    *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
-    *     Target Cache Flush by enabling this bit. When render target flush
-    *     is set due to new association of BTI, PS Scoreboard Stall bit must
-    *     be set in this packet."
-    */
-   if (blorp_uses_bti_rt_writes(batch, params)) {
+   if (blorp_uses_bti_rt_writes(batch, params) &&
+       (batch->flags & BLORP_BATCH_NO_BT_REUSE) == 0) {
+      /* The PIPE_CONTROL command description says:
+       *
+       *    "Whenever a Binding Table Index (BTI) used by a Render Target
+       *     Message points to a different RENDER_SURFACE_STATE, SW must issue
+       *     a Render Target Cache Flush by enabling this bit. When render
+       *     target flush is set due to new association of BTI, PS Scoreboard
+       *     Stall bit must be set in this packet."
+       */
       anv_add_pending_pipe_bits(cmd_buffer,
                                 ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
                                 ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
@@ -365,22 +367,30 @@ blorp_exec_on_render(struct blorp_batch *batch,
 
    blorp_exec(batch, params);
 
-#if GFX_VER >= 11
-   /* The PIPE_CONTROL command description says:
-    *
-    *    "Whenever a Binding Table Index (BTI) used by a Render Target Message
-    *     points to a different RENDER_SURFACE_STATE, SW must issue a Render
-    *     Target Cache Flush by enabling this bit. When render target flush
-    *     is set due to new association of BTI, PS Scoreboard Stall bit must
-    *     be set in this packet."
-    */
    if (blorp_uses_bti_rt_writes(batch, params)) {
-      anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
-                                ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
-                                "after blorp BTI change");
-   }
+      /* Mark the render target as active so that if anybody else uses it,
+       * we'll remember to put a render target cache flush prior.
+       */
+      cmd_buffer->state.gfx.active_color_outputs |=
+         BITFIELD_BIT(params->rt_index);
+
+#if GFX_VER >= 11
+      /* The PIPE_CONTROL command description says:
+       *
+       *    "Whenever a Binding Table Index (BTI) used by a Render Target
+       *     Message points to a different RENDER_SURFACE_STATE, SW must issue
+       *     a Render Target Cache Flush by enabling this bit. When render
+       *     target flush is set due to new association of BTI, PS Scoreboard
+       *     Stall bit must be set in this packet."
+       */
+      if ((batch->flags & BLORP_BATCH_NO_BT_REUSE) == 0) {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT |
+                                   ANV_PIPE_STALL_AT_SCOREBOARD_BIT,
+                                   "after blorp BTI change");
+      }
 #endif
+   }
 
    /* Flag all the instructions emitted by BLORP. */
    BITSET_SET(hw_state->dirty, ANV_GFX_STATE_URB);

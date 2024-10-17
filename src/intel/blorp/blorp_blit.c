@@ -36,6 +36,7 @@
 static const bool split_blorp_blit_debug = false;
 
 struct blorp_blit_vars {
+   uint32_t rt_index;
    /* Input values from blorp_wm_inputs */
    nir_variable *v_bounds_rect;
    nir_variable *v_rect_grid;
@@ -50,6 +51,7 @@ static void
 blorp_blit_vars_init(nir_builder *b, struct blorp_blit_vars *v,
                          const struct blorp_blit_prog_key *key)
 {
+   v->rt_index = key->base.rt_index;
 #define LOAD_INPUT(name, type)\
    v->v_##name = BLORP_CREATE_NIR_INPUT(b->shader, name, type);
 
@@ -132,7 +134,8 @@ blorp_blit_apply_transform(nir_builder *b, nir_def *src_pos,
 }
 
 static nir_tex_instr *
-blorp_create_nir_tex_instr(nir_builder *b, struct blorp_blit_vars *v,
+blorp_create_nir_tex_instr(nir_builder *b,
+                           struct blorp_blit_vars *v,
                            nir_texop op, nir_def *pos, unsigned num_srcs,
                            nir_alu_type dst_type)
 {
@@ -144,7 +147,7 @@ blorp_create_nir_tex_instr(nir_builder *b, struct blorp_blit_vars *v,
    tex->is_array = false;
    tex->is_shadow = false;
 
-   tex->texture_index = BLORP_TEXTURE_BT_INDEX;
+   tex->texture_index = v->rt_index + BLORP_TEXTURE_BT_INDEX;
    tex->sampler_index = BLORP_SAMPLER_INDEX;
 
    /* To properly handle 3-D and 2-D array textures, we pull the Z component
@@ -1478,10 +1481,12 @@ blorp_build_nir_shader(struct blorp_context *blorp,
                       .image_array = true,
                       .access = ACCESS_NON_READABLE);
    } else if (key->dst_usage == ISL_SURF_USAGE_RENDER_TARGET_BIT) {
+      char color_name[20];
+      snprintf(color_name, sizeof(color_name), "color%u", batch->rt_index);
       nir_variable *color_out =
          nir_variable_create(b.shader, nir_var_shader_out,
-                             glsl_vec4_type(), "gl_FragColor");
-      color_out->data.location = FRAG_RESULT_COLOR;
+                             glsl_vec4_type(), color_name);
+      color_out->data.location = FRAG_RESULT_DATA0 + batch->rt_index;
       nir_store_var(&b, color_out, color, 0xf);
    } else if (key->dst_usage == ISL_SURF_USAGE_DEPTH_BIT) {
       nir_variable *depth_out =
@@ -1525,7 +1530,7 @@ blorp_get_blit_kernel_fs(struct blorp_batch *batch,
    const bool multisample_fbo = key->rt_samples > 1;
 
    const struct blorp_program p =
-      blorp_compile_fs(blorp, mem_ctx, nir, multisample_fbo, false);
+      blorp_compile_fs(blorp, mem_ctx, params, nir, multisample_fbo, false);
 
    bool result =
       blorp->upload_shader(batch, MESA_SHADER_FRAGMENT,
@@ -2514,7 +2519,7 @@ blorp_blit(struct blorp_batch *batch,
            bool mirror_x, bool mirror_y)
 {
    struct blorp_params params;
-   blorp_params_init(&params);
+   blorp_params_init(&params, batch->rt_index);
    params.op = BLORP_OP_BLIT;
    const bool compute = batch->flags & BLORP_BATCH_USE_COMPUTE;
    if (compute) {
@@ -2551,6 +2556,7 @@ blorp_blit(struct blorp_batch *batch,
 
    struct blorp_blit_prog_key key = {
       .base = BLORP_BASE_KEY_INIT(BLORP_SHADER_TYPE_BLIT),
+      .base.rt_index = compute ? 0 : params.rt_index,
       .base.shader_pipeline = compute ? BLORP_SHADER_PIPELINE_COMPUTE :
                                         BLORP_SHADER_PIPELINE_RENDER,
       .filter = filter,
@@ -2923,7 +2929,7 @@ blorp_copy(struct blorp_batch *batch,
    if (src_width == 0 || src_height == 0)
       return;
 
-   blorp_params_init(&params);
+   blorp_params_init(&params, batch->rt_index);
    params.op = BLORP_OP_COPY;
 
    const bool compute = batch->flags & BLORP_BATCH_USE_COMPUTE;
@@ -2945,6 +2951,7 @@ blorp_copy(struct blorp_batch *batch,
 
    struct blorp_blit_prog_key key = {
       .base = BLORP_BASE_KEY_INIT(BLORP_SHADER_TYPE_COPY),
+      .base.rt_index = compute ? 0 : params.rt_index,
       .base.shader_pipeline = compute ? BLORP_SHADER_PIPELINE_COMPUTE :
                                         BLORP_SHADER_PIPELINE_RENDER,
       .filter = BLORP_FILTER_NONE,

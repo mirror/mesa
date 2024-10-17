@@ -1857,6 +1857,16 @@ genX(cmd_buffer_apply_pipe_flushes)(struct anv_cmd_buffer *cmd_buffer)
                                     &emitted_bits);
    anv_cmd_buffer_update_pending_query_bits(cmd_buffer, emitted_bits);
 
+   /* If we've flushed the render target cache with a pss-stall,
+    * stall-at-pixel-scoreboard or cs-stall, no more color output is active in
+    * the render target cache.
+    */
+   if ((bits & ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT) &&
+       (bits & (ANV_PIPE_PSS_STALL_SYNC_BIT |
+                ANV_PIPE_STALL_AT_SCOREBOARD_BIT))) {
+      cmd_buffer->state.gfx.active_color_outputs = 0;
+   }
+
 #if INTEL_NEEDS_WA_1508744258
    if (rhwo_opt_change) {
       anv_batch_write_reg(&cmd_buffer->batch, GENX(COMMON_SLICE_CHICKEN1), c1) {
@@ -3715,7 +3725,8 @@ genX(CmdExecuteCommands)(
 
 static inline enum anv_pipe_bits
 anv_pipe_flush_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
-                                     VkAccessFlags2 flags)
+                                     VkAccessFlags2 flags,
+                                     VkPipelineStageFlags2 stages)
 {
    enum anv_pipe_bits pipe_bits = 0;
 
@@ -3802,6 +3813,30 @@ anv_pipe_flush_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
       default:
          break; /* Nothing to do */
       }
+   }
+
+   /* What stage require a stall at pixel scoreboard */
+   VkPipelineStageFlags2 pb_stall_stages =
+      VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT |
+      VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT |
+      VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT;
+
+   /* On a render queue, the following stages can also use a pixel shader */
+   if (anv_cmd_buffer_is_render_queue(cmd_buffer)) {
+      pb_stall_stages |=
+         VK_PIPELINE_STAGE_2_TRANSFER_BIT |
+         VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT |
+         VK_PIPELINE_STAGE_2_RESOLVE_BIT |
+         VK_PIPELINE_STAGE_2_BLIT_BIT |
+         VK_PIPELINE_STAGE_2_CLEAR_BIT;
+   }
+
+   if (stages & pb_stall_stages) {
+#if GFX_VERx10 >= 125
+      pipe_bits |= ANV_PIPE_PSS_STALL_SYNC_BIT;
+#else
+      pipe_bits |= ANV_PIPE_STALL_AT_SCOREBOARD_BIT;
+#endif
    }
 
    return pipe_bits;
@@ -4238,6 +4273,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
    VkAccessFlags2 src_flags = 0;
    VkAccessFlags2 dst_flags = 0;
 
+   VkPipelineStageFlags2 src_stages = 0;
+
 #if GFX_VER < 20
    bool apply_sparse_flushes = false;
    struct anv_device *device = cmd_buffer->device;
@@ -4250,6 +4287,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
       for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
          src_flags |= dep_info->pMemoryBarriers[i].srcAccessMask;
          dst_flags |= dep_info->pMemoryBarriers[i].dstAccessMask;
+
+         src_stages |= dep_info->pMemoryBarriers[i].srcAccessMask;
 
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
@@ -4283,6 +4322,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
          src_flags |= buf_barrier->srcAccessMask;
          dst_flags |= buf_barrier->dstAccessMask;
 
+         src_stages |= buf_barrier->srcStageMask;
+
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
           */
@@ -4312,6 +4353,8 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
 
          src_flags |= img_barrier->srcAccessMask;
          dst_flags |= img_barrier->dstAccessMask;
+
+         src_stages |= img_barrier->srcStageMask;
 
          ANV_FROM_HANDLE(anv_image, image, img_barrier->image);
          const VkImageSubresourceRange *range = &img_barrier->subresourceRange;
@@ -4417,7 +4460,7 @@ cmd_buffer_barrier(struct anv_cmd_buffer *cmd_buffer,
    }
 
    enum anv_pipe_bits bits =
-      anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags) |
+      anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags, src_stages) |
       anv_pipe_invalidate_bits_for_access_flags(cmd_buffer, dst_flags);
 
 #if GFX_VER < 20
@@ -5700,6 +5743,9 @@ void genX(CmdEndRendering)(
           */
          anv_add_pending_pipe_bits(cmd_buffer,
                                    ANV_PIPE_TEXTURE_CACHE_INVALIDATE_BIT |
+                                   (GFX_VERx10 >= 125 ?
+                                    ANV_PIPE_PSS_STALL_SYNC_BIT :
+                                    ANV_PIPE_STALL_AT_SCOREBOARD_BIT) |
                                    ANV_PIPE_RENDER_TARGET_CACHE_FLUSH_BIT,
                                    "MSAA resolve");
       }
@@ -5732,7 +5778,11 @@ void genX(CmdEndRendering)(
           * sure unbound regions read 0, as residencyNonResidentStrict
           * mandates.
           */
-         anv_add_pending_pipe_bits(cmd_buffer, ANV_PIPE_TILE_CACHE_FLUSH_BIT,
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   (GFX_VERx10 >= 125 ?
+                                    ANV_PIPE_PSS_STALL_SYNC_BIT :
+                                    ANV_PIPE_STALL_AT_SCOREBOARD_BIT) |
+                                   ANV_PIPE_TILE_CACHE_FLUSH_BIT,
                                    "sparse MSAA resolve");
       }
 

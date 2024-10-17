@@ -323,6 +323,10 @@ ubwc_possible(struct tu_device *device,
               VkSampleCountFlagBits samples,
               bool use_z24uint_s8uint)
 {
+   /* TODO: enable for a702 */
+   if (info->a6xx.is_a702)
+      return false;
+
    /* no UBWC with compressed formats, E5B9G9R9, S8_UINT
     * (S8_UINT because separate stencil doesn't have UBWC-enable bit)
     */
@@ -693,7 +697,7 @@ tu_image_init(struct tu_device *device, struct tu_image *image,
       }
    }
 
-   if (TU_DEBUG(NOUBWC) || device->physical_device->info->a6xx.is_a702) {
+   if (TU_DEBUG(NOUBWC)) {
       image->ubwc_enabled = false;
    }
 

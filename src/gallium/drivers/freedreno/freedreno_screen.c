@@ -687,6 +687,8 @@ fd_screen_get_shader_param(struct pipe_screen *pscreen,
    case PIPE_SHADER_TESS_CTRL:
    case PIPE_SHADER_TESS_EVAL:
    case PIPE_SHADER_GEOMETRY:
+      if (is_a702(screen))
+         return 0;
       if (is_a6xx(screen))
          break;
       return 0;

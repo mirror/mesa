@@ -209,7 +209,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_shader_subgroup_extended_types = true,
       .KHR_shader_subgroup_uniform_control_flow = true,
       .KHR_shader_terminate_invocation = true,
-      .KHR_spirv_1_4 = true,
+      .KHR_spirv_1_4 = device->info->a6xx.has_hw_multiview || TU_DEBUG(NOCONFORM),
       .KHR_storage_buffer_storage_class = true,
    #ifdef TU_USE_WSI_PLATFORM
       .KHR_swapchain = true,

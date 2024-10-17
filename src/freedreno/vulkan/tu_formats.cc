@@ -79,9 +79,90 @@ tu6_format_color(enum pipe_format format, enum a6xx_tile_mode tile_mode)
 }
 
 static bool
-tu6_format_texture_supported(enum pipe_format format)
+tu6_format_texture_supported(struct tu_physical_device *physical_device, enum pipe_format format)
 {
+   if (physical_device->info->a6xx.is_a702) {
+      switch (format) {
+         case PIPE_FORMAT_RGTC1_UNORM:
+         case PIPE_FORMAT_RGTC1_SNORM:
+         case PIPE_FORMAT_RGTC2_UNORM:
+         case PIPE_FORMAT_RGTC2_SNORM:
+         case PIPE_FORMAT_BPTC_RGBA_UNORM:
+         case PIPE_FORMAT_BPTC_SRGBA:
+         case PIPE_FORMAT_BPTC_RGB_FLOAT:
+         case PIPE_FORMAT_BPTC_RGB_UFLOAT:
+            return false;
+      }
+   }
    return fd6_texture_format(format, TILE6_LINEAR) != FMT6_NONE;
+}
+
+static bool
+tu_format_texture_linear_filtering_supported(struct tu_physical_device *physical_device, VkFormat vk_format)
+{
+   if (physical_device->info->a6xx.is_a702) {
+      switch (vk_format) {
+         case VK_FORMAT_D16_UNORM:
+         case VK_FORMAT_D24_UNORM_S8_UINT:
+         case VK_FORMAT_X8_D24_UNORM_PACK32:
+         case VK_FORMAT_D32_SFLOAT:
+         case VK_FORMAT_D32_SFLOAT_S8_UINT:
+         case VK_FORMAT_R16_UNORM:
+         case VK_FORMAT_R16_SNORM:
+         case VK_FORMAT_R16_USCALED:
+         case VK_FORMAT_R16_SSCALED:
+         case VK_FORMAT_R16_UINT:
+         case VK_FORMAT_R16_SINT:
+         case VK_FORMAT_R16_SFLOAT:
+         case VK_FORMAT_R16G16_UNORM:
+         case VK_FORMAT_R16G16_SNORM:
+         case VK_FORMAT_R16G16_USCALED:
+         case VK_FORMAT_R16G16_SSCALED:
+         case VK_FORMAT_R16G16_UINT:
+         case VK_FORMAT_R16G16_SINT:
+         case VK_FORMAT_R16G16_SFLOAT:
+         case VK_FORMAT_R16G16B16_UNORM:
+         case VK_FORMAT_R16G16B16_SNORM:
+         case VK_FORMAT_R16G16B16_USCALED:
+         case VK_FORMAT_R16G16B16_SSCALED:
+         case VK_FORMAT_R16G16B16_UINT:
+         case VK_FORMAT_R16G16B16_SINT:
+         case VK_FORMAT_R16G16B16_SFLOAT:
+         case VK_FORMAT_R16G16B16A16_UNORM:
+         case VK_FORMAT_R16G16B16A16_SNORM:
+         case VK_FORMAT_R16G16B16A16_USCALED:
+         case VK_FORMAT_R16G16B16A16_SSCALED:
+         case VK_FORMAT_R16G16B16A16_UINT:
+         case VK_FORMAT_R16G16B16A16_SINT:
+         case VK_FORMAT_R16G16B16A16_SFLOAT:
+         case VK_FORMAT_R32_UINT:
+         case VK_FORMAT_R32_SINT:
+         case VK_FORMAT_R32_SFLOAT:
+         case VK_FORMAT_R32G32_UINT:
+         case VK_FORMAT_R32G32_SINT:
+         case VK_FORMAT_R32G32_SFLOAT:
+         case VK_FORMAT_R32G32B32_UINT:
+         case VK_FORMAT_R32G32B32_SINT:
+         case VK_FORMAT_R32G32B32_SFLOAT:
+         case VK_FORMAT_R32G32B32A32_UINT:
+         case VK_FORMAT_R32G32B32A32_SINT:
+         case VK_FORMAT_R32G32B32A32_SFLOAT:
+         case VK_FORMAT_R64_UINT:
+         case VK_FORMAT_R64_SINT:
+         case VK_FORMAT_R64_SFLOAT:
+         case VK_FORMAT_R64G64_UINT:
+         case VK_FORMAT_R64G64_SINT:
+         case VK_FORMAT_R64G64_SFLOAT:
+         case VK_FORMAT_R64G64B64_UINT:
+         case VK_FORMAT_R64G64B64_SINT:
+         case VK_FORMAT_R64G64B64_SFLOAT:
+         case VK_FORMAT_R64G64B64A64_UINT:
+         case VK_FORMAT_R64G64B64A64_SINT:
+         case VK_FORMAT_R64G64B64A64_SFLOAT:
+            return false;
+      }
+   }
+   return !vk_format_is_int(vk_format);
 }
 
 struct tu_native_format
@@ -238,7 +319,7 @@ tu_physical_device_get_format_properties(
 
    bool supported_vtx = tu6_format_vtx_supported(format);
    bool supported_color = tu6_format_color_supported(format);
-   bool supported_tex = tu6_format_texture_supported(format);
+   bool supported_tex = tu6_format_texture_supported(physical_device, format);
    bool is_npot = !util_is_power_of_two_or_zero(desc->block.bits);
 
    if (format == PIPE_FORMAT_NONE ||
@@ -282,7 +363,7 @@ tu_physical_device_get_format_properties(
          }
       }
 
-      if (!vk_format_is_int(vk_format)) {
+      if (tu_format_texture_linear_filtering_supported(physical_device, vk_format)) {
          optimal |= VK_FORMAT_FEATURE_SAMPLED_IMAGE_FILTER_LINEAR_BIT;
 
          if (physical_device->vk.supported_extensions.EXT_filter_cubic)

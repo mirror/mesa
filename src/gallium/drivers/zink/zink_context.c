@@ -1210,7 +1210,7 @@ zink_create_sampler_view(struct pipe_context *pctx, struct pipe_resource *pres,
                          swizzle[2] == PIPE_SWIZZLE_0);
                   swizzle[1] = swizzle[2] = PIPE_SWIZZLE_0;
                } else
-                  assert(state->format == linear);
+                  assert(util_format_linear(state->format) == linear);
             }
          } else if (util_format_is_red_alpha(pres->format)) {
             /* RA formats are mapped to RG with adjusted swizzle */

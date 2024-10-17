@@ -1671,8 +1671,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    OPT(nir_opt_combine_barriers, combine_all_memory_barriers, NULL);
 
-   OPT(intel_nir_lower_printf);
-
    do {
       progress = false;
       OPT(nir_opt_algebraic_before_ffma);
@@ -1703,6 +1701,19 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
    }
 
    brw_vectorize_lower_mem_access(nir, compiler, robust_flags);
+
+   /* Do this after the load/store vectorization because this pass generates
+    * low-level intrinsics with offset values that have different units
+    * depending on HW generations. That cannot be vectorized by the generic
+    * NIR pass.
+    */
+   if (nir->info.stage == MESA_SHADER_MESH ||
+       nir->info.stage == MESA_SHADER_TASK) {
+      if (OPT(brw_nir_lower_task_mesh_io, devinfo))
+         brw_nir_optimize(nir, devinfo);
+   }
+
+   OPT(intel_nir_lower_printf);
 
    /* Potentially perform this optimization pass twice because it can create
     * additional opportunities for itself.
@@ -1871,15 +1882,6 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
 
    if (OPT(nir_opt_rematerialize_compares))
       OPT(nir_opt_dce);
-
-   /* The mesh stages require this pass to be called at the last minute,
-    * but if anything is done by it, it will also constant fold, and that
-    * undoes the work done by nir_trivialize_registers, so call it right
-    * before that one instead.
-    */
-   if (nir->info.stage == MESA_SHADER_MESH ||
-       nir->info.stage == MESA_SHADER_TASK)
-      brw_nir_adjust_payload(nir);
 
    nir_trivialize_registers(nir);
 

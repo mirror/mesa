@@ -2216,8 +2216,16 @@ load("ssbo_uniform_block_intel", [-1, 1], [ACCESS, ALIGN_MUL, ALIGN_OFFSET], [CA
 # src[] = { offset }.
 load("shared_uniform_block_intel", [1], [BASE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 
+# src[] = { urb_handle, offset }.
+load("urb_intel", [1, 1], [], [CAN_ELIMINATE])
+
+# src[] = { value, urb_handle, offset, write_mask }.
+store("urb_intel", [1, 1, 1], [])
+
 # Intrinsics for Intel mesh shading
 system_value("mesh_inline_data_intel", 1, [ALIGN_OFFSET], bit_sizes=[32, 64])
+system_value("urb_task_input_handle_intel", 1, bit_sizes=[32])
+system_value("urb_output_handle_intel", 1, bit_sizes=[32])
 
 # Intrinsics for Intel bindless thread dispatch
 # BASE=brw_topoloy_id

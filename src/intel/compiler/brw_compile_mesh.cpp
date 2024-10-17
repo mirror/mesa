@@ -150,6 +150,8 @@ brw_nir_lower_tue_outputs(nir_shader *nir, brw_tue_map *map)
 
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_out,
             type_size_scalar_dwords, nir_lower_io_lower_64bit_to_32);
+   /* Remove dead code left by lower_io */
+   NIR_PASS(_, nir, nir_opt_dce);
 
    /* From bspec: "It is suggested that SW reserve the 16 bytes following the
     * TUE Header, and therefore start the SW-defined data structure at 32B
@@ -177,63 +179,6 @@ brw_print_tue_map(FILE *fp, const struct brw_tue_map *map)
 }
 
 static bool
-brw_nir_adjust_task_payload_offsets_instr(struct nir_builder *b,
-                                          nir_intrinsic_instr *intrin,
-                                          void *data)
-{
-   switch (intrin->intrinsic) {
-   case nir_intrinsic_store_task_payload:
-   case nir_intrinsic_load_task_payload: {
-      nir_src *offset_src = nir_get_io_offset_src(intrin);
-
-      if (nir_src_is_const(*offset_src))
-         assert(nir_src_as_uint(*offset_src) % 4 == 0);
-
-      b->cursor = nir_before_instr(&intrin->instr);
-
-      /* Regular I/O uses dwords while explicit I/O used for task payload uses
-       * bytes.  Normalize it to dwords.
-       *
-       * TODO(mesh): Figure out how to handle 8-bit, 16-bit.
-       */
-
-      nir_def *offset = nir_ishr_imm(b, offset_src->ssa, 2);
-      nir_src_rewrite(offset_src, offset);
-
-      unsigned base = nir_intrinsic_base(intrin);
-      assert(base % 4 == 0);
-      nir_intrinsic_set_base(intrin, base / 4);
-
-      return true;
-   }
-
-   default:
-      return false;
-   }
-}
-
-static bool
-brw_nir_adjust_task_payload_offsets(nir_shader *nir)
-{
-   return nir_shader_intrinsics_pass(nir,
-                                       brw_nir_adjust_task_payload_offsets_instr,
-                                       nir_metadata_control_flow,
-                                       NULL);
-}
-
-void
-brw_nir_adjust_payload(nir_shader *shader)
-{
-   /* Adjustment of task payload offsets must be performed *after* last pass
-    * which interprets them as bytes, because it changes their unit.
-    */
-   bool adjusted = false;
-   NIR_PASS(adjusted, shader, brw_nir_adjust_task_payload_offsets);
-   if (adjusted) /* clean up the mess created by offset adjustments */
-      NIR_PASS(_, shader, nir_opt_constant_folding);
-}
-
-static bool
 brw_nir_align_launch_mesh_workgroups_instr(nir_builder *b,
                                            nir_intrinsic_instr *intrin,
                                            void *data)
@@ -258,6 +203,328 @@ brw_nir_align_launch_mesh_workgroups(nir_shader *nir)
                                        brw_nir_align_launch_mesh_workgroups_instr,
                                        nir_metadata_control_flow,
                                        NULL);
+}
+
+static unsigned
+component_from_intrinsic(nir_intrinsic_instr *instr)
+{
+   if (nir_intrinsic_has_component(instr))
+      return nir_intrinsic_component(instr);
+   else
+      return 0;
+}
+
+static bool
+is_payload_intrinsic(nir_intrinsic_instr *intrin)
+{
+   return intrin->intrinsic == nir_intrinsic_load_task_payload ||
+          intrin->intrinsic == nir_intrinsic_store_task_payload;
+}
+
+static nir_def *
+intrin_offset_to_urb_offset(nir_builder *b,
+                            const struct intel_device_info *devinfo,
+                            nir_intrinsic_instr *intrin,
+                            unsigned base_offset_B)
+{
+   /* Task payload offsets are in bytes and other intrinsics' offsets are in
+    * dwords.
+    */
+   const bool use_byte_offset = is_payload_intrinsic(intrin);
+   const unsigned intrin_offset =
+      use_byte_offset ? base_offset_B : (base_offset_B >> 2);
+   nir_def *offset = nir_iadd_imm(
+      b, nir_get_io_offset_src(intrin)->ssa,
+      intrin_offset + nir_intrinsic_base(intrin) +
+      component_from_intrinsic(intrin));
+
+   /* On Gfx20+ the offsets in the URB messages are in byte offsets, on
+    * Gfx12.5 the offsets are in 16bytes increments (hence shifts by 2 for
+    * dwords intrinsics, shift by 4 for byte intrinsics).
+    */
+   if (use_byte_offset) {
+      return devinfo->ver >= 20 ? offset : nir_ushr_imm(b, offset, 4);
+   } else {
+      return devinfo->ver >= 20 ?
+         nir_ishl_imm(b, offset, 2) :
+         nir_ushr_imm(b, offset, 2);
+   }
+}
+
+static nir_def *
+load_urb(nir_builder *b,
+         const struct intel_device_info *devinfo,
+         nir_intrinsic_instr *intrin,
+         nir_def *urb_handle)
+{
+   return nir_load_urb_intel(
+      b, intrin->def.num_components, intrin->def.bit_size,
+      urb_handle,
+      intrin_offset_to_urb_offset(b, devinfo, intrin, 0));
+}
+
+static void
+store_urb(nir_builder *b,
+          const struct intel_device_info *devinfo,
+          nir_intrinsic_instr *intrin)
+{
+   nir_store_urb_intel(
+      b,
+      intrin->src[0].ssa,
+      nir_load_urb_output_handle_intel(b),
+      intrin_offset_to_urb_offset(b, devinfo, intrin, 0),
+      nir_imm_int(b, nir_component_mask(intrin->src[0].ssa->num_components)));
+}
+
+static nir_def *
+load_urb_vec4_aligned(nir_builder *b,
+                      const struct intel_device_info *devinfo,
+                      nir_intrinsic_instr *intrin,
+                      nir_def *urb_handle)
+{
+   nir_src *offset_src = nir_get_io_offset_src(intrin);
+
+   /* Try to calculate the value of (offset + base) % 4. If we can do this,
+    * then we can do indirect writes using only 1 URB write.
+    */
+   const bool use_byte_offset = is_payload_intrinsic(intrin);
+   unsigned mod_value, max_mod = use_byte_offset ? 16 : 4;
+   bool use_mod = nir_mod_analysis(
+      nir_get_scalar(offset_src->ssa, 0), nir_type_uint, max_mod, &mod_value);
+   if (use_mod) {
+      mod_value += nir_intrinsic_base(intrin) + component_from_intrinsic(intrin);
+      mod_value %= max_mod;
+   } else {
+      /* Assume the worse case */
+      mod_value = max_mod - 1;
+   }
+
+   if (mod_value == 0)
+      return load_urb(b, devinfo, intrin, urb_handle);
+
+   if (max_mod > 4) {
+      mod_value /= 4;
+      max_mod /= 4;
+   }
+
+   unsigned num_aligned_components = intrin->def.num_components + mod_value;
+   nir_def *unaligned_dword_offset =
+      nir_iadd_imm(b, offset_src->ssa,
+                      nir_intrinsic_base(intrin) +
+                      component_from_intrinsic(intrin));
+   if (use_byte_offset)
+      unaligned_dword_offset = nir_ushr_imm(b, unaligned_dword_offset, 2);
+
+   nir_def *mod = nir_iand_imm(b, unaligned_dword_offset, 0x3);
+   nir_def *aligned_vecs[2];
+
+   /* Load an aligned vec4s value */
+   aligned_vecs[0] = nir_load_urb_intel(
+      b, MIN2(num_aligned_components, 4), intrin->def.bit_size,
+      urb_handle,
+      intrin_offset_to_urb_offset(b, devinfo, intrin, 0));
+   if (num_aligned_components > 4) {
+      nir_def *urb_val, *undef_val;
+      nir_push_if(b, nir_ilt_imm(b, mod, 5));
+      {
+         urb_val = nir_load_urb_intel(
+            b, num_aligned_components - 4, intrin->def.bit_size,
+            urb_handle,
+            intrin_offset_to_urb_offset(b, devinfo, intrin, 16));
+      }
+      nir_push_else(b, NULL);
+      {
+         undef_val = nir_undef(b,
+                               num_aligned_components - 4,
+                               intrin->def.bit_size);
+      }
+      nir_pop_if(b, NULL);
+
+      aligned_vecs[1] = nir_if_phi(b, urb_val, undef_val);
+   }
+
+   nir_def *components[NIR_MAX_VEC_COMPONENTS];
+   if (use_mod) {
+      for (unsigned i = 0; i < intrin->def.num_components; i++) {
+         unsigned c = mod_value + i;
+         components[i] =
+            nir_channel(b, c < 4 ? aligned_vecs[0] : aligned_vecs[1], c % 4);
+      }
+   } else {
+      for (unsigned i = 0; i < MIN2(num_aligned_components, 4); i++)
+         components[i] = nir_channel(b, aligned_vecs[0], i);
+      for (unsigned i = 4; i < num_aligned_components; i++)
+         components[i] = nir_channel(b, aligned_vecs[1], i - 4);
+      nir_def *vec = nir_vec(b, components, num_aligned_components);
+      for (unsigned i = 0; i < intrin->def.num_components; i++)
+         components[i] = nir_vector_extract(b, vec, nir_iadd_imm(b, mod, i));
+   }
+
+   return nir_vec(b, components, intrin->def.num_components);
+}
+
+static void
+store_urb_vec4_aligned(nir_builder *b,
+                       const struct intel_device_info *devinfo,
+                       nir_intrinsic_instr *intrin)
+{
+   nir_src *offset_src = nir_get_io_offset_src(intrin);
+
+   /* Try to calculate the value of (offset + base) % 4. If we can do this,
+    * then we can do indirect writes using only 1 URB write.
+    */
+   const bool use_byte_offset = is_payload_intrinsic(intrin);
+   unsigned mod_value, max_mod = use_byte_offset ? 16 : 4;
+   const bool use_mod = nir_mod_analysis(
+      nir_get_scalar(offset_src->ssa, 0), nir_type_uint, max_mod, &mod_value);
+   if (use_mod) {
+      mod_value += nir_intrinsic_base(intrin) + component_from_intrinsic(intrin);
+      mod_value %= max_mod;
+   } else {
+      /* Assume the worse case */
+      mod_value = max_mod - 1;
+   }
+
+   if (mod_value == 0) {
+      store_urb(b, devinfo, intrin);
+      return;
+   }
+
+   if (max_mod > 4) {
+      mod_value /= 4;
+      max_mod /= 4;
+   }
+
+   const unsigned num_aligned_components =
+      intrin->src[0].ssa->num_components + mod_value;
+   nir_def *unaligned_dword_offset =
+      nir_iadd_imm(b, offset_src->ssa,
+                      nir_intrinsic_base(intrin) +
+                      component_from_intrinsic(intrin));
+   if (use_byte_offset)
+      unaligned_dword_offset = nir_ushr_imm(b, unaligned_dword_offset, 2);
+
+   nir_def *components[NIR_MAX_VEC_COMPONENTS];
+   nir_def *mod, *undef = nir_undef(b, 1, intrin->src[0].ssa->bit_size), *write_mask;
+   if (use_mod) {
+      mod = nir_imm_int(b, mod_value);
+      write_mask = nir_imm_int(
+         b, nir_component_mask(intrin->src[0].ssa->num_components) << mod_value);
+      for (unsigned i = 0; i < mod_value; i++)
+         components[i] = undef;
+      for (unsigned i = 0; i < intrin->src[0].ssa->num_components; i++)
+         components[mod_value + i] = nir_channel(b, intrin->src[0].ssa, i);
+   } else {
+      mod = nir_iand_imm(b, unaligned_dword_offset, 0x3);
+      write_mask = nir_ishl(
+         b,
+         nir_imm_int(b, nir_component_mask(intrin->src[0].ssa->num_components)),
+         mod);
+      for (unsigned i = 0; i < num_aligned_components; i++) {
+         nir_def *cond = nir_i2b(b, nir_iand_imm(b, write_mask, 1u << i));
+
+         nir_def *src_comp =
+            intrin->src[0].ssa->num_components == 1 ?
+            intrin->src[0].ssa :
+            nir_vector_extract(
+               b, intrin->src[0].ssa,
+               nir_imax_imm(b, nir_isub(b, nir_imm_int(b, i), mod), 0));
+
+         components[i] = nir_bcsel(b, cond, src_comp, undef);
+      }
+   }
+
+   nir_def *urb_handle = nir_load_urb_output_handle_intel(b);
+
+   unsigned num_components = MIN2(num_aligned_components, 4);
+   nir_store_urb_intel(
+      b,
+      nir_vec(b, components, num_components),
+      urb_handle,
+      intrin_offset_to_urb_offset(b, devinfo, intrin, 0),
+      nir_iand_imm(b, write_mask, 0xf));
+
+   if (num_aligned_components > 4) {
+      num_components = num_aligned_components - 4;
+      if (!use_mod)
+         nir_push_if(b, nir_i2b(b, nir_iand_imm(b, write_mask, 0xf << 4)));
+      nir_store_urb_intel(
+         b,
+         nir_vec(b, &components[4], num_components),
+         urb_handle,
+         intrin_offset_to_urb_offset(b, devinfo, intrin, 16),
+         nir_ushr_imm(b, write_mask, 4));
+      if (!use_mod)
+         nir_pop_if(b, NULL);
+   }
+}
+
+static bool
+brw_nir_lower_task_mesh_io_instr(nir_builder *b,
+                                 nir_intrinsic_instr *intrin,
+                                 void *data)
+{
+   const struct intel_device_info *devinfo = (const struct intel_device_info *)data;
+
+   switch (intrin->intrinsic) {
+   case nir_intrinsic_load_task_payload: {
+      b->cursor = nir_before_instr(&intrin->instr);
+
+      nir_def *urb_handle =
+         b->shader->info.stage == MESA_SHADER_TASK ?
+         nir_load_urb_output_handle_intel(b) :
+         nir_load_urb_task_input_handle_intel(b);
+      nir_def *def = devinfo->ver >= 20 ?
+         load_urb(b, devinfo, intrin, urb_handle) :
+         load_urb_vec4_aligned(b, devinfo, intrin, urb_handle);
+      nir_def_rewrite_uses(&intrin->def, def);
+
+      nir_instr_remove(&intrin->instr);
+      return true;
+   }
+
+   case nir_intrinsic_load_output:
+   case nir_intrinsic_load_per_vertex_output:
+   case nir_intrinsic_load_per_primitive_output: {
+      b->cursor = nir_before_instr(&intrin->instr);
+
+      nir_def *urb_handle = nir_load_urb_output_handle_intel(b);
+      nir_def *def = devinfo->ver >= 20 ?
+         load_urb(b, devinfo, intrin, urb_handle) :
+         load_urb_vec4_aligned(b, devinfo, intrin, urb_handle);
+      nir_def_rewrite_uses(&intrin->def, def);
+
+      nir_instr_remove(&intrin->instr);
+      return true;
+   }
+
+   case nir_intrinsic_store_output:
+   case nir_intrinsic_store_task_payload:
+   case nir_intrinsic_store_per_vertex_output:
+   case nir_intrinsic_store_per_primitive_output:
+      b->cursor = nir_before_instr(&intrin->instr);
+
+      if (devinfo->ver >= 20)
+         store_urb(b, devinfo, intrin);
+      else
+         store_urb_vec4_aligned(b, devinfo, intrin);
+
+      nir_instr_remove(&intrin->instr);
+      return true;
+
+   default:
+      return false;
+   }
+}
+
+bool
+brw_nir_lower_task_mesh_io(nir_shader *shader,
+                           const struct intel_device_info *devinfo)
+{
+   return nir_shader_intrinsics_pass(shader,
+                                     brw_nir_lower_task_mesh_io_instr,
+                                     nir_metadata_none,
+                                     (void *)devinfo);
 }
 
 static void
@@ -1217,12 +1484,13 @@ brw_nir_lower_mue_outputs(nir_shader *nir, const struct brw_mue_map *map)
 
    NIR_PASS(_, nir, nir_lower_io, nir_var_shader_out,
             type_size_scalar_dwords, nir_lower_io_lower_64bit_to_32);
+   /* Remove dead code left by lower_io */
+   NIR_PASS(_, nir, nir_opt_dce);
 }
 
 static void
 brw_nir_initialize_mue(nir_shader *nir,
-                       const struct brw_mue_map *map,
-                       unsigned dispatch_width)
+                       const struct brw_mue_map *map)
 {
    assert(map->per_primitive_header_size_dw > 0);
 
@@ -1290,17 +1558,18 @@ brw_nir_initialize_mue(nir_shader *nir,
    /* If there's more than one subgroup, then we need to wait for all of them
     * to finish initialization before we can proceed. Otherwise some subgroups
     * may start filling MUE before other finished initializing.
+    *
+    * Note that brw_nir_lower_simd and subsequent optimizations will remove
+    * this code if condition is false.
     */
-   if (workgroup_size > dispatch_width) {
+   nir_push_if(&b, nir_ilt_imm(&b, nir_load_subgroup_size(&b), workgroup_size));
+   {
       nir_barrier(&b, SCOPE_WORKGROUP, SCOPE_WORKGROUP,
-                         NIR_MEMORY_ACQ_REL, nir_var_shader_out);
+                  NIR_MEMORY_ACQ_REL, nir_var_shader_out);
    }
+   nir_pop_if(&b, NULL);
 
-   if (remaining) {
-      nir_metadata_preserve(entrypoint, nir_metadata_none);
-   } else {
-      nir_metadata_preserve(entrypoint, nir_metadata_control_flow);
-   }
+   nir_metadata_preserve(entrypoint, nir_metadata_none);
 }
 
 static void
@@ -1634,6 +1903,15 @@ brw_compile_mesh(const struct brw_compiler *compiler,
                        prog_data->index_format, key->compact_mue);
    brw_nir_lower_mue_outputs(nir, &prog_data->map);
 
+   /*
+    * When Primitive Header is enabled, we may not generates writes to all
+    * fields, so let's initialize everything.
+    */
+   if (prog_data->map.per_primitive_header_size_dw > 0)
+      NIR_PASS_V(nir, brw_nir_initialize_mue, &prog_data->map);
+
+   NIR_PASS(_, nir, brw_nir_adjust_offset_for_arrayed_indices, &prog_data->map);
+
    prog_data->autostrip_enable = brw_mesh_autostrip_enable(compiler, nir, &prog_data->map);
 
    brw_simd_selection_state simd_state{
@@ -1652,16 +1930,8 @@ brw_compile_mesh(const struct brw_compiler *compiler,
 
       nir_shader *shader = nir_shader_clone(params->base.mem_ctx, nir);
 
-      /*
-       * When Primitive Header is enabled, we may not generates writes to all
-       * fields, so let's initialize everything.
-       */
-      if (prog_data->map.per_primitive_header_size_dw > 0)
-         NIR_PASS_V(shader, brw_nir_initialize_mue, &prog_data->map, dispatch_width);
-
       brw_nir_apply_key(shader, compiler, &key->base, dispatch_width);
 
-      NIR_PASS(_, shader, brw_nir_adjust_offset_for_arrayed_indices, &prog_data->map);
       /* Load uniforms can do a better job for constants, so fold before it. */
       NIR_PASS(_, shader, nir_opt_constant_folding);
       NIR_PASS(_, shader, brw_nir_lower_load_uniforms);

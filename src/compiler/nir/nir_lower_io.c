@@ -1893,9 +1893,9 @@ build_explicit_io_atomic(nir_builder *b, nir_intrinsic_instr *intrin,
    if (nir_intrinsic_has_access(atomic))
       nir_intrinsic_set_access(atomic, nir_intrinsic_access(intrin));
 
-   assert(intrin->def.num_components == 1);
-   nir_def_init(&atomic->instr, &atomic->def, 1,
-                intrin->def.bit_size);
+   atomic->num_components = intrin->num_components;
+   nir_def_init(&atomic->instr, &atomic->def,
+                intrin->num_components, intrin->def.bit_size);
 
    assert(atomic->def.bit_size % 8 == 0);
 

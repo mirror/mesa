@@ -53,6 +53,7 @@ static const struct spirv_capabilities implemented_capabilities = {
    .AtomicFloat32AddEXT = true,
    .AtomicFloat64AddEXT = true,
    .AtomicFloat16MinMaxEXT = true,
+   .AtomicFloat16VectorNV = true,
    .AtomicFloat32MinMaxEXT = true,
    .AtomicFloat64MinMaxEXT = true,
    .AtomicStorage = true,
@@ -4306,6 +4307,7 @@ vtn_handle_atomics(struct vtn_builder *b, SpvOp opcode,
       case SpvOpAtomicFAddEXT:
       case SpvOpAtomicFMinEXT:
       case SpvOpAtomicFMaxEXT:
+         atomic->num_components = glsl_get_vector_elements(deref_type);
          fill_common_atomic_sources(b, opcode, w, &atomic->src[1]);
          break;
 

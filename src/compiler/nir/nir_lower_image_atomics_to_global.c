@@ -39,6 +39,7 @@ lower(nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *_)
    b->cursor = nir_before_instr(&intr->instr);
    nir_atomic_op atomic_op = nir_intrinsic_atomic_op(intr);
    enum pipe_format format = nir_intrinsic_format(intr);
+   unsigned num_comps = intr->def.num_components;
    unsigned bit_size = intr->def.bit_size;
 
    /* Even for "formatless" access, we know the size of the texel accessed,
@@ -55,7 +56,7 @@ lower(nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *_)
       else
          format_type = UTIL_FORMAT_TYPE_UNSIGNED;
 
-      format = util_format_get_array(format_type, bit_size, 1, false,
+      format = util_format_get_array(format_type, bit_size, num_comps, false,
                                      type_ != nir_type_float);
    }
 
@@ -79,8 +80,9 @@ lower(nir_builder *b, nir_intrinsic_instr *intr, UNUSED void *_)
    /* Build the global atomic */
    nir_def *global;
    if (swap) {
-      global = nir_global_atomic_swap(b, bit_size, address, intr->src[3].ssa,
-                                      intr->src[4].ssa, .atomic_op = atomic_op);
+      global = nir_global_atomic_swap(b, bit_size, address,
+                                      intr->src[3].ssa, intr->src[4].ssa,
+                                      .atomic_op = atomic_op);
    } else {
       global = nir_global_atomic(b, bit_size, address, intr->src[3].ssa,
                                  .atomic_op = atomic_op);

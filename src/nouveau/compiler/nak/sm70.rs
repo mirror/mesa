@@ -2828,7 +2828,7 @@ impl SM70Encoder<'_> {
                 AtomType::I32 => 1_u8,
                 AtomType::U64 => 2_u8,
                 AtomType::F32 => 3_u8,
-                AtomType::F16x2 => 4_u8,
+                AtomType::F16v2 => 4_u8,
                 AtomType::I64 => 5_u8,
                 AtomType::F64 => 6_u8,
             },

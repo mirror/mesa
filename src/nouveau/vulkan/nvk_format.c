@@ -26,6 +26,8 @@ nvk_format_supports_atomics(const struct nv_device_info *dev,
    case PIPE_FORMAT_R32_SINT:
    case PIPE_FORMAT_R64_UINT:
    case PIPE_FORMAT_R64_SINT:
+   case PIPE_FORMAT_R16G16_FLOAT:
+   case PIPE_FORMAT_R16G16B16A16_FLOAT:
       return true;
    default:
       return false;

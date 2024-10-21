@@ -340,6 +340,9 @@ print_memory_logical_source(FILE *file, const fs_inst *inst, unsigned i)
    case MEMORY_LOGICAL_ADDRESS:
       fprintf(file, " addr: ");
       return false;
+   case MEMORY_LOGICAL_ADDRESS_OFFSET:
+      fprintf(file, " offset: ");
+      return false;
    case MEMORY_LOGICAL_COORD_COMPONENTS:
       fprintf(file, " coord_comps:");
       return false;

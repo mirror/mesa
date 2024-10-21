@@ -107,6 +107,7 @@ validate_memory_logical(const fs_visitor &s, const fs_inst *inst)
    fsv_assert(is_ud_imm(inst->src[MEMORY_LOGICAL_DATA_SIZE]));
    fsv_assert(is_ud_imm(inst->src[MEMORY_LOGICAL_COMPONENTS]));
    fsv_assert(is_ud_imm(inst->src[MEMORY_LOGICAL_FLAGS]));
+   fsv_assert(is_ud_imm(inst->src[MEMORY_LOGICAL_ADDRESS_OFFSET]));
 
    enum lsc_opcode op = (enum lsc_opcode) inst->src[MEMORY_LOGICAL_OPCODE].ud;
    enum memory_flags flags = (memory_flags)inst->src[MEMORY_LOGICAL_FLAGS].ud;
@@ -156,6 +157,13 @@ validate_memory_logical(const fs_visitor &s, const fs_inst *inst)
 
    if (inst->dst.file != BAD_FILE)
       fsv_assert(brw_type_size_bytes(inst->dst.type) == data_size_B);
+
+   /** TGM messages cannot have a base offset */
+   if (mode == MEMORY_MODE_TYPED)
+      fsv_assert(inst->src[MEMORY_LOGICAL_ADDRESS_OFFSET].ud == 0);
+
+   /* Offset must be DWord aligned */
+   fsv_assert((inst->src[MEMORY_LOGICAL_ADDRESS_OFFSET].ud % 4) == 0);
 
    switch (inst->opcode) {
    case SHADER_OPCODE_MEMORY_LOAD_LOGICAL:

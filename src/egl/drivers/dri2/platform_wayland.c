@@ -2422,6 +2422,8 @@ swrast_update_buffers(struct dri2_egl_surface *dri2_surf)
       dri2_surf->dx = dri2_surf->wl_win->dx;
       dri2_surf->dy = dri2_surf->wl_win->dy;
       dri2_surf->current = NULL;
+
+      driSWRastResetBufferAge(dri2_surf->dri_drawable);
    }
 
    /* find back buffer */
@@ -2773,6 +2775,7 @@ dri2_wl_swrast_query_buffer_age(_EGLDisplay *disp, _EGLSurface *surface)
    struct dri2_egl_surface *dri2_surf = dri2_egl_surface(surface);
 
    assert(dri2_dpy->swrast);
+   (void)swrast_update_buffers(dri2_surf);
    return driSWRastQueryBufferAge(dri2_surf->dri_drawable);
 }
 

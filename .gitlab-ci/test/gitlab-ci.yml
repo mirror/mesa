@@ -57,7 +57,6 @@ yaml-toml-shell-test:
     - .gitlab-ci/run-shellcheck.sh
     - section_end
   rules:
-    - !reference [.disable-farm-mr-rules, rules]
     - !reference [.never-post-merge-rules, rules]
     - !reference [.no_scheduled_pipelines-rules, rules]
     - if: $GITLAB_USER_LOGIN == "marge-bot"

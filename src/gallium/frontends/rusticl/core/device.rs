@@ -671,6 +671,8 @@ impl Device {
             // we have lowering in `nir_lower_subgroups`, drivers can just use that
             add_ext(1, 0, 0, "cl_khr_subgroup_shuffle");
             add_ext(1, 0, 0, "cl_khr_subgroup_shuffle_relative");
+            add_ext(1, 0, 0, "cl_intel_subgroups");
+            add_spirv("SPV_INTEL_subgroups");
         }
 
         if self.svm_supported() {
@@ -1083,6 +1085,7 @@ impl Device {
             images_read_write: self.caps.has_rw_images,
             images_write_3d: self.caps.has_3d_image_writes,
             integer_dot_product: true,
+            intel_subgroups: subgroups_supported,
             subgroups: subgroups_supported,
             subgroups_shuffle: subgroups_supported,
             subgroups_shuffle_relative: subgroups_supported,

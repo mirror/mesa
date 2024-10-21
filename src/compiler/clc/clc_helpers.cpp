@@ -974,6 +974,7 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
    }
    if (args->features.intel_subgroups) {
       c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+cl_intel_subgroups");
+      c->getPreprocessorOpts().addMacroDef("cl_intel_subgroups=1");
       needs_opencl_c_h = true;
    }
    if (args->features.subgroups) {

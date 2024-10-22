@@ -92,7 +92,7 @@ enum radv_cmd_dirty_bits {
    RADV_CMD_DIRTY_DB_SHADER_CONTROL = 1ull << 8,
    RADV_CMD_DIRTY_STREAMOUT_ENABLE = 1ull << 9,
    RADV_CMD_DIRTY_GRAPHICS_SHADERS = 1ull << 10,
-   RADV_CMD_DIRTY_COLOR_OUTPUT = 1ull << 11,
+   RADV_CMD_DIRTY_CB_RENDER_STATE = 1ull << 11,
    RADV_CMD_DIRTY_FBFETCH_OUTPUT = 1ull << 12,
    RADV_CMD_DIRTY_FS_STATE = 1ull << 13,
    RADV_CMD_DIRTY_NGG_STATE = 1ull << 14,
@@ -265,6 +265,7 @@ enum radv_tracked_reg {
    RADV_TRACKED_SPI_SHADER_IDX_FORMAT,
    RADV_TRACKED_SPI_SHADER_POS_FORMAT,
 
+   RADV_TRACKED_SPI_SHADER_COL_FORMAT,
    RADV_TRACKED_SPI_SHADER_Z_FORMAT,
    RADV_TRACKED_SPI_VS_OUT_CONFIG,
 
@@ -301,6 +302,12 @@ enum radv_tracked_reg {
    RADV_TRACKED_VGT_SHADER_STAGES_EN,
    RADV_TRACKED_VGT_VERTEX_REUSE_BLOCK_CNTL,
 
+   /* 2 consecutive registers */
+   RADV_TRACKED_CB_TARGET_MASK,
+   RADV_TRACKED_CB_SHADER_MASK,
+
+   RADV_TRACKED_CB_COLOR_CONTROL,
+
    RADV_NUM_ALL_TRACKED_REGS,
 };
 
@@ -308,6 +315,8 @@ struct radv_tracked_regs {
    BITSET_DECLARE(reg_saved_mask, RADV_NUM_ALL_TRACKED_REGS);
    uint32_t reg_value[RADV_NUM_ALL_TRACKED_REGS];
    uint32_t spi_ps_input_cntl[32];
+   uint32_t cb_blend_control[MAX_RTS];
+   uint32_t sx_mrt_blend_opt[MAX_RTS];
 };
 
 struct radv_cmd_state {

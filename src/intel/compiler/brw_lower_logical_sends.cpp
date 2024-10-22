@@ -1371,12 +1371,16 @@ setup_surface_descriptors(const fs_builder &bld, fs_inst *inst, uint32_t desc,
 
 static void
 setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
-                              uint32_t desc, const brw_reg &surface)
+                              uint32_t desc, const brw_reg &surface,
+                              const brw_reg &base_offset)
 {
    const ASSERTED intel_device_info *devinfo = bld.shader->devinfo;
    const brw_compiler *compiler = bld.shader->compiler;
+   const fs_builder ubld1 = bld.exec_all().group(1, 0);
+   brw_reg base_offset_shifted;
 
    inst->src[0] = brw_imm_ud(0); /* desc */
+   inst->src[1] = brw_imm_ud(0);
 
    enum lsc_addr_surface_type surf_type = lsc_msg_desc_addr_type(devinfo, desc);
    switch (surf_type) {
@@ -1392,22 +1396,40 @@ setup_lsc_surface_descriptors(const fs_builder &bld, fs_inst *inst,
       /* Gfx20+ assumes ExBSO with UGM */
       if (devinfo->ver >= 20 && inst->sfid == GFX12_SFID_UGM)
          inst->send_ex_bso = true;
+
+      assert(base_offset.file == IMM);
+      /* We can only encode 16 bits in the extended descriptor */
+      assert(base_offset.ud < (1u << LSC_ADDRESS_OFFSET_SS_BITS));
+      inst->ex_desc = SET_BITS(GET_BITS(base_offset.ud, 16, 4), 31, 19) |
+                      SET_BITS(GET_BITS(base_offset.ud, 3, 0), 15, 12);
       break;
 
    case LSC_ADDR_SURFTYPE_BTI:
       assert(surface.file != BAD_FILE);
       if (surface.file == IMM) {
-         inst->src[1] = brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud));
-      } else {
-         const fs_builder ubld = bld.exec_all().group(1, 0);
-         brw_reg tmp = ubld.vgrf(BRW_TYPE_UD);
-         ubld.SHL(tmp, surface, brw_imm_ud(24));
-         inst->src[1] = component(tmp, 0);
+         unsigned offset = base_offset.file == BAD_FILE ? 0 : base_offset.ud;
+         /* We can encode 12 bits in the extended descriptor */
+         assert(base_offset.ud < (1u << LSC_ADDRESS_OFFSET_BTI_BITS));
+         inst->src[1] =
+            brw_imm_ud(lsc_bti_ex_desc(devinfo, surface.ud, offset));
+      } else if (surface.file != BAD_FILE) {
+         base_offset_shifted =
+            base_offset.file == IMM ? brw_imm_ud(base_offset.ud << 12)
+                                   : ubld1.SHL(base_offset, brw_imm_ud(12));
+         brw_reg surface_reg =
+            ubld1.OR(ubld1.SHL(surface, brw_imm_ud(24)),
+                     base_offset_shifted);
+
+         inst->src[1] = component(surface_reg, 0);
       }
       break;
 
    case LSC_ADDR_SURFTYPE_FLAT:
       inst->src[1] = brw_imm_ud(0);
+      base_offset_shifted =
+      base_offset.file == IMM ? brw_imm_ud(base_offset.ud << 12)
+                              : ubld1.SHL(base_offset, brw_imm_ud(12));
+      inst->src[1] = base_offset_shifted;
       break;
 
    default:
@@ -1465,11 +1487,14 @@ lower_lsc_memory_logical_send(const fs_builder &bld, fs_inst *inst)
       brw_type_with_size(data0.type, data_size_B * 8);
 
    const enum lsc_addr_size addr_size = lsc_addr_size_for_type(addr.type);
-
    const brw_reg base_offset =
       retype(inst->src[MEMORY_LOGICAL_ADDRESS_OFFSET], BRW_TYPE_UD);
-   /* TODO: setup the offset */
-   assert(base_offset.ud == 0);
+
+   /**
+    * TGM messages cannot have a base offset
+    */
+   if (mode == MEMORY_MODE_TYPED)
+      assert(base_offset.ud == 0);
 
    brw_reg payload = addr;
 
@@ -1571,7 +1596,7 @@ lower_lsc_memory_logical_send(const fs_builder &bld, fs_inst *inst)
                              transpose, cache_mode);
 
    /* Set up extended descriptors, fills src[0] and src[1]. */
-   setup_lsc_surface_descriptors(bld, inst, inst->desc, binding);
+   setup_lsc_surface_descriptors(bld, inst, inst->desc, binding, base_offset);
 
    inst->opcode = SHADER_OPCODE_SEND;
    inst->mlen = lsc_msg_addr_len(devinfo, addr_size,
@@ -1962,7 +1987,8 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle,
+                                    brw_imm_ud(0));
    } else {
       inst->desc =
          lsc_msg_desc(devinfo, LSC_OP_LOAD,
@@ -1975,7 +2001,8 @@ lower_lsc_varying_pull_constant_logical_send(const fs_builder &bld,
 
       setup_lsc_surface_descriptors(bld, inst, inst->desc,
                                     surface.file != BAD_FILE ?
-                                    surface : surface_handle);
+                                    surface : surface_handle,
+                                    brw_imm_ud(0));
 
       /* The byte scattered messages can only read one dword at a time so
        * we have to duplicate the message 4 times to read the full vec4.
@@ -2585,7 +2612,8 @@ brw_lower_uniform_pull_constant_loads(fs_visitor &s)
          inst->resize_sources(3);
          setup_lsc_surface_descriptors(ubld, inst, inst->desc,
                                        surface.file != BAD_FILE ?
-                                       surface : surface_handle);
+                                       surface : surface_handle,
+                                       brw_imm_ud(0));
          inst->src[2] = payload;
 
          s.invalidate_analysis(DEPENDENCY_INSTRUCTIONS | DEPENDENCY_VARIABLES);

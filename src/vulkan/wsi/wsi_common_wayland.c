@@ -122,6 +122,8 @@ struct wsi_wl_display {
 
    dev_t main_device;
    bool same_gpu;
+
+   bool has_tearing;
 };
 
 struct wsi_wayland {
@@ -158,7 +160,19 @@ struct wsi_wl_surface {
 
    struct wsi_wl_swapchain *chain;
    struct wl_surface *surface;
-   struct wsi_wl_display *display;
+   struct wsi_wl_display *display; /* active display */
+
+   struct {
+      /* Cached structures, for eg. GetPhysicalDeviceSurfaceFormatsKHR to avoid
+       * round-trips every single time they are called, which is slow
+       * and leaks wl_registries on the server side[1].
+       *
+       * [1]: https://gitlab.freedesktop.org/wayland/wayland/-/merge_requests/388
+       */
+      pthread_mutex_t lock;
+      struct wsi_device *last_device;
+      struct wsi_wl_display cached_display;
+   } query_cache;
 
    /* This has no functional use, and is here only for perfetto */
    struct {
@@ -844,6 +858,7 @@ registry_handle_global(void *data, struct wl_registry *registry,
    } else if (strcmp(interface, wp_tearing_control_manager_v1_interface.name) == 0) {
       display->tearing_control_manager =
          wl_registry_bind(registry, name, &wp_tearing_control_manager_v1_interface, 1);
+      display->has_tearing = display->tearing_control_manager != NULL;
    }
 }
 
@@ -858,26 +873,46 @@ static const struct wl_registry_listener registry_listener = {
 };
 
 static void
+wsi_wl_display_finish_objects(struct wsi_wl_display *display)
+{
+   if (display->wl_shm) {
+      wl_shm_destroy(display->wl_shm);
+      display->wl_shm = NULL;
+   }
+   if (display->wl_syncobj) {
+      wp_linux_drm_syncobj_manager_v1_destroy(display->wl_syncobj);
+      display->wl_syncobj = NULL;
+   }
+   if (display->wl_dmabuf) {
+      zwp_linux_dmabuf_v1_destroy(display->wl_dmabuf);
+      display->wl_dmabuf = NULL;
+   }
+   if (display->wp_presentation_notwrapped) {
+      wp_presentation_destroy(display->wp_presentation_notwrapped);
+      display->wp_presentation_notwrapped = NULL;
+   }
+   if (display->tearing_control_manager) {
+      wp_tearing_control_manager_v1_destroy(display->tearing_control_manager);
+      display->tearing_control_manager = NULL;
+   }
+   if (display->wl_display_wrapper) {
+      wl_proxy_wrapper_destroy(display->wl_display_wrapper);
+      display->wl_display_wrapper = NULL;
+   }
+   if (display->queue) {
+      wl_event_queue_destroy(display->queue);
+      display->queue = NULL;
+   }
+}
+
+static void
 wsi_wl_display_finish(struct wsi_wl_display *display)
 {
    struct wsi_wl_format *f;
    u_vector_foreach(f, &display->formats)
       u_vector_finish(&f->modifiers);
    u_vector_finish(&display->formats);
-   if (display->wl_shm)
-      wl_shm_destroy(display->wl_shm);
-   if (display->wl_syncobj)
-      wp_linux_drm_syncobj_manager_v1_destroy(display->wl_syncobj);
-   if (display->wl_dmabuf)
-      zwp_linux_dmabuf_v1_destroy(display->wl_dmabuf);
-   if (display->wp_presentation_notwrapped)
-      wp_presentation_destroy(display->wp_presentation_notwrapped);
-   if (display->tearing_control_manager)
-      wp_tearing_control_manager_v1_destroy(display->tearing_control_manager);
-   if (display->wl_display_wrapper)
-      wl_proxy_wrapper_destroy(display->wl_display_wrapper);
-   if (display->queue)
-      wl_event_queue_destroy(display->queue);
+   wsi_wl_display_finish_objects(display);
 }
 
 static VkResult
@@ -1207,26 +1242,67 @@ wsi_wl_surface_get_capabilities2(VkIcdSurfaceBase *surface,
    return result;
 }
 
+static struct wsi_wl_display *
+wsi_wl_surface_get_query_display(struct wsi_wl_surface *wsi_wl_surface,
+                                 struct wsi_device *wsi_device)
+{
+   struct wsi_wayland *wsi =
+      (struct wsi_wayland *)wsi_device->wsi[VK_ICD_WSI_PLATFORM_WAYLAND];
+   int err;
+
+   err = pthread_mutex_lock(&wsi_wl_surface->query_cache.lock);
+   if (err != 0)
+      return NULL;
+
+   /* wsi_devices and VkPhysicalDevices are around for the lifetime
+    * of the instance, so it's okay to cache by ptr like this.
+    */
+   if (wsi_wl_surface->query_cache.last_device == wsi_device)
+      return &wsi_wl_surface->query_cache.cached_display;
+
+   if (wsi_wl_surface->query_cache.last_device) {
+      wsi_wl_display_finish(&wsi_wl_surface->query_cache.cached_display);
+      wsi_wl_surface->query_cache.last_device = NULL;
+   }
+
+   if (wsi_wl_display_init(wsi, &wsi_wl_surface->query_cache.cached_display,
+                           wsi_wl_surface->base.display, true,
+                           wsi_device->sw, "mesa display query cache")) {
+      pthread_mutex_unlock(&wsi_wl_surface->query_cache.lock);
+      return NULL;
+   }
+
+   /* We don't need any of the objects, stop them from recieving events and such. */
+   wsi_wl_display_finish_objects(&wsi_wl_surface->query_cache.cached_display);
+
+   wsi_wl_surface->query_cache.last_device = wsi_device;
+   return &wsi_wl_surface->query_cache.cached_display;
+}
+
+static void
+wsi_wl_surface_release_query_display(struct wsi_wl_surface *wsi_wl_surface)
+{
+   pthread_mutex_unlock(&wsi_wl_surface->query_cache.lock);
+}
+
 static VkResult
 wsi_wl_surface_get_formats(VkIcdSurfaceBase *icd_surface,
 			   struct wsi_device *wsi_device,
                            uint32_t* pSurfaceFormatCount,
                            VkSurfaceFormatKHR* pSurfaceFormats)
 {
-   VkIcdSurfaceWayland *surface = (VkIcdSurfaceWayland *)icd_surface;
-   struct wsi_wayland *wsi =
-      (struct wsi_wayland *)wsi_device->wsi[VK_ICD_WSI_PLATFORM_WAYLAND];
+   struct wsi_wl_surface *wsi_wl_surface =
+      wl_container_of((VkIcdSurfaceWayland *)icd_surface, wsi_wl_surface, base);
 
-   struct wsi_wl_display display;
-   if (wsi_wl_display_init(wsi, &display, surface->display, true,
-                           wsi_device->sw, "mesa formats query"))
+   struct wsi_wl_display *display = wsi_wl_surface_get_query_display(wsi_wl_surface, wsi_device);
+   if (!display)
       return VK_ERROR_SURFACE_LOST_KHR;
 
    VK_OUTARRAY_MAKE_TYPED(VkSurfaceFormatKHR, out,
                           pSurfaceFormats, pSurfaceFormatCount);
 
    struct wsi_wl_format *disp_fmt;
-   u_vector_foreach(disp_fmt, &display.formats) {
+   u_vector_foreach(disp_fmt, &display->formats) {
       /* Skip formats for which we can't support both alpha & opaque
        * formats.
        */
@@ -1240,7 +1316,7 @@ wsi_wl_surface_get_formats(VkIcdSurfaceBase *icd_surface,
       }
    }
 
-   wsi_wl_display_finish(&display);
+   wsi_wl_surface_release_query_display(wsi_wl_surface);
 
    return vk_outarray_status(&out);
 }
@@ -1252,20 +1328,18 @@ wsi_wl_surface_get_formats2(VkIcdSurfaceBase *icd_surface,
                             uint32_t* pSurfaceFormatCount,
                             VkSurfaceFormat2KHR* pSurfaceFormats)
 {
-   VkIcdSurfaceWayland *surface = (VkIcdSurfaceWayland *)icd_surface;
-   struct wsi_wayland *wsi =
-      (struct wsi_wayland *)wsi_device->wsi[VK_ICD_WSI_PLATFORM_WAYLAND];
+   struct wsi_wl_surface *wsi_wl_surface =
+      wl_container_of((VkIcdSurfaceWayland *)icd_surface, wsi_wl_surface, base);
 
-   struct wsi_wl_display display;
-   if (wsi_wl_display_init(wsi, &display, surface->display, true,
-                           wsi_device->sw, "mesa formats2 query"))
+   struct wsi_wl_display *display = wsi_wl_surface_get_query_display(wsi_wl_surface, wsi_device);
+   if (!display)
       return VK_ERROR_SURFACE_LOST_KHR;
 
    VK_OUTARRAY_MAKE_TYPED(VkSurfaceFormat2KHR, out,
                           pSurfaceFormats, pSurfaceFormatCount);
 
    struct wsi_wl_format *disp_fmt;
-   u_vector_foreach(disp_fmt, &display.formats) {
+   u_vector_foreach(disp_fmt, &display->formats) {
       /* Skip formats for which we can't support both alpha & opaque
        * formats.
        */
@@ -1279,7 +1353,7 @@ wsi_wl_surface_get_formats2(VkIcdSurfaceBase *icd_surface,
       }
    }
 
-   wsi_wl_display_finish(&display);
+   wsi_wl_surface_release_query_display(wsi_wl_surface);
 
    return vk_outarray_status(&out);
 }
@@ -1290,13 +1364,11 @@ wsi_wl_surface_get_present_modes(VkIcdSurfaceBase *icd_surface,
                                  uint32_t* pPresentModeCount,
                                  VkPresentModeKHR* pPresentModes)
 {
-   VkIcdSurfaceWayland *surface = (VkIcdSurfaceWayland *)icd_surface;
-   struct wsi_wayland *wsi =
-      (struct wsi_wayland *)wsi_device->wsi[VK_ICD_WSI_PLATFORM_WAYLAND];
+   struct wsi_wl_surface *wsi_wl_surface =
+      wl_container_of((VkIcdSurfaceWayland *)icd_surface, wsi_wl_surface, base);
 
-   struct wsi_wl_display display;
-   if (wsi_wl_display_init(wsi, &display, surface->display, true,
-                           wsi_device->sw, "mesa present modes query"))
+   struct wsi_wl_display *display = wsi_wl_surface_get_query_display(wsi_wl_surface, wsi_device);
+   if (!display)
       return VK_ERROR_SURFACE_LOST_KHR;
 
    VkPresentModeKHR present_modes[3];
@@ -1306,11 +1378,11 @@ wsi_wl_surface_get_present_modes(VkIcdSurfaceBase *icd_surface,
    present_modes[present_modes_count++] = VK_PRESENT_MODE_MAILBOX_KHR;
    present_modes[present_modes_count++] = VK_PRESENT_MODE_FIFO_KHR;
 
-   if (display.tearing_control_manager)
+   if (display->has_tearing)
       present_modes[present_modes_count++] = VK_PRESENT_MODE_IMMEDIATE_KHR;
 
    assert(present_modes_count <= ARRAY_SIZE(present_modes));
-   wsi_wl_display_finish(&display);
+   wsi_wl_surface_release_query_display(wsi_wl_surface);
 
    if (pPresentModes == NULL) {
       *pPresentModeCount = present_modes_count;
@@ -1376,6 +1448,9 @@ wsi_wl_surface_destroy(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
 
    if (wsi_wl_surface->display)
       wsi_wl_display_destroy(wsi_wl_surface->display);
+
+   if (wsi_wl_surface->query_cache.last_device)
+      wsi_wl_display_finish(&wsi_wl_surface->query_cache.cached_display);
 
    wsi_wl_surface_analytics_fini(wsi_wl_surface, &instance->alloc, pAllocator);
 

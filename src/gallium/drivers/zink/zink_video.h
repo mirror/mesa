@@ -30,6 +30,7 @@
 #define ZINK_VIDEO_H
 
 #include "pipe/p_video_codec.h"
+#include "util/u_upload_mgr.h"
 #include "zink_types.h"
 
 #define NUM_BUFFERS 4
@@ -39,11 +40,10 @@ struct zink_video_codec {
    struct pipe_screen *screen;
    void *bs_ptr;
    size_t bs_size;
-   struct pipe_transfer *bs_xfer;
    VkCommandPool cmdpool;
+   struct u_upload_mgr *bitstream_mgr;
+   struct zink_resource *bitstream_res;
    VkVideoSessionParametersKHR params;
-   struct pipe_resource *bs[NUM_BUFFERS];
-   unsigned cur_bs_buf;
    unsigned num_priv_mems;
    unsigned max_dpb_slots;
    struct zink_bo **priv_mems;

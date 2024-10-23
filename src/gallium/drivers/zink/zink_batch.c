@@ -766,6 +766,9 @@ submit_queue(void *data, void *gdata, int thread_index)
          bs->is_device_lost = true;
       }
    );
+   /* FIXME: delet this */
+   if (bs->ctx->flags & PIPE_CONTEXT_VIDEO)
+      screen->VIDEO_PRESENT_HACK = true;
    simple_mtx_unlock(&screen->queue_lock);
 
    if (bs->copy_context_semaphore)

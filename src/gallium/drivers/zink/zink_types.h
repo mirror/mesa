@@ -1400,6 +1400,8 @@ struct zink_screen {
    PFN_vkGetInstanceProcAddr vk_GetInstanceProcAddr;
    PFN_vkGetDeviceProcAddr vk_GetDeviceProcAddr;
 
+   /* FIXME: delet this */
+   bool VIDEO_PRESENT_HACK; //somehow implicit sync is broken with video decode on anv?
    bool threaded;
    bool threaded_submit;
    bool is_cpu;

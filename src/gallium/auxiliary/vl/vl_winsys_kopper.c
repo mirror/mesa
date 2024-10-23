@@ -220,7 +220,7 @@ vl_kopper_screen_create_x11(Display *display, int screen)
    scrn->base.texture_from_drawable = vl_kopper_texture_from_drawable;
    scrn->base.get_dirty_area = vl_kopper_get_dirty_area;
    scrn->base.destroy = vl_kopper_screen_destroy;
-   scrn->pipe = scrn->base.pscreen->context_create(scrn->base.pscreen, NULL, 0);
+   scrn->pipe = pipe_create_multimedia_context(scrn->base.pscreen);
 
    vl_compositor_reset_dirty_area(&scrn->dirty_area);
 
@@ -248,7 +248,7 @@ vl_kopper_screen_create_win32(LUID *luid)
 
    scrn->base.destroy = vl_kopper_screen_destroy;
 
-   scrn->pipe = scrn->base.pscreen->context_create(scrn->base.pscreen, NULL, 0);
+   scrn->pipe = pipe_create_multimedia_context(scrn->base.pscreen);
 
    return &scrn->base;
 

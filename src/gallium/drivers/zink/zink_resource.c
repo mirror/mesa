@@ -2740,6 +2740,17 @@ zink_image_subdata(struct pipe_context *pctx,
    struct zink_context *ctx = zink_context(pctx);
    struct zink_resource *res = zink_resource(pres);
 
+   if (ctx->flags & PIPE_CONTEXT_VIDEO) {
+      /* video context only uses video queue and cannot access transfer ops */
+      zink_screen_lock_context(screen);
+      zink_image_subdata(&screen->copy_context->base, pres, level, usage, box, data, stride, layer_stride);
+      /* add inter-context semaphore for synchronization */
+      zink_batch_sync_with_copy_context(ctx);
+      screen->copy_context->base.flush(&screen->copy_context->base, NULL, 0);
+      zink_screen_unlock_context(screen);
+      return;
+   }
+
    /* flush clears to avoid subdata conflict */
    if (!(usage & TC_TRANSFER_MAP_THREADED_UNSYNC) &&
        (res->obj->vkusage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT))

@@ -1931,8 +1931,7 @@ get_nir_def(nir_to_brw_state &ntb, const nir_def &def)
       ntb.ssa_values[def.index] =
          bld.vgrf(reg_type, def.num_components);
 
-      if (def.bit_size * bld.dispatch_width() < 8 * REG_SIZE)
-         bld.UNDEF(ntb.ssa_values[def.index]);
+      bld.emit_undef_for_partial_reg(ntb.ssa_values[def.index]);
 
       return ntb.ssa_values[def.index];
    } else {

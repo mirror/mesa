@@ -411,6 +411,17 @@ namespace brw {
       }
 
       /**
+       * Emit UNDEF for the given register if its data doesn't fully occupy
+       * the space we allocated.
+       */
+      void
+      emit_undef_for_partial_reg(const brw_reg &reg) const
+      {
+         if (brw_type_size_bytes(reg.type) * dispatch_width() < REG_SIZE)
+            UNDEF(reg);
+      }
+
+      /**
        * Assorted arithmetic ops.
        * @{
        */

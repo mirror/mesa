@@ -248,6 +248,9 @@ the libraries in the build.
 
 .. code-block::
 
+   soong_namespace {
+   }
+
    cc_prebuilt_library_shared {
        name: "libglapi",
        arch: {
@@ -330,7 +333,7 @@ the libraries in the build.
                srcs: ["x86_64/libGLESv2.so"],
            },
            x86: {
-               srcs: ["x86_64/libGLESv2.so"],
+               srcs: ["x86/libGLESv2.so"],
            },
        },
        strip: {
@@ -374,16 +377,15 @@ create the file
                        libGLESv1_CM_lp \
                        libGLESv2_lp \
                        libEGL_lp \
-                       libgallium-24.3.0-devel.so \
+                       libgallium-24.3.0-devel \
                        vulkan.lvp
    PRODUCT_VENDOR_PROPERTIES += \
            ro.hardware.egl=lp \
            ro.hardware.vulkan=lvp \
            mesa.libgl.always.software=true \
            mesa.android.no.kms.swrast=true \
-           debug.hwui.renderer=opengl \
+           debug.hwui.renderer=skiagl \
            ro.gfx.angle.supported=false \
-           debug.sf.disable_hwc_vds=1 \
            ro.vendor.hwcomposer.mode=client
 
 Also the file ``device/google/cuttlefish/shared/mesa/BoardConfig.mk``
@@ -395,7 +397,7 @@ Also the file ``device/google/cuttlefish/shared/mesa/BoardConfig.mk``
 
 Next the file ``device/google/cuttlefish/shared/mesa/sepolicy/file_contexts``
 
-.. code-block:: sh
+.. code-block::
 
    /vendor/lib(64)?/egl/libEGL_lp\.so u:object_r:same_process_hal_file:s0
    /vendor/lib(64)?/egl/libGLESv1_CM_lp\.so u:object_r:same_process_hal_file:s0
@@ -410,7 +412,7 @@ to include these build files. First we modify
 to add the below code in the spot where other device_vendor
 files are included.
 
-.. code-block:: sh
+.. code-block:: makefile
 
    $(call inherit-product, device/google/cuttlefish/shared/mesa/device_vendor.mk)
 
@@ -418,9 +420,9 @@ Lastly we modify
 ``device/google/cuttlefish/vsoc_x86_64/BoardConfig.mk`` to include
 the following line where the other BoardConfig files are included
 
-.. code-block:: sh
+.. code-block:: makefile
 
-   -include device/google/cuttlefish/shared/mesa/BoardConfig.mk
+   include device/google/cuttlefish/shared/mesa/BoardConfig.mk
 
 Then we are set to continue following the official instructions to
 build the cuttlefish target and run it in the cuttlefish emulator.

@@ -218,30 +218,18 @@ name, so the name of that library will need to match the tag used in the build.
 
 .. code-block:: sh
 
-   mkdir prebuilts/mesa
-   mkdir prebuilts/mesa/x86_64
-   mkdir prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_64}/lib/libEGL.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libglapi.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libgallium-24.3.0-devel.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libGLESv1_CM.so  prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libGLESv2.so  prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libvulkan_lvp.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_32}/lib/libEGL.so prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libglapi.so prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libgallium-24.3.0-devel.so prebuilts/mesa/x86/
-   cp ${INSTALL_PREFIX_32}/lib/libGLESv1_CM.so  prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libGLESv2.so  prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libvulkan_lvp.so prebuilts/mesa/x86
+   mkdir -p prebuilts/mesa/{x86,x86_64}
 
-   patchelf --set-soname libEGL_lp.so prebuilts/mesa/x86_64/libEGL.so
-   patchelf --set-soname libGLESv1_CM_lp.so prebuilts/mesa/x86_64/libGLESv1_CM.so
-   patchelf --set-soname libGLESv2_lp.so prebuilts/mesa/x86_64/libGLESv2.so
-   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/x86_64/libvulkan_lvp.so
-   patchelf --set-soname libEGL_lp.so prebuilts/mesa/x86/libEGL.so
-   patchelf --set-soname libGLESv1_CM_lp.so prebuilts/mesa/x86/libGLESv1_CM.so
-   patchelf --set-soname libGLESv2_lp.so prebuilts/mesa/x86/libGLESv2.so
-   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/x86/libvulkan_lvp.so
+   for libname in gallium-24.3.0-devel glapi EGL GLESv1_CM GLESv2 vulkan_lvp; do
+      cp ${INSTALL_PREFIX_32}/lib/lib${libname}.so prebuilts/mesa/x86/
+      cp ${INSTALL_PREFIX_64}/lib/lib${libname}.so prebuilts/mesa/x86_64/
+   done
+
+   for libname in EGL GLESv1_CM GLESv2; do
+      patchelf --set-soname lib${libname}_lp.so prebuilts/mesa/{x86,x86_64}/lib${libname}.so
+   done
+
+   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/{x86,x86_64}/libvulkan_lvp.so
 
 We then need to create an ``prebuilts/mesa/Android.bp`` build file to include
 the libraries in the build.

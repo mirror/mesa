@@ -143,6 +143,10 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
       zink_program_reference(screen, &pg, NULL);
    }
 
+   if (bs->video_params)
+      VKSCR(DestroyVideoSessionParametersKHR)(screen->dev, bs->video_params, NULL);
+   bs->video_params = VK_NULL_HANDLE;
+
    bs->resource_size = 0;
    bs->signal_semaphore = VK_NULL_HANDLE;
    bs->sparse_semaphore = VK_NULL_HANDLE;

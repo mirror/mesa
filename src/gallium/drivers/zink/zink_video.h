@@ -40,7 +40,6 @@ struct zink_video_codec {
    struct pipe_screen *screen;
    void *bs_ptr;
    size_t bs_size;
-   VkCommandPool cmdpool;
    struct u_upload_mgr *bitstream_mgr;
    struct zink_resource *bitstream_res;
    VkVideoSessionParametersKHR params;

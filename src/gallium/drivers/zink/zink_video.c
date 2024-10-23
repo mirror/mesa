@@ -81,7 +81,6 @@ zink_destroy_video_codec(struct pipe_video_codec *codec) {
    }
    /* ensure session is no longer in use */
    VKSCR(QueueWaitIdle)(screen->queue_video_decode);
-   VKSCR(DestroyCommandPool)(screen->dev, zvc->cmdpool, NULL);
    VKSCR(DestroyVideoSessionKHR)(screen->dev,
                                  zvc->session, NULL);
    free(zvc);
@@ -248,6 +247,14 @@ zink_begin_frame(struct pipe_video_codec *codec,
                                 target->buffer_format,
                                 codec->profile, codec->entrypoint);
 
+   if (zvc->dpb_array) {
+      zink_batch_reference_resource_rw(ctx, zink_resource(zvc->dpb_res[0]), true);
+   } else {
+      for (unsigned i = 0; i < zvc->max_dpb_slots; i++) {
+         if (zvc->dpb_res[i])
+            zink_batch_reference_resource_rw(ctx, zink_resource(zvc->dpb_res[i]), true);
+      }
+   }
 }
 
 static void
@@ -383,14 +390,14 @@ end_bitstream(struct zink_video_codec *zvc)
 }
 
 static void
-end_coding(struct zink_screen *screen,
+end_coding(struct zink_context *ctx,
            struct zink_video_codec *zvc,
            VkCommandBuffer cmdbuf)
 {
    VkVideoEndCodingInfoKHR eci = { 0 };
    eci.sType = VK_STRUCTURE_TYPE_VIDEO_END_CODING_INFO_KHR;
 
-   VKSCR(CmdEndVideoCodingKHR)(cmdbuf, &eci);
+   VKCTX(CmdEndVideoCodingKHR)(cmdbuf, &eci);
 
    struct zink_resource *zbs = zvc->bitstream_res;
    VkBufferMemoryBarrier2KHR bitstream_bmb;
@@ -413,29 +420,11 @@ end_coding(struct zink_screen *screen,
    di.bufferMemoryBarrierCount = 1;
    di.pBufferMemoryBarriers = &bitstream_bmb;
    /* TODO image barriers */
-   VKSCR(CmdPipelineBarrier2KHR)(cmdbuf, &di);
+   VKCTX(CmdPipelineBarrier2KHR)(cmdbuf, &di);
 
-   if (VKSCR(EndCommandBuffer)(cmdbuf) != VK_SUCCESS) {
-      debug_printf("vkEndCommandBuffer failed\n");
-   }
-
-   VkSubmitInfo si = {0};
-   si.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-   si.waitSemaphoreCount = 0;
-   si.pWaitSemaphores = NULL;
-   si.signalSemaphoreCount = 0;
-   si.pSignalSemaphores = NULL;
-   VkPipelineStageFlags videoDecodeSubmitWaitStages = VK_PIPELINE_STAGE_2_VIDEO_DECODE_BIT_KHR;
-   si.pWaitDstStageMask = &videoDecodeSubmitWaitStages;
-   si.commandBufferCount = 1;
-   si.pCommandBuffers = &cmdbuf;
-
-   VKSCR(QueueSubmit)(screen->queue_video_decode, 1, &si, NULL);
-   VKSCR(QueueWaitIdle)(screen->queue_video_decode);
-   VKSCR(FreeCommandBuffers)(screen->dev, zvc->cmdpool, 1, &cmdbuf);
-   VKSCR(DestroyVideoSessionParametersKHR)(screen->dev,
-                                           zvc->params, NULL);
-
+   ctx->bs->video_params = zvc->params;
+   ctx->bs->has_work = true;
+   ctx->base.flush(&ctx->base, NULL, 0);
 }
 
 static int
@@ -444,6 +433,7 @@ zink_end_frame_h264(struct pipe_video_codec *codec,
                     struct pipe_picture_desc *picture)
 {
    struct zink_video_codec *zvc = (struct zink_video_codec *)codec;
+   struct zink_context *ctx = zink_context(codec->context);
    struct zink_screen *screen = (struct zink_screen *)zvc->screen;
    struct pipe_h264_picture_desc *h264 = (struct pipe_h264_picture_desc *)picture;
 
@@ -559,19 +549,7 @@ zink_end_frame_h264(struct pipe_video_codec *codec,
 
    VKSCR(CreateVideoSessionParametersKHR)(screen->dev, &pci, NULL, &zvc->params);
 
-   VkCommandBuffer cmdbuf;
-   VkCommandBufferAllocateInfo cbai = {0};
-   cbai.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-   cbai.commandPool = zvc->cmdpool;
-   cbai.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-   cbai.commandBufferCount = 1;
-
-   VKSCR(AllocateCommandBuffers)(screen->dev, &cbai, &cmdbuf);
-
-   VkCommandBufferBeginInfo cbbi = {0};
-   cbbi.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-   cbbi.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-   VKSCR(BeginCommandBuffer)(cmdbuf, &cbbi);
+   VkCommandBuffer cmdbuf = ctx->bs->cmdbuf;
 
    VkVideoBeginCodingInfoKHR bci = { 0 };
    bci.sType = VK_STRUCTURE_TYPE_VIDEO_BEGIN_CODING_INFO_KHR;
@@ -647,7 +625,7 @@ zink_end_frame_h264(struct pipe_video_codec *codec,
    vdi.srcBufferRange = align64(zvc->bs_size, zvc->srcbuf_align);
    VKSCR(CmdDecodeVideoKHR)(cmdbuf, &vdi);
 
-   end_coding(screen, zvc, cmdbuf);
+   end_coding(ctx, zvc, cmdbuf);
 
    return 0;
 }
@@ -676,11 +654,6 @@ zink_create_video_codec(struct pipe_context *pctx, const struct pipe_video_codec
    zvc->screen = pctx->screen;
    zvc->bitstream_mgr = u_upload_create(pctx, get_zvc_bitstream_size(zvc), ZINK_BIND_VIDEO, PIPE_USAGE_STAGING, 0);
 
-   VkCommandPoolCreateInfo cpci = {0};
-   cpci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-   cpci.queueFamilyIndex = screen->video_decode_queue;
-   if (VKSCR(CreateCommandPool)(screen->dev, &cpci, NULL, &zvc->cmdpool) != VK_SUCCESS)
-      return NULL;
    return &zvc->base;
 }
 

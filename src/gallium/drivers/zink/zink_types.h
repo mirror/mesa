@@ -605,6 +605,8 @@ struct zink_batch_state {
    struct util_dynarray fences; //zink_tc_fence refs
    simple_mtx_t ref_lock;
 
+   VkVideoSessionParametersKHR video_params;
+
    VkSemaphore present;
    struct zink_resource *swapchain;
    struct util_dynarray acquires;

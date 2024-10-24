@@ -318,6 +318,29 @@ parse_failed:
    return ret;
 }
 
+static void
+fixup_lnl_device_info(struct intel_device_info *devinfo)
+{
+   assert(devinfo->platform == INTEL_PLATFORM_LNL);
+
+   /* Update marketing name for 0x64a0 based on the number of EU. */
+   if (devinfo->pci_device_id != 0x64a0)
+      return;
+
+   const uint32_t eu_total = intel_device_info_eu_total(devinfo);
+   char *lnl_model;
+   switch (eu_total) {
+   case 56: lnl_model = "130V"; break;
+   case 64: lnl_model = "140V"; break;
+   default: lnl_model = "    "; break;
+   }
+
+   char *needle = strstr(devinfo->name, "1X0V");
+   assert(needle);
+   if (needle)
+      memcpy(needle, lnl_model, 4);
+}
+
 bool
 intel_device_info_xe_get_info_from_fd(int fd, struct intel_device_info *devinfo)
 {
@@ -335,6 +358,9 @@ intel_device_info_xe_get_info_from_fd(int fd, struct intel_device_info *devinfo)
 
    if (!xe_query_topology(fd, devinfo))
          return false;
+
+   if (devinfo->platform == INTEL_PLATFORM_LNL)
+      fixup_lnl_device_info(devinfo);
 
    devinfo->has_context_isolation = true;
    devinfo->has_mmap_offset = true;

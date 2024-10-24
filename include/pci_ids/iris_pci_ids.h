@@ -258,7 +258,7 @@ CHIPSET(0x56c1, atsm_g11, "ATS-M", "Intel(R) Data Center GPU Flex 140")
 CHIPSET(0x56c2, atsm_g10, "ATS-M", "Intel(R) Data Center GPU Flex 170V")
 
 CHIPSET(0x6420, lnl, "LNL", "Intel(R) Graphics")
-CHIPSET(0x64a0, lnl, "LNL", "Intel(R) Graphics")
+CHIPSET(0x64a0, lnl, "LNL", "Intel(R) Arc(tm) Graphics 1X0V")
 CHIPSET(0x64b0, lnl, "LNL", "Intel(R) Graphics")
 
 CHIPSET(0x7d40, mtl_u, "MTL", "Intel(R) Graphics")

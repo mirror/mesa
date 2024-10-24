@@ -2659,7 +2659,6 @@ print_shader_info(const struct shader_info *info, FILE *fp)
       fprintf(fp, "max_vertices_out: %u\n", info->mesh.max_vertices_out);
       fprintf(fp, "max_primitives_out: %u\n", info->mesh.max_primitives_out);
       fprintf(fp, "primitive_type: %s\n", primitive_name(info->mesh.primitive_type));
-      print_nz_bool(fp, "nv", info->mesh.nv);
       break;
 
    default:

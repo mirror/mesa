@@ -30,121 +30,12 @@
 #include "nir_builder.h"
 
 typedef struct {
-   uint32_t task_count_shared_addr;
-} lower_task_nv_state;
-
-typedef struct {
    /* If true, lower all task_payload I/O to use shared memory. */
    bool payload_in_shared;
    /* Shared memory address where task_payload will be located. */
    uint32_t payload_shared_addr;
    uint32_t payload_offset_in_bytes;
 } lower_task_state;
-
-static bool
-lower_nv_task_output(nir_builder *b,
-                     nir_instr *instr,
-                     void *state)
-{
-   if (instr->type != nir_instr_type_intrinsic)
-      return false;
-
-   lower_task_nv_state *s = (lower_task_nv_state *)state;
-   nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(instr);
-
-   switch (intrin->intrinsic) {
-   case nir_intrinsic_load_output: {
-      b->cursor = nir_after_instr(instr);
-      nir_def *load =
-         nir_load_shared(b, 1, 32, nir_imm_int(b, 0),
-                         .base = s->task_count_shared_addr);
-      nir_def_rewrite_uses(&intrin->def, load);
-      nir_instr_remove(instr);
-      return true;
-   }
-
-   case nir_intrinsic_store_output: {
-      b->cursor = nir_after_instr(instr);
-      nir_def *store_val = intrin->src[0].ssa;
-      nir_store_shared(b, store_val, nir_imm_int(b, 0),
-                       .base = s->task_count_shared_addr);
-      nir_instr_remove(instr);
-      return true;
-   }
-
-   default:
-      return false;
-   }
-}
-
-static void
-append_launch_mesh_workgroups_to_nv_task(nir_builder *b,
-                                         lower_task_nv_state *s)
-{
-   /* At the beginning of the shader, write 0 to the task count.
-    * This ensures that 0 mesh workgroups are launched when the
-    * shader doesn't write the TASK_COUNT output.
-    */
-   b->cursor = nir_before_impl(b->impl);
-   nir_def *zero = nir_imm_int(b, 0);
-   nir_store_shared(b, zero, zero, .base = s->task_count_shared_addr);
-
-   nir_barrier(b,
-               .execution_scope = SCOPE_WORKGROUP,
-               .memory_scope = SCOPE_WORKGROUP,
-               .memory_semantics = NIR_MEMORY_RELEASE,
-               .memory_modes = nir_var_mem_shared);
-
-   /* At the end of the shader, read the task count from shared memory
-    * and emit launch_mesh_workgroups.
-    */
-   b->cursor = nir_after_cf_list(&b->impl->body);
-
-   nir_barrier(b,
-               .execution_scope = SCOPE_WORKGROUP,
-               .memory_scope = SCOPE_WORKGROUP,
-               .memory_semantics = NIR_MEMORY_ACQUIRE,
-               .memory_modes = nir_var_mem_shared);
-
-   nir_def *task_count =
-      nir_load_shared(b, 1, 32, zero, .base = s->task_count_shared_addr);
-
-   /* NV_mesh_shader doesn't offer to choose which task_payload variable
-    * should be passed to mesh shaders, we just pass all.
-    */
-   uint32_t range = b->shader->info.task_payload_size;
-
-   nir_def *one = nir_imm_int(b, 1);
-   nir_def *dispatch_3d = nir_vec3(b, task_count, one, one);
-   nir_launch_mesh_workgroups(b, dispatch_3d, .base = 0, .range = range);
-}
-
-/**
- * For NV_mesh_shader:
- * Task shaders only have 1 output, TASK_COUNT which is a 32-bit
- * unsigned int that contains the 1-dimensional mesh dispatch size.
- * This output should behave like a shared variable.
- *
- * We lower this output to a shared variable and then we emit
- * the new launch_mesh_workgroups intrinsic at the end of the shader.
- */
-static void
-nir_lower_nv_task_count(nir_shader *shader)
-{
-   lower_task_nv_state state = {
-      .task_count_shared_addr = ALIGN(shader->info.shared_size, 4),
-   };
-
-   shader->info.shared_size += 4;
-   nir_shader_instructions_pass(shader, lower_nv_task_output,
-                                nir_metadata_none, &state);
-
-   nir_function_impl *impl = nir_shader_get_entrypoint(shader);
-   nir_builder builder = nir_builder_create(impl);
-
-   append_launch_mesh_workgroups_to_nv_task(&builder, &state);
-   nir_metadata_preserve(impl, nir_metadata_none);
-}
 
 static nir_intrinsic_op
 shared_opcode_for_task_payload(nir_intrinsic_op task_payload_op)
@@ -403,7 +294,6 @@ nir_lower_task_intrins(nir_shader *shader, lower_task_state *state)
 /**
  * Common Task Shader lowering to make the job of the backends easier.
  *
- * - Lowers NV_mesh_shader TASK_COUNT output to launch_mesh_workgroups.
  * - Removes all code after launch_mesh_workgroups, enforcing the
  *   fact that it's a terminating instruction.
  * - Ensures that task shaders always have at least one
@@ -429,22 +319,14 @@ nir_lower_task_shader(nir_shader *shader,
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_builder builder = nir_builder_create(impl);
 
-   if (shader->info.outputs_written & BITFIELD64_BIT(VARYING_SLOT_TASK_COUNT)) {
-      /* NV_mesh_shader:
-       * If the shader writes TASK_COUNT, lower that to emit
-       * the new launch_mesh_workgroups intrinsic instead.
-       */
-      NIR_PASS_V(shader, nir_lower_nv_task_count);
-   } else {
-      /* To make sure that task shaders always have a code path that
-       * executes a launch_mesh_workgroups, let's add one at the end.
-       * If the shader already had a launch_mesh_workgroups by any chance,
-       * this will be removed.
-       */
-      nir_block *last_block = nir_impl_last_block(impl);
-      builder.cursor = nir_after_block_before_jump(last_block);
-      nir_launch_mesh_workgroups(&builder, nir_imm_zero(&builder, 3, 32));
-   }
+   /* To make sure that task shaders always have a code path that
+    * executes a launch_mesh_workgroups, let's add one at the end.
+    * If the shader already had a launch_mesh_workgroups by any chance,
+    * this will be removed.
+    */
+   nir_block *last_block = nir_impl_last_block(impl);
+   builder.cursor = nir_after_block_before_jump(last_block);
+   nir_launch_mesh_workgroups(&builder, nir_imm_zero(&builder, 3, 32));
 
    bool atomics = options.payload_to_shared_for_atomics;
    bool small_types = options.payload_to_shared_for_small_types;

@@ -525,9 +525,6 @@ typedef struct shader_info {
          uint16_t max_vertices_out;
          uint16_t max_primitives_out;
          enum mesa_prim primitive_type; /* POINTS, LINES or TRIANGLES. */
-
-         /* TODO: remove this when we stop supporting NV_mesh_shader. */
-         bool nv;
       } mesh;
    };
 } shader_info;

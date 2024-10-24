@@ -456,7 +456,7 @@ struct radv_device {
 
    /* Thread trace. */
    struct ac_sqtt sqtt;
-   bool sqtt_enabled;
+   unsigned sqtt_enabled;
    bool sqtt_triggered;
 
    /* SQTT timestamps for queue events. */

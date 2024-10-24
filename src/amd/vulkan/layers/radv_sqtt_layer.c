@@ -656,34 +656,39 @@ radv_handle_sqtt(VkQueue _queue)
    VK_FROM_HANDLE(radv_queue, queue, _queue);
    struct radv_device *device = radv_queue_device(queue);
    const struct radv_physical_device *pdev = radv_device_physical(device);
+   struct radv_instance *instance = radv_physical_device_instance(pdev);
    bool trigger = device->sqtt_triggered;
    device->sqtt_triggered = false;
 
    if (device->sqtt_enabled) {
-      struct ac_sqtt_trace sqtt_trace = {0};
+      if (device->sqtt_enabled == 1) {
+         struct ac_sqtt_trace sqtt_trace = {0};
 
-      radv_end_sqtt(queue);
-      device->sqtt_enabled = false;
+         radv_end_sqtt(queue);
+         device->sqtt_enabled = 0;
 
-      /* TODO: Do something better than this whole sync. */
-      device->vk.dispatch_table.QueueWaitIdle(_queue);
+         /* TODO: Do something better than this whole sync. */
+         device->vk.dispatch_table.QueueWaitIdle(_queue);
 
-      if (radv_get_sqtt_trace(queue, &sqtt_trace)) {
-         struct ac_spm_trace spm_trace;
+         if (radv_get_sqtt_trace(queue, &sqtt_trace)) {
+            struct ac_spm_trace spm_trace;
 
-         if (device->spm.bo)
-            ac_spm_get_trace(&device->spm, &spm_trace);
+            if (device->spm.bo)
+               ac_spm_get_trace(&device->spm, &spm_trace);
 
-         ac_dump_rgp_capture(&pdev->info, &sqtt_trace, device->spm.bo ? &spm_trace : NULL);
+            ac_dump_rgp_capture(&pdev->info, &sqtt_trace, device->spm.bo ? &spm_trace : NULL);
+         } else {
+            /* Trigger a new capture if the driver failed to get
+            * the trace because the buffer was too small.
+            */
+            trigger = true;
+         }
+
+         /* Clear resources used for this capture. */
+         radv_reset_sqtt_trace(device);
       } else {
-         /* Trigger a new capture if the driver failed to get
-          * the trace because the buffer was too small.
-          */
-         trigger = true;
+         device->sqtt_enabled--;
       }
-
-      /* Clear resources used for this capture. */
-      radv_reset_sqtt_trace(device);
    }
 
    if (trigger) {
@@ -702,7 +707,7 @@ radv_handle_sqtt(VkQueue _queue)
 
       radv_begin_sqtt(queue);
       assert(!device->sqtt_enabled);
-      device->sqtt_enabled = true;
+      device->sqtt_enabled = instance->vk.trace_frame_count;
    }
 }
 

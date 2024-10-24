@@ -172,6 +172,7 @@ struct vk_instance {
    uint64_t trace_mode;
 
    uint32_t trace_frame;
+   uint32_t trace_frame_count;
    char *trace_trigger_file;
 };
 

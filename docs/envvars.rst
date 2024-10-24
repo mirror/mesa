@@ -374,6 +374,10 @@ Core Mesa environment variables
    Specifies a trigger file. Creating the file triggers the capture. (e.g.
    ``export MESA_VK_TRACE_TRIGGER=/tmp/trigger`` and then ``touch /tmp/trigger``)
 
+.. envvar:: MESA_VK_TRACE_FRAME_COUNT
+
+   Specifies the number of frames to attempt to capture when triggering a trace.
+
 .. envvar:: MESA_LOADER_DRIVER_OVERRIDE
 
    chooses a different driver binary such as ``etnaviv`` or ``zink``.

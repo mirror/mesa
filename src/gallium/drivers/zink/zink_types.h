@@ -593,6 +593,7 @@ struct zink_batch_state {
    VkCommandBuffer reordered_cmdbuf;
    VkCommandPool unsynchronized_cmdpool;
    VkCommandBuffer unsynchronized_cmdbuf;
+   VkSemaphore copy_context_semaphore; //reusable signal semaphore for copy context sync
    VkSemaphore signal_semaphore; //external signal semaphore
    struct util_dynarray signal_semaphores; //external signal semaphores
    struct util_dynarray wait_semaphores; //external wait semaphores

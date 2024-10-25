@@ -124,6 +124,8 @@ zink_batch_usage_wait(struct zink_context *ctx, struct zink_batch_usage *u);
 void
 zink_batch_usage_try_wait(struct zink_context *ctx, struct zink_batch_usage *u);
 
+void
+zink_batch_sync_with_copy_context(struct zink_context *ctx);
 #ifdef __cplusplus
 }
 #endif

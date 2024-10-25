@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <unistd.h>
 
 #include "crc32.h"
@@ -50,14 +51,6 @@ struct PACKED mesa_index_db_file_entry {
    uint64_t cache_db_file_offset;
 };
 
-struct mesa_index_db_hash_entry {
-   uint64_t cache_db_file_offset;
-   uint64_t index_db_file_offset;
-   uint64_t last_access_time;
-   uint32_t size;
-   bool evicted;
-};
-
 static inline bool mesa_db_seek_end(FILE *file)
 {
    return !fseek(file, 0, SEEK_END);
@@ -90,21 +83,33 @@ static inline bool mesa_db_truncate(FILE *file, long pos)
    return !ftruncate(fileno(file), pos);
 }
 
+static int
+mesa_db_flock(FILE *file, int op)
+{
+   int ret;
+
+   do {
+      ret = flock(fileno(file), op);
+   } while (ret < 0 && errno == EINTR);
+
+   return ret;
+}
+
 static bool
 mesa_db_lock(struct mesa_cache_db *db)
 {
    simple_mtx_lock(&db->flock_mtx);
 
-   if (flock(fileno(db->cache.file), LOCK_EX) == -1)
+   if (mesa_db_flock(db->cache.file, LOCK_EX) < 0)
       goto unlock_mtx;
 
-   if (flock(fileno(db->index.file), LOCK_EX) == -1)
+   if (mesa_db_flock(db->index.file, LOCK_EX) < 0)
       goto unlock_cache;
 
    return true;
 
 unlock_cache:
-   flock(fileno(db->cache.file), LOCK_UN);
+   mesa_db_flock(db->cache.file, LOCK_UN);
 unlock_mtx:
    simple_mtx_unlock(&db->flock_mtx);
 
@@ -114,8 +119,8 @@ unlock_mtx:
 static void
 mesa_db_unlock(struct mesa_cache_db *db)
 {
-   flock(fileno(db->index.file), LOCK_UN);
-   flock(fileno(db->cache.file), LOCK_UN);
+   mesa_db_flock(db->index.file, LOCK_UN);
+   mesa_db_flock(db->cache.file, LOCK_UN);
    simple_mtx_unlock(&db->flock_mtx);
 }
 
@@ -233,6 +238,34 @@ mesa_db_zap(struct mesa_cache_db *db)
    return true;
 }
 
+static struct mesa_index_db_file_entry *
+mesa_db_index_entry_get(struct mesa_cache_db *db, size_t offset)
+{
+   return (struct mesa_index_db_file_entry *)
+      ((char*)db->index_entries + offset);
+}
+
+static void
+mesa_db_index_entry_insert(struct mesa_cache_db *db,
+                           struct mesa_index_db_file_entry *index_entry)
+{
+   size_t offset = (char*)index_entry - (char*)db->index_entries;
+
+   offset += sizeof(struct mesa_db_file_header);
+   _mesa_hash_table_u64_insert(db->index_db, index_entry->hash, (char*)(intptr_t)offset);
+}
+
+static struct mesa_index_db_file_entry *
+mesa_db_index_entry_search(struct mesa_cache_db *db, uint64_t key)
+{
+   size_t index_offset = (intptr_t)_mesa_hash_table_u64_search(db->index_db, key);
+
+   if (!index_offset)
+      return NULL;
+
+   return mesa_db_index_entry_get(db, index_offset - sizeof(struct mesa_db_file_header));
+}
+
 static bool
 mesa_db_index_entry_valid(struct mesa_index_db_file_entry *entry)
 {
@@ -247,46 +280,104 @@ mesa_db_cache_entry_valid(struct mesa_cache_db_file_entry *entry)
 }
 
 static bool
+mesa_db_resize_index_entries(struct mesa_cache_db *db, off_t size)
+{
+   int page_size = getpagesize();
+   size_t page_mask = page_size - 1;
+   off_t old_num_pages, new_num_pages;
+
+   if (db->index_entries_size == size)
+      return true;
+
+   new_num_pages = (size + page_mask) / page_size;
+
+   if (size) {
+      if (db->index_entries_size) {
+         old_num_pages = (db->index_entries_size + page_mask) / page_size;
+
+         if (new_num_pages != old_num_pages) {
+            db->index_entries = mremap(db->index_entries, old_num_pages * page_size,
+                                       new_num_pages * page_size, MREMAP_MAYMOVE);
+            if (db->index_entries == MAP_FAILED) {
+               fprintf(stderr, "%s: mremap failed with error %d (%s)\n",
+                       __func__, errno, strerror(errno));
+               goto error;
+            }
+         }
+      } else {
+         db->index_entries = mmap(NULL, new_num_pages * page_size, PROT_READ | PROT_WRITE,
+                                  MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE, -1, 0);
+         if (db->index_entries == MAP_FAILED) {
+            fprintf(stderr, "%s: mmap failed with error %d (%s)\n",
+                    __func__, errno, strerror(errno));
+            goto error;
+         }
+      }
+   } else {
+      if (db->index_entries_size) {
+         old_num_pages = (db->index_entries_size + page_mask) / page_size;
+
+         munmap(db->index_entries, old_num_pages * page_size);
+      }
+
+      db->index_entries = NULL;
+   }
+
+   db->index_entries_size = size;
+   return true;
+
+error:
+   _mesa_hash_table_u64_clear(db->index_db);
+   db->index_entries = NULL;
+   db->index_entries_size = 0;
+   return false;
+}
+
+static bool
 mesa_db_update_index(struct mesa_cache_db *db)
 {
-   struct mesa_index_db_hash_entry *hash_entry;
-   struct mesa_index_db_file_entry index_entry;
+   struct mesa_index_db_file_entry *index_entry;
    size_t file_length;
+   size_t old_entries, new_entries;
+   int i;
 
    if (!mesa_db_seek_end(db->index.file))
       return false;
 
    file_length = ftell(db->index.file);
+   if (file_length < db->index.offset)
+      return false;
 
    if (!mesa_db_seek(db->index.file, db->index.offset))
       return false;
 
-   while (db->index.offset < file_length) {
-      if (!mesa_db_read(db->index.file, &index_entry))
-         break;
+   new_entries = (file_length - db->index.offset) / sizeof(*index_entry);
+   if (!new_entries)
+      return true;
 
+   old_entries = db->index_entries_size / sizeof(*index_entry);
+
+   if (!mesa_db_resize_index_entries(db, (old_entries + new_entries) * sizeof(*index_entry)))
+      return false;
+
+   _mesa_hash_table_reserve(db->index_db->table, old_entries + new_entries);
+
+   index_entry = mesa_db_index_entry_get(db, old_entries * sizeof(*index_entry));
+   if (!mesa_db_read_data(db->index.file, index_entry, new_entries * sizeof(*index_entry)))
+      return false;
+
+   for (i = 0; i < new_entries; i++, index_entry++) {
       /* Check whether the index entry looks valid or we have a corrupted DB */
-      if (!mesa_db_index_entry_valid(&index_entry))
+      if (!mesa_db_index_entry_valid(index_entry))
          break;
 
-      hash_entry = ralloc(db->mem_ctx, struct mesa_index_db_hash_entry);
-      if (!hash_entry)
-         break;
+      mesa_db_index_entry_insert(db, index_entry);
 
-      hash_entry->cache_db_file_offset = index_entry.cache_db_file_offset;
-      hash_entry->index_db_file_offset = db->index.offset;
-      hash_entry->last_access_time = index_entry.last_access_time;
-      hash_entry->size = index_entry.size;
-
-      _mesa_hash_table_u64_insert(db->index_db, index_entry.hash, hash_entry);
-
-      db->index.offset += sizeof(index_entry);
+      db->index.offset += sizeof(*index_entry);
    }
 
-   if (!mesa_db_seek(db->index.file, db->index.offset))
-      return false;
-
-   return db->index.offset == file_length;
+   return mesa_db_seek(db->index.file, db->index.offset) &&
+      db->index.offset == file_length;
 }
 
 static void
@@ -295,6 +386,8 @@ mesa_db_hash_table_reset(struct mesa_cache_db *db)
    _mesa_hash_table_u64_clear(db->index_db);
    ralloc_free(db->mem_ctx);
    db->mem_ctx = ralloc_context(NULL);
+
+   mesa_db_resize_index_entries(db, 0);
 }
 
 static bool
@@ -323,10 +416,6 @@ mesa_db_load(struct mesa_cache_db *db, bool reload)
        !mesa_db_load_header(&db->index) ||
        db->cache.uuid != db->index.uuid) {
 
-      /* This is unexpected to happen on reload, bail out */
-      if (reload)
-         goto fail;
-
       if (!mesa_db_recreate_files(db))
          goto fail;
    } else {
@@ -338,8 +427,13 @@ mesa_db_load(struct mesa_cache_db *db, bool reload)
    if (reload)
       mesa_db_hash_table_reset(db);
 
-   if (!mesa_db_update_index(db))
-      goto fail;
+   if (!mesa_db_update_index(db)) {
+      mesa_db_recreate_files(db);
+      db->index.offset = ftell(db->index.file);
+
+      if (!mesa_db_update_index(db))
+         goto fail;
+   }
 
    if (!reload)
       mesa_db_unlock(db);
@@ -412,11 +506,16 @@ mesa_db_remove_file(struct mesa_cache_db_file *db_file,
    return true;
 }
 
+struct sort_entry {
+   struct mesa_index_db_file_entry *index_entry;
+   bool evicted;
+};
+
 static int
 entry_sort_lru(const void *_a, const void *_b, void *arg)
 {
-   const struct mesa_index_db_hash_entry *a = *((const struct mesa_index_db_hash_entry **)_a);
-   const struct mesa_index_db_hash_entry *b = *((const struct mesa_index_db_hash_entry **)_b);
+   const struct mesa_index_db_file_entry *a = ((const struct sort_entry *)_a)->index_entry;
+   const struct mesa_index_db_file_entry *b = ((const struct sort_entry *)_b)->index_entry;
 
    /* In practice it's unlikely that we will get two entries with the
     * same timestamp, but technically it's possible to happen if OS
@@ -430,8 +529,8 @@ entry_sort_lru(const void *_a, const void *_b, void *arg)
 static int
 entry_sort_offset(const void *_a, const void *_b, void *arg)
 {
-   const struct mesa_index_db_hash_entry *a = *((const struct mesa_index_db_hash_entry **)_a);
-   const struct mesa_index_db_hash_entry *b = *((const struct mesa_index_db_hash_entry **)_b);
+   const struct mesa_index_db_file_entry *a = ((const struct sort_entry *)_a)->index_entry;
+   const struct mesa_index_db_file_entry *b = ((const struct sort_entry *)_b)->index_entry;
    struct mesa_cache_db *db = arg;
 
    /* Two entries will never have the identical offset, otherwise DB is
@@ -449,14 +548,14 @@ static uint32_t blob_file_size(uint32_t blob_size)
 
 static bool
 mesa_db_compact(struct mesa_cache_db *db, int64_t blob_size,
-                struct mesa_index_db_hash_entry *remove_entry)
+                struct mesa_index_db_file_entry *remove_entry)
 {
    uint32_t num_entries, buffer_size = sizeof(struct mesa_index_db_file_entry);
    struct mesa_db_file_header cache_header, index_header;
    FILE *compacted_cache = NULL, *compacted_index = NULL;
-   struct mesa_index_db_file_entry index_entry;
-   struct mesa_index_db_hash_entry **entries;
-   bool success = false, compact = false;
+   struct mesa_index_db_file_entry *index_entry;
+   struct sort_entry *entries;
+   bool success = false;
    void *buffer = NULL;
    unsigned int i = 0;
 
@@ -482,19 +581,18 @@ mesa_db_compact(struct mesa_cache_db *db, int64_t blob_size,
        index_header.uuid != db->uuid)
       goto cleanup;
 
-   hash_table_foreach(db->index_db->table, entry) {
-      entries[i] = entry->data;
-      entries[i]->evicted = (entries[i] == remove_entry);
-      buffer_size = MAX2(buffer_size, blob_file_size(entries[i]->size));
-      i++;
+   for (i = 0, index_entry = db->index_entries; i < num_entries; i++, index_entry++) {
+      entries[i].index_entry = index_entry;
+      entries[i].evicted = index_entry == remove_entry;
+      buffer_size = MAX2(buffer_size, blob_file_size(index_entry->size));
    }
 
    util_qsort_r(entries, num_entries, sizeof(*entries),
                 entry_sort_lru, db);
 
    for (i = 0; blob_size > 0 && i < num_entries; i++) {
-      blob_size -= blob_file_size(entries[i]->size);
-      entries[i]->evicted = true;
+      blob_size -= blob_file_size(entries[i].index_entry->size);
+      entries[i].evicted = true;
    }
 
    util_qsort_r(entries, num_entries, sizeof(*entries),
@@ -514,59 +612,38 @@ mesa_db_compact(struct mesa_cache_db *db, int64_t blob_size,
        !mesa_db_write_header(&db->index, 0, false))
       goto cleanup;
 
+   /* Skip non-evicted entries at the start of the files */
+   for (i = 0; i < num_entries; i++) {
+      if (entries[i].evicted)
+         break;
+   }
+
    /* Sync the file pointers */
-   if (!mesa_db_seek(compacted_cache, ftell(db->cache.file)) ||
-       !mesa_db_seek(compacted_index, ftell(db->index.file)))
+   if (!mesa_db_seek(compacted_cache, entries[i].index_entry->cache_db_file_offset) ||
+       !mesa_db_seek(compacted_index, ftell(db->index.file) +
+                     i * sizeof(struct mesa_index_db_file_entry)))
       goto cleanup;
 
    /* Do the compaction */
-   for (i = 0; i < num_entries; i++) {
-      blob_size = blob_file_size(entries[i]->size);
+   for (; i < num_entries; i++) {
+      struct mesa_index_db_file_entry *index_entry = entries[i].index_entry;
 
-      /* Sanity-check the cache-read offset */
-      if (ftell(db->cache.file) != entries[i]->cache_db_file_offset)
+      if (entries[i].evicted)
+         continue;
+
+      blob_size = blob_file_size(index_entry->size);
+
+      /* Compact the cache file */
+      if (!mesa_db_seek(db->cache.file, index_entry->cache_db_file_offset) ||
+          !mesa_db_read_data(db->cache.file, buffer, blob_size) ||
+          !mesa_db_cache_entry_valid(buffer) ||
+          !mesa_db_write_data(compacted_cache, buffer, blob_size))
          goto cleanup;
 
-      if (entries[i]->evicted) {
-         /* Jump over the evicted entry */
-         if (!mesa_db_seek_cur(db->cache.file, blob_size) ||
-             !mesa_db_seek_cur(db->index.file, sizeof(index_entry)))
-            goto cleanup;
+      index_entry->cache_db_file_offset = ftell(compacted_cache) - blob_size;
 
-         compact = true;
-         continue;
-      }
-
-      if (compact) {
-         /* Compact the cache file */
-         if (!mesa_db_read_data(db->cache.file,   buffer, blob_size) ||
-             !mesa_db_cache_entry_valid(buffer) ||
-             !mesa_db_write_data(compacted_cache, buffer, blob_size))
-            goto cleanup;
-
-         /* Compact the index file */
-         if (!mesa_db_read(db->index.file, &index_entry) ||
-             !mesa_db_index_entry_valid(&index_entry) ||
-             index_entry.cache_db_file_offset != entries[i]->cache_db_file_offset ||
-             index_entry.size != entries[i]->size)
-            goto cleanup;
-
-         index_entry.cache_db_file_offset = ftell(compacted_cache) - blob_size;
-
-         if (!mesa_db_write(compacted_index, &index_entry))
-            goto cleanup;
-      } else {
-         /* Sanity-check the cache-write offset */
-         if (ftell(compacted_cache) != entries[i]->cache_db_file_offset)
-            goto cleanup;
-
-         /* Jump over the unchanged entry */
-         if (!mesa_db_seek_cur(db->index.file,  sizeof(index_entry)) ||
-             !mesa_db_seek_cur(compacted_index, sizeof(index_entry)) ||
-             !mesa_db_seek_cur(db->cache.file,  blob_size) ||
-             !mesa_db_seek_cur(compacted_cache, blob_size))
-            goto cleanup;
-      }
+      if (!mesa_db_write(compacted_index, index_entry))
+         goto cleanup;
    }
 
    fflush(compacted_cache);
@@ -662,6 +739,12 @@ mesa_cache_db_close(struct mesa_cache_db *db)
    simple_mtx_destroy(&db->flock_mtx);
    ralloc_free(db->mem_ctx);
 
+   mesa_db_resize_index_entries(db, 0);
+   if (db->index_entries) {
+      munmap(db->index_entries, 0);
+      db->index_entries = NULL;
+   }
+
    mesa_db_close_file(&db->index);
    mesa_db_close_file(&db->cache);
 }
@@ -686,8 +769,8 @@ mesa_cache_db_read_entry(struct mesa_cache_db *db,
 {
    uint64_t hash = to_mesa_cache_db_hash(cache_key_160bit);
    struct mesa_cache_db_file_entry cache_entry;
-   struct mesa_index_db_file_entry index_entry;
-   struct mesa_index_db_hash_entry *hash_entry;
+   struct mesa_index_db_file_entry *index_entry;
+   long seek_pos;
    void *data = NULL;
 
    if (!mesa_db_lock(db))
@@ -702,11 +785,11 @@ mesa_cache_db_read_entry(struct mesa_cache_db *db,
    if (!mesa_db_update_index(db))
       goto fail_fatal;
 
-   hash_entry = _mesa_hash_table_u64_search(db->index_db, hash);
-   if (!hash_entry)
+   index_entry = mesa_db_index_entry_search(db, hash);
+   if (!index_entry)
       goto fail;
 
-   if (!mesa_db_seek(db->cache.file, hash_entry->cache_db_file_offset) ||
+   if (!mesa_db_seek(db->cache.file, index_entry->cache_db_file_offset) ||
        !mesa_db_read(db->cache.file, &cache_entry) ||
        !mesa_db_cache_entry_valid(&cache_entry))
       goto fail_fatal;
@@ -722,18 +805,13 @@ mesa_cache_db_read_entry(struct mesa_cache_db *db,
        util_hash_crc32(data, cache_entry.size) != cache_entry.crc)
       goto fail_fatal;
 
-   if (!mesa_db_seek(db->index.file, hash_entry->index_db_file_offset) ||
-       !mesa_db_read(db->index.file, &index_entry) ||
-       !mesa_db_index_entry_valid(&index_entry) ||
-       index_entry.cache_db_file_offset != hash_entry->cache_db_file_offset ||
-       index_entry.size != hash_entry->size)
-      goto fail_fatal;
+   index_entry->last_access_time = os_time_get_nano();
 
-   index_entry.last_access_time = os_time_get_nano();
-   hash_entry->last_access_time = index_entry.last_access_time;
+   seek_pos = ((char*)index_entry - (char*)db->index_entries) +
+      sizeof(struct mesa_db_file_header);
 
-   if (!mesa_db_seek(db->index.file, hash_entry->index_db_file_offset) ||
-       !mesa_db_write(db->index.file, &index_entry))
+   if (!mesa_db_seek(db->index.file, seek_pos) ||
+       !mesa_db_write(db->index.file, index_entry))
       goto fail_fatal;
 
    fflush(db->index.file);
@@ -773,9 +851,9 @@ mesa_cache_db_entry_write(struct mesa_cache_db *db,
                           const void *blob, size_t blob_size)
 {
    uint64_t hash = to_mesa_cache_db_hash(cache_key_160bit);
-   struct mesa_index_db_hash_entry *hash_entry = NULL;
    struct mesa_cache_db_file_entry cache_entry;
-   struct mesa_index_db_file_entry index_entry;
+   struct mesa_index_db_file_entry *index_entry;
+   off_t index_offset;
 
    if (!mesa_db_lock(db))
       return false;
@@ -798,45 +876,40 @@ mesa_cache_db_entry_write(struct mesa_cache_db *db,
          goto fail_fatal;
    }
 
-   hash_entry = _mesa_hash_table_u64_search(db->index_db, hash);
-   if (hash_entry) {
-      hash_entry = NULL;
+   index_entry = mesa_db_index_entry_search(db, hash);
+   if (index_entry)
       goto fail;
-   }
 
    if (!mesa_db_seek_end(db->cache.file) ||
        !mesa_db_seek_end(db->index.file))
       goto fail_fatal;
 
+   index_offset = db->index_entries_size;
+   if (!mesa_db_resize_index_entries(db, index_offset + sizeof(*index_entry)))
+      goto fail;
+
+   index_entry = mesa_db_index_entry_get(db, index_offset);
+
    memcpy(cache_entry.key, cache_key_160bit, sizeof(cache_entry.key));
    cache_entry.crc = util_hash_crc32(blob, blob_size);
    cache_entry.size = blob_size;
 
-   index_entry.hash = hash;
-   index_entry.size = blob_size;
-   index_entry.last_access_time = os_time_get_nano();
-   index_entry.cache_db_file_offset = ftell(db->cache.file);
-
-   hash_entry = ralloc(db->mem_ctx, struct mesa_index_db_hash_entry);
-   if (!hash_entry)
-      goto fail;
-
-   hash_entry->cache_db_file_offset = index_entry.cache_db_file_offset;
-   hash_entry->index_db_file_offset = ftell(db->index.file);
-   hash_entry->last_access_time = index_entry.last_access_time;
-   hash_entry->size = index_entry.size;
+   index_entry->hash = hash;
+   index_entry->size = blob_size;
+   index_entry->last_access_time = os_time_get_nano();
+   index_entry->cache_db_file_offset = ftell(db->cache.file);
 
    if (!mesa_db_write(db->cache.file, &cache_entry) ||
        !mesa_db_write_data(db->cache.file, blob, blob_size) ||
-       !mesa_db_write(db->index.file, &index_entry))
+       !mesa_db_write(db->index.file, index_entry))
       goto fail_fatal;
 
    fflush(db->cache.file);
    fflush(db->index.file);
 
-   db->index.offset = ftell(db->index.file);
+   mesa_db_index_entry_insert(db, index_entry);
 
-   _mesa_hash_table_u64_insert(db->index_db, hash, hash_entry);
+   db->index.offset = ftell(db->index.file);
 
    mesa_db_unlock(db);
 
@@ -847,9 +920,6 @@ fail_fatal:
 fail:
    mesa_db_unlock(db);
 
-   if (hash_entry)
-      ralloc_free(hash_entry);
-
    return false;
 }
 
@@ -859,7 +929,7 @@ mesa_cache_db_entry_remove(struct mesa_cache_db *db,
 {
    uint64_t hash = to_mesa_cache_db_hash(cache_key_160bit);
    struct mesa_cache_db_file_entry cache_entry;
-   struct mesa_index_db_hash_entry *hash_entry;
+   struct mesa_index_db_file_entry *index_entry;
 
    if (!mesa_db_lock(db))
       return NULL;
@@ -873,11 +943,11 @@ mesa_cache_db_entry_remove(struct mesa_cache_db *db,
    if (!mesa_db_update_index(db))
       goto fail_fatal;
 
-   hash_entry = _mesa_hash_table_u64_search(db->index_db, hash);
-   if (!hash_entry)
+   index_entry = mesa_db_index_entry_search(db, hash);
+   if (!index_entry)
       goto fail;
 
-   if (!mesa_db_seek(db->cache.file, hash_entry->cache_db_file_offset) ||
+   if (!mesa_db_seek(db->cache.file, index_entry->cache_db_file_offset) ||
        !mesa_db_read(db->cache.file, &cache_entry) ||
        !mesa_db_cache_entry_valid(&cache_entry))
       goto fail_fatal;
@@ -885,7 +955,7 @@ mesa_cache_db_entry_remove(struct mesa_cache_db *db,
    if (memcmp(cache_entry.key, cache_key_160bit, sizeof(cache_entry.key)))
       goto fail;
 
-   if (!mesa_db_compact(db, 0, hash_entry))
+   if (!mesa_db_compact(db, 0, index_entry))
       goto fail_fatal;
 
    mesa_db_unlock(db);
@@ -943,7 +1013,8 @@ double
 mesa_cache_db_eviction_score(struct mesa_cache_db *db)
 {
    int64_t eviction_size = mesa_cache_db_eviction_size(db);
-   struct mesa_index_db_hash_entry **entries;
+   struct mesa_index_db_file_entry *index_entry;
+   struct sort_entry *entries;
    unsigned num_entries, i = 0;
    double eviction_score = 0;
 
@@ -961,15 +1032,16 @@ mesa_cache_db_eviction_score(struct mesa_cache_db *db)
    if (!entries)
       goto fail;
 
-   hash_table_foreach(db->index_db->table, entry)
-      entries[i++] = entry->data;
+   for (i = 0, index_entry = db->index_entries; i < num_entries; i++)
+      entries[i].index_entry = index_entry++;
 
    util_qsort_r(entries, num_entries, sizeof(*entries),
                 entry_sort_lru, db);
 
    for (i = 0; eviction_size > 0 && i < num_entries; i++) {
-      uint64_t entry_age = os_time_get_nano() - entries[i]->last_access_time;
-      unsigned entry_size = blob_file_size(entries[i]->size);
+      index_entry = entries[i].index_entry;
+      uint64_t entry_age = os_time_get_nano() - index_entry->last_access_time;
+      unsigned entry_size = blob_file_size(index_entry->size);
 
       /* Eviction score is a sum of weighted cache entry sizes,
        * where weight doubles for each month of entry's age.

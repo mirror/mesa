@@ -21,7 +21,7 @@ mesa_cache_db_multipart_open(struct mesa_cache_db_multipart *db,
    char *part_path = NULL;
    unsigned int i;
 
-   db->num_parts = debug_get_num_option("MESA_DISK_CACHE_DATABASE_NUM_PARTS", 50);
+   db->num_parts = debug_get_num_option("MESA_DISK_CACHE_DATABASE_NUM_PARTS", 10);
 
    db->parts = calloc(db->num_parts, sizeof(*db->parts));
    if (!db->parts)

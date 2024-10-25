@@ -90,15 +90,9 @@ static void
 zink_destroy_associated_data(void *data)
 {
    struct zink_video_surf_data *surf = data;
-   struct zink_video_codec *zvc = (struct zink_video_codec *)surf->codec;
-   struct zink_screen *screen = (struct zink_screen *)zvc->screen;
+   struct zink_screen *screen = surf->screen;
    VKSCR(DestroyImageView)(screen->dev, surf->resource.imageViewBinding, NULL);
 
-   for (unsigned i = 0; i < zvc->max_dpb_slots; i++) {
-      if (zvc->render_pic_list[i] == data) {
-         zvc->render_pic_list[i] = NULL;
-      }
-   }
    /* destroy iv */
    free(surf);
 }
@@ -364,7 +358,7 @@ create_surf(struct zink_video_codec *zvc,
    struct zink_screen *screen = (struct zink_screen *)zvc->screen;
    struct zink_video_surf_data *surf = calloc(sizeof(*surf), 1);
 
-   surf->codec = zvc;
+   surf->screen = screen;
    surf->resource.sType = VK_STRUCTURE_TYPE_VIDEO_PICTURE_RESOURCE_INFO_KHR;
    surf->resource.pNext = NULL;
    surf->resource.codedExtent.width = target->width;

@@ -59,7 +59,7 @@ struct zink_video_codec {
 
 struct zink_video_surf_data {
    VkVideoPictureResourceInfoKHR resource;
-   struct zink_video_codec *codec;
+   struct zink_screen *screen;
    uint32_t dpb_index;
 };
 

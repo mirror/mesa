@@ -231,6 +231,7 @@ nvk_CmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodi
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd_buffer, commandBuffer);
    VK_FROM_HANDLE(nvk_video_session, vid, pBeginInfo->videoSession);
    VK_FROM_HANDLE(nvk_video_session_params, params, pBeginInfo->videoSessionParameters);
+   struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
 
    cmd_buffer->video.vid = vid;
    cmd_buffer->video.params = params;
@@ -239,7 +240,7 @@ nvk_CmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodi
 
    /* assign nvdec to sub channel 4 */
    __push_mthd(p, SUBC_NVC5B0, NV906F_SET_OBJECT);
-   P_NV906F_SET_OBJECT(p, { .nvclass = 0xC5B0,
+   P_NV906F_SET_OBJECT(p, { .nvclass = dev->nvkmd->pdev->dev_info.cls_video,
                             .engine = 0 });
 
 

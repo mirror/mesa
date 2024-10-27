@@ -436,6 +436,7 @@ nvk_queue_init_context_state(struct nvk_queue *queue)
    struct nvk_device *dev = nvk_queue_device(queue);
    struct nvk_physical_device *pdev = nvk_device_physical(dev);
    VkResult result;
+   size_t dw_count;
 
    uint32_t push_data[4096];
    struct nv_push push;
@@ -466,7 +467,11 @@ nvk_queue_init_context_state(struct nvk_queue *queue)
          return result;
    }
 
-   return nvk_queue_submit_simple(queue, nv_push_dw_count(&push), push_data);
+   dw_count = nv_push_dw_count(&push);
+   if (dw_count > 0)
+      return nvk_queue_submit_simple(queue, dw_count, push_data);
+   else
+      return VK_SUCCESS;
 }
 
 static VkQueueGlobalPriority

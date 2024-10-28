@@ -1282,7 +1282,7 @@ fixup_gfx9_cs_copy(struct radv_cmd_buffer *cmd_buffer, const struct radv_meta_bl
       for (; x < mip_extent.width; x++) {
          uint32_t coordX = x + mip_offset.x;
          uint64_t addr = ac_surface_addr_from_coord(addrlib, gpu_info, surf, &surf_info, mip_level, coordX, coordY,
-                                                    img_bsurf->layer, image->vk.image_type == VK_IMAGE_TYPE_3D);
+                                                    img_bsurf->layer, image->vk.image_type == VK_IMAGE_TYPE_3D, false);
          struct radeon_winsys_bo *img_bo = image->bindings[0].bo;
          struct radeon_winsys_bo *mem_bo = buf_bsurf->buffer->bo;
          const uint64_t img_offset = image->bindings[0].offset + addr;

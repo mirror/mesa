@@ -478,6 +478,8 @@ radv_physical_device_init_mem_types(struct radv_physical_device *pdev)
    for (unsigned i = 0; i < type_count; ++i) {
       if (pdev->memory_flags[i] & RADEON_FLAG_32BIT)
          pdev->memory_types_32bit |= BITFIELD_BIT(i);
+      if (pdev->memory_flags[i] & RADEON_FLAG_CPU_ACCESS)
+         pdev->memory_types_host_visible |= BITFIELD_BIT(i);
    }
 }
 
@@ -660,6 +662,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = !pdev->use_llvm && !(instance->debug_flags & RADV_DEBUG_NO_GPL),
       .EXT_host_query_reset = true,
+      .EXT_host_image_copy = true,
       .EXT_image_2d_view_of_3d = true,
       .EXT_image_compression_control = true,
       .EXT_image_drm_format_modifier = pdev->info.gfx_level >= GFX9,
@@ -1289,6 +1292,9 @@ radv_physical_device_get_features(const struct radv_physical_device *pdev, struc
 
       /* VK_EXT_depth_clamp_control */
       .depthClampControl = true,
+
+      /* VK_EXT_host_image_copy */
+      .hostImageCopy = true,
    };
 }
 
@@ -1346,6 +1352,43 @@ radv_get_compiler_string(struct radv_physical_device *pdev)
 #else
    unreachable("LLVM is not available");
 #endif
+}
+
+static VkImageLayout radv_host_image_copy_layouts[] = {
+   VK_IMAGE_LAYOUT_GENERAL,
+   VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+   VK_IMAGE_LAYOUT_PREINITIALIZED,
+   VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_STENCIL_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL,
+   VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
+   VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+};
+
+static void
+radv_get_optimal_tiling_layout_uuid(struct radv_physical_device *pdev, void *uuid)
+{
+   struct radv_instance *instance = radv_physical_device_instance(pdev);
+   
+   blake3_hash hash;
+
+   blake3_hasher ctx;
+   _mesa_blake3_init(&ctx);
+   _mesa_blake3_update(&ctx, pdev->cache_uuid, sizeof(pdev->cache_uuid));
+   _mesa_blake3_update(&ctx, &instance->debug_flags, sizeof(instance->debug_flags));
+   _mesa_blake3_update(&ctx, &instance->perftest_flags, sizeof(instance->perftest_flags));
+   _mesa_blake3_final(&ctx, hash);
+
+   memcpy(uuid, hash, VK_UUID_SIZE);
 }
 
 static void
@@ -1991,6 +2034,14 @@ radv_get_physical_device_properties(struct radv_physical_device *pdev)
 
    /* VK_KHR_compute_shader_derivatives */
    p->meshAndTaskShaderDerivatives = radv_taskmesh_enabled(pdev);
+
+   /* VK_EXT_host_image_copy */
+   p->pCopySrcLayouts = radv_host_image_copy_layouts;
+   p->copySrcLayoutCount = ARRAY_SIZE(radv_host_image_copy_layouts);
+   p->pCopyDstLayouts = radv_host_image_copy_layouts;
+   p->copyDstLayoutCount = ARRAY_SIZE(radv_host_image_copy_layouts);
+   p->identicalMemoryTypeRequirements = false;
+   radv_get_optimal_tiling_layout_uuid(pdev, p->optimalTilingLayoutUUID);
 }
 
 static VkResult

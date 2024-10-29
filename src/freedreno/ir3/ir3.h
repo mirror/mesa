@@ -70,6 +70,7 @@ struct ir3_info {
    uint16_t last_baryf; /* instruction # of last varying fetch */
 
    uint16_t last_helper; /* last instruction to use helper invocations */
+   uint16_t last_eogm, last_eolm;
 
    /* Number of instructions of a given category: */
    uint16_t instrs_per_cat[8];

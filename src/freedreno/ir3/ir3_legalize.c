@@ -1450,6 +1450,25 @@ struct ir3_end_of_feature_block_data {
 };
 
 static bool
+needs_eolm(struct ir3_instruction *instr)
+{
+   return opc_cat(instr->opc) == 6;
+}
+
+static bool
+needs_eogm(struct ir3_instruction *instr)
+{
+   return opc_cat(instr->opc) == 5 || opc_cat(instr->opc) == 6;
+}
+
+static bool
+is_cheap_for_eolm_eogm(struct ir3_instruction *instr)
+{
+   /* Blob inserts these flags as soon as possible */
+   return false;
+}
+
+static bool
 is_cheap_for_eq(struct ir3_instruction *instr)
 {
    /* ALU and SFU instructions probably aren't going to benefit much
@@ -1835,6 +1854,13 @@ ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
 
    if (so->type == MESA_SHADER_FRAGMENT)
       kill_sched(ir, so);
+
+   if (so->type == MESA_SHADER_FRAGMENT && so->compiler->gen >= 7) {
+      feature_usage_sched(ctx, ir, so, needs_eolm, is_cheap_for_eolm_eogm,
+                          IR3_INSTR_EOLM);
+      feature_usage_sched(ctx, ir, so, needs_eogm, is_cheap_for_eolm_eogm,
+                          IR3_INSTR_EOGM);
+   }
 
    /* TODO: does (eq) exist before a6xx? */
    if (so->type == MESA_SHADER_FRAGMENT && so->need_pixlod &&

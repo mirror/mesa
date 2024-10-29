@@ -1242,7 +1242,6 @@ uses_helpers(struct ir3_instruction *instr)
    case OPC_QUAD_SHUFFLE_HORIZ:
    case OPC_QUAD_SHUFFLE_VERT:
    case OPC_QUAD_SHUFFLE_DIAG:
-   case OPC_META_TEX_PREFETCH:
       return true;
 
    /* sam requires helper invocations except for dummy prefetch instructions */

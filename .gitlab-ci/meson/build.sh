@@ -105,16 +105,45 @@ esac
 case $CI_PIPELINE_SOURCE in
     schedule)
       # run builds with LTO only for nightly
-      if [ "$CI_JOB_NAME" == "debian-ppc64el" ]; then
-	      # /tmp/ccWlDCPV.s: Assembler messages:
-	      # /tmp/ccWlDCPV.s:15250880: Error: operand out of range (0xfffffffffdd4e688 is not between 0xfffffffffe000000 and 0x1fffffc)
-	      LTO=false
+      declare -A lto_enabled_for_job
+
+      # /tmp/ccWlDCPV.s: Assembler messages:
+      # /tmp/ccWlDCPV.s:15250880: Error: operand out of range (0xfffffffffdd4e688 is not between 0xfffffffffe000000 and 0x1fffffc)
+      lto_enabled_for_job["debian-ppc64el"]=false
+
+      # mesa:imagination / pvr symbols check    FAIL
+      # https://gitlab.freedesktop.org/mesa/mesa/-/issues/11120
+      lto_enabled_for_job["debian-arm64-asan"]=false
+
+      # failed to load plugin : /usr/bin/ld: undefined symbol: onload
+      lto_enabled_for_job["debian-clang"]=false
+      lto_enabled_for_job["debian-clang-release"]=false
+
       # enable one by one for now
-      elif [ "$CI_JOB_NAME" == "fedora-release" ] || [ "$CI_JOB_NAME" == "debian-build-testing" ]; then
-	      LTO=true
-      else
-	      LTO=false
+      lto_enabled_for_job["debian-build-testing"]=true
+      lto_enabled_for_job["debian-arm32"]=true
+      lto_enabled_for_job["debian-arm32-asan"]=true
+      lto_enabled_for_job["debian-arm64"]=true
+      lto_enabled_for_job["debian-arm64-build-test"]=true
+      lto_enabled_for_job["debian-arm64-release"]=true
+      lto_enabled_for_job["debian-android"]=true
+      lto_enabled_for_job["debian-testing"]=true
+      lto_enabled_for_job["debian-testing-asan"]=true
+      lto_enabled_for_job["debian-testing-msan"]=true
+      lto_enabled_for_job["debian-no-libdrm"]=true
+      lto_enabled_for_job["debian-release"]=true
+      lto_enabled_for_job["debian-s390x"]=true
+      lto_enabled_for_job["debian-vulkan"]=true
+      lto_enabled_for_job["debian-x86_32"]=true
+      lto_enabled_for_job["fedora-release"]=true
+      lto_enabled_for_job["debian-ppc64el"]=true
+
+      if [ -z "${lto_enabled_for_job[$CI_JOB_NAME]:-}" ]; then
+        echo >&2 "Job $CI_JOB_NAME is not set to perform LTO or not during the build; defaulting to 'false'."
+        lto_enabled_for_job[$CI_JOB_NAME]=false
       fi
+
+      LTO="${lto_enabled_for_job[$CI_JOB_NAME]}"
       ;;
     *)
       LTO=false

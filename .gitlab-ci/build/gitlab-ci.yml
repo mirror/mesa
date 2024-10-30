@@ -95,6 +95,10 @@ debian-testing:
     - .ci-deqp-artifacts
   stage: build-for-tests
   variables:
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
     UNWIND: "enabled"
     DRI_LOADERS: >
       -D glx=dri
@@ -150,6 +154,8 @@ debian-testing-asan:
       -D platforms=
       -D intel-clc=enabled
       -D install-intel-clc=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-testing-msan:
   # https://github.com/google/sanitizers/wiki/MemorySanitizerLibcxxHowTo
@@ -184,6 +190,8 @@ debian-testing-msan:
       -D platforms=
       -D intel-clc=enabled
       -D install-intel-clc=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-build-testing:
   extends: .meson-build
@@ -258,6 +266,12 @@ debian-release:
     LLVM_VERSION: 15
     UNWIND: "enabled"
     C_ARGS: >
+      -Wno-error=stringop-overread
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
       -Wno-error=stringop-overread
     DRI_LOADERS: >
       -D glx=dri
@@ -522,6 +536,12 @@ debian-arm64:
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
     VULKAN_DRIVERS: "asahi,freedreno,broadcom,panfrost,imagination-experimental"
     DRI_LOADERS:
       -D glvnd=disabled
@@ -599,6 +619,12 @@ debian-no-libdrm:
     C_ARGS: >
       -Wno-error=array-bounds
       -Wno-error=stringop-truncation
+      -Wno-error=stringop-overread
+    C_LINK_ARGS: >
+      -Wno-error=stringop-overflow
+      -Wno-error=stringop-overread
+    CPP_LINK_ARGS: >
+      -Wno-error=stringop-overflow
       -Wno-error=stringop-overread
     EXTRA_OPTION: >
       -D freedreno-kmds=kgsl
@@ -731,6 +757,8 @@ debian-vulkan:
       -D build-aco-tests=true
       -D intel-rt=disabled
       -D imagination-srv=true
+  # extra 20 minutes timeout for nightly LTO pipeline
+  timeout: 50m
 
 debian-x86_32:
   extends:

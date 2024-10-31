@@ -31,7 +31,7 @@
 #include "drm-shim/drm_shim.h"
 #include "util/u_debug.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 struct etna_shim_gpu
 {

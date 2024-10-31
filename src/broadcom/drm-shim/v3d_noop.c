@@ -28,7 +28,7 @@
 #include "drm-uapi/v3d_drm.h"
 #include "drm-shim/drm_shim.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 struct v3d_bo {
         struct shim_bo base;

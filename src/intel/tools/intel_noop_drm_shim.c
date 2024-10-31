@@ -54,7 +54,7 @@ struct i915_bo {
 static struct i915_device i915 = {};
 static bool i915_device_from_json = false;
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static int
 i915_ioctl_noop(int fd, unsigned long request, void *arg)

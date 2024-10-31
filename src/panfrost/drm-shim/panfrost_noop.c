@@ -36,7 +36,7 @@
 /* Default GPU ID if PAN_GPU_ID is not set. This defaults to Mali-G52. */
 #define PAN_GPU_ID_DEFAULT (0x7212)
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static uint64_t
 pan_get_gpu_id(void)

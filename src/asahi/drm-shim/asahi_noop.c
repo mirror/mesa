@@ -9,7 +9,7 @@
 #include "../lib/unstable_asahi_drm.h"
 #include "drm-shim/drm_shim.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static const struct drm_asahi_params_global params = {
    .unstable_uabi_version = DRM_ASAHI_UNSTABLE_UABI_VERSION,

@@ -12,7 +12,7 @@
 
 #include "util/u_math.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 struct msm_device_info {
    uint32_t gpu_id;

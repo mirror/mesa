@@ -120,6 +120,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       /* Optimization may move SGPR uses down, requiring further SSA repair. */
       if (program->should_repair_ssa && repair_ssa(program.get()))
          lower_phis(program.get());
+      split_vectors(program.get());
    }
 
    /* cleanup and exec mask handling */

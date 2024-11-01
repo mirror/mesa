@@ -64,6 +64,8 @@ variables:
           DGC_SH='download-git-cache.sh'
           set -o xtrace
           wget -q -O $${DGC_SH} ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/$${DGC_SH}
+          # An HTML page is a (hidden) failure; for instance a Sign in page for a private fork
+          if grep -i -C 10 'DOCTYPE[[:space:]]*HTML' $${DGC_SH}; then exit 1; fi
           bash $${DGC_SH}
           rm $${DGC_SH}
           set +o xtrace

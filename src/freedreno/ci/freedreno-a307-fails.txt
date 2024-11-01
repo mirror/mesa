@@ -162,14 +162,6 @@ glx@glx-visuals-stencil -pixmap,Crash
 glx@glx_arb_create_context_es2_profile@invalid opengl es version,Fail
 glx@glx_arb_create_context_no_error@no error,Fail
 glx@glx_arb_create_context_robustness@invalid reset notification strategy,Fail
-shaders@point-vertex-id divisor,Crash
-shaders@point-vertex-id gl_instanceid,Crash
-shaders@point-vertex-id gl_instanceid divisor,Crash
-shaders@point-vertex-id gl_vertexid,Crash
-shaders@point-vertex-id gl_vertexid divisor,Crash
-shaders@point-vertex-id gl_vertexid gl_instanceid,Crash
-shaders@point-vertex-id gl_vertexid gl_instanceid divisor,Crash
-spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.1@depthstencil-default_fb-blit,Fail
 spec@!opengl 1.1@depthstencil-default_fb-copypixels,Fail
@@ -249,8 +241,6 @@ spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT16- border 
 spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT24- border color only,Fail
 spec@arb_depth_texture@texwrap formats bordercolor@GL_DEPTH_COMPONENT32- border color only,Fail
 spec@arb_direct_state_access@gettextureimage-formats init-by-rendering,Fail
-spec@arb_direct_state_access@transformfeedback-bufferbase,Fail
-spec@arb_direct_state_access@transformfeedback-bufferbase@general test,Fail
 
 spec@arb_enhanced_layouts@linker@component-layout@intrastage-vs,Fail
 spec@arb_enhanced_layouts@linker@component-layout@vs-to-fs,Fail
@@ -270,7 +260,6 @@ spec@arb_framebuffer_object@framebuffer-blit-levels draw stencil,Fail
 spec@arb_framebuffer_object@framebuffer-blit-levels read stencil,Fail
 spec@arb_map_buffer_alignment@arb_map_buffer_alignment-map-invalidate-range,Crash
 spec@arb_occlusion_query@occlusion_query_meta_no_fragments,Crash
-spec@arb_point_sprite@arb_point_sprite-interactions 1.0,Fail
 spec@arb_seamless_cube_map@arb_seamless_cubemap,Fail
 spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 32 1 8 128 1,Fail
 spec@arb_texture_barrier@arb_texture_barrier-blending-in-shader 32 1 8 128 2,Fail
@@ -350,12 +339,10 @@ spec@arb_texture_rg@fbo-alphatest-formats,Fail
 spec@arb_texture_rg@fbo-alphatest-formats@GL_R8,Fail
 spec@arb_texture_rg@fbo-blending-formats,Fail
 spec@arb_texture_rg@fbo-blending-formats@GL_R8,Fail
-spec@arb_texture_storage@texture-storage@cube array texture,Fail
 spec@arb_transform_feedback2@change objects while paused,Fail
 spec@arb_transform_feedback2@change objects while paused (gles3),Fail
 spec@arb_transform_feedback3@gl_nextbuffer-gl_nextbuffer,Fail
 spec@arb_transform_feedback_instanced@draw-auto instanced,Fail
-spec@arb_uniform_buffer_object@rendering-array,Fail
 spec@arb_uniform_buffer_object@execution@std140-array-struct-array-struct,Fail
 spec@arb_vertex_buffer_object@vbo-subdata-many drawarrays,Fail
 spec@arb_vertex_buffer_object@vbo-subdata-many drawelements,Fail
@@ -633,208 +620,8 @@ spec@arb_texture_rg@texwrap formats-float@GL_RG32F,Fail
 spec@arb_texture_rg@texwrap formats-float@GL_RG32F- NPOT,Fail
 spec@arb_texture_rg@texwrap formats-float@GL_RG32F- swizzled,Fail
 
-# MSAA-related failures
-dEQP-GLES3.functional.fbo.invalidate.sub.unbind_blit_msaa_color,Fail
-dEQP-GLES3.functional.fbo.invalidate.sub.unbind_blit_msaa_depth,Fail
-dEQP-GLES3.functional.fbo.invalidate.sub.unbind_blit_msaa_depth_stencil,Fail
-dEQP-GLES3.functional.fbo.invalidate.sub.unbind_blit_msaa_stencil,Fail
-dEQP-GLES3.functional.fbo.invalidate.whole.unbind_blit_msaa_color,Fail
-dEQP-GLES3.functional.fbo.invalidate.whole.unbind_blit_msaa_depth,Fail
-dEQP-GLES3.functional.fbo.invalidate.whole.unbind_blit_msaa_depth_stencil,Fail
-dEQP-GLES3.functional.fbo.invalidate.whole.unbind_blit_msaa_stencil,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.depth24_stencil8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.depth32f_stencil8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.depth_component16,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.depth_component24,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.depth_component32f,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.r11f_g11f_b10f,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.r16f,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.r8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rg16f,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rg8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgb10_a2,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgb565,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgb5_a1,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgb8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgba4,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.rgba8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.srgb8_alpha8,Fail
-dEQP-GLES3.functional.fbo.msaa.2_samples.stencil_index8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.depth24_stencil8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.depth32f_stencil8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.depth_component16,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.depth_component24,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.depth_component32f,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.r11f_g11f_b10f,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.r16f,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.r8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rg16f,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rg8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgb10_a2,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgb565,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgb5_a1,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgb8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgba4,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.rgba8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.srgb8_alpha8,Fail
-dEQP-GLES3.functional.fbo.msaa.4_samples.stencil_index8,Fail
-dEQP-GLES3.functional.multisample.fbo_max_samples.proportionality_alpha_to_coverage,Fail
-dEQP-GLES3.functional.multisample.fbo_max_samples.proportionality_sample_coverage,Fail
-dEQP-GLES3.functional.multisample.fbo_max_samples.proportionality_sample_coverage_inverted,Fail
-dEQP-GLES3.functional.multisample.fbo_max_samples.sample_coverage_invert,Fail
-dEQP-GLES3.functional.negative_api.buffer.blit_framebuffer_multisample,Fail
-dEQP-GLES3.functional.rasterization.fbo.rbo_multisample_max.interpolation.lines_wide,Fail
-dEQP-GLES3.functional.rasterization.fbo.rbo_multisample_max.primitives.lines_wide,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fastest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa2.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.nicest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdx.texture.msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fastest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa2.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.nicest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.dfdy.texture.msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fastest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa2.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.nicest.fbo_msaa4.vec4_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.float_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.float_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec2_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec2_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec3_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec3_mediump,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec4_highp,Fail
-dEQP-GLES3.functional.shaders.derivate.fwidth.texture.msaa4.vec4_mediump,Fail
 dEQP-GLES3.functional.state_query.integers.max_samples_getfloat,Fail
 dEQP-GLES3.functional.state_query.integers.max_samples_getinteger64,Fail
-spec@arb_framebuffer_srgb@msaa-fast-clear,Crash
-spec@arb_texture_float@multisample-fast-clear gl_arb_texture_float,Crash
-spec@arb_texture_multisample@arb_texture_multisample-dsa-texelfetch,Crash
-spec@arb_texture_multisample@arb_texture_multisample-sample-depth,Crash
-spec@arb_texture_multisample@large-float-texture,Crash
-spec@arb_texture_multisample@large-float-texture-fp16,Crash
-spec@arb_texture_multisample@texturesize@fs-texturesize-isampler2dms,Fail
-spec@arb_texture_multisample@texturesize@fs-texturesize-isampler2dmsarray,Fail
-spec@arb_texture_multisample@texturesize@fs-texturesize-sampler2dms,Fail
-spec@arb_texture_multisample@texturesize@fs-texturesize-sampler2dmsarray,Fail
-spec@arb_texture_multisample@texturesize@fs-texturesize-usampler2dms,Fail
-spec@arb_texture_multisample@texturesize@fs-texturesize-usampler2dmsarray,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-isampler2dms,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-isampler2dmsarray,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-sampler2dms,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-sampler2dmsarray,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-usampler2dms,Fail
-spec@arb_texture_multisample@texturesize@vs-texturesize-usampler2dmsarray,Fail
-spec@arb_texture_rg@multisample-fast-clear gl_arb_texture_rg,Crash
-spec@arb_texture_rg@multisample-fast-clear gl_arb_texture_rg-float,Crash
-spec@arb_texture_rg@multisample-fast-clear gl_arb_texture_rg-int,Crash
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve depthstencil,Fail
-spec@ext_framebuffer_multisample@accuracy all_samples stencil_resolve small depthstencil,Fail
-spec@ext_framebuffer_multisample@fast-clear,Crash
-spec@ext_packed_float@multisample-fast-clear gl_ext_packed_float,Crash
-spec@ext_texture_integer@multisample-fast-clear gl_ext_texture_integer,Crash
-spec@ext_texture_snorm@multisample-fast-clear gl_ext_texture_snorm,Crash
-spec@ext_texture_srgb@multisample-fast-clear gl_ext_texture_srgb,Crash
 
 spec@arb_texture_buffer_object@texture-buffer-size-clamp,Fail
 spec@arb_texture_buffer_object@texture-buffer-size-clamp@r8ui_texture_buffer_size_via_sampler,Fail
@@ -847,7 +634,6 @@ spec@glsl-1.40@uniform_buffer@two-stages,Fail
 # new failures since 2023/02/08 (CTS uprevs, regressions etc.)
 shaders@glsl-max-varyings >max_varying_components,Fail
 spec@!opengl 1.0@gl-1.0-ortho-pos,Fail
-spec@!opengl 1.1@line-smooth-stipple,Fail
 spec@!opengl 1.1@teximage-colors gl_alpha16@Exact upload-download of GL_ALPHA16,Fail
 spec@!opengl 1.1@texwrap 1d,Fail
 spec@!opengl 1.1@texwrap 1d proj,Fail

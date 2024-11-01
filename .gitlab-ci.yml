@@ -61,10 +61,11 @@ variables:
   FDO_UPSTREAM_REPO: mesa/mesa
   MESA_TEMPLATES_COMMIT: &ci-templates-commit d5aa3941aa03c2f716595116354fb81eb8012acb
   CI_PRE_CLONE_SCRIPT: |-
+          DGC_SH='download-git-cache.sh'
           set -o xtrace
-          wget -q -O download-git-cache.sh ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/download-git-cache.sh
-          bash download-git-cache.sh
-          rm download-git-cache.sh
+          wget -q -O $${DGC_SH} ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/$${DGC_SH}
+          bash $${DGC_SH}
+          rm $${DGC_SH}
           set +o xtrace
   S3_JWT_FILE: /s3_jwt
   S3_HOST: s3.freedesktop.org

@@ -116,7 +116,7 @@ zink_debug_options[] = {
    { "nobgc", ZINK_DEBUG_NOBGC, "Disable all async pipeline compiles" },
    { "mem", ZINK_DEBUG_MEM, "Debug memory allocations" },
    { "quiet", ZINK_DEBUG_QUIET, "Suppress warnings" },
-   { "ioopt", ZINK_DEBUG_IOOPT, "Optimize IO" },
+   { "ioopt", ZINK_DEBUG_NOIOOPT, "Don't optimize IO" },
    { "nopc", ZINK_DEBUG_NOPC, "No precompilation" },
    DEBUG_NAMED_VALUE_END
 };
@@ -3501,7 +3501,7 @@ zink_internal_create_screen(const struct pipe_screen_config *config, int64_t dev
    }
    zink_screen_fence_init(&screen->base);
 
-   if (zink_debug & ZINK_DEBUG_IOOPT)
+   if (!(zink_debug & ZINK_DEBUG_NOIOOPT))
       screen->driver_compiler_workarounds.io_opt = true;
    zink_screen_init_compiler(screen);
    if (!disk_cache_init(screen)) {

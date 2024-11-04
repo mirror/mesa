@@ -29,6 +29,7 @@
 
 static void
 vk_descriptor_set_layout_init(struct vk_device *device,
+                              const VkAllocationCallbacks *pAllocator,
                               struct vk_descriptor_set_layout *layout)
 {
    vk_object_base_init(device, &layout->base,
@@ -36,40 +37,45 @@ vk_descriptor_set_layout_init(struct vk_device *device,
 
    layout->ref_cnt = 1;
    layout->destroy = vk_descriptor_set_layout_destroy;
+   layout->allocator = pAllocator ? pAllocator : &device->alloc;
 }
 
 void *
-vk_descriptor_set_layout_zalloc(struct vk_device *device, size_t size)
+vk_descriptor_set_layout_zalloc(struct vk_device *device, const VkAllocationCallbacks *pAllocator, size_t size)
 {
+   const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : &device->alloc;
+
    /* Because we're reference counting and lifetimes may not be what the
     * client expects, these have to be allocated off the device and not as
     * their own object.
     */
    struct vk_descriptor_set_layout *layout =
-      vk_zalloc(&device->alloc, size, 8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      vk_zalloc(allocator, size, 8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (!layout)
       return NULL;
 
-   vk_descriptor_set_layout_init(device, layout);
+   vk_descriptor_set_layout_init(device, allocator, layout);
 
    return layout;
 }
 
 void *
-vk_descriptor_set_layout_multizalloc(struct vk_device *device,
+vk_descriptor_set_layout_multizalloc(struct vk_device *device, const VkAllocationCallbacks *pAllocator,
                                      struct vk_multialloc *ma)
 {
+   const VkAllocationCallbacks *allocator = pAllocator ? pAllocator : &device->alloc;
+
    /* Because we're reference counting and lifetimes may not be what the
     * client expects, these have to be allocated off the device and not as
     * their own object.
     */
    struct vk_descriptor_set_layout *layout =
-      vk_multialloc_zalloc(ma, &device->alloc,
+      vk_multialloc_zalloc(ma, allocator,
                            VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    if (!layout)
       return NULL;
 
-   vk_descriptor_set_layout_init(device, layout);
+   vk_descriptor_set_layout_init(device, allocator, layout);
 
    return layout;
 }
@@ -78,7 +84,7 @@ void
 vk_descriptor_set_layout_destroy(struct vk_device *device,
                                  struct vk_descriptor_set_layout *layout)
 {
-   vk_object_free(device, NULL, layout);
+   vk_object_free(device, layout->allocator, layout);
 }
 
 VKAPI_ATTR void VKAPI_CALL

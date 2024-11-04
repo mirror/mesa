@@ -671,7 +671,7 @@ VkResult anv_CreateDescriptorSetLayout(
    VK_MULTIALLOC_DECL(&ma, struct anv_sampler *, samplers,
                            immutable_sampler_count);
 
-   if (!vk_object_multizalloc(&device->vk, &ma, NULL,
+   if (!vk_object_multizalloc(&device->vk, &ma, pAllocator,
                               VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT))
       return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
 

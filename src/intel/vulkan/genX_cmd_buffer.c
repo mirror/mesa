@@ -470,32 +470,40 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
       return;
 
    /* Initialize the indirect clear color prior to first use. */
-   const enum isl_format depth_format =
-      image->planes[depth_plane].primary_surface.isl.format;
-   const struct anv_address clear_color_addr =
-      anv_image_get_clear_color_addr(cmd_buffer->device, image, depth_format,
-                                     VK_IMAGE_ASPECT_DEPTH_BIT, true);
-   if (!anv_address_is_null(clear_color_addr) &&
+   const struct anv_image_memory_range *fc_mem_range =
+      &image->planes[depth_plane].fast_clear_memory_range;
+   if (fc_mem_range->size > 0 &&
        (initial_layout == VK_IMAGE_LAYOUT_UNDEFINED ||
         initial_layout == VK_IMAGE_LAYOUT_PREINITIALIZED)) {
+      const enum isl_format depth_format =
+         image->planes[depth_plane].primary_surface.isl.format;
+      struct mi_builder b;
+      mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
+
       const union isl_color_value clear_value =
          anv_image_hiz_clear_value(image);
 
       uint32_t depth_value[4] = {};
       isl_color_value_pack(&clear_value, depth_format, depth_value);
 
-      const uint32_t clear_pixel_offset = clear_color_addr.offset +
+      const uint32_t clear_field_offset =
          isl_get_sampler_clear_field_offset(cmd_buffer->device->info,
                                             depth_format);
-      const struct anv_address clear_pixel_addr = {
-         .bo = clear_color_addr.bo,
-         .offset = clear_pixel_offset,
-      };
+      for (unsigned i = 0; i < image->num_view_formats; i++) {
+         const struct anv_address clear_color_addr =
+            anv_image_get_clear_color_addr(cmd_buffer->device, image,
+                                           image->view_formats[i],
+                                           VK_IMAGE_ASPECT_DEPTH_BIT,
+                                           true);
+         assert(!anv_address_is_null(clear_color_addr));
+         const struct anv_address clear_pixel_addr = {
+            .bo = clear_color_addr.bo,
+            .offset = clear_color_addr.offset + clear_field_offset,
+         };
 
-      struct mi_builder b;
-      mi_builder_init(&b, cmd_buffer->device->info, &cmd_buffer->batch);
-      mi_builder_set_write_check(&b, true);
-      mi_store(&b, mi_mem32(clear_pixel_addr), mi_imm(depth_value[0]));
+         mi_builder_set_write_check(&b, i == image->num_view_formats - 1);
+         mi_store(&b, mi_mem32(clear_pixel_addr), mi_imm(depth_value[0]));
+      }
    }
 
    /* If will_full_fast_clear is set, the caller promises to fast-clear the
@@ -926,7 +934,14 @@ set_image_clear_color(struct anv_cmd_buffer *cmd_buffer,
 {
    for (int i = 0; i < image->num_view_formats; i++) {
       union isl_color_value clear_color;
-      isl_color_value_unpack(&clear_color, image->view_formats[i], pixel);
+      if (image->view_formats[i] == ISL_FORMAT_RAW) {
+         /* Only used for cross aspect copies (color <-> depth/stencil) */
+         assert(vk_format_get_blocksize(image->vk.format) <= 32);
+         assert(vk_format_is_color_depth_stencil_capable(image->vk.format));
+         memcpy(clear_color.u32, pixel, sizeof(clear_color.u32));
+      } else {
+         isl_color_value_unpack(&clear_color, image->view_formats[i], pixel);
+      }
 
       UNUSED union isl_color_value sample_color = clear_color;
       if (isl_format_is_srgb(image->view_formats[i])) {

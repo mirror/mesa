@@ -757,21 +757,8 @@ anv_load_fp64_shader(struct anv_device *device)
 
    nir_validate_shader(nir, "after spirv_to_nir");
 
-   NIR_PASS_V(nir, nir_lower_variable_initializers, nir_var_function_temp);
    NIR_PASS_V(nir, nir_lower_returns);
    NIR_PASS_V(nir, nir_inline_functions);
-   NIR_PASS_V(nir, nir_opt_deref);
-
-   NIR_PASS_V(nir, nir_lower_vars_to_ssa);
-   NIR_PASS_V(nir, nir_copy_prop);
-   NIR_PASS_V(nir, nir_opt_dce);
-   NIR_PASS_V(nir, nir_opt_cse);
-   NIR_PASS_V(nir, nir_opt_gcm, true);
-   NIR_PASS_V(nir, nir_opt_peephole_select, 1, false, false);
-   NIR_PASS_V(nir, nir_opt_dce);
-
-   NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_function_temp,
-              nir_address_format_62bit_generic);
 
    anv_device_upload_nir(device, device->internal_cache,
                          nir, sha1);

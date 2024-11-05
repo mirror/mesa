@@ -159,6 +159,8 @@ cmd_dispatch(struct panvk_cmd_buffer *cmdbuf, struct panvk_dispatch_info *info)
    if (!panvk_priv_mem_dev_addr(shader->spd))
       return;
 
+   panvk_per_arch(cmd_flush_deps)(cmdbuf);
+
    struct panvk_physical_device *phys_dev =
       to_panvk_physical_device(cmdbuf->vk.base.device->physical);
    struct panvk_descriptor_state *desc_state =

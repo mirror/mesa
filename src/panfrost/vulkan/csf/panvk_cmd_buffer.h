@@ -422,6 +422,7 @@ struct panvk_cmd_buffer {
       struct panvk_push_constant_state push_constants;
       struct panvk_cs_state cs[PANVK_SUBQUEUE_COUNT];
       struct panvk_tls_state tls;
+      struct panvk_cs_deps cs_deps;
    } state;
 };
 
@@ -452,6 +453,8 @@ panvk_cmd_get_desc_state(struct panvk_cmd_buffer *cmdbuf,
 }
 
 extern const struct vk_command_buffer_ops panvk_per_arch(cmd_buffer_ops);
+
+void panvk_per_arch(cmd_flush_deps)(struct panvk_cmd_buffer *cmdbuf);
 
 void panvk_per_arch(cmd_flush_draws)(struct panvk_cmd_buffer *cmdbuf);
 

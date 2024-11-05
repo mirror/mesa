@@ -292,9 +292,16 @@ drm_shim_driver_init(void)
 
    msm_driver_get_device_info();
 
-   drm_shim_override_file("OF_FULLNAME=/rdb/msm\n"
-                          "OF_COMPATIBLE_N=1\n"
-                          "OF_COMPATIBLE_0=qcom,adreno\n",
-                          "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
-                          render_node_minor);
+   static const char uevent_content[] =
+      "OF_FULLNAME=/rdb/msm\n"
+      "OF_COMPATIBLE_N=1\n"
+      "OF_COMPATIBLE_0=qcom,adreno\n";
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, render_node_minor);
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, primary_node_minor);
 }

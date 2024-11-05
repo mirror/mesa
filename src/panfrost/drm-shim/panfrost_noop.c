@@ -318,23 +318,37 @@ drm_shim_driver_init(void)
       drm_shim_init_iomem_region(DRM_PANTHOR_USER_MMIO_OFFSET, getpagesize(),
                                  panthor_iomem_mmap);
 
-      drm_shim_override_file("DRIVER=panthor\n"
-                             "OF_FULLNAME=/soc/mali\n"
-                             "OF_COMPATIBLE_0=arm,mali-valhall-csf\n"
-                             "OF_COMPATIBLE_N=1\n",
-                             "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
-                             render_node_minor);
+      static const char uevent_content[] =
+         "DRIVER=panthor\n"
+         "OF_FULLNAME=/soc/mali\n"
+         "OF_COMPATIBLE_0=arm,mali-valhall-csf\n"
+         "OF_COMPATIBLE_N=1\n";
+
+      drm_shim_override_file(uevent_content,
+                             "/sys/dev/char/%d:%d/device/uevent",
+                             DRM_MAJOR, render_node_minor);
+
+      drm_shim_override_file(uevent_content,
+                             "/sys/dev/char/%d:%d/device/uevent",
+                             DRM_MAJOR, primary_node_minor);
    } else {
       shim_device.driver_name = "panfrost";
       shim_device.version_minor = 1;
       shim_device.driver_ioctls = panfrost_driver_ioctls;
       shim_device.driver_ioctl_count = ARRAY_SIZE(panfrost_driver_ioctls);
 
-      drm_shim_override_file("DRIVER=panfrost\n"
-                             "OF_FULLNAME=/soc/mali\n"
-                             "OF_COMPATIBLE_0=arm,mali-t860\n"
-                             "OF_COMPATIBLE_N=1\n",
-                             "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
-                             render_node_minor);
+      static const char uevent_content[] =
+         "DRIVER=panfrost\n"
+         "OF_FULLNAME=/soc/mali\n"
+         "OF_COMPATIBLE_0=arm,mali-t860\n"
+         "OF_COMPATIBLE_N=1\n";
+
+      drm_shim_override_file(uevent_content,
+                             "/sys/dev/char/%d:%d/device/uevent",
+                             DRM_MAJOR, render_node_minor);
+
+      drm_shim_override_file(uevent_content,
+                             "/sys/dev/char/%d:%d/device/uevent",
+                             DRM_MAJOR, primary_node_minor);
    }
 }

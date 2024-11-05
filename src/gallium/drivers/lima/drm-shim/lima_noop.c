@@ -111,10 +111,17 @@ drm_shim_driver_init(void)
    shim_device.version_minor = 1;
    shim_device.version_patchlevel = 0;
 
-   drm_shim_override_file("DRIVER=lima\n"
-                          "OF_FULLNAME=/soc/mali\n"
-                          "OF_COMPATIBLE_0=arm,mali-450\n"
-                          "OF_COMPATIBLE_N=1\n",
-                          "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
-                          render_node_minor);
+   static const char uevent_content[] =
+      "DRIVER=lima\n"
+      "OF_FULLNAME=/soc/mali\n"
+      "OF_COMPATIBLE_0=arm,mali-450\n"
+      "OF_COMPATIBLE_N=1\n";
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, render_node_minor);
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, primary_node_minor);
 }

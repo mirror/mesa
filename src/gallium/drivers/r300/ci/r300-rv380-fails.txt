@@ -28,13 +28,9 @@ dEQP-GLES2.functional.shaders.functions.control_flow.mixed_return_break_continue
 dEQP-GLES2.functional.shaders.functions.control_flow.mixed_return_break_continue_vertex,Fail
 dEQP-GLES2.functional.shaders.functions.control_flow.return_after_continue_fragment,Fail
 dEQP-GLES2.functional.shaders.functions.control_flow.return_after_continue_vertex,Fail
-dEQP-GLES2.functional.shaders.indexing.tmp_array.float_const_write_dynamic_read_fragment,Fail
 dEQP-GLES2.functional.shaders.indexing.tmp_array.float_const_write_dynamic_read_vertex,Fail
-dEQP-GLES2.functional.shaders.indexing.tmp_array.vec2_const_write_dynamic_read_fragment,Fail
 dEQP-GLES2.functional.shaders.indexing.tmp_array.vec2_const_write_dynamic_read_vertex,Fail
-dEQP-GLES2.functional.shaders.indexing.tmp_array.vec3_const_write_dynamic_read_fragment,Fail
 dEQP-GLES2.functional.shaders.indexing.tmp_array.vec3_const_write_dynamic_read_vertex,Fail
-dEQP-GLES2.functional.shaders.indexing.tmp_array.vec4_const_write_dynamic_read_fragment,Fail
 dEQP-GLES2.functional.shaders.indexing.tmp_array.vec4_const_write_dynamic_read_vertex,Fail
 dEQP-GLES2.functional.shaders.loops.for_constant_iterations.101_iterations_fragment,Fail
 dEQP-GLES2.functional.shaders.loops.for_constant_iterations.101_iterations_vertex,Fail
@@ -93,6 +89,8 @@ dEQP-GLES2.functional.texture.specification.teximage2d_align.cube_rgba8888_47_1,
 dEQP-GLES2.functional.texture.specification.teximage2d_align.cube_rgba8888_47_2,Fail
 dEQP-GLES2.functional.texture.specification.teximage2d_align.cube_rgba8888_47_4,Fail
 dEQP-GLES2.functional.texture.specification.teximage2d_align.cube_rgba8888_47_8,Fail
+dEQP-GLES2.functional.uniform_api.random.13,Fail
+dEQP-GLES2.functional.uniform_api.random.23,Fail
 dEQP-GLES2.functional.uniform_api.random.81,Fail
 dEQP-GLES2.functional.uniform_api.value.assigned.by_pointer.render.array_in_struct.mat4_mat2_both,Fail
 dEQP-GLES2.functional.uniform_api.value.assigned.by_pointer.render.array_in_struct.mat4_mat2_fragment,Fail

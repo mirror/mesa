@@ -4,6 +4,7 @@
  */
 
 #include "r300_nir.h"
+#include "radeon_code.h"
 
 #include "compiler/nir/nir_builder.h"
 #include "r300_screen.h"
@@ -271,6 +272,84 @@ r300_check_control_flow(nir_shader *s)
    return NULL;
 }
 
+static unsigned
+r300_estimate_instr_cost(nir_instr *instr, bool is_r500)
+{
+   switch (instr->type) {
+   case nir_instr_type_alu: {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      switch (alu->op) {
+      case nir_op_fneg:
+      case nir_op_mov:
+      case nir_op_vec2:
+      case nir_op_vec3:
+      case nir_op_vec4:
+      /* We end with very little fadds in practice, most of them
+       * will be converted to ffma or presubtract. */
+      case nir_op_fadd:
+         return 0;
+      default:
+         return 1;
+      }
+   }
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+      switch (intr->intrinsic) {
+      /* FIXME: maybe return 1 for indirect loads? */
+      case nir_intrinsic_load_ubo_vec4:
+      case nir_intrinsic_load_deref:
+      case nir_intrinsic_store_deref:
+         return 0;
+      default:
+         return 1;
+      }
+   }
+   case nir_instr_type_load_const:
+   case nir_instr_type_undef:
+   case nir_instr_type_deref:
+   case nir_instr_type_phi:
+      return 0;
+   case nir_instr_type_tex:
+      return is_r500 ? 1 : 0;
+   case nir_instr_type_jump:
+      return 1;
+   default:
+      unreachable();
+   }
+}
+
+static char *
+r300_check_too_many_instructions(nir_shader *s, bool is_r400, bool is_r500)
+{
+   unsigned count = 0;
+   nir_foreach_function_impl(impl, s) {
+      nir_foreach_block(block, impl) {
+         nir_foreach_instr(instr, block) {
+            count += r300_estimate_instr_cost(instr, is_r500);
+         }
+      }
+   }
+
+   unsigned limit;
+   switch (s->info.stage) {
+   case MESA_SHADER_FRAGMENT:
+      limit = is_r400 || is_r500 ? R400_PFS_MAX_ALU_INST : R300_PFS_MAX_ALU_INST;
+      /* Pair scheduling helps a lot, so even if we have almost twice the amount of instructions
+       * at this point, we can probably run the shader */
+      count = count / 2;
+      break;
+   case MESA_SHADER_VERTEX:
+      limit = is_r500 ? R500_VS_MAX_ALU : R300_VS_MAX_ALU;
+      /* We can do some tricks in the backend but not so much as for fs. */
+      count = count * 4 / 5;
+      break;
+   default:
+      unreachable();
+   }
+
+   return count > limit ? "Shader contains (maybe) too many instructions." : NULL;
+}
+
 char *
 r300_finalize_nir(struct pipe_screen *pscreen, void *nir)
 {
@@ -295,12 +374,20 @@ r300_finalize_nir(struct pipe_screen *pscreen, void *nir)
 
    nir_sweep(s);
 
-   if (!r300_screen(pscreen)->caps.is_r500 &&
-       (r300_screen(pscreen)->caps.has_tcl || s->info.stage == MESA_SHADER_FRAGMENT)) {
-      char *msg = r300_check_control_flow(s);
-      if (msg)
-         return strdup(msg);
+   char *msg = NULL;
+
+   if (r300_screen(pscreen)->caps.has_tcl || s->info.stage == MESA_SHADER_FRAGMENT) {
+      if (!r300_screen(pscreen)->caps.is_r500) {
+         msg = r300_check_control_flow(s);
+      }
+      if (!msg) {
+         msg = r300_check_too_many_instructions(s, r300_screen(pscreen)->caps.is_r400,
+                                                r300_screen(pscreen)->caps.is_r500);
+      }
    }
+
+   if (msg && !r300_screen(pscreen)->options.nolinkfail)
+      return strdup(msg);
 
    return NULL;
 }

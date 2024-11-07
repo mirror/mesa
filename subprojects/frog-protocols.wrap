@@ -1,0 +1,8 @@
+[wrap-file]
+directory = frog-protocols-0.01
+source_url = https://github.com/misyltoad/frog-protocols/archive/refs/tags/0.01.tar.gz
+source_filename = frog-protocols-0.01.tar.gz
+source_hash = 875940795480ade6c16375fa07d8550e7ed2841937d86cc762f77a2cec6bfac9
+
+[provide]
+frog-protocols = frog_protocols

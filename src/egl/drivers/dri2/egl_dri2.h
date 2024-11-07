@@ -298,6 +298,9 @@ struct dri2_egl_display {
    struct dri2_wl_formats formats;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback_format_table format_table;
+   struct wp_presentation *wp_presentation;
+   struct wp_fifo_manager_v1 *fifo_manager;
+   struct wp_commit_timing_manager_v1 *commit_timing_manager;
    bool authenticated;
    uint32_t capabilities;
    char *device_name;
@@ -316,6 +319,13 @@ struct dri2_egl_display {
 struct dri2_egl_context {
    _EGLContext base;
    struct dri_context *dri_context;
+};
+
+enum dri2_egl_throttle_state {
+   DRI2_EGL_THROTTLE_STATE_INIT = 0,
+   DRI2_EGL_THROTTLE_STATE_COMMITTED,
+   DRI2_EGL_THROTTLE_STATE_FRAME_CALLBACK,
+   DRI2_EGL_THROTTLE_STATE_DISCARDED,
 };
 
 struct dri2_egl_surface {
@@ -344,10 +354,19 @@ struct dri2_egl_surface {
    struct wl_callback *throttle_callback;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback dmabuf_feedback, pending_dmabuf_feedback;
+   struct wp_presentation *wp_presentation_wrapper;
+   struct wp_fifo_v1 *fifo;
+   struct wp_commit_timer_v1 *commit_timer;
+   struct wp_presentation_feedback *presentation_feedback;
    bool compositor_using_another_device;
    int format;
+   enum dri2_egl_throttle_state throttle_state;
    bool resized;
    bool received_dmabuf_feedback;
+   bool can_timestamp;
+   uint64_t last_target_time;
+   uint32_t refresh_nsec;
+   uint64_t displayed_time;
 #endif
 
 #ifdef HAVE_DRM_PLATFORM

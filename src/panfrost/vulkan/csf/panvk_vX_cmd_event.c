@@ -14,6 +14,8 @@ panvk_per_arch(CmdResetEvent2)(VkCommandBuffer commandBuffer, VkEvent _event,
    VK_FROM_HANDLE(panvk_cmd_buffer, cmdbuf, commandBuffer);
    VK_FROM_HANDLE(panvk_event, event, _event);
 
+   panvk_per_arch(cmd_flush_deps)(cmdbuf);
+
    /* Wrap stageMask with a VkDependencyInfo object so we can re-use
     * get_cs_deps(). */
    const VkMemoryBarrier2 barrier = {
@@ -63,6 +65,8 @@ panvk_per_arch(CmdSetEvent2)(VkCommandBuffer commandBuffer, VkEvent _event,
    VK_FROM_HANDLE(panvk_cmd_buffer, cmdbuf, commandBuffer);
    VK_FROM_HANDLE(panvk_event, event, _event);
    struct panvk_cs_deps deps;
+
+   panvk_per_arch(cmd_flush_deps)(cmdbuf);
 
    panvk_per_arch(get_cs_deps)(cmdbuf, pDependencyInfo, &deps);
 

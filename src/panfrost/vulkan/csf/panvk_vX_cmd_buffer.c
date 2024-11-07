@@ -170,6 +170,8 @@ panvk_per_arch(EndCommandBuffer)(VkCommandBuffer commandBuffer)
    VK_FROM_HANDLE(panvk_cmd_buffer, cmdbuf, commandBuffer);
    struct panvk_device *dev = to_panvk_device(cmdbuf->vk.base.device);
 
+   panvk_per_arch(cmd_flush_deps)(cmdbuf);
+
    emit_tls(cmdbuf);
    flush_sync_points(cmdbuf);
 
@@ -417,27 +419,46 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
                                     const VkDependencyInfo *pDependencyInfo)
 {
    VK_FROM_HANDLE(panvk_cmd_buffer, cmdbuf, commandBuffer);
-   struct panvk_cs_deps deps;
+   struct panvk_cs_deps *deps = &cmdbuf->state.cs_deps;
+   struct panvk_cs_deps barrier_deps;
 
-   panvk_per_arch(get_cs_deps)(cmdbuf, pDependencyInfo, &deps);
+   panvk_per_arch(get_cs_deps)(cmdbuf, pDependencyInfo, &barrier_deps);
 
-   if (deps.needs_draw_flush)
+   deps->needs_draw_flush |= barrier_deps.needs_draw_flush;
+
+   for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
+      deps->src[i].wait_sb_mask |= barrier_deps.src[i].wait_sb_mask;
+      /* mali_cs_flush_mode is effectively a bitmask as well */
+      deps->src[i].cache_flush.l2 |= barrier_deps.src[i].cache_flush.l2;
+      deps->src[i].cache_flush.lsc |= barrier_deps.src[i].cache_flush.lsc;
+      deps->src[i].cache_flush.others |= barrier_deps.src[i].cache_flush.others;
+
+      deps->dst[i].wait_subqueue_mask |= barrier_deps.dst[i].wait_subqueue_mask;
+   }
+}
+
+void
+panvk_per_arch(cmd_flush_deps)(struct panvk_cmd_buffer *cmdbuf)
+{
+   struct panvk_cs_deps *deps = &cmdbuf->state.cs_deps;
+
+   if (deps->needs_draw_flush)
       panvk_per_arch(cmd_flush_draws)(cmdbuf);
 
    uint32_t wait_subqueue_mask = 0;
    for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++)
-      wait_subqueue_mask |= deps.dst[i].wait_subqueue_mask;
+      wait_subqueue_mask |= deps->dst[i].wait_subqueue_mask;
 
    for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
-      if (!deps.src[i].wait_sb_mask)
+      if (!deps->src[i].wait_sb_mask)
          continue;
 
       struct cs_builder *b = panvk_get_cs_builder(cmdbuf, i);
       struct panvk_cs_state *cs_state = &cmdbuf->state.cs[i];
 
-      cs_wait_slots(b, deps.src[i].wait_sb_mask, false);
+      cs_wait_slots(b, deps->src[i].wait_sb_mask, false);
 
-      struct panvk_cache_flush_info cache_flush = deps.src[i].cache_flush;
+      struct panvk_cache_flush_info cache_flush = deps->src[i].cache_flush;
       if (cache_flush.l2 != MALI_CS_FLUSH_MODE_NONE ||
           cache_flush.lsc != MALI_CS_FLUSH_MODE_NONE || cache_flush.others) {
          struct cs_index flush_id = cs_scratch_reg32(b, 0);
@@ -465,12 +486,12 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
    }
 
    for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
-      if (!deps.dst[i].wait_subqueue_mask)
+      if (!deps->dst[i].wait_subqueue_mask)
          continue;
 
       struct cs_builder *b = panvk_get_cs_builder(cmdbuf, i);
       for (uint32_t j = 0; j < PANVK_SUBQUEUE_COUNT; j++) {
-         if (!(deps.dst[i].wait_subqueue_mask & BITFIELD_BIT(j)))
+         if (!(deps->dst[i].wait_subqueue_mask & BITFIELD_BIT(j)))
             continue;
 
          struct panvk_cs_state *cs_state = &cmdbuf->state.cs[j];
@@ -488,6 +509,8 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
                         sync_addr);
       }
    }
+
+   memset(deps, 0, sizeof(*deps));
 }
 
 void
@@ -761,6 +784,8 @@ panvk_per_arch(CmdExecuteCommands)(VkCommandBuffer commandBuffer,
 
    if (commandBufferCount == 0)
       return;
+
+   panvk_per_arch(cmd_flush_deps)(primary);
 
    /* Write out any pending seqno changes to registers before calling
     * secondary command buffers. */

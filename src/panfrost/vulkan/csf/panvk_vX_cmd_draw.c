@@ -1507,6 +1507,8 @@ prepare_draw(struct panvk_cmd_buffer *cmdbuf, struct panvk_draw_info *draw)
    /* FIXME: support non-IDVS. */
    assert(idvs);
 
+   panvk_per_arch(cmd_flush_deps)(cmdbuf);
+
    if (!cmdbuf->state.gfx.linked) {
       result = panvk_per_arch(link_shaders)(&cmdbuf->desc_pool, vs, fs,
                                             &cmdbuf->state.gfx.link);

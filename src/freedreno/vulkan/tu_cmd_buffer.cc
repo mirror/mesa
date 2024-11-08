@@ -22,6 +22,7 @@
 
 #include "common/freedreno_gpu_event.h"
 #include "common/freedreno_lrz.h"
+#include "util/perf/gpuvis_trace_utils.h"
 
 static void
 tu_clone_trace_range(struct tu_cmd_buffer *cmd, struct tu_cs *cs,
@@ -2371,10 +2372,14 @@ tu_cmd_render(struct tu_cmd_buffer *cmd_buffer)
       tu6_lazy_emit_tessfactor_addr<CHIP>(cmd_buffer);
 
    struct tu_renderpass_result *autotune_result = NULL;
-   if (use_sysmem_rendering(cmd_buffer, &autotune_result))
+   if (use_sysmem_rendering(cmd_buffer, &autotune_result)) {
+      GPUVIS_TRACE_BLOCK("[MESA] tu_cmd_render SYSMEM");
       tu_cmd_render_sysmem<CHIP>(cmd_buffer, autotune_result);
-   else
+   }
+   else {
+      GPUVIS_TRACE_BLOCK("[MESA] tu_cmd_render GMEM");
       tu_cmd_render_tiles<CHIP>(cmd_buffer, autotune_result);
+   }
 
    /* Outside of renderpasses we assume all draw states are disabled. We do
     * this outside the draw CS for the normal case where 3d gmem stores aren't

@@ -1141,14 +1141,6 @@ iris_setup_uniforms(ASSERTED const struct intel_device_info *devinfo,
                                      work_dim_idx * sizeof(uint32_t));
             break;
          }
-         case nir_intrinsic_load_kernel_input: {
-            assert(nir_intrinsic_base(intrin) +
-                   nir_intrinsic_range(intrin) <= kernel_input_size);
-            b.cursor = nir_before_instr(instr);
-            offset = nir_iadd_imm(&b, intrin->src[0].ssa,
-                                      nir_intrinsic_base(intrin));
-            break;
-         }
          default:
             continue;
          }

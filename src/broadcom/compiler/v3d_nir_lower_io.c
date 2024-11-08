@@ -307,23 +307,6 @@ v3d_nir_lower_vertex_input(struct v3d_compile *c, nir_builder *b,
 }
 
 static void
-v3d_nir_lower_load_kernel_input(nir_builder *b, nir_intrinsic_instr *instr)
-{
-        b->cursor = nir_before_instr(&instr->instr);
-        nir_def *old = &instr->def;
-
-        nir_def *load =
-                nir_load_uniform(b, old->num_components,
-                                    old->bit_size, instr->src->ssa,
-                                    .base = nir_intrinsic_base(instr),
-                                    .range = nir_intrinsic_range(instr),
-                                    .dest_type = nir_type_uint | old->bit_size);
-
-        nir_def_rewrite_uses(old, load);
-        nir_instr_remove(&instr->instr);
-}
-
-static void
 v3d_nir_lower_io_instr(struct v3d_compile *c, nir_builder *b,
                        struct nir_instr *instr,
                        struct v3d_nir_lower_io_state *state)
@@ -336,10 +319,6 @@ v3d_nir_lower_io_instr(struct v3d_compile *c, nir_builder *b,
         case nir_intrinsic_load_input:
                 if (c->s->info.stage == MESA_SHADER_VERTEX)
                         v3d_nir_lower_vertex_input(c, b, intr);
-                break;
-
-        case nir_intrinsic_load_kernel_input:
-                v3d_nir_lower_load_kernel_input(b, intr);
                 break;
 
         case nir_intrinsic_store_output:

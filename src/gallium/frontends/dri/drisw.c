@@ -620,6 +620,9 @@ drisw_init_screen(struct dri_screen *screen, bool driver_name_is_inferred)
 
    screen->swrast_no_present = debug_get_option_swrast_no_present();
 
+   if (!loader)
+      return pscreen;
+
    if (loader->base.version >= 4) {
       if (loader->putImageShm)
          lf = &drisw_shm_lf;

@@ -1905,21 +1905,6 @@ visit_discard(struct lp_build_nir_context *bld_base,
 
 
 static void
-visit_load_kernel_input(struct lp_build_nir_context *bld_base,
-                        nir_intrinsic_instr *instr,
-                        LLVMValueRef result[NIR_MAX_VEC_COMPONENTS])
-{
-   LLVMValueRef offset = get_src(bld_base, instr->src[0]);
-
-   bool offset_is_uniform = nir_src_is_always_uniform(instr->src[0]);
-   bld_base->load_kernel_arg(bld_base, instr->def.num_components,
-                             instr->def.bit_size,
-                             nir_src_bit_size(instr->src[0]),
-                             offset_is_uniform, offset, result);
-}
-
-
-static void
 visit_load_global(struct lp_build_nir_context *bld_base,
                   nir_intrinsic_instr *instr,
                   LLVMValueRef result[NIR_MAX_VEC_COMPONENTS])
@@ -2221,9 +2206,6 @@ visit_intrinsic(struct lp_build_nir_context *bld_base,
    case nir_intrinsic_barrier:
       visit_barrier(bld_base, instr);
       break;
-   case nir_intrinsic_load_kernel_input:
-      visit_load_kernel_input(bld_base, instr, result);
-     break;
    case nir_intrinsic_load_global:
    case nir_intrinsic_load_global_constant:
       visit_load_global(bld_base, instr, result);

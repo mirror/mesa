@@ -557,6 +557,10 @@ VAStatus vlVaQueryVideoProcPipelineCaps(VADriverContextP ctx, VAContextID contex
                                         unsigned int num_filters, VAProcPipelineCaps *pipeline_cap);
 VAStatus vlVaSyncBuffer(VADriverContextP ctx, VABufferID buf_id, uint64_t timeout_ns);
 VAStatus vlVaMapBuffer2(VADriverContextP ctx, VABufferID buf_id, void **pbuf, uint32_t flags);
+#if VA_CHECK_VERSION(1, 22, 0)
+VAStatus vlVaGetSurfaceFormatAttributes(VADriverContextP ctx, VAConfigID config, uint32_t format,
+                                        VASurfaceFormatAttrib *attrib_list, uint32_t num_attribs);
+#endif
 
 // internal functions
 VAStatus vlVaHandleVAProcPipelineParameterBufferType(vlVaDriver *drv, vlVaContext *context, vlVaBuffer *buf);

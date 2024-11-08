@@ -492,10 +492,16 @@ iris_resource_alloc_flags(const struct iris_screen *screen,
                        PIPE_RESOURCE_FLAG_MAP_PERSISTENT))
       flags |= BO_ALLOC_SMEM | BO_ALLOC_CACHED_COHERENT;
 
-   if (screen->devinfo->verx10 >= 125 && screen->devinfo->has_local_mem &&
-       isl_aux_usage_has_ccs(res->aux.usage)) {
-      assert((flags & BO_ALLOC_SMEM) == 0);
-      flags |= BO_ALLOC_LMEM;
+   if (isl_aux_usage_has_ccs(res->aux.usage)) {
+      assert((flags & BO_ALLOC_CACHED_COHERENT) == 0);
+      if (screen->devinfo->ver >= 20)
+         flags |= BO_ALLOC_COMPRESSED;
+
+      if (screen->devinfo->has_local_mem) {
+         assert((flags & BO_ALLOC_SMEM) == 0);
+         flags |= BO_ALLOC_LMEM;
+      }
+
       /* For displayable surfaces with clear color,
        * the KMD will need to access the clear color via CPU.
        */
@@ -1022,63 +1028,6 @@ iris_resource_create_for_buffer(struct pipe_screen *pscreen,
    return &res->base.b;
 }
 
-static bool
-iris_resource_image_is_pat_compressible(const struct iris_screen *screen,
-                                        const struct pipe_resource *templ,
-                                        struct iris_resource *res,
-                                        unsigned flags)
-{
-   assert(templ->target != PIPE_BUFFER);
-
-   if (INTEL_DEBUG(DEBUG_NO_CCS))
-      return false;
-
-   if (screen->devinfo->ver < 20)
-      return false;
-
-   if (flags & (BO_ALLOC_CACHED_COHERENT |
-                BO_ALLOC_CPU_VISIBLE))
-      return false;
-
-   struct iris_bufmgr *bufmgr = screen->bufmgr;
-   if ((iris_bufmgr_vram_size(bufmgr) > 0) && (flags & BO_ALLOC_SMEM))
-      return false;
-
-   /* We don't have modifiers with compression enabled on Xe2 so far. */
-   if (res->mod_info) {
-      assert(!isl_drm_modifier_has_aux(res->mod_info->modifier));
-      return false;
-   }
-
-   /* Bspec 58797 (r58646):
-    *
-    *    Enabling compression is not legal for TileX surfaces.
-    */
-   if (res->surf.tiling == ISL_TILING_X)
-      return false;
-
-   /* Bspec 71650 (r59764):
-    *
-    *    3 SW  must disable or resolve compression
-    *       Display: Access to anything except Tile4 Framebuffers...
-    *          Display Page Tables
-    *          Display State Buffers
-    *          Linear/TileX Framebuffers
-    *          Display Write-Back Buffers
-    *          Etc.
-    *
-    * So far, we don't support resolving on Xe2 and may not want to enable
-    * compression under these conditions later, so we only enable it when
-    * a TILING_4 image is to display.
-    */
-   if ((flags & BO_ALLOC_SCANOUT) && res->surf.tiling != ISL_TILING_4) {
-      assert(res->surf.tiling == ISL_TILING_LINEAR);
-      return false;
-   }
-
-   return true;
-}
-
 static struct pipe_resource *
 iris_resource_create_for_image(struct pipe_screen *pscreen,
                                const struct pipe_resource *templ,
@@ -1125,9 +1074,6 @@ iris_resource_create_for_image(struct pipe_screen *pscreen,
    enum iris_memory_zone memzone = IRIS_MEMZONE_OTHER;
 
    unsigned flags = iris_resource_alloc_flags(screen, templ, res);
-
-   if (iris_resource_image_is_pat_compressible(screen, templ, res, flags))
-      flags |= BO_ALLOC_COMPRESSED;
 
    /* These are for u_upload_mgr buffers only */
    assert(!(templ->flags & (IRIS_RESOURCE_FLAG_SHADER_MEMZONE |

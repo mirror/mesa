@@ -1599,6 +1599,7 @@ optimizations.extend([
    (('~flog2', ('fpow', a, b)), ('fmul', b, ('flog2', a))),
    (('~fmul', ('fexp2(is_used_once)', a), ('fexp2(is_used_once)', b)), ('fexp2', ('fadd', a, b))),
    (('bcsel', ('flt(nnan)', a, 0.0), 0.0, ('fsqrt', a)), ('fsqrt', ('fmax', a, 0.0))),
+   (('bcsel', ('fge', a, 0.0), ('fsqrt', a), 0.0), ('fsqrt', ('fmax', a, 0.0))),
    (('~fmul', ('fsqrt', a), ('fsqrt', a)), ('fabs',a)),
    (('~fmulz', ('fsqrt', a), ('fsqrt', a)), ('fabs', a)),
    # Division and reciprocal

@@ -152,6 +152,8 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
          schedule_program(program.get());
       validate(program.get());
 
+      vectorize_spills(program.get());
+
       /* Register Allocation */
       register_allocation(program.get());
 

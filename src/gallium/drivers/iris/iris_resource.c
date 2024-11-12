@@ -1642,9 +1642,10 @@ iris_flush_resource(struct pipe_context *ctx, struct pipe_resource *resource)
     * wouldn't know how to handle.
     */
    if (!iris_bo_is_real(res->bo)) {
-      assert(!(res->base.b.bind & PIPE_BIND_SHARED));
-      iris_reallocate_resource_inplace(ice, res, PIPE_BIND_SHARED);
-      assert(res->base.b.bind & PIPE_BIND_SHARED);
+      const unsigned dmabuf_bind = PIPE_BIND_SHARED | PIPE_BIND_SCANOUT;
+      assert((res->base.b.bind & dmabuf_bind) == 0);
+      iris_reallocate_resource_inplace(ice, res, dmabuf_bind);
+      assert((res->base.b.bind & dmabuf_bind) == dmabuf_bind);
       newly_external = true;
    }
 

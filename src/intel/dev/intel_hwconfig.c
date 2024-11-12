@@ -202,6 +202,8 @@ should_apply_hwconfig_item(uint16_t always_apply_verx10,
 #define DEVINFO_HWCONFIG(CVER, F, I)                                    \
    DEVINFO_HWCONFIG_KV((CVER), F, (I)->key, (I)->val[0])
 
+#define GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG 300
+
 static void
 process_hwconfig_item(struct intel_device_info *devinfo,
                       const struct hwconfig *item,
@@ -209,7 +211,34 @@ process_hwconfig_item(struct intel_device_info *devinfo,
 {
    switch (item->key) {
    case INTEL_HWCONFIG_MAX_SLICES_SUPPORTED:
-   case INTEL_HWCONFIG_MAX_DUAL_SUBSLICES_SUPPORTED:
+      /* if we are not applying hwconfig to max_slices and max_subslices_per_slice
+       * it should be skipped at all, otherwise the upper limit values set in
+       * xe_compute_topology() will cause hwconfig mismatch warnings in
+       * some SKUs.
+       */
+      if (devinfo->verx10 < GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG)
+         break;
+
+      DEVINFO_HWCONFIG(GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG, max_slices, item);
+      break;
+   case INTEL_HWCONFIG_MAX_DUAL_SUBSLICES_SUPPORTED: /* available in Gfx 12.5 */
+   case INTEL_HWCONFIG_MAX_SUBSLICE: /* available in Gfx 20+ */
+      if (devinfo->verx10 < GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG)
+         break;
+
+      /* This one is special because it depends on max_slices that is not
+       * guarantee to be processed before this one
+       */
+      if (check_only) {
+         hwconfig_item_warning("max_subslices_per_slice",
+                               devinfo->max_subslices_per_slice, item->key,
+                               item->val[0] / devinfo->max_slices);
+      } else {
+         /* it will be later adjusted in late_apply_hwconfig() */
+         DEVINFO_HWCONFIG(GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG,
+                          max_subslices_per_slice, item);
+      }
+      break;
    case INTEL_HWCONFIG_NUM_PIXEL_PIPES:
    case INTEL_HWCONFIG_DEPRECATED_MAX_NUM_GEOMETRY_PIPES:
    case INTEL_HWCONFIG_DEPRECATED_L3_CACHE_SIZE_IN_KB:
@@ -317,7 +346,6 @@ process_hwconfig_item(struct intel_device_info *devinfo,
    case INTEL_HWCONFIG_MAX_PIXEL_FILL_RATE_PER_SLICE:
    case INTEL_HWCONFIG_MAX_PIXEL_FILL_RATE_PER_DSS:
    case INTEL_HWCONFIG_URB_SIZE_PER_L3_BANK_COUNT_IN_KB:
-   case INTEL_HWCONFIG_MAX_SUBSLICE:
    case INTEL_HWCONFIG_MAX_EU_PER_SUBSLICE:
    case INTEL_HWCONFIG_RAMBO_L3_BANK_SIZE_IN_KB:
    case INTEL_HWCONFIG_SLM_SIZE_PER_SS_IN_KB:
@@ -333,12 +361,23 @@ apply_hwconfig_item(struct intel_device_info *devinfo,
    process_hwconfig_item(devinfo, item, false);
 }
 
+static void
+late_apply_hwconfig(struct intel_device_info *devinfo)
+{
+   if (devinfo->verx10 >= GFX_VERX_USE_TOPOLOGY_FROM_HWCONFIG) {
+      assert((devinfo->max_subslices_per_slice % devinfo->max_slices) == 0);
+      devinfo->max_subslices_per_slice /= devinfo->max_slices;
+   }
+}
+
 bool
 intel_hwconfig_process_table(struct intel_device_info *devinfo,
                              void *data, int32_t len)
 {
-   if (intel_hwconfig_is_required(devinfo))
+   if (intel_hwconfig_is_required(devinfo)) {
       process_hwconfig_table(devinfo, data, len, apply_hwconfig_item);
+      late_apply_hwconfig(devinfo);
+   }
 
    return intel_hwconfig_is_required(devinfo);
 }

@@ -752,7 +752,13 @@ isl_genX(surf_fill_state_s)(const struct isl_device *dev, void *state,
          }
       }
 
-#if GFX_VERx10 >= 125
+#if GFX_VERx10 >= 200
+      if (info->view->usage & (ISL_SURF_USAGE_RENDER_TARGET_BIT |
+                               ISL_SURF_USAGE_STORAGE_BIT)) {
+         s.CompressionFormat =
+            isl_get_render_compression_format(info->surf->format);
+      }
+#elif GFX_VERx10 == 125
       if (info->aux_usage == ISL_AUX_USAGE_MC) {
          s.CompressionFormat =
             get_media_compression_format(info->mc_format, info->surf->format);

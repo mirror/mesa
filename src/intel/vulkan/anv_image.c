@@ -2825,8 +2825,13 @@ anv_bind_image_memory(struct anv_device *device,
       if (device->info->has_aux_map && anv_image_map_aux_tt(device, image, p))
          continue;
 
-      /* Do nothing except for gfx12. There are no special requirements. */
-      if (device->info->ver != 12)
+      /* If the BO PAT enables compression, there is nothing else to do. */
+      if (device->info->ver >= 20 &&
+          (bo->alloc_flags & ANV_BO_ALLOC_COMPRESSED))
+         continue;
+
+      /* No special requirements on gfx9-11. */
+      if (device->info->ver <= 11)
          continue;
 
       /* The plane's BO cannot support CCS, disable compression on it. */

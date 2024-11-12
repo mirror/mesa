@@ -1036,8 +1036,7 @@ iris_resource_image_is_pat_compressible(const struct iris_screen *screen,
    if (screen->devinfo->ver < 20)
       return false;
 
-   if (flags & (BO_ALLOC_PROTECTED |
-                BO_ALLOC_CACHED_COHERENT |
+   if (flags & (BO_ALLOC_CACHED_COHERENT |
                 BO_ALLOC_CPU_VISIBLE))
       return false;
 

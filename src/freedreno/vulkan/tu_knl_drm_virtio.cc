@@ -579,7 +579,7 @@ tu_bo_init(struct tu_device *dev,
       .flags = MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE |
                COND(dump, MSM_SUBMIT_BO_DUMP),
       .handle = bo->res_id,
-      .presumed = iova,
+      .address = iova,
    };
 
    *bo = (struct tu_bo) {

@@ -561,7 +561,7 @@ device_submit_cmdstreams(struct device *dev)
          submit_bo->handle = buf->gem_handle;
          submit_bo->flags =
             buf->flags | MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE;
-         submit_bo->presumed = buf->iova;
+         submit_bo->address = buf->iova;
 
          buf->flags = 0;
       }
@@ -569,7 +569,7 @@ device_submit_cmdstreams(struct device *dev)
       bo_list[0].handle = dev->va_id;
       bo_list[0].flags =
          MSM_SUBMIT_BO_DUMP | MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE;
-      bo_list[0].presumed = dev->va_iova;
+      bo_list[0].address = dev->va_iova;
    }
 
    struct drm_msm_gem_submit submit_req = {

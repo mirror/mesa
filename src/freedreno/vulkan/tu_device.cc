@@ -2543,8 +2543,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    /* Initialize sparse array for refcounting imported BOs */
    util_sparse_array_init(&device->bo_map, sizeof(struct tu_bo), 512);
 
-   if (physical_device->has_set_iova) {
-      STATIC_ASSERT(TU_MAX_QUEUE_FAMILIES == 1);
+   if (physical_device->has_set_iova && !physical_device->has_sparse) {
       if (!u_vector_init(&device->zombie_vmas, 64,
                          sizeof(struct tu_zombie_vma))) {
          result = vk_startup_errorf(physical_device->instance,

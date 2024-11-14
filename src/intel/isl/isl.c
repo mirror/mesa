@@ -3218,6 +3218,16 @@ isl_surf_supports_ccs(const struct isl_device *dev,
          }
       }
 
+      /* DG2 and above, disable compression for small UINT surfaces
+       * with UAV usage, expecting better performance.
+       */
+      if (ISL_GFX_VERX10(dev) >= 125 &&
+          surf->usage & ISL_SURF_USAGE_STORAGE_BIT &&
+          (surf->logical_level0_px.width <= 64 ||
+           surf->logical_level0_px.height <= 64)) {
+            return false;
+      }
+
       if (intel_needs_workaround(dev->info, 22015614752) &&
           (surf->usage & ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT) &&
           (surf->levels > 1 ||

@@ -218,12 +218,14 @@ prepare_fs_driver_set(struct panvk_cmd_buffer *cmdbuf)
 #define MIN_DEPTH_CLIP_RANGE 37.7E-06f
 
 static void
-prepare_sysvals(struct panvk_cmd_buffer *cmdbuf)
+prepare_sysvals(struct panvk_cmd_buffer *cmdbuf,
+                const struct panvk_draw_info *draw)
 {
    struct panvk_graphics_sysvals *sysvals = &cmdbuf->state.gfx.sysvals;
    struct vk_color_blend_state *cb = &cmdbuf->vk.dynamic_graphics_state.cb;
    const struct vk_rasterization_state *rs =
       &cmdbuf->vk.dynamic_graphics_state.rs;
+   struct pan_fb_info *fbinfo = &cmdbuf->state.gfx.render.fb.info;
 
    if (is_dirty(cmdbuf, CB_BLEND_CONSTANTS)) {
       for (unsigned i = 0; i < ARRAY_SIZE(cb->blend_constants); i++)
@@ -291,6 +293,20 @@ prepare_sysvals(struct panvk_cmd_buffer *cmdbuf)
          sysvals->viewport.offset.z = CLAMP(z_offset, 0.0f, 1.0f);
       }
 
+      cmdbuf->state.gfx.push_uniforms = 0;
+   }
+
+   if (cmdbuf->state.gfx.render.dirty) {
+      sysvals->fs.multisampled = (fbinfo->nr_samples > 1);
+      cmdbuf->state.gfx.push_uniforms = 0;
+   }
+
+   if (draw->vertex.base != sysvals->vs.first_vertex ||
+       draw->vertex.base != sysvals->vs.base_vertex ||
+       draw->instance.base != sysvals->vs.base_instance) {
+      sysvals->vs.first_vertex = draw->vertex.base;
+      sysvals->vs.base_vertex = draw->vertex.base;
+      sysvals->vs.base_instance = draw->instance.base;
       cmdbuf->state.gfx.push_uniforms = 0;
    }
 }
@@ -1543,7 +1559,7 @@ prepare_draw(struct panvk_cmd_buffer *cmdbuf, struct panvk_draw_info *draw)
    if (result != VK_SUCCESS)
       return result;
 
-   prepare_sysvals(cmdbuf);
+   prepare_sysvals(cmdbuf, draw);
 
    result = prepare_push_uniforms(cmdbuf);
    if (result != VK_SUCCESS)

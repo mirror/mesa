@@ -260,7 +260,7 @@ tu_queue_init(struct tu_device *device,
    queue->priority = priority;
    queue->vk.driver_submit = queue_submit;
 
-   int ret = tu_drm_submitqueue_new(device, priority, &queue->msm_queue_id);
+   int ret = tu_drm_submitqueue_new(device, TU_QUEUE_GFX, priority, &queue->msm_queue_id);
    if (ret)
       return vk_startup_errorf(device->instance, VK_ERROR_INITIALIZATION_FAILED,
                                "submitqueue create failed");

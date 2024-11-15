@@ -12,6 +12,12 @@
 
 #include "tu_common.h"
 
+enum tu_queue_type
+{
+   TU_QUEUE_GFX,
+   TU_QUEUE_SPARSE,
+};
+
 struct tu_queue
 {
    struct vk_queue vk;

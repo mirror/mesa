@@ -39,6 +39,8 @@ tu_bo_init_new_explicit_iova(struct tu_device *dev,
 {
    struct tu_instance *instance = dev->physical_device->instance;
 
+   size = ALIGN(size, os_page_size);
+
    VkResult result =
       dev->instance->knl->bo_init(dev, base, out_bo, size, client_iova,
                                   mem_property, flags, name);
@@ -64,6 +66,7 @@ tu_bo_init_dmabuf(struct tu_device *dev,
                   uint64_t size,
                   int fd)
 {
+   size = ALIGN(size, os_page_size);
    VkResult result = dev->instance->knl->bo_init_dmabuf(dev, bo, size, fd);
    if (result != VK_SUCCESS)
       return result;

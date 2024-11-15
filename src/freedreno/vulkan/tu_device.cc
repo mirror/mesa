@@ -1348,6 +1348,14 @@ static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {
    NULL,
 };
 
+static const VkQueueFamilyProperties tu_gfx_queue_family_properties = {
+   .queueFlags =
+      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
+   .queueCount = 1,
+   .timestampValidBits = 48,
+   .minImageTransferGranularity = { 1, 1, 1 },
+};
+
 VkResult
 tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
@@ -1507,6 +1515,12 @@ tu_physical_device_init(struct tu_physical_device *device,
    tu_get_properties(device, &device->vk.properties);
 
    device->vk.supported_sync_types = device->sync_types;
+
+   device->queue_families[device->num_queue_families++] =
+      (struct tu_queue_family) {
+         .type = TU_QUEUE_GFX,
+         .properties = &tu_gfx_queue_family_properties,
+      };
 
 #ifdef TU_USE_WSI_PLATFORM
    result = tu_wsi_init(device);
@@ -1685,18 +1699,18 @@ tu_DestroyInstance(VkInstance _instance,
    vk_free(&instance->vk.alloc, instance);
 }
 
-static const VkQueueFamilyProperties tu_queue_family_properties = {
-   .queueFlags =
-      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
-   .queueCount = 1,
-   .timestampValidBits = 48,
-   .minImageTransferGranularity = { 1, 1, 1 },
-};
-
 void
 tu_physical_device_get_global_priority_properties(const struct tu_physical_device *pdevice,
+                                                  enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props)
 {
+   /* drm/msm only supports one priority for VM_BIND queues */
+   if (type == TU_QUEUE_SPARSE) {
+      props->priorityCount = 1;
+      props->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+      return;
+   }
+
    props->priorityCount = MIN2(pdevice->submitqueue_priority_count, 3);
    switch (props->priorityCount) {
    case 1:
@@ -1728,20 +1742,25 @@ tu_GetPhysicalDeviceQueueFamilyProperties2(
    VK_OUTARRAY_MAKE_TYPED(VkQueueFamilyProperties2, out,
                           pQueueFamilyProperties, pQueueFamilyPropertyCount);
 
-   vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p)
-   {
-      p->queueFamilyProperties = tu_queue_family_properties;
+   for (unsigned i = 0; i < pdevice->num_queue_families; i++) {
+      struct tu_queue_family *family = &pdevice->queue_families[i];
 
-      vk_foreach_struct(ext, p->pNext) {
-         switch (ext->sType) {
-         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR: {
-            VkQueueFamilyGlobalPriorityPropertiesKHR *props =
-               (VkQueueFamilyGlobalPriorityPropertiesKHR *) ext;
-            tu_physical_device_get_global_priority_properties(pdevice, props);
-            break;
-         }
-         default:
-            break;
+      vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p)
+      {
+         p->queueFamilyProperties = *family->properties;
+
+         vk_foreach_struct(ext, p->pNext) {
+            switch (ext->sType) {
+            case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR: {
+               VkQueueFamilyGlobalPriorityPropertiesKHR *props =
+                  (VkQueueFamilyGlobalPriorityPropertiesKHR *) ext;
+               tu_physical_device_get_global_priority_properties(
+                  pdevice, family->type, props);
+               break;
+            }
+            default:
+               break;
+            }
          }
       }
    }
@@ -2487,6 +2506,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       const VkDeviceQueueCreateInfo *queue_create =
          &pCreateInfo->pQueueCreateInfos[i];
       uint32_t qfi = queue_create->queueFamilyIndex;
+      enum tu_queue_type type = physical_device->queue_families[qfi].type;
       device->queues[qfi] = (struct tu_queue *) vk_alloc(
          &device->vk.alloc,
          queue_create->queueCount * sizeof(struct tu_queue), 8,
@@ -2504,7 +2524,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       device->queue_count[qfi] = queue_create->queueCount;
 
       for (unsigned q = 0; q < queue_create->queueCount; q++) {
-         result = tu_queue_init(device, &device->queues[qfi][q], q, queue_create);
+         result = tu_queue_init(device, &device->queues[qfi][q], type, q,
+                                queue_create);
          if (result != VK_SUCCESS) {
             device->queue_count[qfi] = q;
             goto fail_queues;

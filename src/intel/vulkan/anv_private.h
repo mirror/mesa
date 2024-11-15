@@ -227,6 +227,9 @@ struct intel_perf_query_result;
 
 #define ANV_GRAPHICS_SHADER_STAGE_COUNT (MESA_SHADER_MESH + 1)
 
+#define ANV_POLYGON_MODE_DYNAMIC_POLYGON (VK_POLYGON_MODE_MAX_ENUM - 1)
+#define ANV_POLYGON_MODE_DYNAMIC_PRIMITIVE (VK_POLYGON_MODE_MAX_ENUM - 2)
+
 /* Defines where various values are defined in the inline parameter register.
  */
 #define ANV_INLINE_PARAM_PUSH_ADDRESS_OFFSET (0)
@@ -4899,6 +4902,11 @@ struct anv_graphics_pipeline {
 
    uint32_t                                     view_mask;
    uint32_t                                     instance_multiplier;
+
+   /* Last select pre-rasterization topology mode (with some values indicating
+    * the dynamic values ANV_RASTER_POLYGON_MODE_DYNAMIC_*)
+    */
+   VkPolygonMode                                last_preraster_topology;
 
    bool                                         rp_has_ds_self_dep;
 

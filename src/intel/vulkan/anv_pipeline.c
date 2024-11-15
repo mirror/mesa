@@ -33,6 +33,7 @@
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
 #include "compiler/brw_disasm.h"
+#include "compiler/brw_prim.h"
 #include "anv_private.h"
 #include "compiler/brw_nir.h"
 #include "compiler/brw_nir_rt.h"
@@ -2785,6 +2786,58 @@ get_vs_input_elements(const struct brw_vs_prog_data *vs_prog_data)
           __builtin_popcount(elements_double) / 2;
 }
 
+static VkPolygonMode
+get_last_pre_raster_topology(struct anv_graphics_pipeline *pipeline)
+{
+   if (anv_pipeline_is_mesh(pipeline)) {
+      switch (get_mesh_prog_data(pipeline)->primitive_type) {
+      case MESA_PRIM_POINTS:
+         return VK_POLYGON_MODE_POINT;
+      case MESA_PRIM_LINES:
+         return VK_POLYGON_MODE_LINE;
+      case MESA_PRIM_TRIANGLES:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      default:
+         unreachable("invalid primitive type for mesh");
+      }
+   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY)) {
+      switch (get_gs_prog_data(pipeline)->output_topology) {
+      case _3DPRIM_POINTLIST:
+         return VK_POLYGON_MODE_POINT;
+
+      case _3DPRIM_LINELIST:
+      case _3DPRIM_LINESTRIP:
+      case _3DPRIM_LINELOOP:
+         return VK_POLYGON_MODE_LINE;
+
+      case _3DPRIM_TRILIST:
+      case _3DPRIM_TRIFAN:
+      case _3DPRIM_TRISTRIP:
+      case _3DPRIM_RECTLIST:
+      case _3DPRIM_QUADLIST:
+      case _3DPRIM_QUADSTRIP:
+      case _3DPRIM_POLYGON:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      }
+      unreachable("Unsupported GS output topology");
+   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
+      switch (get_tes_prog_data(pipeline)->output_topology) {
+      case INTEL_TESS_OUTPUT_TOPOLOGY_POINT:
+         return VK_POLYGON_MODE_POINT;
+
+      case INTEL_TESS_OUTPUT_TOPOLOGY_LINE:
+         return VK_POLYGON_MODE_LINE;
+
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CW:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CCW:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      }
+      unreachable("Unsupported TCS output topology");
+   } else {
+      return ANV_POLYGON_MODE_DYNAMIC_PRIMITIVE;
+   }
+}
+
 static void
 anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
                            const struct vk_graphics_pipeline_state *state)
@@ -2828,12 +2881,14 @@ anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
       /* TODO(mesh): Mesh vs. Multiview with Instancing. */
    }
 
-
    pipeline->dynamic_patch_control_points =
       anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL) &&
       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS) &&
       (pipeline->base.shaders[MESA_SHADER_TESS_CTRL]->dynamic_push_values &
        ANV_DYNAMIC_PUSH_INPUT_VERTICES);
+
+   pipeline->last_preraster_topology =
+      get_last_pre_raster_topology(pipeline);
 
    if (pipeline->base.shaders[MESA_SHADER_FRAGMENT] && state->ms) {
       pipeline->sample_shading_enable = state->ms->sample_shading_enable;

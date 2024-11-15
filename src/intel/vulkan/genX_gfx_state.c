@@ -383,51 +383,9 @@ anv_raster_polygon_mode(const struct anv_graphics_pipeline *pipeline,
                         VkPolygonMode polygon_mode,
                         VkPrimitiveTopology primitive_topology)
 {
-   if (anv_pipeline_is_mesh(pipeline)) {
-      switch (get_mesh_prog_data(pipeline)->primitive_type) {
-      case MESA_PRIM_POINTS:
-         return VK_POLYGON_MODE_POINT;
-      case MESA_PRIM_LINES:
-         return VK_POLYGON_MODE_LINE;
-      case MESA_PRIM_TRIANGLES:
-         return polygon_mode;
-      default:
-         unreachable("invalid primitive type for mesh");
-      }
-   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY)) {
-      switch (get_gs_prog_data(pipeline)->output_topology) {
-      case _3DPRIM_POINTLIST:
-         return VK_POLYGON_MODE_POINT;
-
-      case _3DPRIM_LINELIST:
-      case _3DPRIM_LINESTRIP:
-      case _3DPRIM_LINELOOP:
-         return VK_POLYGON_MODE_LINE;
-
-      case _3DPRIM_TRILIST:
-      case _3DPRIM_TRIFAN:
-      case _3DPRIM_TRISTRIP:
-      case _3DPRIM_RECTLIST:
-      case _3DPRIM_QUADLIST:
-      case _3DPRIM_QUADSTRIP:
-      case _3DPRIM_POLYGON:
-         return polygon_mode;
-      }
-      unreachable("Unsupported GS output topology");
-   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
-      switch (get_tes_prog_data(pipeline)->output_topology) {
-      case INTEL_TESS_OUTPUT_TOPOLOGY_POINT:
-         return VK_POLYGON_MODE_POINT;
-
-      case INTEL_TESS_OUTPUT_TOPOLOGY_LINE:
-         return VK_POLYGON_MODE_LINE;
-
-      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CW:
-      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CCW:
-         return polygon_mode;
-      }
-      unreachable("Unsupported TCS output topology");
-   } else {
+   if (pipeline->last_preraster_topology == ANV_POLYGON_MODE_DYNAMIC_POLYGON)
+      return polygon_mode;
+   if (pipeline->last_preraster_topology == ANV_POLYGON_MODE_DYNAMIC_PRIMITIVE) {
       switch (primitive_topology) {
       case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
          return VK_POLYGON_MODE_POINT;
@@ -449,6 +407,8 @@ anv_raster_polygon_mode(const struct anv_graphics_pipeline *pipeline,
          unreachable("Unsupported primitive topology");
       }
    }
+
+   return pipeline->last_preraster_topology;
 }
 
 static inline bool

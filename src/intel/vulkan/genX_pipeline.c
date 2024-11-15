@@ -736,6 +736,17 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
          urb.VSNumberofURBEntries      = pipeline->urb_cfg.entries[i];
       }
 #endif
+#if INTEL_WA_16014912113_GFX_VER
+      /* All the URB configuration values are in the second dwords of the
+       * instruction, just save that for easy diffing.
+       */
+      if (i == MESA_SHADER_TESS_EVAL) {
+         assert(GENX(3DSTATE_URB_DS_length) == 2);
+         pipeline->ds_urb_cfg =
+            pipeline->batch_data[pipeline->final.urb.offset +
+                                 pipeline->final.urb.len - 1];
+      }
+#endif
    }
 
 #if GFX_VERx10 >= 125

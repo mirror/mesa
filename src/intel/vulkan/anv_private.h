@@ -4949,8 +4949,11 @@ struct anv_graphics_pipeline {
     */
    uint32_t                                     batch_data[480];
 
+   /* Tracking for Wa_16014912113 */
+   uint32_t                                     ds_urb_cfg;
+
    /* Urb setup utilized by this pipeline. */
-   struct intel_urb_config urb_cfg;
+   struct intel_urb_config                      urb_cfg;
 
    /* Fully backed instructions, ready to be emitted in the anv_cmd_buffer */
    struct {

@@ -1525,7 +1525,8 @@ dd_context_flush_resource(struct pipe_context *_pipe,
 }
 
 static void
-dd_context_clear(struct pipe_context *_pipe, unsigned buffers, const struct pipe_scissor_state *scissor_state,
+dd_context_clear(struct pipe_context *_pipe, unsigned buffers, unsigned color_mask,
+                 const struct pipe_scissor_state *scissor_state,
                  const union pipe_color_union *color, double depth,
                  unsigned stencil)
 {
@@ -1535,6 +1536,7 @@ dd_context_clear(struct pipe_context *_pipe, unsigned buffers, const struct pipe
 
    record->call.type = CALL_CLEAR;
    record->call.info.clear.buffers = buffers;
+   record->call.info.clear.color_mask = color_mask;
    if (scissor_state)
       record->call.info.clear.scissor_state = *scissor_state;
    record->call.info.clear.color = *color;
@@ -1542,7 +1544,7 @@ dd_context_clear(struct pipe_context *_pipe, unsigned buffers, const struct pipe
    record->call.info.clear.stencil = stencil;
 
    dd_before_draw(dctx, record);
-   pipe->clear(pipe, buffers, scissor_state, color, depth, stencil);
+   pipe->clear(pipe, buffers, color_mask, scissor_state, color, depth, stencil);
    dd_after_draw(dctx, record);
 }
 

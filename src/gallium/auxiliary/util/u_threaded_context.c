@@ -4697,6 +4697,7 @@ struct tc_clear {
    bool scissor_state_set;
    uint8_t stencil;
    uint16_t buffers;
+   unsigned clear_mask;
    float depth;
    struct pipe_scissor_state scissor_state;
    union pipe_color_union color;
@@ -4707,12 +4708,13 @@ tc_call_clear(struct pipe_context *pipe, void *call)
 {
    struct tc_clear *p = to_call(call, tc_clear);
 
-   pipe->clear(pipe, p->buffers, p->scissor_state_set ? &p->scissor_state : NULL, &p->color, p->depth, p->stencil);
+   pipe->clear(pipe, p->buffers, p->clear_mask, p->scissor_state_set ? &p->scissor_state : NULL, &p->color, p->depth, p->stencil);
    return call_size(tc_clear);
 }
 
 static void
-tc_clear(struct pipe_context *_pipe, unsigned buffers, const struct pipe_scissor_state *scissor_state,
+tc_clear(struct pipe_context *_pipe, unsigned buffers, unsigned clear_mask,
+         const struct pipe_scissor_state *scissor_state,
          const union pipe_color_union *color, double depth,
          unsigned stencil)
 {
@@ -4720,6 +4722,7 @@ tc_clear(struct pipe_context *_pipe, unsigned buffers, const struct pipe_scissor
    struct tc_clear *p = tc_add_call(tc, TC_CALL_clear, tc_clear);
 
    p->buffers = buffers;
+   p->clear_mask = clear_mask;
    if (scissor_state) {
       p->scissor_state = *scissor_state;
       struct tc_renderpass_info *info = tc_get_renderpass_info(tc);

@@ -215,6 +215,9 @@ struct st_context
    /* driver supports scissored clears */
    bool can_scissor_clear;
 
+   /* driver supports masked clears */
+   bool can_masked_clear;
+
    /* Some state is contained in constant objects.
     * Other state is just parameter values.
     */

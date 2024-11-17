@@ -1303,6 +1303,26 @@ gather_inputs(struct nir_builder *builder, nir_intrinsic_instr *intr, void *cb_d
    if (linkage->consumer_stage == MESA_SHADER_FRAGMENT) {
       switch (intr->intrinsic) {
       case nir_intrinsic_load_input:
+         if (linkage->producer_stage == MESA_SHADER_MESH) {
+            /* These outputs are per-primitive in mesh shaders,
+             * but the spec doesn't define them as per-primitive in fragment shaders.
+             * Treat them as per-primitive for the sake of varying optimization.
+             */
+            switch (sem.location) {
+            case VARYING_SLOT_PRIMITIVE_ID:
+            case VARYING_SLOT_LAYER:
+            case VARYING_SLOT_VIEWPORT: {
+               intr->intrinsic = nir_intrinsic_load_per_primitive_input;
+               fs_vec4_type = FS_VEC4_TYPE_PER_PRIMITIVE;
+               break;
+            }
+            default:
+               fs_vec4_type = FS_VEC4_TYPE_FLAT;
+               break;
+            }
+            break;
+         }
+
          fs_vec4_type = FS_VEC4_TYPE_FLAT;
          break;
       case nir_intrinsic_load_per_primitive_input:

@@ -1495,10 +1495,7 @@ gather_outputs(struct nir_builder *builder, nir_intrinsic_instr *intr, void *cb_
        intr->intrinsic != nir_intrinsic_load_per_primitive_output)
       return false;
 
-   bool is_store =
-      intr->intrinsic == nir_intrinsic_store_output ||
-      intr->intrinsic == nir_intrinsic_store_per_vertex_output ||
-      intr->intrinsic == nir_intrinsic_store_per_primitive_output;
+   const bool is_store = !nir_intrinsic_infos[intr->intrinsic].has_dest;
 
    if (is_store) {
       /* nir_lower_io_to_scalar is required before this */
@@ -3981,9 +3978,7 @@ relocate_slot(struct linkage_info *linkage, struct scalar_slot *slot,
 
 #if PRINT_RELOCATE_SLOT
          unsigned bit_size =
-            (intr->intrinsic == nir_intrinsic_load_input ||
-             intr->intrinsic == nir_intrinsic_load_input_vertex ||
-             intr->intrinsic == nir_intrinsic_load_interpolated_input)
+            nir_intrinsic_infos[intr->intrinsic].has_dest
             ? intr->def.bit_size : intr->src[0].ssa->bit_size;
 
          assert(bit_size == 16 || bit_size == 32);

@@ -465,19 +465,19 @@ optimizations.extend([
 
    (('fdph', a, b), ('fdot4', ('vec4', 'a.x', 'a.y', 'a.z', 1.0), b), 'options->lower_fdph'),
 
-   (('fdot4', a, 0.0), 0.0),
-   (('fdot3', a, 0.0), 0.0),
-   (('fdot2', a, 0.0), 0.0),
+   (('fdot4(nsz,nnan)', a, 0.0), 0.0),
+   (('fdot3(nsz,nnan)', a, 0.0), 0.0),
+   (('fdot2(nsz,nnan)', a, 0.0), 0.0),
 
    (('fdot4', ('vec4', a, b,   c,   1.0), d), ('fdph',  ('vec3', a, b, c), d), '!options->lower_fdph'),
-   (('fdot4', ('vec4', a, 0.0, 0.0, 0.0), b), ('fmul', a, b)),
-   (('fdot4', ('vec4', a, b,   0.0, 0.0), c), ('fdot2', ('vec2', a, b), c)),
-   (('fdot4', ('vec4', a, b,   c,   0.0), d), ('fdot3', ('vec3', a, b, c), d)),
+   (('fdot4(nsz,nnan)', ('vec4', a, 0.0, 0.0, 0.0), b), ('fmul', a, 'b.x')),
+   (('fdot4(nsz,nnan)', ('vec4', a, b,   0.0, 0.0), c), ('fdot2', ('vec2', a, b), c)),
+   (('fdot4(nsz,nnan)', ('vec4', a, b,   c,   0.0), d), ('fdot3', ('vec3', a, b, c), d)),
 
-   (('fdot3', ('vec3', a, 0.0, 0.0), b), ('fmul', a, b)),
-   (('fdot3', ('vec3', a, b,   0.0), c), ('fdot2', ('vec2', a, b), c)),
+   (('fdot3(nsz,nnan)', ('vec3', a, 0.0, 0.0), b), ('fmul', a, 'b.x')),
+   (('fdot3(nsz,nnan)', ('vec3', a, b,   0.0), c), ('fdot2', ('vec2', a, b), c)),
 
-   (('fdot2', ('vec2', a, 0.0), b), ('fmul', a, b)),
+   (('fdot2(nsz,nnan)', ('vec2', a, 0.0), b), ('fmul', a, 'b.x')),
    (('fdot2', a, 1.0), ('fadd', 'a.x', 'a.y')),
 
    # Lower fdot to fsum when it is available
@@ -954,7 +954,7 @@ optimizations.extend([
 
    # max(-min(b, a), b) -> max(abs(b), -a)
    # min(-max(b, a), b) -> min(-abs(b), -a)
-   (('fmax', ('fneg', ('fmin', b, a)), b), ('fmax', ('fabs', b), ('fneg', a))),
+   (('fmax(nsz)', ('fneg', ('fmin', b, a)), b), ('fmax', ('fabs', b), ('fneg', a))),
    (('fmin', ('fneg', ('fmax', b, a)), b), ('fmin', ('fneg', ('fabs', b)), ('fneg', a))),
 
    # If a in [0,b] then b-a is also in [0,b].  Since b in [0,1], max(b-a, 0) =
@@ -1075,8 +1075,6 @@ for s in [16, 32, 64]:
        (('bcsel@{}'.format(s), ('feq', a, 0.0), 1.0, ('i2f{}'.format(s), ('iadd', ('b2i{}'.format(s), ('flt', 0.0, 'a@{}'.format(s))), ('ineg', ('b2i{}'.format(s), ('flt', 'a@{}'.format(s), 0.0)))))),
         ('i2f{}'.format(s), ('iadd', ('b2i32', ('!fge', a, 0.0)), ('ineg', ('b2i32', ('!flt', a, 0.0)))))),
 
-       (('bcsel', a, ('b2f(is_used_once)', 'b@{}'.format(s)), ('b2f', 'c@{}'.format(s))), ('b2f', ('bcsel', a, b, c))),
-
        # The C spec says, "If the value of the integral part cannot be represented
        # by the integer type, the behavior is undefined."  "Undefined" can mean
        # "the conversion doesn't happen at all."
@@ -1107,6 +1105,9 @@ for s in [16, 32, 64]:
        # HLSL's sign function returns an integer
        (('i2f{}'.format(s), ('f2i', ('fsign', 'a@{}'.format(s)))), ('fsign', a)),
     ])
+
+    if s < 64:
+        optimizations.extend([(('bcsel', a, ('b2f(is_used_once)', 'b@{}'.format(s)), ('b2f', 'c@{}'.format(s))), ('b2f', ('bcsel', a, b, c)))])
 
     for B in [32, 64]:
         if s < B:
@@ -1224,9 +1225,6 @@ for s in [8, 16, 32, 64]:
        (('bcsel', ('ige', 'a@{}'.format(s), b), b, a), ('imin', a, b), '!'+lower_imin),
        (('bcsel', ('ige', 'b@{}'.format(s), a), b, a), ('imax', a, b), '!'+lower_imax),
 
-       # True/False are ~0 and 0 in NIR.  b2i of True is 1, and -1 is ~0 (True).
-       (('ineg', ('b2i{}'.format(s), 'a@{}'.format(s))), a),
-
        # SM5 32-bit shifts are defined to use the 5 least significant bits (or 4 bits for 16 bits)
        (('ishl', 'a@{}'.format(s), ('iand', s - 1, b)), ('ishl', a, b)),
        (('ishr', 'a@{}'.format(s), ('iand', s - 1, b)), ('ishr', a, b)),
@@ -1234,6 +1232,11 @@ for s in [8, 16, 32, 64]:
        (('ushr', 'a@{}'.format(s), ('ishl(is_used_once)', ('iand', b, 1), amount_bits - 1)), ('ushr', a, ('ishl', b, amount_bits - 1))),
        (('ushr', 'a@{}'.format(s), ('ishl(is_used_once)', ('iand', b, 3), amount_bits - 2)), ('ushr', a, ('ishl', b, amount_bits - 2))),
     ])
+
+    # There are no 64bit booleans in NIR
+    if s < 64:
+        # True/False are ~0 and 0 in NIR.  b2i of True is 1, and -1 is ~0 (True).
+        optimizations.extend([(('ineg', ('b2i{}'.format(s), 'a@{}'.format(s))), a)])
 
 optimizations.extend([
    # Common pattern like 'if (i == 0 || i == 1 || ...)'
@@ -1602,7 +1605,8 @@ optimizations.extend([
    (('~flog2', ('frsq', a)), ('fmul', -0.5, ('flog2', a))),
    (('~flog2', ('fpow', a, b)), ('fmul', b, ('flog2', a))),
    (('~fmul', ('fexp2(is_used_once)', a), ('fexp2(is_used_once)', b)), ('fexp2', ('fadd', a, b))),
-   (('bcsel', ('flt', a, 0.0), 0.0, ('fsqrt', a)), ('fsqrt', ('fmax', a, 0.0))),
+   (('bcsel', ('flt(nnan)', a, 0.0), 0.0, ('fsqrt', a)), ('fsqrt', ('fmax', a, 0.0))),
+   (('bcsel', ('fge', a, 0.0), ('fsqrt', a), 0.0), ('fsqrt', ('fmax', a, 0.0))),
    (('~fmul', ('fsqrt', a), ('fsqrt', a)), ('fabs',a)),
    (('~fmulz', ('fsqrt', a), ('fsqrt', a)), ('fabs', a)),
    # Division and reciprocal
@@ -1986,8 +1990,8 @@ optimizations.extend([
    (('bcsel', a, ('b2i16', 'b@1'), ('b2i16', 'c@1')), ('b2i16', ('bcsel', a, b, c))),
 
    # Lowered pack followed by lowered unpack, for the high bits
-   (('u2u32', ('ushr', ('ior', ('ishl', a, 32), ('u2u64', b)), 32)), ('u2u32', a)),
-   (('u2u16', ('ushr', ('ior', ('ishl', a, 16), ('u2u32', b)), 16)), ('u2u16', a)),
+   (('u2u32', ('ushr', ('ior', ('ishl', a, 32), ('u2u64', 'b@32')), 32)), ('u2u32', a)),
+   (('u2u16', ('ushr', ('ior', ('ishl', a, 16), ('u2u32', 'b@16')), 16)), ('u2u16', a)),
 ])
 
 # After the ('extract_u8', a, 0) pattern, above, triggers, there will be
@@ -2131,7 +2135,6 @@ optimizations.extend([
    (('find_lsb', ('bitfield_reverse', a)), ('ufind_msb_rev', a), 'options->has_find_msb_rev'),
    (('ufind_msb_rev', ('bitfield_reverse', a)), ('find_lsb', a), '!options->lower_find_lsb'),
 
-   (('ifind_msb', ('f2i32(is_used_once)', a)), ('ufind_msb', ('f2i32', ('fabs', a)))),
    (('ifind_msb', ('extract_u8', a, b)),       ('ufind_msb', ('extract_u8', a, b))),
    (('ifind_msb', ('extract_u16', a, b)),      ('ufind_msb', ('extract_u16', a, b))),
    (('ifind_msb', ('imax', a, 1)),             ('ufind_msb', ('imax', a, 1))),
@@ -2283,11 +2286,11 @@ optimizations.extend([
    # Optimizations for ubitfield_extract(value, offset, umin(bits, 32-(offset&0x1f))) and such
    (('ult', a, ('umin', ('iand', a, b), c)), False),
    (('ult', 31, ('umin', '#bits(is_ult_32)', a)), False),
-   (('ubfe', 'value', 'offset', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
+   (('ubfe', 'value', 'offset', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
     ('ubfe', 'value', 'offset', 'width')),
-   (('ibfe', 'value', 'offset', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
+   (('ibfe', 'value', 'offset', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset'))))),
     ('ibfe', 'value', 'offset', 'width')),
-   (('bfm', ('umin', 'width', ('iadd', 32, ('ineg', ('iand', 31, 'offset')))), 'offset'),
+   (('bfm', ('umin', ('iand', 31, 'width'), ('iadd', 32, ('ineg', ('iand', 31, 'offset')))), 'offset'),
     ('bfm', 'width', 'offset')),
 
    # open-coded BFM
@@ -2303,14 +2306,14 @@ optimizations.extend([
    (('ubfe', a, b, 0), 0),
    (('ibfe', a, b, 0), 0),
 
-   (('ubfe', a, 0, '#b'), ('iand', a, ('ushr', 0xffffffff, ('ineg', b)))),
+   (('ubfe', a, 0, '#b'), ('bcsel', ('ine', ('iand', b, 31), 0), ('iand', a, ('ushr', 0xffffffff, ('ineg', b))), 0)),
 
    (('b2i32', ('ine', ('ubfe', a, b, 1), 0)), ('ubfe', a, b, 1)),
    (('b2i32', ('ine', ('ibfe', a, b, 1), 0)), ('ubfe', a, b, 1)), # ubfe in the replacement is correct
-   (('ine', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ieq', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ine', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
-   (('ieq', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0)),
+   (('ine', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ieq', ('ibfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ine', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ine', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
+   (('ieq', ('ubfe(is_used_once)', a, '#b', '#c'), 0), ('ieq', ('bcsel', ('ine', ('iand', c, 31), 0), ('iand', a, ('ishl', ('ushr', 0xffffffff, ('ineg', c)), b)), 0), 0)),
 
    (('ibitfield_extract', 'value', 'offset', 'bits'),
     ('bcsel', ('ieq', 0, 'bits'),
@@ -3282,7 +3285,6 @@ for sz, mulz in itertools.product([16, 32, 64], [False, True]):
 
 late_optimizations.extend([
    # Subtractions get lowered during optimization, so we need to recombine them
-   (('fadd@8', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),
    (('fadd@16', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),
    (('fadd@32', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub'),
    (('fadd@64', a, ('fneg', 'b')), ('fsub', 'a', 'b'), 'options->has_fsub && !(options->lower_doubles_options & nir_lower_dsub)'),
@@ -3408,8 +3410,8 @@ late_optimizations.extend([
    (('~fmul@32', a, ('fadd', 2.0, ('fneg', a))),    ('flrp', a, 1.0, a), '!options->lower_flrp32'),
 
    # we do these late so that we don't get in the way of creating ffmas
-   (('fmin', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmin', a, b))),
-   (('fmax', ('fadd(is_used_once)', '#c', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmax', a, b))),
+   (('fmin', ('fadd(is_used_once)', '#c(is_a_number)', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmin', a, b))),
+   (('fmax', ('fadd(is_used_once)', '#c(is_a_number)', a), ('fadd(is_used_once)', '#c', b)), ('fadd', c, ('fmax', a, b))),
 
    # Putting this in 'optimizations' interferes with the bcsel(a, op(b, c),
    # op(b, d)) => op(b, bcsel(a, c, d)) transformations.  I do not know why.
@@ -3461,7 +3463,9 @@ late_optimizations.extend([
    # result, it is very easy for 3-source instruction combined with either
    # loads of immediate values or copies from weird register strides to be
    # more expensive than the primitive instructions it represents.
-   (('ubfe', a, '#b', '#c'), ('iand', ('ushr', 0xffffffff, ('ineg', c)), ('ushr', a, b)), 'options->avoid_ternary_with_two_constants'),
+   (('ubfe', a, '#b', '#c'),
+    ('bcsel', ('ieq', ('iand', c, 31), 0), 0, ('iand', ('ushr', 0xffffffff, ('ineg', c)), ('ushr', a, b))),
+    'options->avoid_ternary_with_two_constants'),
 
    # b is the lowest order bit to be extracted and c is the number of bits to
    # extract.  The inner shift removes the bits above b + c by shifting left
@@ -3469,7 +3473,14 @@ late_optimizations.extend([
    # -(b + c).  The outer shift moves the bit that was at b to bit zero.
    # After the first shift, that bit is now at b + (32 - (b + c)) or 32 - c.
    # This means that it must be shifted right by 32 - c or -c bits.
-   (('ibfe', a, '#b', '#c'), ('ishr', ('ishl', a, ('ineg', ('iadd', b, c))), ('ineg', c)), 'options->avoid_ternary_with_two_constants'),
+   (('ibfe', a, '#b', '#c'),
+    ('bcsel', ('ieq', ('iand', c, 31), 0),
+     0,
+     ('bcsel', ('ilt', ('iadd', ('iand', b, 31), ('iand', c, 31)), 32),
+      ('ishr', ('ishl', a, ('ineg', ('iadd', ('iand', b, 31), ('iand', c, 31)))), ('ineg', ('iand', c, 31))),
+      ('ishr', a, b)
+     )
+    ), 'options->avoid_ternary_with_two_constants'),
 
    # Clean up no-op shifts that may result from the bfe lowerings.
    (('ishl', a, 0), a),
@@ -3636,9 +3647,9 @@ distribute_src_mods = [
    (('fneg', ('fmul(is_used_once)', a, b)), ('fmul', ('fneg', a), b)),
    (('fabs', ('fmul(is_used_once)', a, b)), ('fmul', ('fabs', a), ('fabs', b))),
 
-   (('fneg', ('ffma(is_used_once)', a, b, c)), ('ffma', ('fneg', a), b, ('fneg', c))),
-   (('fneg', ('flrp(is_used_once)', a, b, c)), ('flrp', ('fneg', a), ('fneg', b), c)),
-   (('fneg', ('~fadd(is_used_once)', a, b)), ('fadd', ('fneg', a), ('fneg', b))),
+   (('fneg(nsz)', ('ffma(is_used_once)', a, b, c)), ('ffma', ('fneg', a), b, ('fneg', c))),
+   (('fneg(nsz)', ('flrp(is_used_once)', a, b, c)), ('flrp', ('fneg', a), ('fneg', b), c)),
+   (('fneg(nsz)', ('fadd(is_used_once)', a, b)), ('fadd', ('fneg', a), ('fneg', b))),
 
    # Note that fmin <-> fmax.  I don't think there is a way to distribute
    # fabs() into fmin or fmax.
@@ -3653,31 +3664,11 @@ distribute_src_mods = [
    # must be applied to the second source.
    (('fneg', ('fdph_replicated(is_used_once)', a, b)), ('fdph_replicated', a, ('fneg', b))),
 
-   (('fneg', ('fsign(is_used_once)', a)), ('fsign', ('fneg', a))),
+   (('fneg(nsz)', ('fsign(is_used_once)', a)), ('fsign', ('fneg', a))),
    (('fabs', ('fsign(is_used_once)', a)), ('fsign', ('fabs', a))),
 ]
 
 before_lower_int64_optimizations = [
-    # The i2i64(a) implies that 'a' has at most 32-bits of data.
-    (('ishl', ('i2i64', a), b),
-     # Effective shift count of zero, just return 'a'.
-     ('bcsel', ('ieq', ('iand', b, 63), 0), ('i2i64', a),
-      ('bcsel', ('ilt', ('iand', b, 63), 32),
-       # Shifting less than 32 bits, so both 32-bit halves will have
-       # some data. These (and the else case) shift counts are of 32-bit
-       # values, so the shift counts are implicitly moduolo 32.
-       ('pack_64_2x32_split', ('ishl', ('i2i32', a), b), ('ishr', ('i2i32', a),          ('iadd', ('ineg', b), 32) )),
-       # Shifting 32 bits or more, so lower 32 bits must be zero.
-       ('pack_64_2x32_split', 0                        , ('ishl', ('i2i32', a), ('iabs', ('iadd', ('ineg', b), 32)))))),
-     '(options->lower_int64_options & nir_lower_shift64) != 0'),
-
-    (('ishl', ('u2u64', a), b),
-     ('bcsel', ('ieq', ('iand', b, 63), 0), ('u2u64', a),
-      ('bcsel', ('ilt', ('iand', b, 63), 32),
-       ('pack_64_2x32_split', ('ishl', ('u2u32', a), b), ('ushr', ('u2u32', a),          ('iadd', ('ineg', b), 32) )),
-       ('pack_64_2x32_split', 0                        , ('ishl', ('u2u32', a), ('iabs', ('iadd', ('ineg', b), 32)))))),
-     '(options->lower_int64_options & nir_lower_shift64) != 0'),
-
     # If ineg64 is lowered, then the negation is not free. Try to eliminate
     # some of the negations.
     (('iadd@64', ('ineg', a), ('ineg(is_used_once)', b)), ('isub', ('ineg', a), b), '(options->lower_int64_options & nir_lower_ineg64) != 0'),
@@ -3686,7 +3677,7 @@ before_lower_int64_optimizations = [
     (('isub@64', ('ineg', a), ('ineg', b)), ('isub', b, a), '(options->lower_int64_options & nir_lower_ineg64) != 0'),
 
     (('imul@64', ('ineg', a), ('ineg', b)), ('imul', a, b)),
-    (('idiv@64', ('ineg', a), ('ineg', b)), ('idiv', a, b)),
+    (('idiv@64', ('ineg(no_signed_wrap)', a), ('ineg', b)), ('idiv', a, b)),
 
     # If the hardware can do int64, the shift is the same cost as the add. It
     # should be fine to do this transformation unconditionally.
@@ -3694,17 +3685,75 @@ before_lower_int64_optimizations = [
     (('iadd', ('u2u64', a), ('u2u64', a)), ('ishl', ('u2u64', a), 1)),
 ]
 
+for s in [8, 16, 32]:
+    before_lower_int64_optimizations.extend([
+        (('ishl', ('i2i64', f"a@{s}"), b),
+         # Effective shift count of zero, just return 'a'.
+         ('bcsel', ('ieq', ('iand', b, 63), 0), ('i2i64', a),
+          ('bcsel', ('ilt', ('iand', b, 63), 32),
+           # Shifting less than 32 bits, so both 32-bit halves will have
+           # some data. These (and the else case) shift counts are of 32-bit
+           # values, so the shift counts are implicitly moduolo 32.
+           ('pack_64_2x32_split', ('ishl', ('i2i32', a), b), ('ishr', ('i2i32', a),          ('iadd', ('ineg', ('iand', b, 63)), 32) )),
+           # Shifting 32 bits or more, so lower 32 bits must be zero.
+           ('pack_64_2x32_split', 0                        , ('ishl', ('i2i32', a), ('iabs', ('iadd', ('ineg', ('iand', b, 63)), 32)))))),
+         '(options->lower_int64_options & nir_lower_shift64) != 0'),
+
+        (('ishl', ('u2u64', f"a@{s}"), b),
+         ('bcsel', ('ieq', ('iand', b, 63), 0), ('u2u64', a),
+          ('bcsel', ('ilt', ('iand', b, 63), 32),
+           ('pack_64_2x32_split', ('ishl', ('u2u32', a), b), ('ushr', ('u2u32', a),          ('iadd', ('ineg', ('iand', b, 63)), 32) )),
+           ('pack_64_2x32_split', 0                        , ('ishl', ('u2u32', a), ('iabs', ('iadd', ('ineg', ('iand', b, 63)), 32)))))),
+         '(options->lower_int64_options & nir_lower_shift64) != 0'),
+        ])
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--out', required=True)
+parser.add_argument('--out-tests', required=True)
+parser.add_argument('--build-tests', action='store_true')
 args = parser.parse_args()
 
+nir_opt_algebraic = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic",
+    optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_before_ffma = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_before_ffma",
+    before_ffma_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_before_lower_int64 = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_before_lower_int64",
+    before_lower_int64_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_late = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_late",
+    late_optimizations,
+    build_tests=args.build_tests
+)
+
+nir_opt_algebraic_distribute_src_mods = nir_algebraic.AlgebraicPass(
+    "nir_opt_algebraic_distribute_src_mods",
+    distribute_src_mods,
+    build_tests=args.build_tests
+)
+
+if args.build_tests:
+    with open(args.out_tests, "w", encoding='utf-8') as f:
+        f.write(nir_opt_algebraic.render_tests())
+        f.write(nir_opt_algebraic_before_ffma.render_tests())
+        f.write(nir_opt_algebraic_before_lower_int64.render_tests())
+        f.write(nir_opt_algebraic_late.render_tests())
+        f.write(nir_opt_algebraic_distribute_src_mods.render_tests())
+
 with open(args.out, "w", encoding='utf-8') as f:
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic", optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_before_ffma",
-                                        before_ffma_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_before_lower_int64",
-                                        before_lower_int64_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_late",
-                                        late_optimizations).render())
-    f.write(nir_algebraic.AlgebraicPass("nir_opt_algebraic_distribute_src_mods",
-                                        distribute_src_mods).render())
+    f.write(nir_opt_algebraic.render())
+    f.write(nir_opt_algebraic_before_ffma.render())
+    f.write(nir_opt_algebraic_before_lower_int64.render())
+    f.write(nir_opt_algebraic_late.render())
+    f.write(nir_opt_algebraic_distribute_src_mods.render())

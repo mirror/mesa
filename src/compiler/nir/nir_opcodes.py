@@ -622,16 +622,28 @@ if (nir_is_rounding_mode_rtz(execution_mode, bit_size)) {
 """)
 binop("iadd", tint, _2src_commutative + associative, "(uint64_t)src0 + (uint64_t)src1")
 binop("iadd_sat", tint, _2src_commutative, """
-      src1 > 0 ?
-         (src0 + src1 < src0 ? u_intN_max(bit_size) : src0 + src1) :
-         (src0 < src0 + src1 ? u_intN_min(bit_size) : src0 + src1)
+if ((src0 < 0) != (src1 < 0)) {
+   dst = src0 + src1;
+} else {
+   uint64_t result = (uint64_t)src0 + (uint64_t)src1;
+   if (src0 < 0 && src1 < 0)
+      dst = result < (uint64_t)u_intN_min(bit_size) ? u_intN_min(bit_size) : src0 + src1;
+   else
+      dst = result > (uint64_t)u_intN_max(bit_size) ? u_intN_max(bit_size) : src0 + src1;
+}
 """)
 binop("uadd_sat", tuint, _2src_commutative,
-      "(src0 + src1) < src0 ? u_uintN_max(sizeof(src0) * 8) : (src0 + src1)")
+      "(u_uintN_max(sizeof(src0) * 8) - src0) < src1 ? u_uintN_max(sizeof(src0) * 8) : (src0 + src1)")
 binop("isub_sat", tint, "", """
-      src1 < 0 ?
-         (src0 - src1 < src0 ? u_intN_max(bit_size) : src0 - src1) :
-         (src0 < src0 - src1 ? u_intN_min(bit_size) : src0 - src1)
+if ((src0 < 0) == (src1 < 0)) {
+   dst = src0 - src1;
+} else {
+   uint64_t result = (uint64_t)src0 - (uint64_t)src1;
+   if (src0 < 0 && src1 >= 0)
+      dst = result < (uint64_t)u_intN_min(bit_size) ? u_intN_min(bit_size) : src0 - src1;
+   else
+      dst = result > (uint64_t)u_intN_max(bit_size) ? u_intN_max(bit_size) : src0 - src1;
+}
 """)
 binop("usub_sat", tuint, "", "src0 < src1 ? 0 : src0 - src1")
 
@@ -742,11 +754,11 @@ binop("umul_32x16", tuint32, "", "src0 * (uint16_t) src1",
       description = "Multiply 32-bits with low 16-bits, with zero extension")
 
 binop("fdiv", tfloat, "", "src0 / src1")
-binop("idiv", tint, "", "src1 == 0 ? 0 : (src0 / src1)")
+binop("idiv", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ? 0 : (src0 / src1)")
 binop("udiv", tuint, "", "src1 == 0 ? 0 : (src0 / src1)")
 
 binop_convert("uadd_carry", tuint, tuint, _2src_commutative,
-              "src0 + src1 < src0",
+              "(u_uintN_max(sizeof(src0) * 8) - src0) < src1",
               description = """
 Return an integer (1 or 0) representing the carry resulting from the
 addition of the two unsigned arguments.
@@ -793,10 +805,10 @@ binop("umod", tuint, "", "src1 == 0 ? 0 : src0 % src1")
 #
 # http://mathforum.org/library/drmath/view/52343.html
 
-binop("irem", tint, "", "src1 == 0 ? 0 : src0 % src1")
-binop("imod", tint, "",
-      "src1 == 0 ? 0 : ((src0 % src1 == 0 || (src0 >= 0) == (src1 >= 0)) ?"
-      "                 src0 % src1 : src0 % src1 + src1)")
+binop("irem", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ? 0 : src0 % src1")
+binop("imod", tint, "", "(src1 == 0 || (src0 == u_intN_min(bit_size) && src1 == -1)) ?"
+                        " 0 : ((src0 % src1 == 0 || (src0 >= 0) == (src1 >= 0)) ?"
+                        " src0 % src1 : src0 % src1 + src1)")
 binop("fmod", tfloat, "", "src0 - src1 * floorf(src0 / src1)")
 binop("frem", tfloat, "", "src0 - src1 * truncf(src0 / src1)")
 
@@ -1612,7 +1624,7 @@ opcode("sdot_4x8_iadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
 """)
 
 # Like udot_4x8_uadd, but the result is clampled to the range [0, 0xfffffffff].
-opcode("udot_4x8_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
+opcode("udot_4x8_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tuint32],
        False, _2src_commutative, """
    const uint64_t v0x = (uint8_t)(src0      );
    const uint64_t v0y = (uint8_t)(src0 >>  8);
@@ -1686,7 +1698,7 @@ opcode("sdot_2x16_iadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
 """)
 
 # Like udot_2x16_uadd, but the result is clampled to the range [0, 0xfffffffff].
-opcode("udot_2x16_uadd_sat", 0, tint32, [0, 0, 0], [tuint32, tuint32, tint32],
+opcode("udot_2x16_uadd_sat", 0, tuint32, [0, 0, 0], [tuint32, tuint32, tuint32],
        False, _2src_commutative, """
    const uint64_t v0x = (uint16_t)(src0      );
    const uint64_t v0y = (uint16_t)(src0 >> 16);

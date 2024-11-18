@@ -98,7 +98,7 @@ print_annotation(print_state *state, void *obj)
    const char *note = entry->data;
    _mesa_hash_table_remove(state->annotations, entry);
 
-   fprintf(fp, "%s\n\n", note);
+   fprintf(fp, " %s", note);
 }
 
 /* For 1 element, the size is intentionally omitted. */
@@ -924,8 +924,9 @@ print_var_decl(nir_variable *var, print_state *state)
    if (var->pointer_initializer)
       fprintf(fp, " = &%s", get_var_name(var->pointer_initializer, state));
 
-   fprintf(fp, "\n");
    print_annotation(state, var);
+
+   fprintf(fp, "\n");
 }
 
 static void
@@ -2171,8 +2172,8 @@ print_block(nir_block *block, print_state *state, unsigned tabs)
 
    nir_foreach_instr(instr, block) {
       print_instr(instr, state, tabs);
-      fprintf(fp, "\n");
       print_annotation(state, instr);
+      fprintf(fp, "\n");
    }
 
    print_indentation(tabs, fp);

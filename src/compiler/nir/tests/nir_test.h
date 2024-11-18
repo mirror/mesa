@@ -11,8 +11,14 @@
 #include "nir.h"
 #include "nir_builder.h"
 
+static inline void
+delete_annotation(hash_entry *he)
+{
+   free(he->data);
+}
+
 class nir_test : public ::testing::Test {
- protected:
+public:
    nir_test(const char *name)
    {
       glsl_type_singleton_init_or_ref();
@@ -25,8 +31,10 @@ class nir_test : public ::testing::Test {
    {
       if (HasFailure()) {
          printf("\nShader from the failed test:\n\n");
-         nir_print_shader(b->shader, stdout);
+         nir_print_shader_annotated(b->shader, stdout, annotations);
       }
+
+      _mesa_hash_table_destroy(annotations, delete_annotation);
 
       ralloc_free(b->shader);
 
@@ -36,6 +44,8 @@ class nir_test : public ::testing::Test {
    nir_shader_compiler_options options = {};
    nir_builder _b;
    nir_builder *b;
+
+   hash_table *annotations = nullptr;
 };
 
 #endif

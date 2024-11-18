@@ -2422,6 +2422,8 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
       /* If INTEL_FORCE_PROBE was used, then the user has opted-in for
        * unsupported device support. No need to print a warning message.
        */
+   } else if (devinfo.ver == 30) {
+      mesa_logw("Vulkan not yet supported on %s", devinfo.name);
    } else if (devinfo.ver > 20) {
       result = vk_errorf(instance, VK_ERROR_INCOMPATIBLE_DRIVER,
                          "Vulkan not yet supported on %s", devinfo.name);

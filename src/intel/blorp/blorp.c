@@ -40,6 +40,7 @@ blorp_op_to_intel_measure_snapshot(enum blorp_op op)
       MAP(HIZ_AMBIGUATE),
       MAP(HIZ_CLEAR),
       MAP(HIZ_RESOLVE),
+      MAP(HIZ_PARTIAL_RESOLVE),
       MAP(MCS_AMBIGUATE),
       MAP(MCS_COLOR_CLEAR),
       MAP(MCS_PARTIAL_RESOLVE),
@@ -65,6 +66,7 @@ const char *blorp_op_to_name(enum blorp_op op)
       MAP(HIZ_AMBIGUATE),
       MAP(HIZ_CLEAR),
       MAP(HIZ_RESOLVE),
+      MAP(HIZ_PARTIAL_RESOLVE),
       MAP(MCS_AMBIGUATE),
       MAP(MCS_COLOR_CLEAR),
       MAP(MCS_PARTIAL_RESOLVE),
@@ -267,13 +269,15 @@ blorp_hiz_op(struct blorp_batch *batch, struct blorp_surf *surf,
    case ISL_AUX_OP_FULL_RESOLVE:
       params.op = BLORP_OP_HIZ_RESOLVE;
       break;
+   case ISL_AUX_OP_PARTIAL_RESOLVE:
+      params.op = BLORP_OP_HIZ_PARTIAL_RESOLVE;
+      break;
    case ISL_AUX_OP_AMBIGUATE:
       params.op = BLORP_OP_HIZ_AMBIGUATE;
       break;
    case ISL_AUX_OP_FAST_CLEAR:
       params.op = BLORP_OP_HIZ_CLEAR;
       break;
-   case ISL_AUX_OP_PARTIAL_RESOLVE:
    case ISL_AUX_OP_NONE:
       unreachable("Invalid HiZ op");
    }

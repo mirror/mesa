@@ -229,15 +229,24 @@ isl_aux_prepare_access(enum isl_aux_state initial_state,
    assert(!fast_clear_supported || info[usage].fast_clear);
 
    switch (initial_state) {
+   case ISL_AUX_STATE_CLEAR:
+      if (!fast_clear_supported)
+         return info[usage].partial_resolve ?
+                ISL_AUX_OP_PARTIAL_RESOLVE : ISL_AUX_OP_FULL_RESOLVE;
+      else if (usage == ISL_AUX_USAGE_HIZ_CCS_WT)
+         return ISL_AUX_OP_PARTIAL_RESOLVE;
+      else
+         return ISL_AUX_OP_NONE;
    case ISL_AUX_STATE_COMPRESSED_HIER_DEPTH:
-      if (usage == ISL_AUX_USAGE_HIZ_CCS_WT)
+      if (!fast_clear_supported)
          return ISL_AUX_OP_FULL_RESOLVE;
+      else if (usage == ISL_AUX_USAGE_HIZ_CCS_WT)
+         return ISL_AUX_OP_PARTIAL_RESOLVE;
       FALLTHROUGH;
    case ISL_AUX_STATE_COMPRESSED_CLEAR:
       if (!info[usage].compressed)
          return ISL_AUX_OP_FULL_RESOLVE;
       FALLTHROUGH;
-   case ISL_AUX_STATE_CLEAR:
    case ISL_AUX_STATE_PARTIAL_CLEAR:
       return fast_clear_supported ?
                 ISL_AUX_OP_NONE :
@@ -277,11 +286,18 @@ isl_aux_state_transition_aux_op(enum isl_aux_state initial_state,
       return ISL_AUX_STATE_CLEAR;
    case ISL_AUX_OP_PARTIAL_RESOLVE:
       assert(isl_aux_state_has_valid_aux(initial_state));
-      assert(info[usage].partial_resolve);
-      return initial_state == ISL_AUX_STATE_CLEAR ||
-             initial_state == ISL_AUX_STATE_PARTIAL_CLEAR ||
-             initial_state == ISL_AUX_STATE_COMPRESSED_CLEAR ?
-             ISL_AUX_STATE_COMPRESSED_NO_CLEAR : initial_state;
+      if (isl_aux_usage_has_hiz(usage) &&
+          isl_aux_usage_has_ccs(usage)) {
+         return initial_state == ISL_AUX_STATE_COMPRESSED_HIER_DEPTH ||
+                initial_state == ISL_AUX_STATE_CLEAR ?
+                ISL_AUX_STATE_COMPRESSED_CLEAR : initial_state;
+      } else {
+         assert(info[usage].partial_resolve);
+         return initial_state == ISL_AUX_STATE_CLEAR ||
+                initial_state == ISL_AUX_STATE_PARTIAL_CLEAR ||
+                initial_state == ISL_AUX_STATE_COMPRESSED_CLEAR ?
+                ISL_AUX_STATE_COMPRESSED_NO_CLEAR : initial_state;
+      }
    case ISL_AUX_OP_FULL_RESOLVE:
       assert(isl_aux_state_has_valid_aux(initial_state));
       return info[usage].full_resolves_ambiguate ||

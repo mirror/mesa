@@ -5570,9 +5570,9 @@ void genX(CmdBeginRendering)(
 
       if (clear_aspects != 0) {
          const bool hiz_clear =
-            anv_can_hiz_clear_ds_view(cmd_buffer->device, d_iview,
-                                      depth_layout, clear_aspects,
-                                      clear_value.depth,
+            anv_can_hiz_clear_ds_view(cmd_buffer->device, ds_iview,
+                                      d_iview ? depth_layout : stencil_layout,
+                                      clear_aspects, clear_value.depth,
                                       render_area,
                                       cmd_buffer->queue_family->queueFlags);
 

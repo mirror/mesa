@@ -697,6 +697,8 @@ iris_hiz_exec(struct iris_context *ice,
       name = "depth clear";
       break;
    case ISL_AUX_OP_PARTIAL_RESOLVE:
+      name = "depth partial resolve";
+      break;
    case ISL_AUX_OP_NONE:
       unreachable("Invalid HiZ op");
    }

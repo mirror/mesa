@@ -501,6 +501,7 @@ get_color_aux_op(const struct blorp_params *params)
    case BLORP_OP_HIZ_AMBIGUATE:
    case BLORP_OP_HIZ_CLEAR:
    case BLORP_OP_HIZ_RESOLVE:
+   case BLORP_OP_HIZ_PARTIAL_RESOLVE:
    case BLORP_OP_SLOW_DEPTH_CLEAR:
       assert(params->fast_clear_op == ISL_AUX_OP_NONE);
       return ISL_AUX_OP_NONE;

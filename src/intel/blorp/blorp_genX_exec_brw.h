@@ -1514,11 +1514,17 @@ blorp_emit_gfx8_hiz_op(struct blorp_batch *batch,
          assert(params->full_surface_hiz_op);
          hzp.DepthBufferResolveEnable = true;
          break;
+      case ISL_AUX_OP_PARTIAL_RESOLVE:
+#if GFX_VERx10 >= 125
+         hzp.DepthBufferPartialResolveEnable = true;
+#else
+         hzp.DepthBufferResolveEnable = true;
+#endif
+         break;
       case ISL_AUX_OP_AMBIGUATE:
          assert(params->full_surface_hiz_op);
          hzp.HierarchicalDepthBufferResolveEnable = true;
          break;
-      case ISL_AUX_OP_PARTIAL_RESOLVE:
       case ISL_AUX_OP_NONE:
          unreachable("Invalid HIZ op");
       }

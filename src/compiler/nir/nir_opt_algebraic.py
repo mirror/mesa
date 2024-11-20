@@ -3721,6 +3721,8 @@ for s in [16, 32, 64]:
     late_optimizations.extend([
         (('bcsel@{}'.format(s), ('ieq', 0, 'a@{}'.format(s)), 'b@{}'.format(s), 'c@{}'.format(s)), ('icsel_eqz', a, b, c), "options->has_icsel_eqz{} && !options->no_integers".format(s)),
         (('bcsel@{}'.format(s), ('ine', 0, 'a@{}'.format(s)), 'b@{}'.format(s), 'c@{}'.format(s)), ('icsel_eqz', a, c, b), "options->has_icsel_eqz{} && !options->no_integers".format(s)),
+        (('bcsel', ('feq', 'a@{}'.format(s), 'a@{}'.format(s)), 'b@{}'.format(s), 'c@{}'.format(s)), ('fcsel_eqn', a, b, c), "options->has_fcsel_eqn{}".format(s)),
+        (('bcsel', ('fneu', 'a@{}'.format(s), 'a@{}'.format(s)), 'b@{}'.format(s), 'c@{}'.format(s)), ('fcsel_eqn', a, c, b), "options->has_fcsel_eqn{}".format(s)),
     ])
 
 distribute_src_mods = [

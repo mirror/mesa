@@ -97,7 +97,8 @@ void ac_nir_set_options(struct radeon_info *info, bool use_llvm,
                          nir_io_prefer_scalar_fs_inputs |
                          nir_io_mix_convergent_flat_with_interpolated |
                          nir_io_vectorizer_ignores_types |
-                         nir_io_compaction_rotates_color_channels;
+                         nir_io_compaction_rotates_color_channels |
+                         nir_io_compaction_groups_tes_inputs_into_pos_and_var_groups;
    options->lower_layer_fs_input_to_sysval = true;
    options->scalarize_ddx = true;
    options->skip_lower_packing_ops =

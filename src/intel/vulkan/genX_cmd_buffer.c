@@ -546,7 +546,7 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
    } else if (cmd_buffer->device->info->verx10 >= 125 &&
               final_needs_ccs && !initial_ccs_valid) {
       assert(initial_hiz_valid);
-      hiz_op = ISL_AUX_OP_FULL_RESOLVE;
+      hiz_op = ISL_AUX_OP_PARTIAL_RESOLVE;
    }
 
    if (hiz_op != ISL_AUX_OP_NONE) {

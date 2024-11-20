@@ -49,6 +49,7 @@
     <value name="CMF_R32_G32" value="9" />
     <value name="CMF_R32_G32_B32_A32" value="10" />
     <value name="CMF_Y16_U16_Y16_V16" value="11" />
+    <value name="CMF_DISABLE_WRITE_COMPRESSION" value="12" />
     <value name="CMF_ML8" value="15" />
   </enum>
   <struct name="INTERFACE_DESCRIPTOR_DATA" length="8">

@@ -148,6 +148,8 @@ destroy_st_manager(void)
    if (global_fscreen) {
       if (global_fscreen->screen)
          global_fscreen->screen->destroy(global_fscreen->screen);
+      if (global_fscreen->st_screen)
+         st_screen_destroy(global_fscreen);
       FREE(global_fscreen);
    }
 }

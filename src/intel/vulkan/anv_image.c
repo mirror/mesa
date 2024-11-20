@@ -814,7 +814,7 @@ add_aux_surface_if_supported(struct anv_device *device,
       }
 
       if (device->info->ver == 12 &&
-          image->planes[plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT) {
+          isl_aux_usage_has_ccs(image->planes[plane].aux_usage)) {
          return add_aux_state_tracking_buffer(device, image, aux_state_offset,
                                               plane);
       }

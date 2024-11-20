@@ -58,6 +58,10 @@ nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
                              bool (*cond_function)(const nir_instr *a,
                                                    const nir_instr *b));
 
+nir_instr *nir_instr_set_add(struct set *instr_set, nir_instr *instr,
+                             bool (*cond_function)(const nir_instr *a,
+                                                   const nir_instr *b));
+
 /**
  * Removes an instruction from an instruction set, so that other instructions
  * won't be merged with it.

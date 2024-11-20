@@ -782,9 +782,9 @@ nir_instr_set_destroy(struct set *instr_set)
 }
 
 nir_instr *
-nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
-                             bool (*cond_function)(const nir_instr *a,
-                                                   const nir_instr *b))
+nir_instr_set_add(struct set *instr_set, nir_instr *instr,
+                  bool (*cond_function)(const nir_instr *a,
+                                        const nir_instr *b))
 {
    if (!instr_can_rewrite(instr))
       return NULL;
@@ -795,10 +795,6 @@ nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
       return NULL;
 
    if (!cond_function || cond_function(match, instr)) {
-      /* rewrite instruction if condition is matched */
-      nir_def *def = nir_instr_get_def_def(instr);
-      nir_def *new_def = nir_instr_get_def_def(match);
-
       /* It's safe to replace an exact instruction with an inexact one as
        * long as we make it exact.  If we got here, the two instructions are
        * exactly identical in every other way so, once we've set the exact
@@ -809,14 +805,28 @@ nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
          nir_instr_as_alu(match)->fp_fast_math |= nir_instr_as_alu(instr)->fp_fast_math;
       }
 
-      nir_def_rewrite_uses(def, new_def);
-
       return match;
    } else {
       /* otherwise, replace hashed instruction */
       e->key = instr;
       return NULL;
    }
+}
+
+nir_instr *
+nir_instr_set_add_or_rewrite(struct set *instr_set, nir_instr *instr,
+                             bool (*cond_function)(const nir_instr *a,
+                                                   const nir_instr *b))
+{
+   nir_instr *match = nir_instr_set_add(instr_set, instr, cond_function);
+   if (match) {
+      /* rewrite instruction if condition is matched */
+      nir_def *def = nir_instr_get_def_def(instr);
+      nir_def *new_def = nir_instr_get_def_def(match);
+      nir_def_rewrite_uses(def, new_def);
+   }
+
+   return match;
 }
 
 void

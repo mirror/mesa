@@ -1079,12 +1079,10 @@ transition_color_buffer(struct anv_cmd_buffer *cmd_buffer,
     */
    const bool private_binding_acquire =
       src_queue_external &&
-      anv_image_is_externally_shared(image) &&
       anv_image_has_private_binding(image);
 
    const bool private_binding_release =
       dst_queue_external &&
-      anv_image_is_externally_shared(image) &&
       anv_image_has_private_binding(image);
 
    if (initial_layout == final_layout &&

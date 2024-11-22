@@ -109,11 +109,12 @@ bool
 fdl6_layout(struct fdl_layout *layout, const struct fd_dev_info *info,
             enum pipe_format format, uint32_t nr_samples, uint32_t width0,
             uint32_t height0, uint32_t depth0, uint32_t mip_levels,
-            uint32_t array_size, bool is_3d, bool is_mutable,
+            uint32_t array_size, bool is_3d, bool is_mutable, bool sparse,
             struct fdl_explicit_layout *explicit_layout)
 {
    uint32_t offset = 0, heightalign;
    uint32_t ubwc_blockwidth, ubwc_blockheight;
+   uint32_t sparse_blockwidth, sparse_blockheight;
 
    assert(nr_samples > 0);
    layout->width0 = width0;
@@ -131,6 +132,10 @@ fdl6_layout(struct fdl_layout *layout, const struct fd_dev_info *info,
    layout->is_mutable = is_mutable;
 
    fdl6_get_ubwc_blockwidth(layout, &ubwc_blockwidth, &ubwc_blockheight);
+   fdl_get_sparse_block_size(format, nr_samples, &sparse_blockwidth,
+                             &sparse_blockheight);
+   uint32_t sparse_blocksize = 65536;
+   assert(sparse_blocksize == sparse_blockwidth * sparse_blockheight * layout->cpp);
 
    /* For simplicity support UBWC only for 3D images without mipmaps,
     * most d3d11 games don't use mipmaps for 3D images.
@@ -215,6 +220,7 @@ fdl6_layout(struct fdl_layout *layout, const struct fd_dev_info *info,
                         ubwc_tile_height_alignment);
 
    uint32_t min_3d_layer_size = 0;
+   bool in_sparse_miptail = false;
 
    for (uint32_t level = 0; level < mip_levels; level++) {
       uint32_t depth = u_minify(depth0, level);
@@ -222,7 +228,20 @@ fdl6_layout(struct fdl_layout *layout, const struct fd_dev_info *info,
       struct fdl_slice *ubwc_slice = &layout->ubwc_slices[level];
       enum a6xx_tile_mode tile_mode = fdl_tile_mode(layout, level);
       uint32_t pitch = fdl_pitch(layout, level);
+      uint32_t width = u_minify(width0, level);
       uint32_t height = u_minify(height0, level);
+
+      /* Follow the Vulkan requirements for when the miptail begins. */
+      if (sparse &&
+          (width < sparse_blockwidth || height < sparse_blockheight) &&
+          !in_sparse_miptail) {
+         in_sparse_miptail = true;
+         layout->mip_tail_first_lod = level;
+         /* The algorithm here follows the HW, which should ensure that the
+          * miptail is page aligned. If not we're in big trouble.
+          */
+         assert(layout->size % 4096 == 0);
+      }
 
       uint32_t nblocksy = util_format_get_nblocksy(format, height);
       if (tile_mode)
@@ -292,6 +311,38 @@ fdl6_layout(struct fdl_layout *layout, const struct fd_dev_info *info,
 
    if (layout->layer_first) {
       layout->layer_size = align64(layout->size, 4096);
+
+      if (sparse) {
+         if (!in_sparse_miptail) {
+            layout->mip_tail_first_lod = layout->mip_levels;
+            assert(layout->layer_size % 4096 == 0);
+         }
+
+         /* Honor the Vulkan requirement that the mip tail region is a
+          * multiple of the sparse block size (i.e. 64k). Note that the mip
+          * tail offset is *not* required to be a multiple of the sparse
+          * block size, and we can't guarantee that anyway as the miplevel
+          * offset is controlled by the HW. The partial block before the
+          * miptail will only be partially mapped.
+          */
+         uint32_t mip_tail_size = fdl_sparse_miptail_size(layout);
+
+         /* Vulkan CTS requires that as the image size decreases, the
+          * memory requirements always decrease or stay the same. If there
+          * is no sparse miptail, apply the same padding to the last layer
+          * so that if the image becomes small enough to have a sparse
+          * miptail then the padding still applies.
+          */
+         if (mip_tail_size == 0) {
+            mip_tail_size = layout->slices[mip_levels - 1].size0;
+         }
+
+         assert(mip_tail_size % 4096 == 0);
+
+         layout->layer_size +=
+            (sparse_blocksize - mip_tail_size) % sparse_blocksize;
+      }
+
       layout->size = layout->layer_size * array_size;
    }
 

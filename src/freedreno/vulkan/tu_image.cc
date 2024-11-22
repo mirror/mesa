@@ -548,6 +548,7 @@ tu_image_update_layout(struct tu_device *device, struct tu_image *image,
                        image->vk.array_layers,
                        image->vk.image_type == VK_IMAGE_TYPE_3D,
                        image->is_mutable,
+                       image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_RESIDENCY_BIT,
                        plane_layouts ? &plane_layout : NULL)) {
          assert(plane_layouts); /* can only fail with explicit layout */
          return vk_error(device, VK_ERROR_INVALID_DRM_FORMAT_MODIFIER_PLANE_LAYOUT_EXT);

@@ -118,6 +118,22 @@ etna_ml_get_core_info(struct etna_context *context)
    return &info->npu;
 }
 
+void
+etna_ml_reorder_dimensions(const struct etna_operation *operation, unsigned *input_width, unsigned *input_height, unsigned *output_width, unsigned *output_height)
+{
+   unsigned stride = operation->stride;
+   unsigned input_channels = operation->input_channels;
+
+   if (input_channels / (stride * stride) < *input_width &&
+       input_channels / (stride * stride) < *input_height) {
+      SWAP(*input_width, *input_height);
+      SWAP(*output_width, *output_height);
+   } else if (input_height > input_width) {
+      SWAP(*input_width, *input_height);
+      SWAP(*output_width, *output_height);
+   }
+}
+
 static bool
 needs_reshuffle(struct etna_ml_subgraph *subgraph, const struct pipe_ml_operation *poperation)
 {

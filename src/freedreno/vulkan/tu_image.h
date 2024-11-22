@@ -125,12 +125,20 @@ bool
 ubwc_possible(struct tu_device *device,
               VkFormat format,
               VkImageType type,
+              VkImageCreateFlags flags,
               VkImageUsageFlags usage,
               VkImageUsageFlags stencil_usage,
               const struct fd_dev_info *info,
               VkSampleCountFlagBits samples,
               uint32_t mip_levels,
               bool use_z24uint_s8uint);
+
+bool
+tu_is_r8g8(enum pipe_format format);
+
+bool
+tu_format_list_reinterprets_r8g8_r16(enum pipe_format format,
+                                     const VkImageFormatListCreateInfo *fmt_list);
 
 struct tu_frag_area {
    float width;
@@ -146,5 +154,10 @@ tu_fragment_density_map_sample(const struct tu_image_view *fdm,
 VkResult
 tu_image_update_layout(struct tu_device *device, struct tu_image *image,
                        uint64_t modifier, const VkSubresourceLayout *plane_layouts);
+
+void
+tu_bind_sparse_image(struct tu_device *device, void *submit,
+                     struct tu_image *image,
+                     const VkSparseImageMemoryBind *bind);
 
 #endif /* TU_IMAGE_H */

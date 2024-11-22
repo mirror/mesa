@@ -256,6 +256,20 @@ void fdl_dump_layout(struct fdl_layout *layout);
 void fdl6_get_ubwc_blockwidth(const struct fdl_layout *layout,
                               uint32_t *blockwidth, uint32_t *blockheight);
 
+void fdl6_get_ubwc_macrotile_size(const struct fdl_layout *layout,
+                                  uint32_t *macrotile_width,
+                                  uint32_t *macrotile_height);
+
+/* Single-sampled R8G8 textures have a special UBWC block layout. */
+static inline bool
+fdl6_is_r8g8(const struct fdl_layout *layout)
+{
+   return layout->cpp == 2 &&
+          util_format_get_nr_components(layout->format) == 2 &&
+          !layout->is_mutable;
+}
+
+
 enum fdl_view_type {
    FDL_VIEW_TYPE_1D = 0,
    FDL_VIEW_TYPE_2D = 1,
@@ -370,6 +384,11 @@ fdl6_memcpy_tiled_to_linear(uint32_t x_start, uint32_t y_start,
                             unsigned src_miplevel,
                             uint32_t dst_pitch,
                             const struct fdl_ubwc_config *config);
+
+uint32_t fdl6_get_bank_mask(const struct fdl_layout *layout, unsigned miplevel,
+                            const struct fdl_ubwc_config *config);
+
+uint32_t fdl6_get_bank_shift(const struct fdl_ubwc_config *config);
 
 ENDC;
 

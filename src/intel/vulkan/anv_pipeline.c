@@ -272,8 +272,14 @@ void anv_DestroyPipeline(
          anv_pipeline_to_graphics_base(pipeline);
 
       for (unsigned s = 0; s < ARRAY_SIZE(gfx_pipeline->shaders); s++) {
-         if (gfx_pipeline->shaders[s])
+         if (gfx_pipeline->shaders[s]) {
+            vk_device_memory_report_emit(&device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                         (uint64_t)gfx_pipeline->shaders[s]->kernel.map,
+                                         gfx_pipeline->shaders[s]->kernel.alloc_size,
+                                         VK_OBJECT_TYPE_PIPELINE,
+                                         (uint64_t)anv_pipeline_to_handle(pipeline), 0 /* heap 0: device memory */);
             anv_shader_bin_unref(device, gfx_pipeline->shaders[s]);
+         }
       }
       break;
    }
@@ -282,8 +288,14 @@ void anv_DestroyPipeline(
       struct anv_compute_pipeline *compute_pipeline =
          anv_pipeline_to_compute(pipeline);
 
-      if (compute_pipeline->cs)
+      if (compute_pipeline->cs) {
+         vk_device_memory_report_emit(&device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                      (uint64_t)compute_pipeline->cs->kernel.map,
+                                      compute_pipeline->cs->kernel.alloc_size,
+                                      VK_OBJECT_TYPE_PIPELINE,
+                                      (uint64_t)anv_pipeline_to_handle(pipeline), 0 /* heap 0: device memory */);
          anv_shader_bin_unref(device, compute_pipeline->cs);
+      }
 
       break;
    }
@@ -294,6 +306,11 @@ void anv_DestroyPipeline(
 
       util_dynarray_foreach(&rt_pipeline->shaders,
                             struct anv_shader_bin *, shader) {
+         vk_device_memory_report_emit(&device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                      (uint64_t)(*shader)->kernel.map,
+                                      (*shader)->kernel.alloc_size,
+                                      VK_OBJECT_TYPE_PIPELINE,
+                                      (uint64_t)anv_pipeline_to_handle(pipeline), 0 /* heap 0: device memory */);
          anv_shader_bin_unref(device, *shader);
       }
       break;
@@ -2823,6 +2840,12 @@ anv_compute_pipeline_create(struct anv_device *device,
 
    *pPipeline = anv_pipeline_to_handle(&pipeline->base);
 
+   vk_device_memory_report_emit(&pipeline->base.device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                (uint64_t)pipeline->cs->kernel.map,
+                                pipeline->cs->kernel.alloc_size,
+                                VK_OBJECT_TYPE_PIPELINE,
+                                (uint64_t)(*pPipeline), 0 /* heap 0: device memory */);
+
    return pipeline->base.batch.status;
 }
 
@@ -3092,6 +3115,20 @@ anv_graphics_lib_validate_shaders(struct anv_graphics_lib_pipeline *lib,
    }
 }
 
+static void anv_dmr_emit_graphics_pipeline_event(struct anv_graphics_base_pipeline *pipeline) {
+   for (unsigned s = 0; s < ARRAY_SIZE(pipeline->shaders); s++) {
+      struct anv_shader_bin *shader = pipeline->shaders[s];
+
+      if (shader) {
+         vk_device_memory_report_emit(&pipeline->base.device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                      (uint64_t)shader->kernel.map,
+                                      shader->kernel.alloc_size,
+                                      VK_OBJECT_TYPE_PIPELINE,
+                                      (uint64_t)anv_pipeline_to_handle(&pipeline->base), 0 /* heap 0: device memory */);
+      }
+   }
+}
+
 static VkResult
 anv_graphics_lib_pipeline_create(struct anv_device *device,
                                  struct vk_pipeline_cache *cache,
@@ -3198,6 +3235,8 @@ anv_graphics_lib_pipeline_create(struct anv_device *device,
       flags & VK_PIPELINE_CREATE_2_RETAIN_LINK_TIME_OPTIMIZATION_INFO_BIT_EXT);
 
    *pPipeline = anv_pipeline_to_handle(&pipeline->base.base);
+
+   anv_dmr_emit_graphics_pipeline_event(&pipeline->base);
 
    return VK_SUCCESS;
 }
@@ -3337,6 +3376,8 @@ anv_graphics_pipeline_create(struct anv_device *device,
    ANV_RMV(graphics_pipeline_create, device, pipeline, false);
 
    *pPipeline = anv_pipeline_to_handle(&pipeline->base.base);
+
+   anv_dmr_emit_graphics_pipeline_event(&pipeline->base);
 
    return pipeline->base.base.batch.status;
 }
@@ -4210,6 +4251,14 @@ anv_ray_tracing_pipeline_create(
    ANV_RMV(rt_pipeline_create, device, pipeline, false);
 
    *pPipeline = anv_pipeline_to_handle(&pipeline->base);
+
+   util_dynarray_foreach(&pipeline->shaders, struct anv_shader_bin *, shader) {
+      vk_device_memory_report_emit(&device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   (uint64_t)(*shader)->kernel.map,
+                                   (*shader)->kernel.alloc_size,
+                                   VK_OBJECT_TYPE_PIPELINE,
+                                   (uint64_t)(*pPipeline), 0 /* heap 0: device memory */);
+   }
 
    return pipeline->base.batch.status;
 }

@@ -570,15 +570,8 @@ void
 anv_rmv_log_cmd_buffer_create(struct anv_device *device,
                               struct anv_cmd_buffer *cmd_buffer)
 {
-   uint64_t data_size =
-      cmd_buffer->surface_state_stream.total_size +
-      cmd_buffer->dynamic_state_stream.total_size +
-      cmd_buffer->general_state_stream.total_size +
-      cmd_buffer->indirect_push_descriptor_stream.total_size;
-
-   uint64_t executable_size = 0;
-   list_for_each_entry(struct anv_batch_bo, bbo, &cmd_buffer->batch_bos, link)
-      executable_size += bbo->length;
+   uint64_t data_size = anv_cmd_buffer_data_size(cmd_buffer);
+   uint64_t executable_size = anv_cmd_buffer_executable_size(cmd_buffer);
 
    simple_mtx_lock(&device->vk.memory_trace_data.token_mtx);
    struct vk_rmv_resource_create_token create_token = {

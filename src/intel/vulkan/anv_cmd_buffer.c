@@ -41,6 +41,54 @@
  * is concerned, most of anv_cmd_buffer is magic.
  */
 
+uint64_t anv_cmd_buffer_data_size(struct anv_cmd_buffer *cmd_buffer)
+{
+   uint64_t data_size =
+      cmd_buffer->surface_state_stream.total_size +
+      cmd_buffer->dynamic_state_stream.total_size +
+      cmd_buffer->general_state_stream.total_size +
+      cmd_buffer->indirect_push_descriptor_stream.total_size;
+
+   return data_size;
+}
+
+uint64_t anv_cmd_buffer_executable_size(struct anv_cmd_buffer *cmd_buffer)
+{
+   uint64_t executable_size = 0;
+
+   list_for_each_entry(struct anv_batch_bo, bbo, &cmd_buffer->batch_bos, link)
+      executable_size += bbo->length;
+
+   list_for_each_entry(struct anv_batch_bo, bbo, &cmd_buffer->generation.batch_bos, link)
+      executable_size += bbo->length;
+
+   if (cmd_buffer->generation.ring_bo)
+      executable_size += cmd_buffer->generation.ring_bo->size;
+
+   return executable_size;
+}
+
+void
+anv_dmr_emit_cmd_buffer_event(struct vk_device *device,
+                              struct anv_cmd_buffer *cmd_buffer,
+                              bool is_alloc)
+{
+   uint64_t allocation_size = anv_cmd_buffer_data_size(cmd_buffer) +
+      anv_cmd_buffer_executable_size(cmd_buffer);
+
+   if (cmd_buffer->companion_rcs_cmd_buffer) {
+      allocation_size += (anv_cmd_buffer_data_size(cmd_buffer) +
+      anv_cmd_buffer_executable_size(cmd_buffer));
+   }
+
+   VkDeviceMemoryReportEventTypeEXT event_type = is_alloc ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT
+                                                          : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT;
+
+   vk_device_memory_report_emit(device, event_type, list_first_entry(&cmd_buffer->batch_bos, struct anv_batch_bo, link)->bo->gem_handle, allocation_size,
+                                VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
+}
+
 static void
 anv_cmd_state_init(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -239,6 +287,8 @@ anv_cmd_buffer_destroy(struct vk_command_buffer *vk_cmd_buffer)
    }
 
    ANV_RMV(cmd_buffer_destroy, cmd_buffer->device, cmd_buffer);
+   if (vk_cmd_buffer->state != MESA_VK_COMMAND_BUFFER_STATE_INITIAL)
+      anv_dmr_emit_cmd_buffer_event(&device->vk, cmd_buffer, false);
 
    destroy_cmd_buffer(cmd_buffer);
    pthread_mutex_unlock(&device->mutex);
@@ -308,6 +358,8 @@ anv_cmd_buffer_reset(struct vk_command_buffer *vk_cmd_buffer,
    }
 
    ANV_RMV(cmd_buffer_destroy, cmd_buffer->device, cmd_buffer);
+   if (vk_cmd_buffer->state != MESA_VK_COMMAND_BUFFER_STATE_INITIAL)
+      anv_dmr_emit_cmd_buffer_event(&cmd_buffer->device->vk, cmd_buffer, false);
 
    reset_cmd_buffer(cmd_buffer, flags);
 }

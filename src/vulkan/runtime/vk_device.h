@@ -91,6 +91,11 @@ enum vk_queue_submit_mode {
    VK_QUEUE_SUBMIT_MODE_THREADED_ON_DEMAND,
 };
 
+struct vk_device_memory_report {
+   PFN_vkDeviceMemoryReportCallbackEXT callback;
+   void *data;
+};
+
 /** Base struct for VkDevice */
 struct vk_device {
    struct vk_object_base base;
@@ -270,6 +275,10 @@ struct vk_device {
 
    /* For VK_KHR_pipeline_binary */
    bool disable_internal_cache;
+
+   /* For VK_EXT_device_memory_report */
+   struct vk_device_memory_report *memory_reports;
+   uint32_t memory_report_count;
 };
 
 VK_DEFINE_HANDLE_CASTS(vk_device, base, VkDevice,
@@ -376,6 +385,35 @@ vk_device_check_status(struct vk_device *device)
 
    return result;
 }
+
+void vk_device_memory_report_finish(struct vk_device *device);
+
+VkResult vk_device_memory_report_init(struct vk_device *device,
+                                      const VkDeviceCreateInfo *create_info);
+
+void _vk_device_memory_report_emit(struct vk_device *device,
+                                   VkDeviceMemoryReportEventTypeEXT type,
+                                   uint64_t memory_object_id,
+                                   VkDeviceSize size,
+                                   VkObjectType object_type,
+                                   uint64_t object_handle,
+                                   uint32_t heap_index);
+
+static inline void
+vk_device_memory_report_emit(struct vk_device *device,
+                             VkDeviceMemoryReportEventTypeEXT type,
+                             uint64_t memory_object_id,
+                             VkDeviceSize size,
+                             VkObjectType object_type,
+                             uint64_t object_handle,
+                             uint32_t heap_index)
+{
+   if (likely(!device->memory_reports))
+      return;
+
+   _vk_device_memory_report_emit(device, type, memory_object_id, size, object_type, object_handle, heap_index);
+}
+
 
 #ifndef _WIN32
 

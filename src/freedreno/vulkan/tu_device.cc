@@ -76,7 +76,11 @@ tu_device_get_cache_uuid(struct tu_physical_device *device, void *uuid)
    return 0;
 }
 
+#if defined(ANDROID_STRICT) && ANDROID_API_LEVEL <= 32
+#define TU_API_VERSION VK_MAKE_VERSION(1, 1, VK_HEADER_VERSION)
+#else
 #define TU_API_VERSION VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION)
+#endif
 
 VKAPI_ATTR VkResult VKAPI_CALL
 tu_EnumerateInstanceVersion(uint32_t *pApiVersion)

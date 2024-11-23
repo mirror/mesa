@@ -1463,6 +1463,10 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
 
    tu_init_dri_options(instance);
 
+#if DETECT_OS_ANDROID
+   vk_android_init_ugralloc();
+#endif
+
    *pInstance = tu_instance_to_handle(instance);
 
 #ifdef HAVE_PERFETTO
@@ -1482,6 +1486,10 @@ tu_DestroyInstance(VkInstance _instance,
 
    if (!instance)
       return;
+
+#if DETECT_OS_ANDROID
+   vk_android_destroy_ugralloc();
+#endif
 
    VG(VALGRIND_DESTROY_MEMPOOL(instance));
 

@@ -67,8 +67,6 @@ tu_hal_open(const struct hw_module_t *mod,
       .GetInstanceProcAddr = tu_GetInstanceProcAddr,
    };
 
-   vk_android_init_ugralloc();
-
    *dev = &hal_dev->common;
    return 0;
 }
@@ -77,6 +75,5 @@ static int
 tu_hal_close(struct hw_device_t *dev)
 {
    /* hwvulkan.h claims that hw_device_t::close() is never called. */
-   vk_android_destroy_ugralloc();
    return -1;
 }

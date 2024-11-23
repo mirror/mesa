@@ -1461,7 +1461,25 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    tu_init_dri_options(instance);
 
 #if DETECT_OS_ANDROID
-   vk_android_init_ugralloc();
+   struct u_gralloc *u_gralloc = vk_android_init_ugralloc();
+
+   if (u_gralloc) {
+      switch (u_gralloc_get_type(u_gralloc)) {
+      case U_GRALLOC_TYPE_GRALLOC4:
+         mesa_logi("tuGrallocDebug: GRALLOC4");
+      case U_GRALLOC_TYPE_CROS:
+         mesa_logi("tuGrallocDebug: CROS");
+      case U_GRALLOC_TYPE_LIBDRM:
+         mesa_logi("tuGrallocDebug: LIBDRM");
+      case U_GRALLOC_TYPE_QCOM:
+         mesa_logi("tuGrallocDebug: QCOM");
+      case U_GRALLOC_TYPE_FALLBACK:
+         mesa_logi("tuGrallocDebug: FALLBACK");
+      default:
+         break;
+   }
+}
+
 #endif
 
    *pInstance = tu_instance_to_handle(instance);

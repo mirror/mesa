@@ -307,6 +307,10 @@ get_device_extensions(const struct tu_physical_device *device,
 
       /* For Graphics Flight Recorder (GFR) */
       .AMD_buffer_marker = true,
+#if DETECT_OS_ANDROID
+      .ANDROID_external_memory_android_hardware_buffer = vk_android_get_ugralloc() != NULL,
+      .ANDROID_native_buffer = vk_android_get_ugralloc() != NULL,
+#endif
       .ARM_rasterization_order_attachment_access = true,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
@@ -314,13 +318,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .IMG_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
       .VALVE_mutable_descriptor_type = true,
    } };
-
-#if DETECT_OS_ANDROID
-   if (vk_android_get_ugralloc() != NULL) {
-      ext->ANDROID_external_memory_android_hardware_buffer = true,
-      ext->ANDROID_native_buffer = true;
-   }
-#endif
 }
 
 static void

@@ -42,12 +42,25 @@ struct AHardwareBuffer;
 struct u_gralloc *vk_android_get_ugralloc(void);
 struct u_gralloc *vk_android_init_ugralloc(void);
 void vk_android_destroy_ugralloc(void);
+VkResult vk_android_bind_anb_as_mem(struct vk_device *device,
+                                    const VkBindImageMemoryInfo *bind_info);
+
+// Deprecated
 VkResult vk_android_import_anb(struct vk_device *device,
                                const VkImageCreateInfo *pCreateInfo,
                                const VkAllocationCallbacks *alloc,
                                struct vk_image *image);
+VkResult vk_android_import_anb2(struct vk_device *device,
+                                const VkImageCreateInfo *pCreateInfo,
+                                struct vk_image *image);
+// Deprecated
 VkResult vk_android_get_anb_layout(
    const VkImageCreateInfo *pCreateInfo,
+   VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
+   VkSubresourceLayout *out_layouts, int max_planes);
+
+VkResult vk_android_get_anb_layout2(
+   const VkBindImageMemoryInfo *bind_info,
    VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
    VkSubresourceLayout *out_layouts, int max_planes);
 VkResult vk_android_get_ahb_layout(
@@ -73,6 +86,13 @@ vk_android_destroy_ugralloc(void)
 }
 
 static inline VkResult
+vk_android_bind_anb_as_mem(struct vk_device *device,
+                           const VkBindImageMemoryInfo *bind_info)
+{
+   return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+static inline VkResult
 vk_android_import_anb(struct vk_device *device,
                       const VkImageCreateInfo *pCreateInfo,
                       const VkAllocationCallbacks *alloc,
@@ -82,8 +102,25 @@ vk_android_import_anb(struct vk_device *device,
 }
 
 static inline VkResult
+vk_android_import_anb2(struct vk_device *device,
+                       const VkImageCreateInfo *pCreateInfo,
+                       struct vk_image *image)
+{
+   return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+static inline VkResult
 vk_android_get_anb_layout(
    const VkImageCreateInfo *pCreateInfo,
+   VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
+   VkSubresourceLayout *out_layouts, int max_planes)
+{
+   return VK_ERROR_FEATURE_NOT_PRESENT;
+}
+
+static inline VkResult
+vk_android_get_anb_layout2(
+   const VkBindImageMemoryInfo *bind_info,
    VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
    VkSubresourceLayout *out_layouts, int max_planes)
 {

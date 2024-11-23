@@ -259,6 +259,7 @@ vk_gralloc_to_drm_explicit_layout(
    return VK_SUCCESS;
 }
 
+// Deprecated
 VkResult
 vk_android_import_anb(struct vk_device *device,
                       const VkImageCreateInfo *pCreateInfo,
@@ -313,6 +314,84 @@ vk_android_import_anb(struct vk_device *device,
 }
 
 VkResult
+vk_android_import_anb2(struct vk_device *device,
+                       const VkImageCreateInfo *pCreateInfo,
+                       struct vk_image *image) {
+   const VkNativeBufferANDROID *native_buffer =
+      vk_find_struct_const(pCreateInfo->pNext, NATIVE_BUFFER_ANDROID);
+
+   if (!native_buffer)
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+
+   VkBindImageMemoryInfo bimi = {
+      .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+      .pNext = native_buffer,
+      .image = (VkImage)image,
+      .memory = VK_NULL_HANDLE,
+      .memoryOffset = 0,
+   };
+
+   return device->dispatch_table.BindImageMemory2((VkDevice)device, 1, &bimi);
+}
+
+VkResult
+vk_android_bind_anb_as_mem(struct vk_device *device,
+                           const VkBindImageMemoryInfo *bind_info)
+{
+   VkResult result;
+
+   const VkNativeBufferANDROID *native_buffer =
+      vk_find_struct_const(bind_info->pNext, NATIVE_BUFFER_ANDROID);
+
+   if (!native_buffer)
+      return VK_ERROR_INVALID_EXTERNAL_HANDLE;
+
+   VK_FROM_HANDLE(vk_image, image, bind_info->image);
+
+   assert(native_buffer);
+   assert(native_buffer->handle);
+   assert(native_buffer->handle->numFds > 0);
+
+   const VkMemoryDedicatedAllocateInfo ded_alloc = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+      .pNext = NULL,
+      .buffer = VK_NULL_HANDLE,
+      .image = (VkImage)image};
+
+   const VkImportMemoryFdInfoKHR import_info = {
+      .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+      .pNext = &ded_alloc,
+      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+      .fd = os_dupfd_cloexec(native_buffer->handle->data[0]),
+   };
+
+   result = device->dispatch_table.AllocateMemory(
+      (VkDevice)device,
+      &(VkMemoryAllocateInfo){
+         .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+         .pNext = &import_info,
+         .allocationSize = lseek(import_info.fd, 0, SEEK_END),
+         .memoryTypeIndex = 0, /* Should we be smarter here? */
+      },
+      &device->alloc, &image->anb_memory);
+
+   if (result != VK_SUCCESS) {
+      close(import_info.fd);
+      return result;
+   }
+
+   VkBindImageMemoryInfo bi = {
+      .sType = VK_STRUCTURE_TYPE_BIND_IMAGE_MEMORY_INFO,
+      .image = (VkImage)image,
+      .memory = image->anb_memory,
+      .memoryOffset = 0,
+   };
+
+   return device->dispatch_table.BindImageMemory2((VkDevice)device, 1, &bi);
+}
+
+// Deprecated
+VkResult
 vk_android_get_anb_layout(
    const VkImageCreateInfo *pCreateInfo,
    VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
@@ -320,6 +399,25 @@ vk_android_get_anb_layout(
 {
    const VkNativeBufferANDROID *native_buffer =
       vk_find_struct_const(pCreateInfo->pNext, NATIVE_BUFFER_ANDROID);
+
+   struct u_gralloc_buffer_handle gr_handle = {
+      .handle = native_buffer->handle,
+      .hal_format = native_buffer->format,
+      .pixel_stride = native_buffer->stride,
+   };
+
+   return vk_gralloc_to_drm_explicit_layout(&gr_handle, out,
+                                            out_layouts, max_planes);
+}
+
+VkResult
+vk_android_get_anb_layout2(
+   const VkBindImageMemoryInfo *bind_info,
+   VkImageDrmFormatModifierExplicitCreateInfoEXT *out,
+   VkSubresourceLayout *out_layouts, int max_planes)
+{
+   const VkNativeBufferANDROID *native_buffer =
+      vk_find_struct_const(bind_info->pNext, NATIVE_BUFFER_ANDROID);
 
    struct u_gralloc_buffer_handle gr_handle = {
       .handle = native_buffer->handle,

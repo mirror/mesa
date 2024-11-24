@@ -209,7 +209,9 @@ struct brw_base_prog_key {
 
    enum brw_robustness_flags robust_flags:2;
 
-   unsigned padding:22;
+   enum intel_vue_map_mode vue_map_mode:2;
+
+   unsigned padding:20;
 
    /**
     * Apply workarounds for SIN and COS input range problems.
@@ -1099,7 +1101,7 @@ brw_varying_to_offset(const struct intel_vue_map *vue_map, unsigned varying)
 void brw_compute_vue_map(const struct intel_device_info *devinfo,
                          struct intel_vue_map *vue_map,
                          uint64_t slots_valid,
-                         bool separate_shader,
+                         enum intel_vue_map_mode map_mode,
                          uint32_t pos_slots);
 
 void brw_compute_tess_vue_map(struct intel_vue_map *const vue_map,

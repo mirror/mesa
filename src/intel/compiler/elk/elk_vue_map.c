@@ -84,7 +84,9 @@ elk_compute_vue_map(const struct intel_device_info *devinfo,
    }
 
    vue_map->slots_valid = slots_valid;
-   vue_map->separate = separate;
+   vue_map->map_mode = separate ?
+      INTEL_VUE_MAP_MODE_SEPARATE_GL :
+      INTEL_VUE_MAP_MODE_SEPARATE_VK;
 
    /* gl_Layer, gl_ViewportIndex & gl_PrimitiveShadingRateEXT don't get their
     * own varying slots -- they are stored in the first VUE slot
@@ -224,7 +226,7 @@ elk_compute_tess_vue_map(struct intel_vue_map *vue_map,
    vue_map->slots_valid = vertex_slots;
 
    /* separate isn't really meaningful, but make sure it's initialized */
-   vue_map->separate = false;
+   vue_map->map_mode = INTEL_VUE_MAP_MODE_LINKED;
 
    vertex_slots &= ~(VARYING_BIT_TESS_LEVEL_OUTER |
                      VARYING_BIT_TESS_LEVEL_INNER);
@@ -306,7 +308,9 @@ elk_print_vue_map(FILE *fp, const struct intel_vue_map *vue_map,
               vue_map->num_slots,
               vue_map->num_per_patch_slots,
               vue_map->num_per_vertex_slots,
-              vue_map->separate ? "SSO" : "non-SSO");
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_GL ? "SSO-GL" :
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_VK ? "SSO-VK" :
+              "non-SSO");
       for (int i = 0; i < vue_map->num_slots; i++) {
          if (vue_map->slot_to_varying[i] >= VARYING_SLOT_PATCH0) {
             fprintf(fp, "  [%d] VARYING_SLOT_PATCH%d\n", i,
@@ -318,7 +322,10 @@ elk_print_vue_map(FILE *fp, const struct intel_vue_map *vue_map,
       }
    } else {
       fprintf(fp, "VUE map (%d slots, %s)\n",
-              vue_map->num_slots, vue_map->separate ? "SSO" : "non-SSO");
+              vue_map->num_slots,
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_GL ? "SSO-GL" :
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_VK ? "SSO-VK" :
+              "non-SSO");
       for (int i = 0; i < vue_map->num_slots; i++) {
          fprintf(fp, "  [%d] %s\n", i,
                  varying_name(vue_map->slot_to_varying[i], stage));

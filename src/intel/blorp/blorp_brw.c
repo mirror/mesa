@@ -78,7 +78,9 @@ blorp_compile_vs_brw(struct blorp_context *blorp, void *mem_ctx,
    brw_compute_vue_map(compiler->devinfo,
                        &vs_prog_data->base.vue_map,
                        nir->info.outputs_written,
-                       nir->info.separate_shader,
+                       nir->info.separate_shader ?
+                       INTEL_VUE_MAP_MODE_SEPARATE_GL :
+                       INTEL_VUE_MAP_MODE_LINKED,
                        1);
 
    struct brw_vs_prog_key vs_key = { 0, };

@@ -60,10 +60,10 @@ void
 brw_compute_vue_map(const struct intel_device_info *devinfo,
                     struct intel_vue_map *vue_map,
                     uint64_t slots_valid,
-                    bool separate,
+                    enum intel_vue_map_mode map_mode,
                     uint32_t pos_slots)
 {
-   if (separate) {
+   if (map_mode != INTEL_VUE_MAP_MODE_LINKED) {
       /* In SSO mode, we don't know whether the adjacent stage will
        * read/write gl_ClipDistance, which has a fixed slot location.
        * We have to assume the worst and reserve a slot for it, or else
@@ -76,8 +76,35 @@ brw_compute_vue_map(const struct intel_device_info *devinfo,
       slots_valid |= BITFIELD64_BIT(VARYING_SLOT_CLIP_DIST1);
    }
 
+   if (map_mode == INTEL_VUE_MAP_MODE_SEPARATE_VK) {
+      /* Those bits we should never see (VARYING_SLOT_PRIMITIVE_SHADING_RATE
+       * is mapped to VARYING_SLOT_FACE so we have to allow it)
+       */
+      const uint64_t unused_vk_slots =
+         VARYING_BIT_COL0 | VARYING_BIT_COL1 |
+         VARYING_BIT_FOGC |
+         VARYING_BIT_TEX0 | VARYING_BIT_TEX1 |
+         VARYING_BIT_TEX2 | VARYING_BIT_TEX3 |
+         VARYING_BIT_TEX4 | VARYING_BIT_TEX5 |
+         VARYING_BIT_TEX6 | VARYING_BIT_TEX7 |
+         VARYING_BIT_BFC0 | VARYING_BIT_BFC1 |
+         VARYING_BIT_EDGE | VARYING_BIT_CLIP_VERTEX |
+         VARYING_BIT_TESS_LEVEL_OUTER | VARYING_BIT_TESS_LEVEL_INNER |
+         VARYING_BIT_BOUNDING_BOX0 | VARYING_BIT_BOUNDING_BOX1;
+      assert((slots_valid & unused_vk_slots) == 0);
+
+      /* Everything else before the generic bits, we need to enable to ensure
+       * a mapping layout between shader compiled separately.
+       */
+      slots_valid |= BITFIELD64_BIT(VARYING_SLOT_LAYER);
+      slots_valid |= BITFIELD64_BIT(VARYING_SLOT_VIEWPORT);
+      slots_valid |= BITFIELD64_BIT(VARYING_SLOT_VIEW_INDEX);
+      slots_valid |= BITFIELD64_BIT(VARYING_SLOT_VIEWPORT_MASK);
+      slots_valid |= BITFIELD64_BIT(VARYING_SLOT_PRIMITIVE_SHADING_RATE);
+   }
+
    vue_map->slots_valid = slots_valid;
-   vue_map->separate = separate;
+   vue_map->map_mode = map_mode;
 
    /* gl_Layer, gl_ViewportIndex & gl_PrimitiveShadingRateEXT don't get their
     * own varying slots -- they are stored in the first VUE slot
@@ -139,6 +166,9 @@ brw_compute_vue_map(const struct intel_device_info *devinfo,
    /* front and back colors need to be consecutive so that we can use
     * ATTRIBUTE_SWIZZLE_INPUTATTR_FACING to swizzle them when doing
     * two-sided color.
+    *
+    * For the separate shader use case in Vulkan, those slots are always
+    * unused.
     */
    if (slots_valid & BITFIELD64_BIT(VARYING_SLOT_COL0))
       assign_vue_slot(vue_map, VARYING_SLOT_COL0, slot++);
@@ -177,7 +207,7 @@ brw_compute_vue_map(const struct intel_device_info *devinfo,
    uint64_t generics = slots_valid & ~BITFIELD64_MASK(VARYING_SLOT_VAR0);
    while (generics != 0) {
       const int varying = ffsll(generics) - 1;
-      if (separate) {
+      if (map_mode != INTEL_VUE_MAP_MODE_LINKED) {
          slot = first_generic_slot + varying - VARYING_SLOT_VAR0;
       }
       assign_vue_slot(vue_map, varying, slot++);
@@ -203,7 +233,7 @@ brw_compute_tess_vue_map(struct intel_vue_map *vue_map,
    vue_map->slots_valid = vertex_slots;
 
    /* separate isn't really meaningful, but make sure it's initialized */
-   vue_map->separate = false;
+   vue_map->map_mode = INTEL_VUE_MAP_MODE_LINKED;
 
    vertex_slots &= ~(VARYING_BIT_TESS_LEVEL_OUTER |
                      VARYING_BIT_TESS_LEVEL_INNER);
@@ -283,7 +313,9 @@ brw_print_vue_map(FILE *fp, const struct intel_vue_map *vue_map,
               vue_map->num_slots,
               vue_map->num_per_patch_slots,
               vue_map->num_per_vertex_slots,
-              vue_map->separate ? "SSO" : "non-SSO");
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_GL ? "SSO-GL" :
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_VK ? "SSO-VK" :
+              "non-SSO");
       for (int i = 0; i < vue_map->num_slots; i++) {
          if (vue_map->slot_to_varying[i] >= VARYING_SLOT_PATCH0) {
             fprintf(fp, "  [%d] VARYING_SLOT_PATCH%d\n", i,
@@ -295,7 +327,10 @@ brw_print_vue_map(FILE *fp, const struct intel_vue_map *vue_map,
       }
    } else {
       fprintf(fp, "VUE map (%d slots, %s)\n",
-              vue_map->num_slots, vue_map->separate ? "SSO" : "non-SSO");
+              vue_map->num_slots,
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_GL ? "SSO-GL" :
+              vue_map->map_mode == INTEL_VUE_MAP_MODE_SEPARATE_VK ? "SSO-VK" :
+              "non-SSO");
       for (int i = 0; i < vue_map->num_slots; i++) {
          fprintf(fp, "  [%d] %s\n", i,
                  varying_name(vue_map->slot_to_varying[i], stage));

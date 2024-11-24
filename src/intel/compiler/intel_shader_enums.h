@@ -89,6 +89,24 @@ enum intel_shader_dispatch_mode {
    INTEL_DISPATCH_MODE_TCS_MULTI_PATCH = 2,
 };
 
+enum intel_vue_map_mode {
+   /**
+    * In this mode, the values are packed to use the minimum amount of slots.
+    */
+   INTEL_VUE_MAP_MODE_LINKED,
+   /**
+    * In this mode, the values are layed out in slots such that 2 shaders'
+    * layout is compatible following the rules of ARB_separate_shader_objects.
+    */
+   INTEL_VUE_MAP_MODE_SEPARATE_GL,
+   /**
+    * In this mode, the values are layed out in slots such that 2 shaders'
+    * layout is compatible following the Vulkan rules.
+    */
+   INTEL_VUE_MAP_MODE_SEPARATE_VK,
+};
+
+
 /**
  * Data structure recording the relationship between the gl_varying_slot enum
  * and "slots" within the vertex URB entry (VUE).  A "slot" is defined as a
@@ -109,15 +127,20 @@ struct intel_vue_map {
    uint64_t slots_valid;
 
    /**
-    * Is this VUE map for a separate shader pipeline?
+    * How is the map layed out
     *
-    * Separable programs (GL_ARB_separate_shader_objects) can be mixed and matched
-    * without the linker having a chance to dead code eliminate unused varyings.
+    * Separable programs (GL_ARB_separate_shader_objects) or Vulkan's pipeline
+    * libraries an shader objects can be mixed and matched without the linker
+    * having a chance to dead code eliminate unused varyings.
     *
-    * This means that we have to use a fixed slot layout, based on the output's
-    * location field, rather than assigning slots in a compact contiguous block.
+    * This means that we have to use a fixed slot layout, based on the
+    * output's location field, rather than assigning slots in a compact
+    * contiguous block.
+    *
+    * GL & Vulkan have slightly different rules and different number of
+    * varyings, so we slightly different behavior between the 2.
     */
-   bool separate;
+   enum intel_vue_map_mode map_mode;
 
    /**
     * Map from gl_varying_slot value to VUE slot.  For gl_varying_slots that are

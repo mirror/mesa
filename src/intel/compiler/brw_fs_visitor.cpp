@@ -149,17 +149,20 @@ fs_visitor::emit_urb_writes(const brw_reg &gs_vertex_count)
             sources[length++] = zero;
          }
 
-         if (vue_map->slots_valid & VARYING_BIT_LAYER)
+         if ((vue_map->slots_valid & VARYING_BIT_LAYER) &&
+             this->outputs[VARYING_SLOT_LAYER].file != BAD_FILE)
             sources[length++] = this->outputs[VARYING_SLOT_LAYER];
          else
             sources[length++] = zero;
 
-         if (vue_map->slots_valid & VARYING_BIT_VIEWPORT)
+         if ((vue_map->slots_valid & VARYING_BIT_VIEWPORT) &&
+             this->outputs[VARYING_SLOT_VIEWPORT].file != BAD_FILE)
             sources[length++] = this->outputs[VARYING_SLOT_VIEWPORT];
          else
             sources[length++] = zero;
 
-         if (vue_map->slots_valid & VARYING_BIT_PSIZ)
+         if ((vue_map->slots_valid & VARYING_BIT_PSIZ) &&
+             this->outputs[VARYING_SLOT_PSIZ].file != BAD_FILE)
             sources[length++] = this->outputs[VARYING_SLOT_PSIZ];
          else
             sources[length++] = zero;

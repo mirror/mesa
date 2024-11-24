@@ -224,7 +224,8 @@ PRAGMA_DIAGNOSTIC_ERROR(-Wpadded)
 struct iris_base_prog_key {
    unsigned program_string_id;
    bool limit_trig_input_range;
-   unsigned padding:24;
+   enum intel_vue_map_mode vue_map_mode:2;
+   unsigned padding:22;
 };
 
 struct iris_vue_prog_key {

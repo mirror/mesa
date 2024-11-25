@@ -199,6 +199,22 @@ vk_instance_init(struct vk_instance *instance,
       return vk_error(instance, VK_ERROR_INITIALIZATION_FAILED);
    }
 
+   if (mtx_init(&instance->surfaces.mutex, mtx_plain) != 0) {
+      mtx_destroy(&instance->debug_report.callbacks_mutex);
+      mtx_destroy(&instance->debug_utils.callbacks_mutex);
+      mtx_destroy(&instance->physical_devices.mutex);
+      return vk_error(instance, VK_ERROR_INITIALIZATION_FAILED);
+   }
+
+   instance->surfaces.table = util_hash_table_create_ptr_keys();
+   if (!instance->surfaces.table) {
+      mtx_destroy(&instance->debug_report.callbacks_mutex);
+      mtx_destroy(&instance->debug_utils.callbacks_mutex);
+      mtx_destroy(&instance->physical_devices.mutex);
+      mtx_destroy(&instance->surfaces.mutex);
+      return vk_error(instance, VK_ERROR_INITIALIZATION_FAILED);
+   }
+
    instance->trace_mode = parse_debug_string(getenv("MESA_VK_TRACE"), trace_options);
    instance->trace_frame = (uint32_t)debug_get_num_option("MESA_VK_TRACE_FRAME", 0xFFFFFFFF);
    instance->trace_trigger_file = secure_getenv("MESA_VK_TRACE_TRIGGER");
@@ -246,9 +262,15 @@ vk_instance_finish(struct vk_instance *instance)
          vk_free2(&instance->alloc, &messenger->alloc, messenger);
       }
    }
+   if (instance->surfaces.destroy) {
+      hash_table_foreach(instance->surfaces.table, entry)
+         instance->surfaces.destroy(&instance->alloc, entry->data);
+   }
+   _mesa_hash_table_destroy(instance->surfaces.table, NULL);
    mtx_destroy(&instance->debug_report.callbacks_mutex);
    mtx_destroy(&instance->debug_utils.callbacks_mutex);
    mtx_destroy(&instance->physical_devices.mutex);
+   mtx_destroy(&instance->surfaces.mutex);
    vk_free(&instance->alloc, (char *)instance->app_info.app_name);
    vk_free(&instance->alloc, (char *)instance->app_info.engine_name);
    vk_object_base_finish(&instance->base);

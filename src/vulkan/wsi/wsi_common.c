@@ -346,7 +346,7 @@ wsi_DestroySurfaceKHR(VkInstance _instance,
 #endif
 #ifdef VK_USE_PLATFORM_WIN32_KHR
    if (surface->platform == VK_ICD_WSI_PLATFORM_WIN32) {
-      wsi_win32_surface_destroy(surface, _instance, pAllocator);
+      wsi_win32_surface_release(surface, _instance, pAllocator);
       return;
    }
 #endif

@@ -83,6 +83,8 @@ struct wsi_win32_image {
 struct wsi_win32_surface {
    VkIcdSurfaceWin32 base;
 
+   uint32_t refcount;
+
    /* The first time a swapchain is created against this surface, a DComp
     * target/visual will be created for it and that swapchain will be bound.
     * When a new swapchain is created, we delay changing the visual's content
@@ -117,6 +119,25 @@ wsi_GetPhysicalDeviceWin32PresentationSupportKHR(VkPhysicalDevice physicalDevice
    return (wsi_device->queue_supports_blit & BITFIELD64_BIT(queueFamilyIndex)) != 0;
 }
 
+static void
+wsi_win32_surface_destroy_impl(const VkAllocationCallbacks *instance_alloc,
+                               const VkAllocationCallbacks *alloc,
+                               void *_surface)
+{
+   wsi_win32_surface *surface = (wsi_win32_surface *)_surface;
+   if (surface->visual)
+      surface->visual->Release();
+   if (surface->target)
+      surface->target->Release();
+   vk_free2(instance_alloc, alloc, surface);
+}
+
+static void
+wsi_win32_surface_destroy(const VkAllocationCallbacks *instance_alloc, void *_surface)
+{
+   wsi_win32_surface_destroy_impl(instance_alloc, nullptr, _surface);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 wsi_CreateWin32SurfaceKHR(VkInstance _instance,
                           const VkWin32SurfaceCreateInfoKHR *pCreateInfo,
@@ -128,33 +149,54 @@ wsi_CreateWin32SurfaceKHR(VkInstance _instance,
 
    assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_WIN32_SURFACE_CREATE_INFO_KHR);
 
-   surface = (wsi_win32_surface *)vk_zalloc2(&instance->alloc, pAllocator, sizeof(*surface), 8,
-                        VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
+   mtx_lock(&instance->surfaces.mutex);
+   instance->surfaces.destroy = wsi_win32_surface_destroy;
+   surface = (wsi_win32_surface *)util_hash_table_get(instance->surfaces.table, pCreateInfo->hwnd);
+   if (surface) {
+      surface->refcount++;
+   } else {
 
-   if (surface == NULL)
-      return VK_ERROR_OUT_OF_HOST_MEMORY;
+      surface = (wsi_win32_surface *)vk_zalloc2(&instance->alloc, pAllocator, sizeof(*surface), 8,
+                           VK_SYSTEM_ALLOCATION_SCOPE_OBJECT);
 
-   surface->base.base.platform = VK_ICD_WSI_PLATFORM_WIN32;
+      if (surface == NULL) {
+         mtx_unlock(&instance->surfaces.mutex);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
 
-   surface->base.hinstance = pCreateInfo->hinstance;
-   surface->base.hwnd = pCreateInfo->hwnd;
+      if (!_mesa_hash_table_insert(instance->surfaces.table, pCreateInfo->hwnd, surface)) {
+         vk_free2(&instance->alloc, pAllocator, surface);
+         mtx_unlock(&instance->surfaces.mutex);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
+
+      surface->refcount = 1;
+      surface->base.base.platform = VK_ICD_WSI_PLATFORM_WIN32;
+
+      surface->base.hinstance = pCreateInfo->hinstance;
+      surface->base.hwnd = pCreateInfo->hwnd;
+   }
 
    *pSurface = VkIcdSurfaceBase_to_handle(&surface->base.base);
+   mtx_unlock(&instance->surfaces.mutex);
 
    return VK_SUCCESS;
 }
 
 void
-wsi_win32_surface_destroy(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
+wsi_win32_surface_release(VkIcdSurfaceBase *icd_surface, VkInstance _instance,
                           const VkAllocationCallbacks *pAllocator)
 {
    VK_FROM_HANDLE(vk_instance, instance, _instance);
    wsi_win32_surface *surface = (wsi_win32_surface *)icd_surface;
-   if (surface->visual)
-      surface->visual->Release();
-   if (surface->target)
-      surface->target->Release();
-   vk_free2(&instance->alloc, pAllocator, icd_surface);
+   mtx_lock(&instance->surfaces.mutex);
+   if (--surface->refcount > 0) {
+      mtx_unlock(&instance->surfaces.mutex);
+      return;
+   }
+   wsi_win32_surface_destroy_impl(&instance->alloc, pAllocator, (void *)surface);
+   _mesa_hash_table_remove_key(instance->surfaces.table, surface->base.hwnd);
+   mtx_unlock(&instance->surfaces.mutex);
 }
 
 static VkResult

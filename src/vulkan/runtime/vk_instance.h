@@ -30,6 +30,7 @@
 #include "c11/threads.h"
 #include "util/list.h"
 #include "util/u_debug.h"
+#include "util/u_hash_table.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -173,6 +174,18 @@ struct vk_instance {
 
    uint32_t trace_frame;
    char *trace_trigger_file;
+
+   /** Cache of created WSI surfaces
+    *
+    * Some platforms cannot support multiple WSI surfaces created against
+    * the same native surface. Enable these platforms to cache surfaces
+    * and look them up when another one is attempted to be created.
+    */
+   struct {
+      mtx_t mutex;
+      struct hash_table *table;
+      void (*destroy)(const VkAllocationCallbacks *instance_alloc, void *surface);
+   } surfaces;
 };
 
 VK_DEFINE_HANDLE_CASTS(vk_instance, base, VkInstance,

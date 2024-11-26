@@ -687,6 +687,217 @@ etna_tensor_zero_point(const struct pipe_tensor *tensor)
    }
 }
 
+static void
+split_relu(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation,
+           unsigned tp_core, unsigned tp_cores_used, unsigned *in_dims, unsigned *out_dims)
+{
+   unsigned remaining_in_size;
+   unsigned dim_to_split = 2;
+
+   remaining_in_size = in_dims[dim_to_split];
+
+   for (unsigned i = 0; i <= tp_core; i++) {
+      unsigned size = DIV_ROUND_UP(remaining_in_size, (tp_cores_used - i));
+
+      if (i < tp_cores_used - 1) {
+         in_dims[dim_to_split] = size;
+         remaining_in_size -= in_dims[dim_to_split];
+      } else
+         in_dims[dim_to_split] = remaining_in_size;
+
+      out_dims[dim_to_split] = size;
+   }
+}
+
+#define DIMS(w, h, c) input_width == w && input_height == h && input_channels == c
+
+static struct etna_bo *
+create_relu_config(struct etna_ml_subgraph *subgraph, const struct etna_operation *operation,
+                   unsigned tp_core, unsigned tp_cores_used, struct etna_bo *pwl_lut)
+{
+   struct pipe_context *pctx = subgraph->base.context;
+   struct etna_bo *bo = etna_ml_create_bo(pctx, sizeof(struct etna_tp_params));
+   unsigned input_width = operation->input_width;
+   unsigned input_height = operation->input_height;
+   unsigned input_channels = operation->input_channels;
+   unsigned output_width = operation->output_width;
+   unsigned output_height = operation->output_height;
+   unsigned output_channels = operation->output_channels;
+   unsigned in_dims[3];
+   unsigned out_dims[3];
+   unsigned out_loop_3_count = 1;
+   unsigned out_loop_4_count = 1;
+
+   if (DIMS(360, 200, 8)) {
+      out_loop_3_count = 4;
+      out_loop_4_count = 23;
+   } else if (DIMS(180, 100, 16)) {
+      out_loop_3_count = 2;
+      out_loop_4_count = 12;
+   } else if (DIMS(180, 100, 32)) {
+      out_loop_3_count = 2;
+      out_loop_4_count = 12;
+   } else if (DIMS(90, 50, 32)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 6;
+   } else if (DIMS(90, 50, 64)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 6;
+   } else if (DIMS(90, 50, 96)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 6;
+   } else if (DIMS(45, 25, 64)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 3;
+   } else if (DIMS(45, 25, 96)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 3;
+   } else if (DIMS(45, 25, 128)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 3;
+   } else if (DIMS(23, 13, 128)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 2;
+   } else if (DIMS(23, 13, 96)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 2;
+   } else if (DIMS(23, 13, 256)) {
+      out_loop_3_count = 1;
+      out_loop_4_count = 2;
+   } else {
+      fprintf(stderr, "WARNING: Unexpected dimensions for ReLU operation.");
+      out_loop_3_count = 1;
+      out_loop_4_count = 1;
+   }
+
+   SWAP(input_width, input_height);
+   SWAP(output_width, output_height);
+
+   etna_bo_cpu_prep(bo, DRM_ETNA_PREP_WRITE);
+
+   struct etna_tp_params *map = etna_bo_map(bo);
+
+   set_default_tp_config(map);
+
+   in_dims[0] = input_width;
+   in_dims[1] = input_height;
+   in_dims[2] = input_channels;
+
+   out_dims[0] = output_width;
+   out_dims[1] = output_height;
+   out_dims[2] = output_channels;
+
+   split_pad(subgraph, operation, tp_core, tp_cores_used, in_dims, out_dims);
+
+   map->in_image_x_size = in_dims[0];
+   map->in_image_y_size = in_dims[1];
+   map->in_image_z_size = in_dims[2];
+
+   map->in_image_stride = input_width;
+   map->in_image_slice = input_width * input_height;
+
+   map->in_window_x_start = 0x0;
+   map->in_window_y_start = 0x0;
+
+   map->in_window_x_end = in_dims[0] - 1;
+   map->in_window_y_end = in_dims[1] - 1;
+
+   map->in_tile_x_size = 64;
+   map->in_tile_x_inc = 64;
+   map->in_tile_y_size = 16;
+   map->in_tile_y_inc = 16;
+
+   map->alu_pwl_enable = 0x1;
+   map->alu_load_pwl_lut = 0x1;
+   map->alu_load_pwl_lut_global_mem = 0x1;
+   map->alu_load_pwl_lut_address = etna_bo_gpu_va(pwl_lut);
+   map->alu_pwl_sign_support = 0x1;
+
+   struct pipe_resource *input = etna_ml_get_tensor(subgraph, operation->input_tensors[0]);
+   unsigned offset = etna_ml_get_offset(subgraph, operation->input_tensors[0]);
+   map->in_image_base_address = etna_bo_gpu_va(etna_resource(input)->bo) + offset;
+
+   struct pipe_resource *output = etna_ml_get_tensor(subgraph, operation->output_tensors[0]);
+   offset = etna_ml_get_offset(subgraph, operation->output_tensors[0]);
+   map->out_image_base_address = etna_bo_gpu_va(etna_resource(output)->bo) + offset;
+
+   for (unsigned i = 0; i < tp_core; i++) {
+      unsigned in_dims[3];
+      unsigned out_dims[3];
+      unsigned in_offset = 0;
+      unsigned out_offset = 0;
+
+      in_dims[0] = input_width;
+      in_dims[1] = input_height;
+      in_dims[2] = input_channels;
+
+      out_dims[0] = output_width;
+      out_dims[1] = output_height;
+      out_dims[2] = output_channels;
+
+      split_pad(subgraph, operation, i, tp_cores_used, in_dims, out_dims);
+
+      in_offset = map->in_image_slice * in_dims[2];
+      out_offset = out_dims[0] * out_dims[1] * out_dims[2];
+
+      map->in_image_base_address += in_offset;
+      map->out_image_base_address += out_offset;
+   }
+
+   map->out_loop_1_reset = 0x1;
+   map->out_loop_2_reset = 0x1;
+   map->out_loop_3_reset = 0x0;
+   map->out_loop_0_inc = 0x0;
+   map->out_loop_1_inc = 0x1;
+   map->out_loop_0_count = 0x1;
+   map->out_loop_1_count = 0x0;
+   map->out_loop_2_count = 0x0;
+
+   map->out_loop_3_count = out_loop_3_count;
+   map->out_loop_4_count = out_loop_4_count;
+
+   map->out_loop_2_inc = out_dims[0];
+   map->out_loop_3_inc = 64;
+   map->out_loop_4_inc = out_dims[0] * 16;
+   map->out_loop_6_inc = out_dims[0] * out_dims[1];
+
+   map->in_zp = operation->input_zero_point;
+   map->out_zp = operation->output_zero_point;
+
+   if (operation->input_scale != operation->output_scale) {
+      if (operation->input_scale == 0x1.ce11bap-4 &&
+          operation->output_scale == 0x1.e72804p-5) {
+         map->alu_output_post_multiplier = 0x72d1;
+      } else if (operation->input_scale == 0x1.2cb7c4p-5 &&
+                 operation->output_scale == 0x1.30f1e2p-6) {
+         map->alu_output_post_multiplier = 0x7c74;
+      } else if (operation->input_scale == 0x1.4c043cp-5 &&
+                 operation->output_scale == 0x1.4248ep-6) {
+         map->alu_output_post_multiplier = 0x3dd;
+         map->alu_output_postshift = 0x1f;
+         map->alu_output_postshift_5_6 = 0x3;
+      } else {
+         fprintf(stderr, "%a %x\n", operation->input_scale, fui(operation->input_scale));
+         fprintf(stderr, "%a %x\n", operation->output_scale, fui(operation->output_scale));
+         fprintf(stderr, "%a %x\n", operation->input_scale / operation->output_scale, fui(operation->input_scale / operation->output_scale));
+         fprintf(stderr, "%a %x\n", operation->output_scale / operation->input_scale, fui(operation->output_scale / operation->input_scale));
+         unreachable("Unsupported scales for ReLU.");
+      }
+   }
+
+   if (tp_cores_used > 1)
+      map->no_flush = tp_core < tp_cores_used - 1;
+
+   map->in_image_circular_buf_size = 0x0;
+   map->in_image_circular_buf_end_address_plus_1 = 0xFFFFFFFF >> 6;
+   map->out_image_circular_buf_size = 0x0;
+   map->out_image_circular_buf_end_address_plus_1 = 0xFFFFFFFF >> 6;
+
+   etna_bo_cpu_fini(bo);
+
+   return bo;
+}
+
 void
 etna_ml_lower_transpose(struct etna_ml_subgraph *subgraph,
                         const struct pipe_tensor *input_tensor,
@@ -832,6 +1043,61 @@ etna_ml_lower_pad(struct etna_ml_subgraph *subgraph,
 }
 
 void
+etna_ml_lower_relu(struct etna_ml_subgraph *subgraph,
+                   const struct pipe_ml_operation *operation,
+                   const struct pipe_tensor *input_tensor,
+                   struct etna_operation *relu)
+{
+   relu->type = ETNA_JOB_TYPE_TP;
+   relu->tp_type = ETNA_ML_TP_RELU;
+
+   relu->input_tensors[0] = input_tensor->index;
+   relu->input_count = 1;
+   relu->input_width = input_tensor->dims[1];
+   relu->input_height = input_tensor->dims[2];
+   relu->input_channels = input_tensor->dims[3];
+   relu->input_tensor_sizes[0] = relu->input_width *
+                                 relu->input_height *
+                                 relu->input_channels;
+   relu->input_zero_point = input_tensor->zero_point;
+   relu->input_scale = input_tensor->scale;
+
+   relu->output_tensors[0] = operation->output_tensors[0]->index;
+   relu->output_width = operation->output_tensors[0]->dims[1];
+   relu->output_height = operation->output_tensors[0]->dims[2];
+   relu->output_channels = operation->output_tensors[0]->dims[3];
+   relu->output_zero_point = operation->output_tensors[0]->zero_point;
+   relu->output_scale = operation->output_tensors[0]->scale;
+}
+
+static struct etna_bo *
+create_relu_lut_bo(struct etna_ml_subgraph *subgraph,
+                   const struct etna_operation *operation)
+{
+   struct pipe_context *context = subgraph->base.context;
+   struct etna_context *ctx = etna_context(context);
+   unsigned lut_length = 512;
+   struct etna_bo *pwl_lut = etna_bo_new(ctx->screen->dev,
+                                         lut_length * sizeof(uint32_t),
+                                         DRM_ETNA_GEM_CACHE_WC);
+
+   etna_bo_cpu_prep(pwl_lut, DRM_ETNA_PREP_WRITE);
+
+   uint32_t *map = etna_bo_map(pwl_lut);
+
+   for (int i = 0; i < lut_length; i++) {
+      if (i < 16)
+         map[i] = 0x0;
+      else
+         map[i] = MIN2(0x8000 + (i - 16) * 0x800, 0xf7fff);
+   }
+
+   etna_bo_cpu_fini(pwl_lut);
+
+   return pwl_lut;
+}
+
+void
 etna_ml_compile_operation_tp(struct etna_ml_subgraph *subgraph,
                              const struct etna_operation *operation,
                              struct etna_vip_instruction *instruction)
@@ -881,6 +1147,16 @@ etna_ml_compile_operation_tp(struct etna_ml_subgraph *subgraph,
       }
       break;
    }
+   case ETNA_ML_TP_RELU: {
+      unsigned tp_cores_used = etna_ml_get_core_info(ctx)->tp_core_count;
+
+      ML_DBG("relu: input_width %d tp_cores_used %d\n", operation->input_width, tp_cores_used);
+      instruction->pwl_lut = create_relu_lut_bo(subgraph, operation);
+      for (unsigned i = 0; i < tp_cores_used; i++) {
+         instruction->configs[i] = create_relu_config(subgraph, operation, i, tp_cores_used, instruction->pwl_lut);
+      }
+      break;
+   }
    }
    instruction->type = ETNA_JOB_TYPE_TP;
    instruction->tp_type = operation->tp_type;
@@ -907,7 +1183,8 @@ etna_ml_emit_operation_tp(struct etna_ml_subgraph *subgraph,
       etna_set_state(stream, VIVS_GL_OCB_REMAP_END, 0x0);
       etna_set_state(stream, VIVS_GL_TP_CONFIG, 0x0);
 
-      if (operation->tp_type == ETNA_ML_TP_PAD) {
+      if (operation->tp_type == ETNA_ML_TP_PAD ||
+          operation->tp_type == ETNA_ML_TP_RELU) {
          etna_set_state(stream, VIVS_GL_UNK03950, j < tp_core_count - 1 ? 0x8 : 0x0);
       } else {
          etna_set_state(stream, VIVS_GL_UNK03950, 0x0);

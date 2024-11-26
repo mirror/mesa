@@ -435,6 +435,30 @@ lower_operations(struct etna_ml_subgraph *subgraph,
             list_addtail(&operation->link, etna_operations);
             break;
          }
+         case PIPE_ML_OPERATION_TYPE_RELU: {
+            unsigned input_tensor = poperation->input_tensors[0]->index;
+
+            if (needs_transpose(poperations, count, poperation)) {
+               ML_DBG("Adding transpose for relu operation.\n");
+               struct etna_operation *operation = calloc(1, sizeof(*operation));
+               etna_ml_lower_transpose(subgraph, poperation->input_tensors[0], operation, &input_tensor);
+               list_addtail(&operation->link, etna_operations);
+            }
+
+            struct etna_operation *operation = calloc(1, sizeof(*operation));
+            etna_ml_lower_relu(subgraph, poperation, poperation->input_tensors[0], operation);
+            operation->input_tensors[0] = input_tensor;
+            list_addtail(&operation->link, etna_operations);
+
+            if (needs_detranspose(poperations, count, poperation)) {
+               ML_DBG("Adding detranspose for relu operation.\n");
+               struct etna_operation *detranspose = calloc(1, sizeof(*operation));
+               etna_ml_lower_detranspose(subgraph, operation, detranspose);
+               operation->output_tensors[0] = detranspose->input_tensors[0];
+               list_addtail(&detranspose->link, etna_operations);
+            }
+            break;
+         }
          default:
             unreachable("Unsupported ML operation type");
       }
@@ -523,6 +547,7 @@ count_tensors(const struct pipe_ml_operation *poperations,
       case PIPE_ML_OPERATION_TYPE_ADD:
       case PIPE_ML_OPERATION_TYPE_CONCATENATION:
       case PIPE_ML_OPERATION_TYPE_SPLIT:
+      case PIPE_ML_OPERATION_TYPE_RELU:
          break;
       default:
          unreachable("Unsupported ML operation type");
@@ -728,6 +753,8 @@ etna_ml_subgraph_invoke(struct pipe_context *pctx, struct pipe_ml_subgraph *psub
             case ETNA_JOB_TYPE_TP:
                for (unsigned j = 0; j < tp_core_count && operation->configs[j]; j++) {
                   dump_bo(operation->configs[j], "tp", i, j, 0, 0);
+                  if (operation->pwl_lut)
+                     dump_bo(operation->pwl_lut, "compressed", i, j, 0, 0);
                }
                break;
             case ETNA_JOB_TYPE_NN:
@@ -755,6 +782,8 @@ etna_ml_subgraph_invoke(struct pipe_context *pctx, struct pipe_ml_subgraph *psub
          etna_cmd_stream_ref_bo(stream, operation->configs[j], ETNA_RELOC_READ);
       if (operation->coefficients)
          etna_cmd_stream_ref_bo(stream, operation->coefficients, ETNA_RELOC_READ);
+      if (operation->pwl_lut)
+         etna_cmd_stream_ref_bo(stream, operation->pwl_lut, ETNA_RELOC_READ);
       etna_cmd_stream_ref_bo(stream, etna_resource(operation->input)->bo, ETNA_RELOC_READ);
       etna_cmd_stream_ref_bo(stream, etna_resource(operation->output)->bo, ETNA_RELOC_WRITE);
 
@@ -865,6 +894,7 @@ etna_ml_subgraph_destroy(struct pipe_context *context, struct pipe_ml_subgraph *
       for (unsigned j = 0; j < MAX_CONFIG_BOS && operation->configs[j]; j++)
          etna_bo_del(operation->configs[j]);
       etna_bo_del(operation->coefficients);
+      etna_bo_del(operation->pwl_lut);
       pipe_resource_reference(&operation->input, NULL);
       pipe_resource_reference(&operation->output, NULL);
    }

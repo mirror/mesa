@@ -39,6 +39,9 @@
 #include <assert.h>
 #include <vulkan/vulkan_core.h>
 #include <vulkan/vulkan_xcb.h>
+#ifdef GLX_USE_APPLE
+#include <vulkan/vulkan_metal.h>
+#endif
 #include "util/u_debug.h"
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"
@@ -376,10 +379,22 @@ static const __DRIswrastLoaderExtension swrastLoaderExtension = {
 
 static_assert(sizeof(struct kopper_vk_surface_create_storage) >= sizeof(VkXcbSurfaceCreateInfoKHR), "");
 
+#ifdef GLX_USE_APPLE
+void* kopperGetMetalLayer(void);
+#endif
+
 static void
 kopperSetSurfaceCreateInfo(void *_draw, struct kopper_loader_info *out)
 {
     __GLXDRIdrawable *draw = _draw;
+#ifdef GLX_USE_APPLE
+    VkMetalSurfaceCreateInfoEXT *metal = (VkMetalSurfaceCreateInfoEXT *)&out->bos;
+
+    metal->sType = VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT;
+    metal->pNext = NULL;
+    metal->flags = 0;
+    metal->pLayer = kopperGetMetalLayer();
+#else
     VkXcbSurfaceCreateInfoKHR *xcb = (VkXcbSurfaceCreateInfoKHR *)&out->bos;
 
     xcb->sType = VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR;
@@ -387,6 +402,7 @@ kopperSetSurfaceCreateInfo(void *_draw, struct kopper_loader_info *out)
     xcb->flags = 0;
     xcb->connection = XGetXCBConnection(draw->psc->dpy);
     xcb->window = draw->xDrawable;
+#endif
 }
 
 static const __DRIkopperLoaderExtension kopperLoaderExtension = {

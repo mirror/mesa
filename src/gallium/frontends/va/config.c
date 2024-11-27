@@ -253,6 +253,12 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
             }
          } break;
 #endif
+         case VAConfigAttribLowLatency:
+            return pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                            PIPE_VIDEO_ENTRYPOINT_BITSTREAM,
+                                            PIPE_VIDEO_CAP_LOW_LATENCY);
+            break;
+
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;
@@ -572,6 +578,12 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                value = roi_support;
          } break;
 
+         case VAConfigAttribLowLatency:
+            return pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                            PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                            PIPE_VIDEO_CAP_LOW_LATENCY);
+            break;
+
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;
@@ -582,6 +594,12 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
             value = get_screen_supported_va_rt_formats(pscreen,
                                                        PIPE_VIDEO_PROFILE_UNKNOWN,
                                                        PIPE_VIDEO_ENTRYPOINT_PROCESSING);
+            break;
+         case VAConfigAttribLowLatency:
+            return pscreen->get_video_param(pscreen,
+                                            PIPE_VIDEO_PROFILE_UNKNOWN,
+                                            PIPE_VIDEO_ENTRYPOINT_PROCESSING,
+                                            PIPE_VIDEO_CAP_LOW_LATENCY);
             break;
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
@@ -746,6 +764,8 @@ vlVaCreateConfig(VADriverContextP ctx, VAProfile profile, VAEntrypoint entrypoin
             return VA_STATUS_ERROR_INVALID_VALUE;
          }
       }
+      if (attrib_list[i].type == VAConfigAttribLowLatency)
+         config->low_latency = attrib_list[i].value;
    }
 
    /* Default value if not specified in the input attributes. */

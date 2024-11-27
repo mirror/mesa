@@ -310,6 +310,8 @@ vlVaCreateContext(VADriverContextP ctx, VAConfigID config_id, int picture_width,
    if (!context)
       return VA_STATUS_ERROR_ALLOCATION_FAILED;
 
+   context->templat.low_latency = config->low_latency;
+
    if (is_vpp && !drv->vscreen->pscreen->get_video_param(drv->vscreen->pscreen,
                                                          PIPE_VIDEO_PROFILE_UNKNOWN,
                                                          PIPE_VIDEO_ENTRYPOINT_PROCESSING,

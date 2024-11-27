@@ -902,6 +902,9 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
 
          return 0;
 
+      case PIPE_VIDEO_CAP_LOW_LATENCY:
+         return sscreen->info.vcn_ip_version >= VCN_1_0_0;
+
       default:
          return 0;
       }

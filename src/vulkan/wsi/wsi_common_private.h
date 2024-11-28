@@ -31,6 +31,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+struct gbm_device;
+struct gbm_bo;
 
 struct wsi_image;
 struct wsi_swapchain;
@@ -69,6 +71,11 @@ struct wsi_drm_image_params {
    uint32_t num_modifier_lists;
    const uint32_t *num_modifiers;
    const uint64_t *const *modifiers;
+
+#ifndef WIN32
+   struct gbm_device *gbm;
+   void *libgbm;
+#endif
 };
 
 struct wsi_dxgi_image_params {
@@ -85,10 +92,17 @@ struct wsi_image_info {
    VkExternalMemoryImageCreateInfo ext_mem;
    VkImageFormatListCreateInfo format_list;
    VkImageDrmFormatModifierListCreateInfoEXT drm_mod_list;
+   VkImageDrmFormatModifierExplicitCreateInfoEXT drm_explicit_mod;
+   VkSubresourceLayout plane_layouts[4];
 
    enum wsi_image_type image_type;
    bool explicit_sync;
    bool prime_use_linear_modifier;
+
+#ifndef WIN32
+   struct gbm_device *gbm;
+   void *libgbm;
+#endif
 
    /* Not really part of VkImageCreateInfo but needed to figure out the
     * number of planes we need to bind.
@@ -114,6 +128,10 @@ struct wsi_image_info {
    VkResult (*finish_create)(const struct wsi_swapchain *chain,
                              const struct wsi_image_info *info,
                              struct wsi_image *image);
+
+   void (*destroy)(const struct wsi_swapchain *chain,
+                   const struct wsi_image_info *info,
+                   struct wsi_image *image);
 };
 
 enum wsi_explicit_sync_timelines
@@ -157,14 +175,13 @@ struct wsi_image {
 
 #ifndef _WIN32
    uint64_t drm_modifier;
+   struct gbm_bo *gbm_bo;
+   int dma_buf_fd;
 #endif
    int num_planes;
    uint32_t sizes[4];
    uint32_t offsets[4];
    uint32_t row_pitches[4];
-#ifndef _WIN32
-   int dma_buf_fd;
-#endif
    void *cpu_map;
 };
 

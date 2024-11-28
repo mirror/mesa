@@ -780,6 +780,9 @@ wsi_destroy_image(const struct wsi_swapchain *chain,
 #endif
    }
 
+   if (chain->image_info.destroy)
+      chain->image_info.destroy(chain, &chain->image_info, image);
+
    if (image->cpu_map != NULL) {
       wsi->UnmapMemory(chain->device, image->blit.buffer != VK_NULL_HANDLE ?
                                       image->blit.memory : image->memory);

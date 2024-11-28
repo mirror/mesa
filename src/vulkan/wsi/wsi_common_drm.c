@@ -41,6 +41,8 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <xf86drm.h>
+#include <dlfcn.h>
+#include <gbm.h>
 
 uint32_t
 wsi_common_drm_format_for_vk_format(VkFormat vk_format, bool alpha)
@@ -855,6 +857,189 @@ wsi_configure_prime_image(UNUSED const struct wsi_swapchain *chain,
    return VK_SUCCESS;
 }
 
+static struct gbm_bo *
+wsi_create_foreign_bo(const struct wsi_image_info *info)
+{
+   const uint32_t fourcc =
+	wsi_common_drm_format_for_vk_format(info->create.format, true);
+
+   if (info->prime_use_linear_modifier) {
+      const uint64_t linear = DRM_FORMAT_MOD_LINEAR;
+      struct gbm_bo *(*gbm_bo_create_with_modifiers2)(struct gbm_device *,
+                                                      uint32_t, uint32_t,
+                                                      uint32_t, const uint64_t *,
+                                                      const unsigned int,
+                                                      uint32_t);
+      gbm_bo_create_with_modifiers2 = dlsym(info->libgbm, "gbm_bo_create_with_modifiers2");
+      return gbm_bo_create_with_modifiers2(info->gbm,
+                                           info->create.extent.width,
+                                           info->create.extent.height,
+                                           fourcc, &linear, 1,
+                                           GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT);
+   } else {
+      struct gbm_bo *(*gbm_bo_create)(struct gbm_device *,
+                                      uint32_t, uint32_t,
+                                      uint32_t, uint32_t);
+      gbm_bo_create = dlsym(info->libgbm, "gbm_bo_create");
+      return gbm_bo_create(info->gbm,
+                           info->create.extent.width,
+                           info->create.extent.height,
+                           fourcc,
+                           GBM_BO_USE_RENDERING | GBM_BO_USE_SCANOUT |
+                           GBM_BO_USE_LINEAR);
+   }
+}
+
+static VkResult
+wsi_create_foreign_image_mem(const struct wsi_swapchain *chain,
+                             const struct wsi_image_info *info,
+                             struct wsi_image *image)
+{
+   const struct wsi_device *wsi = chain->wsi;
+   VkResult result;
+
+   image->gbm_bo = wsi_create_foreign_bo(info);
+   if (!image->gbm_bo)
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+   int (*gbm_bo_get_fd)(struct gbm_bo*) = dlsym(info->libgbm, "gbm_bo_get_fd");
+   uint32_t (*gbm_bo_get_stride)(struct gbm_bo*) = dlsym(info->libgbm,
+                                                         "gbm_bo_get_stride");
+   image->dma_buf_fd = gbm_bo_get_fd(image->gbm_bo);
+   assert(image->dma_buf_fd >= 0);
+   uint32_t linear_stride = gbm_bo_get_stride(image->gbm_bo);
+   uint32_t linear_size = linear_stride * info->create.extent.height;
+
+   /* Ensure our BO is compatible with our template */
+
+   const VkExternalMemoryBufferCreateInfo buffer_external_info = {
+      .sType = VK_STRUCTURE_TYPE_EXTERNAL_MEMORY_BUFFER_CREATE_INFO,
+      .pNext = NULL,
+      .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+   };
+   const VkBufferCreateInfo buffer_info = {
+      .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+      .pNext = &buffer_external_info,
+      .size = linear_size,
+      .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+      .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
+   };
+
+   result = wsi->CreateBuffer(chain->device, &buffer_info, &chain->alloc,
+                              &image->blit.buffer);
+   if (result != VK_SUCCESS)
+      return result;
+
+   VkMemoryRequirements reqs;
+   wsi->GetBufferMemoryRequirements(chain->device, image->blit.buffer,
+                                    &reqs);
+   assert(reqs.size <= linear_size);
+
+   const struct wsi_memory_allocate_info memory_wsi_info = {
+      .sType = VK_STRUCTURE_TYPE_WSI_MEMORY_ALLOCATE_INFO_MESA,
+      .pNext = NULL,
+      .implicit_sync = true,
+   };
+   const VkImportMemoryFdInfoKHR buf_mem_fd_info = {
+      .sType = VK_STRUCTURE_TYPE_IMPORT_MEMORY_FD_INFO_KHR,
+      .pNext = &memory_wsi_info,
+      .fd = os_dupfd_cloexec(image->dma_buf_fd),
+      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+   };
+   assert(buf_mem_fd_info.fd >= 0);
+   const VkMemoryDedicatedAllocateInfo buf_mem_dedicated_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+      .pNext = &buf_mem_fd_info,
+      .image = VK_NULL_HANDLE,
+      .buffer = image->blit.buffer,
+   };
+   const VkMemoryAllocateInfo buf_mem_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .pNext = &buf_mem_dedicated_info,
+      .allocationSize = linear_size,
+      .memoryTypeIndex =
+         info->select_blit_dst_memory_type(wsi, reqs.memoryTypeBits),
+   };
+
+   result = wsi->AllocateMemory(chain->device, &buf_mem_info, &chain->alloc,
+                                &image->blit.memory);
+   if (result != VK_SUCCESS)
+      return result;
+
+   result = wsi->BindBufferMemory(chain->device, image->blit.buffer,
+                                  image->blit.memory, 0);
+   if (result != VK_SUCCESS)
+      return result;
+
+   wsi->GetImageMemoryRequirements(chain->device, image->image, &reqs);
+
+   const VkMemoryDedicatedAllocateInfo memory_dedicated_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO,
+      .pNext = NULL,
+      .image = image->image,
+      .buffer = VK_NULL_HANDLE,
+   };
+   const VkMemoryAllocateInfo memory_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .pNext = &memory_dedicated_info,
+      .allocationSize = reqs.size,
+      .memoryTypeIndex =
+         info->select_image_memory_type(wsi, reqs.memoryTypeBits),
+   };
+
+   result = wsi->AllocateMemory(chain->device, &memory_info,
+                                &chain->alloc, &image->memory);
+   if (result != VK_SUCCESS)
+      return result;
+
+   image->num_planes = 1;
+   image->sizes[0] = linear_size;
+   image->row_pitches[0] = linear_stride;
+   image->offsets[0] = 0;
+
+   return VK_SUCCESS;
+}
+
+static void
+wsi_destroy_foreign_image(const struct wsi_swapchain *chain,
+                          const struct wsi_image_info *info, struct wsi_image *image)
+{
+   void (*gbm_bo_destroy)(struct gbm_bo *) = dlsym(info->libgbm, "gbm_bo_destroy");
+   gbm_bo_destroy(image->gbm_bo);
+}
+
+static VkResult
+wsi_configure_foreign_image(const struct wsi_swapchain *chain,
+                            const struct wsi_drm_image_params *params,
+                            const VkSwapchainCreateInfoKHR *pCreateInfo,
+                            struct wsi_image_info *info)
+{
+   VkResult result =
+      wsi_configure_image(chain, pCreateInfo,
+                          VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+                          info);
+   if (result != VK_SUCCESS)
+      return result;
+
+   wsi_configure_buffer_image(chain, pCreateInfo,
+                              WSI_PRIME_LINEAR_STRIDE_ALIGN, 4096,
+                              info);
+   info->create.tiling = VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT;
+
+   wsi_memory_type_select_cb select_buffer_memory_type =
+      params->same_gpu ? wsi_select_device_memory_type :
+                           prime_select_buffer_memory_type;
+   info->prime_use_linear_modifier = false;
+   info->create_mem = wsi_create_foreign_image_mem;
+   info->select_blit_dst_memory_type = select_buffer_memory_type;
+   info->select_image_memory_type = wsi_select_device_memory_type;
+   info->destroy = wsi_destroy_foreign_image;
+   info->gbm = params->gbm;
+   info->libgbm = params->libgbm;
+
+   return VK_SUCCESS;
+}
+
 bool
 wsi_drm_image_needs_buffer_blit(const struct wsi_device *wsi,
                                 const struct wsi_drm_image_params *params)
@@ -877,9 +1062,13 @@ wsi_drm_configure_image(const struct wsi_swapchain *chain,
    assert(params->base.image_type == WSI_IMAGE_TYPE_DRM);
 
    if (chain->blit.type == WSI_SWAPCHAIN_BUFFER_BLIT) {
-      return wsi_configure_prime_image(chain, pCreateInfo,
-                                       params,
-                                       info);
+      if (params->gbm)
+         return wsi_configure_foreign_image(chain, params, pCreateInfo,
+                                            info);
+      else
+         return wsi_configure_prime_image(chain, pCreateInfo,
+                                          params,
+                                          info);
    } else {
       return wsi_configure_native_image(chain, pCreateInfo,
                                         params,

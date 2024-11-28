@@ -42,6 +42,7 @@
 #include <errno.h>
 #include <string.h>
 #include <fcntl.h>
+#include <dlfcn.h>
 #include "drm-uapi/drm_fourcc.h"
 #include "util/libdrm.h"
 #include "util/cnd_monotonic.h"
@@ -87,6 +88,12 @@ struct wsi_x11_connection {
    bool is_xwayland;
    bool has_mit_shm;
    bool has_xfixes;
+   struct {
+      bool cross;
+      int gbm_fd;
+      struct gbm_device *gbm;
+      void *libgbm;
+   } cross_device;
 };
 
 struct wsi_x11 {
@@ -146,6 +153,7 @@ wsi_dri3_open(xcb_connection_t *conn,
  */
 static bool
 wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
+                              struct wsi_x11_connection *wsi_conn,
                               xcb_connection_t *conn)
 {
    xcb_screen_iterator_t screen_iter =
@@ -161,9 +169,25 @@ wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
 
    bool match = wsi_dev->can_present_on_device(wsi_dev->pdevice, dri3_fd);
 
-   close(dri3_fd);
+   if (getenv("WSI_FORCE_CROSS_DEVICE_BLIT"))
+      match = false;
 
-   return match;
+   if (match) {
+      wsi_conn->cross_device.cross = false;
+      close(dri3_fd);
+      return true;
+   }
+
+   fprintf(stderr, "WSI: using cross-device blit\n");
+   wsi_conn->cross_device.cross = true;
+   wsi_conn->cross_device.gbm_fd = dri3_fd;
+   wsi_conn->cross_device.libgbm = dlopen("libgbm.so", RTLD_NOW | RTLD_NOLOAD);
+   struct gbm_device* (*gbm_create_device)(int)= dlsym(wsi_conn->cross_device.libgbm,
+                                                       "gbm_create_device");
+   wsi_conn->cross_device.gbm = gbm_create_device(wsi_conn->cross_device.gbm_fd);
+   assert(wsi_conn->cross_device.libgbm);
+
+   return false;
 }
 #endif
 
@@ -390,6 +414,13 @@ static void
 wsi_x11_connection_destroy(struct wsi_device *wsi_dev,
                            struct wsi_x11_connection *conn)
 {
+   if (conn->cross_device.cross) {
+      void (*gbm_device_destroy)(struct gbm_device*) = dlsym(conn->cross_device.libgbm,
+                                                             "gbm_device_destroy");
+      gbm_device_destroy(conn->cross_device.gbm);
+      close(conn->cross_device.gbm_fd);
+      dlclose(conn->cross_device.libgbm);
+   }
    vk_free(&wsi_dev->instance_alloc, conn);
 }
 
@@ -2099,7 +2130,7 @@ x11_image_init(VkDevice device_h, struct x11_swapchain *chain,
    }
    image->pixmap = xcb_generate_id(chain->conn);
 
-   if (image->base.drm_modifier != DRM_FORMAT_MOD_INVALID) {
+   if (image->base.drm_modifier != DRM_FORMAT_MOD_INVALID && chain->has_dri3_modifiers) {
       /* If the image has a modifier, we must have DRI3 v1.2. */
       assert(chain->has_dri3_modifiers);
 
@@ -2366,7 +2397,7 @@ wsi_x11_swapchain_query_dri3_modifiers_changed(struct x11_swapchain *chain)
 
    drm_image_params = (struct wsi_drm_image_params){
       .base.image_type = WSI_IMAGE_TYPE_DRM,
-      .same_gpu = wsi_x11_check_dri3_compatible(wsi_device, chain->conn),
+      .same_gpu = wsi_x11_check_dri3_compatible(wsi_device, wsi_conn, chain->conn),
       .explicit_sync = chain->base.image_info.explicit_sync,
    };
 
@@ -2630,9 +2661,10 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
       image_params = &cpu_image_params.base;
    } else {
 #ifdef HAVE_X11_DRM
+      bool same_gpu = wsi_x11_check_dri3_compatible(wsi_device, wsi_conn, conn);
       drm_image_params = (struct wsi_drm_image_params) {
          .base.image_type = WSI_IMAGE_TYPE_DRM,
-         .same_gpu = wsi_x11_check_dri3_compatible(wsi_device, conn),
+         .same_gpu = same_gpu,
          .explicit_sync =
 #ifdef HAVE_DRI3_EXPLICIT_SYNC
             wsi_conn->has_dri3_explicit_sync &&
@@ -2642,7 +2674,17 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
             false,
 #endif
       };
-      if (wsi_device->supports_modifiers) {
+
+      if (!same_gpu) {
+         drm_image_params.libgbm = wsi_conn->cross_device.libgbm;
+         drm_image_params.gbm = wsi_conn->cross_device.gbm;
+         modifiers[0] = calloc(1, sizeof(*modifiers[0]));
+         modifiers[0][0] = DRM_FORMAT_MOD_LINEAR;
+         num_modifiers[0] = 1;
+         drm_image_params.modifiers = (const uint64_t **) modifiers;
+         drm_image_params.num_modifiers = num_modifiers;
+         drm_image_params.num_modifier_lists = 1;
+      } else if (wsi_device->supports_modifiers) {
          wsi_x11_get_dri3_modifiers(wsi_conn, conn, window, bit_depth, 32,
                                     modifiers, num_modifiers,
                                     &drm_image_params.num_modifier_lists,

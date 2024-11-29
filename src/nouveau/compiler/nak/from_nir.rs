@@ -2622,14 +2622,18 @@ impl<'a> ShaderFromNir<'a> {
                 let size_B =
                     (intrin.def.bit_size() / 8) * intrin.def.num_components();
                 assert!(u32::from(size_B) <= intrin.align());
+
                 let order = if intrin.intrinsic
                     == nir_intrinsic_load_global_constant
                     || (intrin.access() & ACCESS_CAN_REORDER) != 0
                 {
                     MemOrder::Constant
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
+
                 let access = MemAccess {
                     mem_type: MemType::from_size(size_B, false),
                     space: MemSpace::Global(MemAddrType::A64),
@@ -3069,10 +3073,15 @@ impl<'a> ShaderFromNir<'a> {
                 let size_B =
                     (srcs[0].bit_size() / 8) * srcs[0].num_components();
                 assert!(u32::from(size_B) <= intrin.align());
+                let order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
                 let access = MemAccess {
                     mem_type: MemType::from_size(size_B, false),
                     space: MemSpace::Global(MemAddrType::A64),
-                    order: MemOrder::Strong(MemScope::System),
+                    order,
                     eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                 };

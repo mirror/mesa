@@ -1462,49 +1462,85 @@ dbg_expand_rpt(struct ir3 *ir)
    }
 }
 
-struct ir3_helper_block_data {
-   /* Whether helper invocations may be used on any path starting at the
+struct ir3_end_of_feature_block_data {
+   /* Whether the feature may be used on any path starting at the
     * beginning of the block.
     */
-   bool uses_helpers_beginning;
+   bool uses_feature_beginning;
 
-   /* Whether helper invocations may be used by the end of the block. Branch
-    * instructions are considered to be "between" blocks, because (eq) has to be
-    * inserted after them in the successor blocks, so branch instructions using
-    * helpers will result in uses_helpers_end = true for their block.
+   /* Whether the feature may be used by the end of the block. Branch
+    * instructions are considered to be "between" blocks, because the flag has
+    * to be inserted after them in the successor blocks, so branch instructions
+    * using the feature will result in uses_feature_end = true for their block.
     */
-   bool uses_helpers_end;
+   bool uses_feature_end;
 };
 
-/* Insert (eq) after the last instruction using the results of helper
- * invocations. Use a backwards dataflow analysis to determine at which points
- * in the program helper invocations are definitely never used, and then insert
- * (eq) at the point where we cross from a point where they may be used to a
- * point where they are never used.
- */
-static void
-helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
-             struct ir3_shader_variant *so)
+static bool
+needs_eolm(struct ir3_instruction *instr)
 {
-   bool non_prefetch_helpers = false;
+   return opc_cat(instr->opc) == 6;
+}
+
+static bool
+needs_eogm(struct ir3_instruction *instr)
+{
+   return opc_cat(instr->opc) == 5 || opc_cat(instr->opc) == 6;
+}
+
+static bool
+is_cheap_for_eolm_eogm(struct ir3_instruction *instr)
+{
+   /* Blob inserts these flags as soon as possible */
+   return false;
+}
+
+static bool
+is_cheap_for_eq(struct ir3_instruction *instr)
+{
+   /* ALU and SFU instructions probably aren't going to benefit much
+    * from killing helper invocations, because they complete at least
+    * an entire quad in a cycle and don't access any quad-divergent
+    * memory, so delay emitting (eq) in the hopes that we find a nop
+    * afterwards.
+    */
+   return is_alu(instr) || is_sfu(instr);
+}
+
+/* There are NOP flags which signify that certain feature will not be used after
+ * this point. It could be the end of helper invocations (eq), the end of
+ * cat5/cat6 usage (eolm)/(eogm). The common denominator is that such flags are
+ * placed onto nop and cannot be used inside a control flow.
+ *
+ * Use a backwards dataflow analysis to determine at which points
+ * in the feature is definitely never used, and then insert
+ * corresponding flag at the point where we cross from a point where they may be
+ * used to a point where they are never used.
+ */
+static bool
+feature_usage_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
+                    struct ir3_shader_variant *so,
+                    bool (*check_instr)(struct ir3_instruction *),
+                    bool (*cheap_instr)(struct ir3_instruction *),
+                    uint32_t new_flag)
+{
+   bool uses_feature = false;
 
    foreach_block (block, &ir->block_list) {
-      struct ir3_helper_block_data *bd =
-         rzalloc(ctx, struct ir3_helper_block_data);
+      struct ir3_end_of_feature_block_data *bd =
+         rzalloc(ctx, struct ir3_end_of_feature_block_data);
       foreach_instr (instr, &block->instr_list) {
-         if (uses_helpers(instr)) {
-            bd->uses_helpers_beginning = true;
-            if (instr->opc != OPC_META_TEX_PREFETCH) {
-               non_prefetch_helpers = true;
-            }
+         if (check_instr(instr)) {
+            uses_feature = true;
+            bd->uses_feature_beginning = true;
          }
 
          if (instr->opc == OPC_SHPE) {
-            /* (eq) is not allowed in preambles, mark the whole preamble as
-             * requiring helpers to avoid putting it there.
+            /* The flags are not allowed in preambles, mark the whole preamble
+             * as to avoid putting it there.
              */
-            bd->uses_helpers_beginning = true;
-            bd->uses_helpers_end = true;
+            bd->uses_feature_beginning = true;
+            bd->uses_feature_end = true;
          }
       }
 
@@ -1513,52 +1549,46 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
          if (terminator->opc == OPC_BALL || terminator->opc == OPC_BANY ||
              (terminator->opc == OPC_GETONE &&
               (terminator->flags & IR3_INSTR_NEEDS_HELPERS))) {
-            bd->uses_helpers_beginning = true;
-            bd->uses_helpers_end = true;
-            non_prefetch_helpers = true;
+            bd->uses_feature_beginning = true;
+            bd->uses_feature_end = true;
          }
       }
 
       block->data = bd;
    }
 
-   /* If only prefetches use helpers then we can disable them in the shader via
-    * a register setting.
-    */
-   if (!non_prefetch_helpers) {
-      so->prefetch_end_of_quad = true;
-      return;
-   }
+   if (!uses_feature)
+      return false;
 
    bool progress;
    do {
       progress = false;
       foreach_block_rev (block, &ir->block_list) {
-         struct ir3_helper_block_data *bd = block->data;
+         struct ir3_end_of_feature_block_data *bd = block->data;
 
-         if (!bd->uses_helpers_beginning)
+         if (!bd->uses_feature_beginning)
             continue;
 
          for (unsigned i = 0; i < block->physical_predecessors_count; i++) {
             struct ir3_block *pred = block->physical_predecessors[i];
-            struct ir3_helper_block_data *pred_bd = pred->data;
-            if (!pred_bd->uses_helpers_end) {
-               pred_bd->uses_helpers_end = true;
+            struct ir3_end_of_feature_block_data *pred_bd = pred->data;
+            if (!pred_bd->uses_feature_end) {
+               pred_bd->uses_feature_end = true;
             }
-            if (!pred_bd->uses_helpers_beginning) {
-               pred_bd->uses_helpers_beginning = true;
+            if (!pred_bd->uses_feature_beginning) {
+               pred_bd->uses_feature_beginning = true;
                progress = true;
             }
          }
       }
    } while (progress);
 
-   /* Now, we need to determine the points where helper invocations become
+   /* Now, we need to determine the points where the feature become
     * unused.
     */
    foreach_block (block, &ir->block_list) {
-      struct ir3_helper_block_data *bd = block->data;
-      if (bd->uses_helpers_end)
+      struct ir3_end_of_feature_block_data *bd = block->data;
+      if (bd->uses_feature_end)
          continue;
 
       /* We need to check the predecessors because of situations with critical
@@ -1572,10 +1602,10 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
        *    ...
        *    end
        *
-       * The endif block will have uses_helpers_beginning = false and
-       * uses_helpers_end = false, but because we jump to there from the
-       * beginning of the if where uses_helpers_end = true, we still want to
-       * add an (eq) at the beginning of the block:
+       * The endif block will have uses_feature_beginning = false and
+       * uses_feature_end = false, but because we jump to there from the
+       * beginning of the if where uses_feature_end = true, we still want to
+       * add the flag at the beginning of the block:
        *
        *    br p0.x, #endif
        *    ...
@@ -1603,33 +1633,29 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
        *    ...
        *    end
        *
-       * We also need this to make sure we insert (eq) after branches which use
-       * helper invocations.
+       * We also need this to make sure we insert the flag after branches which use
+       * the feature.
        */
-      bool pred_uses_helpers = bd->uses_helpers_beginning;
+      bool pred_uses_feature = bd->uses_feature_beginning;
       for (unsigned i = 0; i < block->physical_predecessors_count; i++) {
          struct ir3_block *pred = block->physical_predecessors[i];
-         struct ir3_helper_block_data *pred_bd = pred->data;
-         if (pred_bd->uses_helpers_end) {
-            pred_uses_helpers = true;
+         struct ir3_end_of_feature_block_data *pred_bd = pred->data;
+         if (pred_bd->uses_feature_end) {
+            pred_uses_feature = true;
             break;
          }
       }
 
-      if (!pred_uses_helpers)
+      if (!pred_uses_feature)
          continue;
 
-      /* The last use of helpers is somewhere between the beginning and the
-       * end. first_instr will be the first instruction where helpers are no
-       * longer required, or NULL if helpers are not required just at the end.
+      /* The last use of the feature is somewhere between the beginning and the
+       * end. first_instr will be the first instruction where the feature are no
+       * longer required, or NULL if the feature are not required just at the end.
        */
       struct ir3_instruction *first_instr = NULL;
       foreach_instr_rev (instr, &block->instr_list) {
-         /* Skip prefetches because they actually execute before the block
-          * starts and at this stage they aren't guaranteed to be at the start
-          * of the block.
-          */
-         if (uses_helpers(instr) && instr->opc != OPC_META_TEX_PREFETCH)
+         if (check_instr(instr))
             break;
          first_instr = instr;
       }
@@ -1642,18 +1668,12 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
              * insert one.
              */
             if (instr->opc == OPC_NOP) {
-               instr->flags |= IR3_INSTR_EQ;
+               instr->flags |= new_flag;
                killed = true;
                break;
             }
 
-            /* ALU and SFU instructions probably aren't going to benefit much
-             * from killing helper invocations, because they complete at least
-             * an entire quad in a cycle and don't access any quad-divergent
-             * memory, so delay emitting (eq) in the hopes that we find a nop
-             * afterwards.
-             */
-            if (is_alu(instr) || is_sfu(instr))
+            if (cheap_instr(instr))
                continue;
             if (instr->opc == OPC_PREDE)
                continue;
@@ -1670,10 +1690,32 @@ helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
       if (!killed && (expensive_instruction_in_block ||
                       block->successors[0] != ir3_end_block(ir))) {
          struct ir3_instruction *nop = ir3_NOP(block);
-         nop->flags |= IR3_INSTR_EQ;
+         nop->flags |= new_flag;
          if (first_instr)
             ir3_instr_move_before(nop, first_instr);
       }
+   }
+
+   return true;
+}
+
+/* Insert (eq) after the last instruction using the results of helper
+ * invocations. Use a backwards dataflow analysis to determine at which points
+ * in the program helper invocations are definitely never used, and then insert
+ * (eq) at the point where we cross from a point where they may be used to a
+ * point where they are never used.
+ */
+static void
+helper_sched(struct ir3_legalize_ctx *ctx, struct ir3 *ir,
+             struct ir3_shader_variant *so)
+{
+   if (!feature_usage_sched(ctx, ir, so, uses_helpers, is_cheap_for_eq,
+                            IR3_INSTR_EQ) &&
+       so->num_sampler_prefetch) {
+      /* If only prefetches use helpers then we can disable them in the shader
+       * via a register setting.
+       */
+      so->prefetch_end_of_quad = true;
    }
 }
 
@@ -1838,6 +1880,13 @@ ir3_legalize(struct ir3 *ir, struct ir3_shader_variant *so, int *max_bary)
 
    if (so->type == MESA_SHADER_FRAGMENT)
       kill_sched(ir, so);
+
+   if (so->type == MESA_SHADER_FRAGMENT && so->compiler->gen >= 7) {
+      feature_usage_sched(ctx, ir, so, needs_eolm, is_cheap_for_eolm_eogm,
+                          IR3_INSTR_EOLM);
+      feature_usage_sched(ctx, ir, so, needs_eogm, is_cheap_for_eolm_eogm,
+                          IR3_INSTR_EOGM);
+   }
 
    /* TODO: does (eq) exist before a6xx? */
    if (so->type == MESA_SHADER_FRAGMENT && so->need_pixlod &&

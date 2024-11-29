@@ -70,6 +70,7 @@ struct ir3_info {
    uint16_t last_baryf; /* instruction # of last varying fetch */
 
    uint16_t last_helper; /* last instruction to use helper invocations */
+   uint16_t last_eogm, last_eolm;
 
    /* Number of instructions of a given category: */
    uint16_t instrs_per_cat[8];
@@ -359,6 +360,11 @@ typedef enum ir3_instruction_flags {
     * their sources.
     */
    IR3_INSTR_IMM_OFFSET = BIT(21),
+
+   /* a7xx, set on a nop after all cat6 */
+   IR3_INSTR_EOLM = BIT(22),
+   /* a7xx, set on a nop after all cat5/cat6 */
+   IR3_INSTR_EOGM = BIT(23),
 } ir3_instruction_flags;
 
 struct ir3_instruction {
@@ -1236,7 +1242,6 @@ uses_helpers(struct ir3_instruction *instr)
    case OPC_QUAD_SHUFFLE_HORIZ:
    case OPC_QUAD_SHUFFLE_VERT:
    case OPC_QUAD_SHUFFLE_DIAG:
-   case OPC_META_TEX_PREFETCH:
       return true;
 
    /* sam requires helper invocations except for dummy prefetch instructions */

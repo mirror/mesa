@@ -274,6 +274,10 @@ ir3_collect_info(struct ir3_shader_variant *v)
 
    bool in_preamble = false;
    bool has_eq = false;
+   bool has_eolm = false;
+   bool has_eogm = false;
+   bool needs_eolm = false;
+   bool needs_eogm = false;
 
    foreach_block (block, &shader->block_list) {
       int sfu_delay = 0, mem_delay = 0;
@@ -288,6 +292,13 @@ ir3_collect_info(struct ir3_shader_variant *v)
             if (is_dest_gpr(reg)) {
                collect_reg_info(instr, reg, info);
             }
+         }
+
+         if (opc_cat(instr->opc) == 6) {
+            needs_eogm = true;
+            needs_eolm = true;
+         } else if (opc_cat(instr->opc) == 5) {
+            needs_eogm = true;
          }
 
          if ((instr->opc == OPC_STP || instr->opc == OPC_LDP)) {
@@ -314,9 +325,29 @@ ir3_collect_info(struct ir3_shader_variant *v)
             has_eq = true;
          }
 
+         if ((instr->opc == OPC_NOP) && (instr->flags & IR3_INSTR_EOLM)) {
+            info->last_eolm = info->instrs_count;
+            has_eolm = true;
+         }
+
+         if ((instr->opc == OPC_NOP) && (instr->flags & IR3_INSTR_EOGM)) {
+            info->last_eogm = info->instrs_count;
+            has_eogm = true;
+         }
+
          if (v->type == MESA_SHADER_FRAGMENT && v->need_pixlod &&
              instr->opc == OPC_END && !v->prefetch_end_of_quad && !has_eq)
             info->last_helper = info->instrs_count;
+
+         if (v->compiler->gen >= 7 && v->type == MESA_SHADER_FRAGMENT &&
+             instr->opc == OPC_END && needs_eolm && !has_eolm) {
+            info->last_eolm = info->instrs_count;
+         }
+
+         if (v->compiler->gen >= 7 && v->type == MESA_SHADER_FRAGMENT &&
+             instr->opc == OPC_END && needs_eogm && !has_eogm) {
+            info->last_eogm = info->instrs_count;
+         }
 
          if (instr->opc == OPC_SHPS)
             in_preamble = true;

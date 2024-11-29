@@ -1917,8 +1917,8 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
    uint32_t i;
    uint32_t extension_flag = 0;//enc->enc_pic.num_temporal_layers > 1 ? 1 : 0;
    bool show_existing = false;
-   bool frame_is_intra = av1_pic->frame_type == AV1_ENC_FRAME_TYPE_KEY ||
-                         av1_pic->frame_type == AV1_ENC_FRAME_TYPE_INTRA_ONLY;
+   bool frame_is_intra = av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY ||
+                         av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY;
    uint32_t obu_type = RENCODE_OBU_TYPE_FRAME_HEADER;
 
    radv_enc_av1_bs_instruction_type(cmd_buffer, RENCODE_AV1_BITSTREAM_INSTRUCTION_COPY, 0);
@@ -1930,7 +1930,7 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
    /*  uncompressed_header() */
    radv_enc_av1_bs_instruction_type(cmd_buffer, RENCODE_AV1_BITSTREAM_INSTRUCTION_COPY, 0);
    /*  show_existing_frame  */
-   show_existing = av1_pic->frame_type == AV1_ENC_FRAME_TYPE_SHOW_EXISTING;
+   //   show_existing = av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SHOW_EXISTING;
    radv_enc_code_fixed_bits(cmd_buffer, show_existing ? 1 : 0, 1);
    /*  if (show_existing_frame == 1) */
    if(show_existing) {
@@ -1938,17 +1938,17 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
       radv_enc_code_fixed_bits(cmd_buffer, 0, 3);//av1_pic->frame_to_show_map_idx, 3);
       /*  display_frame_id  */
       if (seq->flags.frame_id_numbers_present_flag)
-         radv_enc_code_fixed_bits(cmd_buffer, 0,//av1_pic->display_frame_id,
-                                                 RENCODE_AV1_DELTA_FRAME_ID_LENGTH +
-                                                 RENCODE_AV1_ADDITIONAL_FRAME_ID_LENGTH);
+         radv_enc_code_fixed_bits(cmd_buffer, av1_pic->current_frame_id,
+                                  seq->delta_frame_id_length_minus_2 + 2 +
+                                  seq->additional_frame_id_length_minus_1 + 1);
    } else {
       /*  frame_type  */
       radv_enc_code_fixed_bits(cmd_buffer, av1_pic->frame_type, 2);
       /*  show_frame  */
       radv_enc_code_fixed_bits(cmd_buffer, 1, 1);
       bool error_resilient_mode = false;
-      if ((av1_pic->frame_type == AV1_ENC_FRAME_TYPE_SWITCH) ||
-            (av1_pic->frame_type == AV1_ENC_FRAME_TYPE_KEY))
+      if ((av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH) ||
+            (av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY))
          error_resilient_mode = true;
       else {
          /*  error_resilient_mode  */
@@ -1973,11 +1973,11 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
       if (seq->flags.frame_id_numbers_present_flag)
          /*  current_frame_id  */
          radv_enc_code_fixed_bits(cmd_buffer, av1_pic->current_frame_id,
-               RENCODE_AV1_DELTA_FRAME_ID_LENGTH +
-               RENCODE_AV1_ADDITIONAL_FRAME_ID_LENGTH);
+                                  seq->delta_frame_id_length_minus_2 + 2 +
+                                  seq->additional_frame_id_length_minus_1 + 1);
 
       bool frame_size_override = false;
-      if (av1_pic->frame_type == AV1_ENC_FRAME_TYPE_SWITCH)
+      if (av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH)
          frame_size_override = true;
       else {
          /*  frame_size_override_flag  */
@@ -1992,8 +1992,8 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
          /*  primary_ref_frame  */
          radv_enc_code_fixed_bits(cmd_buffer, 0, 3);         /* always LAST_FRAME(1) */
 
-      if ((av1_pic->frame_type != AV1_ENC_FRAME_TYPE_SWITCH) &&
-          (av1_pic->frame_type != AV1_ENC_FRAME_TYPE_KEY))
+      if ((av1_pic->frame_type != STD_VIDEO_AV1_FRAME_TYPE_SWITCH) &&
+          (av1_pic->frame_type != STD_VIDEO_AV1_FRAME_TYPE_KEY))
          /*  refresh_frame_flags  */
          radv_enc_code_fixed_bits(cmd_buffer, av1_pic->refresh_frame_flags, 8);
 
@@ -2026,7 +2026,7 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
             if (seq->flags.frame_id_numbers_present_flag)
                radv_enc_code_fixed_bits(cmd_buffer,
                                         av1_pic->delta_frame_id_minus_1[i],
-                                        RENCODE_AV1_DELTA_FRAME_ID_LENGTH);
+                                        seq->delta_frame_id_length_minus_2 + 2);
          }
 
          if (frame_size_override && !error_resilient_mode)
@@ -2137,9 +2137,9 @@ radv_enc_cdf_default_table(struct radv_cmd_buffer *cmd_buffer,
    radv_cs_add_buffer(device->ws, cs, cmd_buffer->video.vid->ctx.mem->bo);
    uint64_t va = radv_buffer_get_va(cmd_buffer->video.vid->ctx.mem->bo);
    va += cmd_buffer->video.vid->ctx.offset;
-   uint32_t use_cdf_default = (av1_pic->frame_type == AV1_ENC_FRAME_TYPE_KEY ||
-                               av1_pic->frame_type == AV1_ENC_FRAME_TYPE_INTRA_ONLY ||
-                               av1_pic->frame_type == AV1_ENC_FRAME_TYPE_SWITCH);
+   uint32_t use_cdf_default = (av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY ||
+                               av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY ||
+                               av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH);
    ENC_BEGIN;
    radeon_emit(cs, pdev->vcn_enc_cmds.cdf_default_table_av1);
    radeon_emit(cs, use_cdf_default);
@@ -2452,8 +2452,8 @@ radv_video_enc_control_video_coding(struct radv_cmd_buffer *cmd_buffer, const Vk
          (VkVideoEncodeH265RateControlInfoKHR *)vk_find_struct_const(rate_control->pNext,
                                                                      VIDEO_ENCODE_H265_RATE_CONTROL_INFO_KHR);
       const VkVideoEncodeAV1RateControlInfoKHR *av1_rate_control =
-	(VkVideoEncodeAV1RateControlInfoKHR *)vk_find_struct_const(rate_control->pNext,
-								   VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR);
+        (VkVideoEncodeAV1RateControlInfoKHR *)vk_find_struct_const(rate_control->pNext,
+                                                                   VIDEO_ENCODE_AV1_RATE_CONTROL_INFO_KHR);
 
       uint32_t rate_control_method = RENCODE_RATE_CONTROL_METHOD_NONE;
 
@@ -2495,9 +2495,9 @@ radv_video_enc_control_video_coding(struct radv_cmd_buffer *cmd_buffer, const Vk
          const VkVideoEncodeH265RateControlLayerInfoKHR *h265_layer =
             (VkVideoEncodeH265RateControlLayerInfoKHR *)vk_find_struct_const(
                layer->pNext, VIDEO_ENCODE_H265_RATE_CONTROL_LAYER_INFO_KHR);
-	 const VkVideoEncodeAV1RateControlLayerInfoKHR *av1_layer =
-	   (VkVideoEncodeAV1RateControlLayerInfoKHR *)vk_find_struct_const(
-	       layer->pNext, VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR);
+         const VkVideoEncodeAV1RateControlLayerInfoKHR *av1_layer =
+           (VkVideoEncodeAV1RateControlLayerInfoKHR *)vk_find_struct_const(
+               layer->pNext, VIDEO_ENCODE_AV1_RATE_CONTROL_LAYER_INFO_KHR);
          uint32_t frame_rate_den, frame_rate_num;
          vid->rc_layer_init[l].target_bit_rate = layer->averageBitrate;
          vid->rc_layer_init[l].peak_bit_rate = layer->maxBitrate;

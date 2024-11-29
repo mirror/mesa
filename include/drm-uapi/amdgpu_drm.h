@@ -70,7 +70,7 @@ extern "C" {
 #define DRM_IOCTL_AMDGPU_WAIT_FENCES	DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_WAIT_FENCES, union drm_amdgpu_wait_fences)
 #define DRM_IOCTL_AMDGPU_VM		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_VM, union drm_amdgpu_vm)
 #define DRM_IOCTL_AMDGPU_FENCE_TO_HANDLE DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_FENCE_TO_HANDLE, union drm_amdgpu_fence_to_handle)
-#define DRM_IOCTL_AMDGPU_SCHED		DRM_IOW(DRM_COMMAND_BASE + DRM_AMDGPU_SCHED, union drm_amdgpu_sched)
+#define DRM_IOCTL_AMDGPU_SCHED		DRM_IOWR(DRM_COMMAND_BASE + DRM_AMDGPU_SCHED, union drm_amdgpu_sched)
 
 /**
  * DOC: memory domains
@@ -343,6 +343,11 @@ union drm_amdgpu_vm {
 #define AMDGPU_SCHED_OP_PROCESS_PRIORITY_OVERRIDE	1
 #define AMDGPU_SCHED_OP_CONTEXT_PRIORITY_OVERRIDE	2
 
+struct drm_amdgpu_sched_info {
+	 __u32 pipe;
+	 __u32 queue;
+};
+
 struct drm_amdgpu_sched_in {
 	/* AMDGPU_SCHED_OP_* */
 	__u32	op;
@@ -350,10 +355,17 @@ struct drm_amdgpu_sched_in {
 	/** AMDGPU_CTX_PRIORITY_* */
 	__s32	priority;
 	__u32   ctx_id;
+	__u32   ip_type;
+	__u32   ring;
+};
+
+struct drm_amdgpu_sched_out {
+	struct drm_amdgpu_sched_info info;
 };
 
 union drm_amdgpu_sched {
 	struct drm_amdgpu_sched_in in;
+	struct drm_amdgpu_sched_out out;
 };
 
 /*

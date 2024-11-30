@@ -102,19 +102,6 @@ lower_64b_intrinsics(nir_builder *b, nir_instr *instr, void *unused)
    nir_def *def = &intr->def;
    def->bit_size = 32;
 
-   /* load_kernel_input is handled specially, lowering to two 32b inputs:
-    */
-   if (intr->intrinsic == nir_intrinsic_load_kernel_input) {
-      assert(num_comp == 1);
-
-      nir_def *offset = nir_iadd_imm(b,
-            intr->src[0].ssa, 4);
-
-      nir_def *upper = nir_load_kernel_input(b, 1, 32, offset);
-
-      return nir_pack_64_2x32_split(b, def, upper);
-   }
-
    nir_def *components[num_comp];
 
    if (is_intrinsic_load(intr->intrinsic)) {

@@ -398,7 +398,6 @@ Converter::getFile(nir_intrinsic_op op) const
       return FILE_MEMORY_SHARED;
    case nir_intrinsic_load_input:
    case nir_intrinsic_load_interpolated_input:
-   case nir_intrinsic_load_kernel_input:
    case nir_intrinsic_load_per_vertex_input:
       return FILE_SHADER_INPUT;
    case nir_intrinsic_load_output:
@@ -2425,19 +2424,6 @@ Converter::visit(nir_intrinsic_instr *insn)
          indirectOffset = mkOp1v(OP_MOV, TYPE_U32, getSSA(4, FILE_ADDRESS), indirectOffset);
 
       storeVector(insn, 0, nullptr, offset, indirectOffset);
-      break;
-   }
-   case nir_intrinsic_load_kernel_input: {
-      const DataType dType = getDType(insn);
-      LValues &newDefs = convert(&insn->def);
-      Value *indirectOffset;
-      uint32_t offset = getIndirect(&insn->src[0], 0, indirectOffset);
-      if (indirectOffset)
-         indirectOffset = mkOp1v(OP_MOV, TYPE_U32, getSSA(4, FILE_ADDRESS), indirectOffset);
-
-      for (uint8_t i = 0u; i < dest_components; ++i)
-         loadFrom(getFile(op), 0, dType, newDefs[i], offset, i, indirectOffset);
-
       break;
    }
    case nir_intrinsic_load_scratch:

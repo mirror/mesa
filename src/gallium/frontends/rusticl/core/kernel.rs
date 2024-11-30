@@ -928,20 +928,41 @@ fn compile_nir_variant(
         Some(glsl_get_cl_type_size_align),
     );
 
-    nir_pass!(
-        nir,
-        nir_lower_explicit_io,
-        nir_variable_mode::nir_var_mem_global | nir_variable_mode::nir_var_mem_constant,
-        global_address_format,
-    );
+    if dev.generic_address_space() {
+        nir_pass!(
+            nir,
+            nir_lower_explicit_io,
+            nir_variable_mode::nir_var_mem_generic,
+            nir_address_format::nir_address_format_62bit_generic,
+        );
+
+        nir_pass!(
+            nir,
+            nir_lower_explicit_io,
+            nir_variable_mode::nir_var_mem_constant,
+            global_address_format,
+        );
+    } else {
+        nir_pass!(
+            nir,
+            nir_lower_explicit_io,
+            nir_variable_mode::nir_var_mem_global | nir_variable_mode::nir_var_mem_constant,
+            global_address_format,
+        );
+
+        nir_pass!(
+            nir,
+            nir_lower_explicit_io,
+            nir_variable_mode::nir_var_mem_shared | nir_variable_mode::nir_var_function_temp,
+            shared_address_format,
+        );
+    }
 
     nir_pass!(nir, rusticl_lower_intrinsics, &mut lower_state);
     nir_pass!(
         nir,
         nir_lower_explicit_io,
-        nir_variable_mode::nir_var_mem_shared
-            | nir_variable_mode::nir_var_function_temp
-            | nir_variable_mode::nir_var_uniform,
+        nir_variable_mode::nir_var_uniform,
         shared_address_format,
     );
 

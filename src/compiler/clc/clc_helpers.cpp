@@ -937,6 +937,9 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
       c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+cl_khr_fp64");
       c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+__opencl_c_fp64");
    }
+   if (args->features.generic_address_space) {
+      c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+__opencl_c_generic_address_space");
+   }
    if (args->features.int64) {
       c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+cles_khr_int64");
       c->getTargetOpts().OpenCLExtensionsAsWritten.push_back("+__opencl_c_int64");

@@ -82,7 +82,7 @@ impl CLInfo<cl_device_info> for cl_device_id {
             }
             CL_DEVICE_EXTENSIONS => cl_prop::<&str>(&dev.extension_string),
             CL_DEVICE_EXTENSIONS_WITH_VERSION => cl_prop::<&Vec<cl_name_version>>(&dev.extensions),
-            CL_DEVICE_GENERIC_ADDRESS_SPACE_SUPPORT => cl_prop::<bool>(false),
+            CL_DEVICE_GENERIC_ADDRESS_SPACE_SUPPORT => cl_prop::<bool>(dev.generic_address_space()),
             CL_DEVICE_GLOBAL_MEM_CACHE_TYPE => cl_prop::<cl_device_mem_cache_type>(CL_NONE),
             CL_DEVICE_GLOBAL_MEM_CACHE_SIZE => cl_prop::<cl_ulong>(0),
             CL_DEVICE_GLOBAL_MEM_CACHELINE_SIZE => cl_prop::<cl_uint>(0),

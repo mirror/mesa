@@ -52,6 +52,7 @@ enum clc_spirv_version {
 struct clc_optional_features {
    bool fp16;
    bool fp64;
+   bool generic_address_space;
    bool int64;
    bool images;
    bool images_depth;

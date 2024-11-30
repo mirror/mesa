@@ -1153,6 +1153,7 @@ Rusticl environment variables
 
    - ``fp16`` enables OpenCL half support
    - ``fp64`` enables OpenCL double support
+   - ``generic`` enables generic address space support
 
 .. envvar:: RUSTICL_DEBUG
 

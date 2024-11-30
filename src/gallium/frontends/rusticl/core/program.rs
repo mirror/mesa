@@ -207,7 +207,7 @@ impl ProgramBuild {
                 .nir_shader_compiler_options(pipe_shader_type::PIPE_SHADER_COMPUTE),
             &d.lib_clc,
             &mut spec_constants,
-            d.address_bits(),
+            d.address_mode(),
             log.as_mut(),
         );
 

@@ -6,6 +6,7 @@ use crate::core::util::*;
 use crate::core::version::*;
 use crate::impl_cl_type_trait_base;
 
+use mesa_rust::compiler::clc::spirv::SPIRVAddressMode;
 use mesa_rust::compiler::clc::*;
 use mesa_rust::compiler::nir::*;
 use mesa_rust::pipe::context::*;
@@ -716,6 +717,18 @@ impl Device {
             .compute_param(pipe_compute_cap::PIPE_COMPUTE_CAP_ADDRESS_BITS)
     }
 
+    pub fn address_mode(&self) -> SPIRVAddressMode {
+        if self.address_bits() == 64 {
+            if self.generic_address_space() {
+                SPIRVAddressMode::Bits64Generic
+            } else {
+                SPIRVAddressMode::Bits64
+            }
+        } else {
+            SPIRVAddressMode::Bits32
+        }
+    }
+
     pub fn const_max_size(&self) -> cl_ulong {
         min(
             // Needed to fix the `api min_max_constant_buffer_size` CL CTS test as it can't really
@@ -1086,6 +1099,10 @@ impl Device {
         self.screen.param(pipe_cap::PIPE_CAP_NIR_SAMPLERS_AS_DEREF) == 1
     }
 
+    pub fn generic_address_space(&self) -> bool {
+        self.address_bits() == 64 && Platform::features().generic
+    }
+
     pub fn helper_ctx(&self) -> impl HelperContextWrapper + '_ {
         HelperContext {
             lock: self.helper_ctx.lock().unwrap(),
@@ -1097,6 +1114,7 @@ impl Device {
         clc_optional_features {
             fp16: self.fp16_supported(),
             fp64: self.fp64_supported(),
+            generic_address_space: self.generic_address_space(),
             int64: self.int64_supported(),
             images: self.caps.has_images,
             images_depth: self.caps.has_depth_images,

@@ -66,6 +66,7 @@ void main() {
         return;
 
     DEREF(INDEX(vk_aabb, args.leaf_bounds, leaf_node_id)) = bounds;
+    DEREF(INDEX(uint32_t, args.leaf_flags, leaf_node_id)) = args.geom_data.geometry_id;
     memoryBarrier(gl_ScopeDevice,
         gl_StorageSemanticsBuffer,
         gl_SemanticsAcquireRelease | gl_SemanticsMakeAvailable | gl_SemanticsMakeVisible);
@@ -110,12 +111,17 @@ void main() {
         for (uint32_t i = 0; i < 4; ++i)
             DEREF(dst_node).children[i] = children[i];
 
+        bool all_opaque = true, none_opaque = true;
+
         for (uint32_t i = 0; i < valid_child_count; ++i) {
             uint32_t child_offset = id_to_offset(children[i]);
             vk_aabb child_bounds;
-            if (child_offset == dst_offset)
+            if (child_offset == dst_offset) {
                 child_bounds = bounds;
-            else if (child_offset >= internal_nodes_offset) {
+                bool is_opaque = (args.geom_data.geometry_id & VK_GEOMETRY_OPAQUE) != 0;
+                all_opaque = all_opaque && is_opaque;
+                none_opaque = none_opaque && !is_opaque;
+            } else if (child_offset >= internal_nodes_offset) {
                 child_bounds = vk_aabb(vec3(INFINITY), vec3(-INFINITY));
                 REF(radv_bvh_box32_node) child_node = REF(radv_bvh_box32_node)OFFSET(dst_bvh, child_offset);
                 for (uint32_t j = 0; j < 4; ++j) {
@@ -124,15 +130,27 @@ void main() {
                     child_bounds.min = min(child_bounds.min, DEREF(child_node).coords[j].min);
                     child_bounds.max = max(child_bounds.max, DEREF(child_node).coords[j].max);
                 }
+                all_opaque = all_opaque && ((DEREF(child_node).flags & VK_BVH_BOX_FLAG_ONLY_OPAQUE) != 0);
+                none_opaque = none_opaque && ((DEREF(child_node).flags & VK_BVH_BOX_FLAG_NO_OPAQUE) != 0);
             } else {
                 uint32_t child_index = (child_offset - first_leaf_offset) / leaf_node_size;
                 child_bounds = DEREF(INDEX(vk_aabb, args.leaf_bounds, child_index));
+                bool is_opaque = (DEREF(INDEX(uint32_t, args.leaf_flags, child_index)) & VK_GEOMETRY_OPAQUE) != 0;
+                all_opaque = all_opaque && is_opaque;
+                none_opaque = none_opaque && !is_opaque;
             }
 
             DEREF(dst_node).coords[i] = child_bounds;
         }
+        uint32_t flags = 0;
+        if (all_opaque)
+            flags |= VK_BVH_BOX_FLAG_ONLY_OPAQUE;
+        if (none_opaque)
+            flags |= VK_BVH_BOX_FLAG_NO_OPAQUE;
+        DEREF(dst_node).flags = flags;
 
         if (parent_id == RADV_BVH_ROOT_NODE) {
+            DEREF(args.dst).root_flags = flags;
             vk_aabb root_bounds = vk_aabb(vec3(INFINITY), vec3(-INFINITY));
             for (uint32_t i = 0; i < valid_child_count; ++i) {
                 vk_aabb bounds = DEREF(dst_node).coords[i];

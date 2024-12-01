@@ -46,6 +46,7 @@ struct update_args {
    REF(radv_accel_struct_header) src;
    REF(radv_accel_struct_header) dst;
    REF(vk_aabb) leaf_bounds;
+   REF(uint32_t) leaf_flags;
    REF(uint32_t) internal_ready_count;
    uint32_t leaf_node_count;
 

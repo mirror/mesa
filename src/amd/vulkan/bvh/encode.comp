@@ -36,6 +36,12 @@ void set_parent(uint32_t child, uint32_t parent)
 void
 main()
 {
+   /* This should usually be impossible since we launch an unaligned indirect dispatch
+    * for encoding. However, this doesn't work on gfx6, so we need to manually check.
+    */
+   if (gl_GlobalInvocationID.x >= DEREF(args.header).ir_internal_node_count)
+      return;
+
    /* Revert the order so we start at the root */
    uint32_t global_id = DEREF(args.header).ir_internal_node_count - 1 - gl_GlobalInvocationID.x;
 

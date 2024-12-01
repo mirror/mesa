@@ -145,18 +145,36 @@ push_node(uint32_t children[2], vk_aabb bounds[2])
    total_bounds.min = vec3(INFINITY);
    total_bounds.max = vec3(-INFINITY);
 
+   bool all_opaque = true, none_opaque = true;
+
    for (uint i = 0; i < 2; ++i) {
-      VOID_REF node = OFFSET(args.bvh, ir_id_to_offset(children[i]));
-      REF(vk_ir_node) child = REF(vk_ir_node)(node);
+      uint32_t child_flags = fetch_child_flags(args.bvh, children[i]);
 
       total_bounds.min = min(total_bounds.min, bounds[i].min);
       total_bounds.max = max(total_bounds.max, bounds[i].max);
 
       DEREF(dst_node).children[i] = children[i];
+
+      if (ir_id_to_type(children[i]) == vk_ir_node_triangle ||
+          ir_id_to_type(children[i]) == vk_ir_node_aabb) {
+         bool opaque = (child_flags & VK_GEOMETRY_OPAQUE) != 0;
+         all_opaque = opaque && all_opaque;
+         none_opaque = !opaque && none_opaque;
+      } else {
+         all_opaque = (child_flags & VK_BVH_BOX_FLAG_ONLY_OPAQUE) != 0 && all_opaque;
+         none_opaque = (child_flags & VK_BVH_BOX_FLAG_NO_OPAQUE) != 0 && none_opaque;
+      }
    }
+
+   uint32_t dst_flags = 0;
+   if (all_opaque)
+      dst_flags |= VK_BVH_BOX_FLAG_ONLY_OPAQUE;
+   if (none_opaque)
+      dst_flags |= VK_BVH_BOX_FLAG_NO_OPAQUE;
 
    DEREF(dst_node).base.aabb = total_bounds;
    DEREF(dst_node).bvh_offset = VK_UNKNOWN_BVH_OFFSET;
+   DEREF(dst_node).flags = dst_flags;
    return dst_id;
 }
 

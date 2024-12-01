@@ -35,9 +35,11 @@
 
 #define SUBGROUP_SIZE_ID 0
 #define BVH_BOUNDS_OFFSET_ID 1
+#define ROOT_FLAGS_OFFSET_ID 2
 #ifdef VULKAN
 layout (constant_id = SUBGROUP_SIZE_ID) const int SUBGROUP_SIZE = 64;
 layout (constant_id = BVH_BOUNDS_OFFSET_ID) const int BVH_BOUNDS_OFFSET = 0;
+layout (constant_id = ROOT_FLAGS_OFFSET_ID) const int ROOT_FLAGS_OFFSET = -1;
 #endif
 
 struct leaf_args {

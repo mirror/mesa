@@ -57,6 +57,7 @@ main(void)
    vk_aabb previous_bounds;
    previous_bounds.min = vec3(INFINITY);
    previous_bounds.max = vec3(-INFINITY);
+   uint32_t previous_flags;
 
    for (;;) {
       uint32_t count = 0;
@@ -82,6 +83,7 @@ main(void)
 
       REF(vk_ir_box_node) node = REF(vk_ir_box_node)(OFFSET(args.bvh, current_offset));
       vk_aabb bounds = previous_bounds;
+      bool all_opaque = true, none_opaque = true;
 
       lbvh_node_info info = DEREF(INDEX(lbvh_node_info, args.node_info, idx));
 
@@ -96,28 +98,60 @@ main(void)
 
       if (previous_child_index == -1) {
          if (children[0] != VK_BVH_INVALID_NODE) {
+            uint32_t child_flags = fetch_child_flags(args.bvh, children[0]);
             uint32_t child_offset = ir_id_to_offset(children[0]);
             REF(vk_ir_node) child = REF(vk_ir_node)(OFFSET(args.bvh, child_offset));
             vk_aabb child_bounds = DEREF(child).aabb;
             bounds.min = min(bounds.min, child_bounds.min);
             bounds.max = max(bounds.max, child_bounds.max);
+
+            if (ir_id_to_type(children[0]) == vk_ir_node_triangle ||
+                ir_id_to_type(children[0]) == vk_ir_node_aabb) {
+               bool opaque = (child_flags & VK_GEOMETRY_OPAQUE) != 0;
+               all_opaque = opaque && all_opaque;
+               none_opaque = !opaque && none_opaque;
+            } else {
+               all_opaque = (child_flags & VK_BVH_BOX_FLAG_ONLY_OPAQUE) != 0 && all_opaque;
+               none_opaque = (child_flags & VK_BVH_BOX_FLAG_NO_OPAQUE) != 0 && none_opaque;
+            }
          }
          previous_child_index = 0;
+      } else {
+         all_opaque = (previous_flags & VK_BVH_BOX_FLAG_ONLY_OPAQUE) != 0 && all_opaque;
+         none_opaque = (previous_flags & VK_BVH_BOX_FLAG_NO_OPAQUE) != 0 && none_opaque;
       }
 
       /* Fetch the non-cached child */
       if (children[1 - previous_child_index] != VK_BVH_INVALID_NODE) {
+         uint32_t child_flags = fetch_child_flags(args.bvh, children[0]);
          uint32_t child_offset = ir_id_to_offset(children[1 - previous_child_index]);
          REF(vk_ir_node) child = REF(vk_ir_node)(OFFSET(args.bvh, child_offset));
          vk_aabb child_bounds = DEREF(child).aabb;
          bounds.min = min(bounds.min, child_bounds.min);
          bounds.max = max(bounds.max, child_bounds.max);
+
+         if (ir_id_to_type(children[0]) == vk_ir_node_triangle ||
+             ir_id_to_type(children[0]) == vk_ir_node_aabb) {
+            bool opaque = (child_flags & VK_GEOMETRY_OPAQUE) != 0;
+            all_opaque = opaque && all_opaque;
+            none_opaque = !opaque && none_opaque;
+         } else {
+            all_opaque = (child_flags & VK_BVH_BOX_FLAG_ONLY_OPAQUE) != 0 && all_opaque;
+            none_opaque = (child_flags & VK_BVH_BOX_FLAG_NO_OPAQUE) != 0 && none_opaque;
+         }
       }
+
+      uint32_t flags = 0;
+      if (all_opaque)
+         flags |= VK_BVH_BOX_FLAG_ONLY_OPAQUE;
+      if (none_opaque)
+         flags |= VK_BVH_BOX_FLAG_NO_OPAQUE;
 
       vk_ir_box_node node_value;
 
       node_value.base.aabb = bounds;
       node_value.bvh_offset = VK_UNKNOWN_BVH_OFFSET;
+      node_value.flags = flags;
       node_value.children = children;
 
       DEREF(node) = node_value;
@@ -132,6 +166,7 @@ main(void)
 
       previous_id = current_id;
       previous_bounds = bounds;
+      previous_flags = flags;
 
       memoryBarrierBuffer();
    }

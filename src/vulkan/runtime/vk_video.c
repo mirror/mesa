@@ -2599,6 +2599,20 @@ static void vk_video_encode_av1_code_leb128(uint8_t *buf, uint32_t num_bytes, ui
    } while((leb128_byte & 0x80));
 }
 
+static StdVideoEncodeAV1OperatingPointInfo default_av1_operating_point = {
+   .flags = {
+      .decoder_model_present_for_this_op = 0,
+      .low_delay_mode_flag = 0,
+      .initial_display_delay_present_for_this_op = 0,
+   },
+   .operating_point_idc = 0,
+   .seq_level_idx = STD_VIDEO_AV1_LEVEL_6_1,
+   .seq_tier = 0,
+   .decoder_buffer_delay = 0,
+   .encoder_buffer_delay = 0,
+   .initial_display_delay_minus_1 = 0,
+};
+
 VkResult
 vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
                             size_t size_limit,
@@ -2613,17 +2627,20 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
    uint8_t* size_offset = NULL;
    uint32_t obu_size;
    uint8_t obu_size_bin[2];
-   int num_obu_size_bytes = 2;
+   const int num_obu_size_bytes = 2;
    const StdVideoAV1ColorConfig* color = &params->av1_enc.seq_hdr.color_config;
    const StdVideoAV1TimingInfo* timing_info = &params->av1_enc.seq_hdr.timing_info;
    const StdVideoAV1SequenceHeader *seq_hdr = &params->av1_enc.seq_hdr.base;
    const StdVideoEncodeAV1DecoderModelInfo* decoder_model = &params->av1_enc.decoder_model;
-   int num_op_points = params->av1_enc.num_op_points;
-   const StdVideoEncodeAV1OperatingPointInfo* op_points = params->av1_enc.op_points;
+   int num_op_points = MAX2(params->av1_enc.num_op_points, 1);
+   const StdVideoEncodeAV1OperatingPointInfo* op_points = params->av1_enc.num_op_points ?
+      params->av1_enc.op_points : &default_av1_operating_point;
 
    assert(params->op == VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR);
 
    vl_bitstream_encoder_clear(&enc, data_ptr, data_size, size_limit);
+   /* AV1 does not need start code prevention */
+   enc.prevent_start_code = false;
 
    if (!color || (num_op_points > 0 && !op_points))
       return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
@@ -2643,6 +2660,7 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
    /*  still_picture */
    vl_bitstream_put_bits(&enc, 1, seq_hdr->flags.still_picture);
    /*  reduced_still_picture_header */
+   assert(seq_hdr->flags.reduced_still_picture_header == 0);
    vl_bitstream_put_bits(&enc, 1, seq_hdr->flags.reduced_still_picture_header);
    /*  timing_info_present_flag  */
    vl_bitstream_put_bits(&enc, 1, seq_hdr->flags.timing_info_present_flag);
@@ -2686,16 +2704,20 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
       if (op_point_info->seq_level_idx > 7)
          vl_bitstream_put_bits(&enc, 1, op_point_info->seq_tier);  /* tier */
 
-      if (decoder_model && op_point_info->flags.decoder_model_present_for_this_op) {
-         vl_bitstream_put_bits(&enc, 1, 1);
-         vl_bitstream_put_uvlc(&enc, op_point_info->decoder_buffer_delay);
-         vl_bitstream_put_uvlc(&enc, op_point_info->encoder_buffer_delay);
-         vl_bitstream_put_bits(&enc, 1, op_point_info->flags.low_delay_mode_flag);
+      if (decoder_model) {
+         vl_bitstream_put_bits(&enc, 1, op_point_info->flags.decoder_model_present_for_this_op);
+         if (op_point_info->flags.decoder_model_present_for_this_op) {
+            vl_bitstream_put_uvlc(&enc, op_point_info->decoder_buffer_delay);
+            vl_bitstream_put_uvlc(&enc, op_point_info->encoder_buffer_delay);
+            vl_bitstream_put_bits(&enc, 1, op_point_info->flags.low_delay_mode_flag);
+         }
       }
 
-      if (seq_hdr->flags.initial_display_delay_present_flag &&
-          op_point_info->flags.initial_display_delay_present_for_this_op) {
-         vl_bitstream_put_bits(&enc, 4, op_point_info->initial_display_delay_minus_1);
+      if (seq_hdr->flags.initial_display_delay_present_flag) {
+         vl_bitstream_put_bits(&enc, 1, op_point_info->flags.initial_display_delay_present_for_this_op);
+         if (op_point_info->flags.initial_display_delay_present_for_this_op) {
+            vl_bitstream_put_bits(&enc, 4, op_point_info->initial_display_delay_minus_1);
+         }
       }
    }
 
@@ -2798,9 +2820,7 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
 
    /* update obu_size */
    for (int i = 0; i < sizeof(obu_size_bin); i++) {
-      uint8_t *p = (uint8_t *)((((uintptr_t)size_offset & 3) ^ 3) | ((uintptr_t)size_offset & ~3));
-      *p = obu_size_bin[i];
-      size_offset++;
+      *(size_offset++) = obu_size_bin[i];
    }
 
    vl_bitstream_flush(&enc);

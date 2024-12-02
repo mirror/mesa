@@ -76,7 +76,11 @@ tu_device_get_cache_uuid(struct tu_physical_device *device, void *uuid)
    return 0;
 }
 
+#if defined(ANDROID_STRICT) && ANDROID_API_LEVEL <= 32
+#define TU_API_VERSION VK_MAKE_VERSION(1, 1, VK_HEADER_VERSION)
+#else
 #define TU_API_VERSION VK_MAKE_VERSION(1, 3, VK_HEADER_VERSION)
+#endif
 
 VKAPI_ATTR VkResult VKAPI_CALL
 tu_EnumerateInstanceVersion(uint32_t *pApiVersion)
@@ -308,6 +312,10 @@ get_device_extensions(const struct tu_physical_device *device,
 
       /* For Graphics Flight Recorder (GFR) */
       .AMD_buffer_marker = true,
+#if DETECT_OS_ANDROID
+      .ANDROID_external_memory_android_hardware_buffer = vk_android_get_ugralloc() != NULL,
+      .ANDROID_native_buffer = vk_android_get_ugralloc() != NULL,
+#endif
       .ARM_rasterization_order_attachment_access = true,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
@@ -316,13 +324,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .NV_compute_shader_derivatives = device->info->chip >= 7,
       .VALVE_mutable_descriptor_type = true,
    } };
-
-#if DETECT_OS_ANDROID
-   if (vk_android_get_ugralloc() != NULL) {
-      ext->ANDROID_external_memory_android_hardware_buffer = true,
-      ext->ANDROID_native_buffer = true;
-   }
-#endif
 }
 
 static void
@@ -1595,6 +1596,28 @@ tu_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
 
    tu_init_dri_options(instance);
 
+#if DETECT_OS_ANDROID
+   struct u_gralloc *u_gralloc = vk_android_init_ugralloc();
+
+   if (u_gralloc) {
+      switch (u_gralloc_get_type(u_gralloc)) {
+      case U_GRALLOC_TYPE_GRALLOC4:
+         mesa_logi("tuGrallocDebug: GRALLOC4");
+      case U_GRALLOC_TYPE_CROS:
+         mesa_logi("tuGrallocDebug: CROS");
+      case U_GRALLOC_TYPE_LIBDRM:
+         mesa_logi("tuGrallocDebug: LIBDRM");
+      case U_GRALLOC_TYPE_QCOM:
+         mesa_logi("tuGrallocDebug: QCOM");
+      case U_GRALLOC_TYPE_FALLBACK:
+         mesa_logi("tuGrallocDebug: FALLBACK");
+      default:
+         break;
+   }
+}
+
+#endif
+
    *pInstance = tu_instance_to_handle(instance);
 
 #ifdef HAVE_PERFETTO
@@ -1614,6 +1637,10 @@ tu_DestroyInstance(VkInstance _instance,
 
    if (!instance)
       return;
+
+#if DETECT_OS_ANDROID
+   vk_android_destroy_ugralloc();
+#endif
 
    VG(VALGRIND_DESTROY_MEMPOOL(instance));
 

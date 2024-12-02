@@ -1649,16 +1649,19 @@ radv_enc_params(struct radv_cmd_buffer *cmd_buffer, const VkVideoEncodeInfoKHR *
       radv_enc_layer_select(cmd_buffer, MIN2(h265_pic->TemporalId, max_layers));
    } else if (av1_pic) {
       switch (av1_pic->frame_type) {
-      case 0:
-      case 1:
+      case STD_VIDEO_AV1_FRAME_TYPE_KEY:
+      case STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY:
          pic_type = RENCODE_PICTURE_TYPE_I;
          slot_idx = 0;
          break;
       default:
          pic_type = RENCODE_PICTURE_TYPE_P;
-         slot_idx = enc_info->pReferenceSlots[0].slotIndex;
+         slot_idx = av1_picture_info->referenceNameSlotIndices[0];
          break;
       }
+      radv_enc_layer_select(cmd_buffer, MIN2(av1_pic->pExtensionHeader ?
+                                             av1_pic->pExtensionHeader->temporal_id : 0,
+                                             max_layers));
    } else {
       assert(0);
       return;

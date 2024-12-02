@@ -2149,34 +2149,6 @@ radv_enc_cdf_default_table(struct radv_cmd_buffer *cmd_buffer,
    ENC_END;
 }
 
-static void radv_enc_av1_temporal_delimiter(struct radv_cmd_buffer *cmd_buffer)
-{
-   bool use_extension_flag;
-
-   /* obu header () */
-   /* obu_forbidden_bit */
-   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
-   /* obu_type */
-   radv_enc_code_fixed_bits(cmd_buffer, RENCODE_OBU_TYPE_TEMPORAL_DELIMITER, 4);
-   /* obu_extension_flag */
-   use_extension_flag = 0;//(enc->enc_pic.num_temporal_layers) > 1 &&
-//                        (enc->enc_pic.temporal_id) > 0 ? 1 : 0;
-   radv_enc_code_fixed_bits(cmd_buffer, use_extension_flag ? 1 : 0, 1);
-   /* obu_has_size_field */
-   radv_enc_code_fixed_bits(cmd_buffer, 1, 1);
-   /* obu_reserved_1bit */
-   radv_enc_code_fixed_bits(cmd_buffer, 0, 1);
-
-   if (use_extension_flag) {
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);//enc->enc_pic.temporal_id, 3);
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 2);  /* spatial_id should always be zero */
-      radv_enc_code_fixed_bits(cmd_buffer, 0, 3);  /* reserved 3 bits */
-   }
-
-   radv_enc_code_fixed_bits(cmd_buffer, 0, 8); /* obu has size */
-}
-
-
 static void radv_enc_av1_tile_group(struct radv_cmd_buffer *cmd_buffer)
 {
    uint32_t extension_flag = 0;//>enc_pic.num_temporal_layers > 1 ? 1 : 0;

@@ -853,11 +853,34 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
    case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR: {
       struct VkVideoEncodeAV1CapabilitiesKHR *ext = (struct VkVideoEncodeAV1CapabilitiesKHR *)
          vk_find_struct(pCapabilities->pNext, VIDEO_ENCODE_AV1_CAPABILITIES_KHR);
-      ext->flags = 0;
       pCapabilities->maxDpbSlots = 9;//NUM_AV1_REFS;
       pCapabilities->maxActiveReferencePictures = 8;//NUM_AV1_REFS;
       strcpy(pCapabilities->stdHeaderVersion.extensionName, VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_EXTENSION_NAME);
       pCapabilities->stdHeaderVersion.specVersion = VK_STD_VULKAN_VIDEO_CODEC_AV1_ENCODE_SPEC_VERSION;
+      ext->flags = VK_VIDEO_ENCODE_AV1_CAPABILITY_PER_RATE_CONTROL_GROUP_MIN_MAX_Q_INDEX_BIT_KHR |
+                   VK_VIDEO_ENCODE_AV1_CAPABILITY_GENERATE_OBU_EXTENSION_HEADER_BIT_KHR;
+      ext->maxLevel = cap ? cap->max_level : 0;
+      /* TODO: check VCN5 */
+      ext->codedPictureAlignment.width = 64;
+      ext->codedPictureAlignment.height = 16;
+      ext->maxTiles.width = 2;
+      ext->maxTiles.height = 16;
+      ext->minTileSize.width = 64;
+      ext->minTileSize.height = 64;
+      ext->maxTileSize.width = 4096;
+      ext->maxTileSize.height = 4096;
+      ext->superblockSizes = VK_VIDEO_ENCODE_AV1_SUPERBLOCK_SIZE_64_BIT_KHR;
+      ext->maxSingleReferenceCount = 1;
+      ext->singleReferenceNameMask =
+         (1 << (STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME - STD_VIDEO_AV1_REFERENCE_NAME_LAST_FRAME));
+      ext->maxTemporalLayerCount = 4;
+      ext->maxSpatialLayerCount = 1;
+      ext->maxOperatingPoints = 4;
+      ext->minQIndex = 1;
+      ext->maxQIndex = 255;
+      ext->prefersGopRemainingFrames = false;
+      ext->requiresGopRemainingFrames = false;
+      ext->stdSyntaxFlags = VK_VIDEO_ENCODE_AV1_STD_SKIP_MODE_PRESENT_UNSET_BIT_KHR;
       break;
    }
    default:

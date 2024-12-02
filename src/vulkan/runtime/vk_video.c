@@ -2724,13 +2724,6 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
    }
 
    {
-      /* REVIEW:
-         This is weird, because internally the driver will handle the alignment, but then again the user is supposed to check it, so...
-      if (!((seq_hdr->max_frame_width_minus_1 + 1) % 64) || !((seq_hdr->max_frame_height_minus_1 + 1) % 64)) {
-         return VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR;
-      }
-      */
-
       /*  frame_width_bits_minus_1  */
       vl_bitstream_put_bits(&enc, 4, seq_hdr->frame_width_bits_minus_1);
       /*  frame_height_bits_minus_1  */

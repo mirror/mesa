@@ -403,6 +403,7 @@ radv_video_patch_session_parameters(struct vk_video_session_parameters *params)
       return;
    case VK_VIDEO_CODEC_OPERATION_ENCODE_H264_BIT_KHR:
    case VK_VIDEO_CODEC_OPERATION_ENCODE_H265_BIT_KHR:
+   case VK_VIDEO_CODEC_OPERATION_ENCODE_AV1_BIT_KHR:
       radv_video_patch_encode_session_parameters(params);
       break;
    }

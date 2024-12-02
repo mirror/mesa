@@ -2217,9 +2217,7 @@ radv_enc_headers_av1_obu_instruction(struct radv_cmd_buffer *cmd_buffer,
    radv_enc_reset(cmd_buffer);
    ENC_BEGIN;
    radeon_emit(cs, pdev->vcn_enc_cmds.bitstream_instruction_av1);
-   radv_enc_av1_bs_instruction_type(cmd_buffer, RENCODE_AV1_BITSTREAM_INSTRUCTION_COPY, 0);
 
-   radv_enc_av1_temporal_delimiter(cmd_buffer);
    radv_enc_av1_bs_instruction_type(cmd_buffer,
                                     RENCODE_AV1_BITSTREAM_INSTRUCTION_OBU_START,
                                     RENCODE_OBU_START_TYPE_FRAME_HEADER);

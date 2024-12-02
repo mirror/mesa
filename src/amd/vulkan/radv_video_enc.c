@@ -2591,6 +2591,9 @@ radv_video_patch_encode_session_parameters(struct vk_video_session_parameters *p
       if (frame_height >= (1 << (params->av1_enc.seq_hdr.base.frame_height_bits_minus_1 + 1))) {
          params->av1_enc.seq_hdr.base.frame_height_bits_minus_1++;
       }
+
+      /* AMD does not support loop restoration */
+      params->av1_enc.seq_hdr.base.flags.enable_restoration = 0;
       break;
    }
    default:

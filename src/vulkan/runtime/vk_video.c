@@ -2631,6 +2631,7 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
    const StdVideoAV1ColorConfig* color = &params->av1_enc.seq_hdr.color_config;
    const StdVideoAV1TimingInfo* timing_info = &params->av1_enc.seq_hdr.timing_info;
    const StdVideoAV1SequenceHeader *seq_hdr = &params->av1_enc.seq_hdr.base;
+   uint8_t decoder_model_present_flag = 0;
    const StdVideoEncodeAV1DecoderModelInfo* decoder_model = &params->av1_enc.decoder_model;
    int num_op_points = MAX2(params->av1_enc.num_op_points, 1);
    const StdVideoEncodeAV1OperatingPointInfo* op_points = params->av1_enc.num_op_points ?
@@ -2681,6 +2682,7 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
 
       /*  decoder_model_info_present_flag  */
       if (decoder_model) {
+         decoder_model_present_flag = 1;
          vl_bitstream_put_bits(&enc, 1, 1);
          vl_bitstream_put_bits(&enc, 5, decoder_model->buffer_delay_length_minus_1);
          vl_bitstream_put_bits(&enc, 32, decoder_model->num_units_in_decoding_tick);
@@ -2704,7 +2706,7 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
       if (op_point_info->seq_level_idx > 7)
          vl_bitstream_put_bits(&enc, 1, op_point_info->seq_tier);  /* tier */
 
-      if (decoder_model) {
+      if (decoder_model_present_flag) {
          vl_bitstream_put_bits(&enc, 1, op_point_info->flags.decoder_model_present_for_this_op);
          if (op_point_info->flags.decoder_model_present_for_this_op) {
             vl_bitstream_put_uvlc(&enc, op_point_info->decoder_buffer_delay);
@@ -2734,15 +2736,17 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
       /*  frame_height_bits_minus_1  */
       vl_bitstream_put_bits(&enc, 4, seq_hdr->frame_height_bits_minus_1);
       /*  max_frame_width_minus_1  */
-      vl_bitstream_put_bits(&enc, seq_hdr->frame_width_bits_minus_1 + 1, seq_hdr->max_frame_width_minus_1 );
+      vl_bitstream_put_bits(&enc, seq_hdr->frame_width_bits_minus_1 + 1, seq_hdr->max_frame_width_minus_1);
       /*  max_frame_height_minus_1  */
-      vl_bitstream_put_bits(&enc, seq_hdr->frame_height_bits_minus_1 + 1, seq_hdr->max_frame_height_minus_1 );
+      vl_bitstream_put_bits(&enc, seq_hdr->frame_height_bits_minus_1 + 1, seq_hdr->max_frame_height_minus_1);
    }
 
    if (!seq_hdr->flags.reduced_still_picture_header) {
       vl_bitstream_put_bits(&enc, 1, seq_hdr->flags.frame_id_numbers_present_flag);
-      vl_bitstream_put_bits(&enc, 4, seq_hdr->delta_frame_id_length_minus_2);
-      vl_bitstream_put_bits(&enc, 3, seq_hdr->additional_frame_id_length_minus_1);
+      if (seq_hdr->flags.frame_id_numbers_present_flag) {
+         vl_bitstream_put_bits(&enc, 4, seq_hdr->delta_frame_id_length_minus_2);
+         vl_bitstream_put_bits(&enc, 3, seq_hdr->additional_frame_id_length_minus_1);
+      }
    }
 
    /*  use_128x128_superblock  */
@@ -2771,8 +2775,21 @@ vk_video_encode_av1_seq_hdr(const struct vk_video_session_parameters *params,
          vl_bitstream_put_bits(&enc, 1, seq_hdr->flags.enable_ref_frame_mvs);
       }
 
-      if (seq_hdr->seq_force_integer_mv)
-         vl_bitstream_put_bits(&enc, 1, seq_hdr->seq_force_integer_mv);
+      if (seq_hdr->seq_force_screen_content_tools == 2 /* SELECT_SCREEN_CONTENT_TOOLS */)
+         vl_bitstream_put_bits(&enc, 1, 1); /* seq_choose_screen_content_tools = 1 */
+      else {
+         vl_bitstream_put_bits(&enc, 1, 0); /* seq_choose_screen_content_tools = 0 */
+         vl_bitstream_put_bits(&enc, 1, seq_hdr->seq_force_screen_content_tools);
+      }
+
+      if (seq_hdr->seq_force_screen_content_tools > 0) {
+         if (seq_hdr->seq_force_integer_mv == 2 /* SELECT_INTEGER_MV */)
+            vl_bitstream_put_bits(&enc, 1, seq_hdr->seq_force_integer_mv); /* seq_choose_integer_mv = 1 */
+         else {
+            vl_bitstream_put_bits(&enc, 1, 0); /* seq_choose_integer_mv = 0 */
+            vl_bitstream_put_bits(&enc, 1, seq_hdr->seq_force_integer_mv);
+         }
+      }
 
       if (seq_hdr->flags.enable_order_hint)
          vl_bitstream_put_bits(&enc, 3, seq_hdr->order_hint_bits_minus_1);

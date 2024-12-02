@@ -2139,7 +2139,8 @@ radv_enc_cdf_default_table(struct radv_cmd_buffer *cmd_buffer,
    va += cmd_buffer->video.vid->ctx.offset;
    uint32_t use_cdf_default = (av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_KEY ||
                                av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_INTRA_ONLY ||
-                               av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH);
+                               av1_pic->frame_type == STD_VIDEO_AV1_FRAME_TYPE_SWITCH ||
+                               av1_pic->primary_ref_frame == 7 /* PRIMARY_REF_NONE */);
    ENC_BEGIN;
    radeon_emit(cs, pdev->vcn_enc_cmds.cdf_default_table_av1);
    radeon_emit(cs, use_cdf_default);

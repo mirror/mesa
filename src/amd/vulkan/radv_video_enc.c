@@ -1988,9 +1988,10 @@ radv_enc_av1_frame_header(struct radv_cmd_buffer *cmd_buffer,
       if (seq->flags.enable_order_hint)
          radv_enc_code_fixed_bits(cmd_buffer, av1_pic->order_hint, seq->order_hint_bits_minus_1 + 1);
 
-      if (!frame_is_intra && !error_resilient_mode)
-         /*  primary_ref_frame  */
-         radv_enc_code_fixed_bits(cmd_buffer, 0, 3);         /* always LAST_FRAME(1) */
+      if (!frame_is_intra && !error_resilient_mode) {
+         /*  primary_ref_frame - VCN4 can either use NONE (7) or LAST (0) */
+         radv_enc_code_fixed_bits(cmd_buffer, av1_pic->primary_ref_frame != 7 ? 0 : 7, 3);
+      }
 
       if ((av1_pic->frame_type != STD_VIDEO_AV1_FRAME_TYPE_SWITCH) &&
           (av1_pic->frame_type != STD_VIDEO_AV1_FRAME_TYPE_KEY))

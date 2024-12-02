@@ -60,7 +60,7 @@ static void
 emit_base_vertex_instance_bo(struct anv_cmd_buffer *cmd_buffer,
                              struct anv_address addr)
 {
-   emit_vertex_bo(cmd_buffer, addr, addr.bo ? 8 : 0, ANV_SVGS_VB_INDEX);
+   emit_vertex_bo(cmd_buffer, addr, addr.bo ? 8 : 0, BRW_SVGS_VE_INDEX);
 }
 
 static void
@@ -95,7 +95,7 @@ emit_draw_index(struct anv_cmd_buffer *cmd_buffer, uint32_t draw_index)
    struct anv_address addr =
       anv_cmd_buffer_temporary_state_address(cmd_buffer, state);
 
-   emit_vertex_bo(cmd_buffer, addr, 4, ANV_DRAWID_VB_INDEX);
+   emit_vertex_bo(cmd_buffer, addr, 4, BRW_DRAWID_VE_INDEX);
 }
 #endif /* GFX_VER <= 11 */
 
@@ -113,9 +113,9 @@ update_dirty_vbs_for_gfx8_vb_flush(struct anv_cmd_buffer *cmd_buffer,
    uint64_t vb_used = dyn->vi->bindings_valid;
    if (vs_prog_data->uses_firstvertex ||
        vs_prog_data->uses_baseinstance)
-      vb_used |= 1ull << ANV_SVGS_VB_INDEX;
+      vb_used |= 1ull << BRW_SVGS_VE_INDEX;
    if (vs_prog_data->uses_drawid)
-      vb_used |= 1ull << ANV_DRAWID_VB_INDEX;
+      vb_used |= 1ull << BRW_DRAWID_VE_INDEX;
 
    genX(cmd_buffer_update_dirty_vbs_for_gfx8_vb_flush)(cmd_buffer,
                                                        access_type,

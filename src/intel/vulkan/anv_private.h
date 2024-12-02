@@ -208,9 +208,6 @@ struct intel_perf_query_result;
  */
 #define MAX_BINDING_TABLE_SIZE 240
 
-#define ANV_SVGS_VB_INDEX    MAX_VBS
-#define ANV_DRAWID_VB_INDEX (MAX_VBS + 1)
-
 /* We reserve this MI ALU register for the purpose of handling predication.
  * Other code which uses the MI ALU should leave it alone.
  */

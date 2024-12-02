@@ -314,14 +314,14 @@ genX(cmd_buffer_emit_indirect_generated_draws_inplace)(struct anv_cmd_buffer *cm
       /* We're using the indirect buffer directly to source base instance &
        * first vertex values. Mark the entire area as used.
        */
-      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, ANV_SVGS_VB_INDEX,
+      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, BRW_SVGS_VE_INDEX,
                                                      indirect_data_addr,
                                                      indirect_data_stride * max_draw_count);
    }
 
    if (vs_prog_data->uses_drawid) {
       /* Mark the whole draw id buffer as used. */
-      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, ANV_SVGS_VB_INDEX,
+      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, BRW_DRAWID_VE_INDEX,
                                                      draw_id_addr,
                                                      sizeof(uint32_t) * max_draw_count);
    }
@@ -493,14 +493,14 @@ genX(cmd_buffer_emit_indirect_generated_draws_inring)(struct anv_cmd_buffer *cmd
       /* We're using the indirect buffer directly to source base instance &
        * first vertex values. Mark the entire area as used.
        */
-      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, ANV_SVGS_VB_INDEX,
+      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, BRW_SVGS_VE_INDEX,
                                                      indirect_data_addr,
                                                      indirect_data_stride * max_draw_count);
    }
 
    if (vs_prog_data->uses_drawid) {
       /* Mark the whole draw id buffer as used. */
-      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, ANV_SVGS_VB_INDEX,
+      genX(cmd_buffer_set_binding_for_gfx8_vb_flush)(cmd_buffer, BRW_DRAWID_VE_INDEX,
                                                      draw_id_addr,
                                                      sizeof(uint32_t) * max_draw_count);
    }

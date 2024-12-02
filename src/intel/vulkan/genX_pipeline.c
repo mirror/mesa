@@ -351,7 +351,7 @@ emit_vertex_input(struct anv_graphics_pipeline *pipeline,
 #endif
 
          struct GENX(VERTEX_ELEMENT_STATE) element = {
-            .VertexBufferIndex = ANV_SVGS_VB_INDEX,
+            .VertexBufferIndex = BRW_SVGS_VE_INDEX,
             .Valid = true,
             .SourceElementFormat = ISL_FORMAT_R32G32_UINT,
 #if GFX_VER >= 11
@@ -378,7 +378,7 @@ emit_vertex_input(struct anv_graphics_pipeline *pipeline,
 
       if (vs_prog_data->uses_drawid) {
          struct GENX(VERTEX_ELEMENT_STATE) element = {
-            .VertexBufferIndex = ANV_DRAWID_VB_INDEX,
+            .VertexBufferIndex = BRW_DRAWID_VE_INDEX,
             .Valid = true,
             .SourceElementFormat = ISL_FORMAT_R32_UINT,
 #if GFX_VER >= 11

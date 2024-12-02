@@ -1523,8 +1523,13 @@ intrinsic("load_frag_coord_zw_pan", [2], dest_comp=1, indices=[COMPONENT], flags
 # src[] = { sampler_index }
 load("sampler_lod_parameters_pan", [1], flags=[CAN_ELIMINATE, CAN_REORDER])
 
-# Like load_output but using a specified render target conversion descriptor
-load("converted_output_pan", [1], indices=[DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
+# Like load_output but using a specified render target and conversion descriptor
+# src[] = { target, conversion }
+# valid targets are:
+# 0..7: Color[0..7]
+# 255:  Depth
+# 254:  Stencil
+load("converted_output_pan", [1, 1], indices=[DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
 
 # Load the render target conversion descriptor for a given render target given
 # in the BASE index. Converts to a type with size given by the source type.

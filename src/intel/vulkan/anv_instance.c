@@ -52,6 +52,7 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_LIMIT_TRIG_INPUT_RANGE(false)
       DRI_CONF_ANV_MESH_CONV_PRIM_ATTRS_TO_VERT_ATTRS(-2)
       DRI_CONF_FORCE_VK_VENDOR()
+      DRI_CONF_FORCE_VK_DEVICENAME()
       DRI_CONF_FAKE_SPARSE(false)
 #if DETECT_OS_ANDROID && ANDROID_API_LEVEL >= 34
       DRI_CONF_VK_REQUIRE_ASTC(true)
@@ -166,6 +167,8 @@ anv_init_dri_options(struct anv_instance *instance)
        driQueryOptioni(&instance->dri_options, "query_copy_with_shader_threshold");
     instance->force_vk_vendor =
        driQueryOptioni(&instance->dri_options, "force_vk_vendor");
+    instance->force_vk_devicename =
+       driQueryOptionstr(&instance->dri_options, "force_vk_devicename");
     instance->has_fake_sparse =
        driQueryOptionb(&instance->dri_options, "fake_sparse");
     instance->enable_tbimr = driQueryOptionb(&instance->dri_options, "intel_tbimr");

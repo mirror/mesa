@@ -323,6 +323,9 @@
 #define DRI_CONF_FORCE_VK_VENDOR() \
    DRI_CONF_OPT_I(force_vk_vendor, 0, -1, 2147483647, "Override GPU vendor id")
 
+#define DRI_CONF_FORCE_VK_DEVICENAME() \
+   DRI_CONF_OPT_S_NODEF(force_vk_devicename, "Override Vulkan deviceName.")
+
 #define DRI_CONF_FAKE_SPARSE(def) \
    DRI_CONF_OPT_B(fake_sparse, def, \
                   "Advertise support for sparse binding of textures regardless of real support")

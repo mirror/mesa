@@ -940,6 +940,7 @@ struct anv_instance {
     bool                                        sample_mask_out_opengl_behaviour;
     float                                       lower_depth_range_rate;
     bool                                        report_vk_1_3;
+    char                                        *force_vk_devicename;
 
     /* HW workarounds */
     bool                                        no_16bit;

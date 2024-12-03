@@ -106,7 +106,8 @@ v3dv_wsi_init(struct v3dv_physical_device *physical_device)
                             v3dv_physical_device_to_handle(physical_device),
                             v3dv_wsi_proc_addr,
                             &physical_device->vk.instance->alloc,
-                            physical_device->display_fd, NULL,
+                            physical_device->display_fd,
+                            &physical_device->instance->dri_options,
                             &(struct wsi_device_options){.sw_device = false});
 
    if (result != VK_SUCCESS)

@@ -426,7 +426,9 @@ vn_physical_device_sanitize_properties(struct vn_physical_device *physical_dev)
       memcpy(device_name + VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 5, "...)", 4);
       device_name_len = VK_MAX_PHYSICAL_DEVICE_NAME_SIZE - 1;
    }
-   memcpy(props->deviceName, device_name, device_name_len + 1);
+   snprintf(props->deviceName, device_name_len + 1,
+            "%s", (strlen(physical_dev->instance->force_vk_devicename) > 0) ?
+            physical_dev->instance->force_vk_devicename : device_name);
 
    /* store renderer VkDriverId for implementation specific workarounds */
    physical_dev->renderer_driver_id = props->driverID;

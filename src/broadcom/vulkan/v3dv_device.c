@@ -51,6 +51,7 @@
 #include "git_sha1.h"
 
 #include "util/build_id.h"
+#include "util/driconf.h"
 #include "util/os_file.h"
 #include "util/u_debug.h"
 #include "util/format/u_format.h"
@@ -532,6 +533,31 @@ static VkResult enumerate_devices(struct vk_instance *vk_instance);
 
 static void destroy_physical_device(struct vk_physical_device *device);
 
+static const driOptionDescription v3dv_dri_options[] = {
+   DRI_CONF_SECTION_PERFORMANCE
+      DRI_CONF_VK_X11_OVERRIDE_MIN_IMAGE_COUNT(0)
+      DRI_CONF_VK_X11_STRICT_IMAGE_COUNT(false)
+      DRI_CONF_VK_X11_ENSURE_MIN_IMAGE_COUNT(false)
+      DRI_CONF_VK_XWAYLAND_WAIT_READY(true)
+   DRI_CONF_SECTION_END
+
+   DRI_CONF_SECTION_DEBUG
+      DRI_CONF_FORCE_VK_DEVICENAME()
+   DRI_CONF_SECTION_END
+};
+
+static void
+v3dv_init_dri_options(struct v3dv_instance *instance)
+{
+   driParseOptionInfo(&instance->available_dri_options, v3dv_dri_options,
+                      ARRAY_SIZE(v3dv_dri_options));
+   driParseConfigFiles(&instance->dri_options, &instance->available_dri_options, 0, "v3dv", NULL, NULL,
+                       instance->vk.app_info.app_name, instance->vk.app_info.app_version,
+                       instance->vk.app_info.engine_name, instance->vk.app_info.engine_version);
+   instance->force_vk_devicename =
+      driQueryOptionstr(&instance->dri_options, "force_vk_devicename");
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL
 v3dv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
                     const VkAllocationCallbacks *pAllocator,
@@ -622,6 +648,8 @@ v3dv_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
    }
 #endif
 
+   v3dv_init_dri_options(instance);
+
    *pInstance = v3dv_instance_to_handle(instance);
 
    return VK_SUCCESS;
@@ -685,6 +713,9 @@ v3dv_DestroyInstance(VkInstance _instance,
 #endif
 
    VG(VALGRIND_DESTROY_MEMPOOL(instance));
+
+   driDestroyOptionCache(&instance->dri_options);
+   driDestroyOptionInfo(&instance->available_dri_options);
 
    vk_instance_finish(&instance->vk);
    vk_free(&instance->vk.alloc, instance);
@@ -1250,7 +1281,8 @@ get_device_properties(const struct v3dv_physical_device *device,
 
    /* VkPhysicalDeviceProperties */
    snprintf(properties->deviceName, sizeof(properties->deviceName),
-            "%s", device->name);
+            "%s", (strlen(device->instance->force_vk_devicename) > 0) ?
+            device->instance->force_vk_devicename : device->name);
    memcpy(properties->pipelineCacheUUID,
             device->pipeline_cache_uuid, VK_UUID_SIZE);
 

@@ -127,6 +127,7 @@ struct v3d_simulator_file;
 struct v3dv_physical_device {
    struct vk_physical_device vk;
 
+   struct v3dv_instance *instance;
    char *name;
    int32_t render_fd;
    int32_t display_fd;
@@ -226,6 +227,11 @@ bool v3dv_meta_can_use_tlb(struct v3dv_image *image,
 
 struct v3dv_instance {
    struct vk_instance vk;
+
+   struct driOptionCache dri_options;
+   struct driOptionCache available_dri_options;
+
+   char *force_vk_devicename;
 
    bool pipeline_cache_enabled;
    bool default_pipeline_cache_enabled;

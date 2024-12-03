@@ -77,6 +77,7 @@ struct radv_instance {
       uint8_t override_graphics_shader_version;
       uint8_t override_compute_shader_version;
       uint8_t override_ray_tracing_shader_version;
+      char *force_vk_devicename;
       int override_vram_size;
       int override_uniform_offset_alignment;
    } drirc;

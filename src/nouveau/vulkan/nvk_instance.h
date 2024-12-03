@@ -21,6 +21,7 @@ struct nvk_instance {
 
    uint8_t driver_build_sha[20];
    uint32_t force_vk_vendor;
+   char *force_vk_devicename;
 };
 
 VK_DEFINE_HANDLE_CASTS(nvk_instance, vk.base, VkInstance, VK_OBJECT_TYPE_INSTANCE)

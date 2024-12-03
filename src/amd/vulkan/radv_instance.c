@@ -162,6 +162,7 @@ static const driOptionDescription radv_dri_options[] = {
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
+      DRI_CONF_FORCE_VK_DEVICENAME()
       DRI_CONF_OVERRIDE_VRAM_SIZE()
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
       DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(false)
@@ -202,6 +203,9 @@ radv_init_dri_options(struct radv_instance *instance)
    driParseConfigFiles(&instance->drirc.options, &instance->drirc.available_options, 0, "radv", NULL, NULL,
                        instance->vk.app_info.app_name, instance->vk.app_info.app_version,
                        instance->vk.app_info.engine_name, instance->vk.app_info.engine_version);
+
+   instance->drirc.force_vk_devicename =
+      driQueryOptionstr(&instance->drirc.options, "force_vk_devicename");
 
    instance->drirc.enable_mrt_output_nan_fixup =
       driQueryOptionb(&instance->drirc.options, "radv_enable_mrt_output_nan_fixup");

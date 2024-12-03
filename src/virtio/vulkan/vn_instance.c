@@ -64,6 +64,7 @@ static const driOptionDescription vn_dri_options[] = {
       DRI_CONF_VENUS_WSI_MULTI_PLANE_MODIFIERS(false)
    DRI_CONF_SECTION_END
    DRI_CONF_SECTION_DEBUG
+      DRI_CONF_FORCE_VK_DEVICENAME()
       DRI_CONF_VK_WSI_FORCE_BGRA8_UNORM_FIRST(false)
       DRI_CONF_VK_WSI_FORCE_SWAPCHAIN_TO_CURRENT_EXTENT(false)
    DRI_CONF_SECTION_END
@@ -356,6 +357,8 @@ vn_CreateInstance(const VkInstanceCreateInfo *pCreateInfo,
       driQueryOptionb(&instance->dri_options, "venus_implicit_fencing");
    instance->enable_wsi_multi_plane_modifiers = driQueryOptionb(
       &instance->dri_options, "venus_wsi_multi_plane_modifiers");
+   instance->force_vk_devicename =
+      driQueryOptionstr(&instance->dri_options, "force_vk_devicename");
 
    if (VN_DEBUG(INIT)) {
       vn_log(instance, "supports multi-plane wsi format modifiers: %s",

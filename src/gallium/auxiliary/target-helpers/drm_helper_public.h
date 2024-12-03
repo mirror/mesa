@@ -15,6 +15,7 @@ extern const struct drm_driver_descriptor vmwgfx_driver_descriptor;
 extern const struct drm_driver_descriptor kgsl_driver_descriptor;
 extern const struct drm_driver_descriptor msm_driver_descriptor;
 extern const struct drm_driver_descriptor virtio_gpu_driver_descriptor;
+extern const struct drm_driver_descriptor vtest_driver_descriptor;
 extern const struct drm_driver_descriptor v3d_driver_descriptor;
 extern const struct drm_driver_descriptor vc4_driver_descriptor;
 extern const struct drm_driver_descriptor panfrost_driver_descriptor;

@@ -137,6 +137,9 @@ driCreateNewScreen3(int scrn, int fd,
    case DRI_SCREEN_DRI3:
       pscreen = dri2_init_screen(screen, driver_name_is_inferred);
       break;
+   case DRI_SCREEN_VIRGL:
+      pscreen = virgl_init_screen(screen, driver_name_is_inferred);
+      break;
    case DRI_SCREEN_KOPPER:
       pscreen = kopper_init_screen(screen, driver_name_is_inferred);
       break;

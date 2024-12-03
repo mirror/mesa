@@ -62,6 +62,7 @@ enum dri_screen_type {
    DRI_SCREEN_KOPPER,
    DRI_SCREEN_SWRAST,
    DRI_SCREEN_KMS_SWRAST,
+   DRI_SCREEN_VIRGL,
 };
 
 /**

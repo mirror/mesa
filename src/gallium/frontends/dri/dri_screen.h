@@ -204,6 +204,8 @@ struct pipe_screen *
 kopper_init_screen(struct dri_screen *screen, bool driver_name_is_inferred);
 struct pipe_screen *
 drisw_init_screen(struct dri_screen *screen, bool driver_name_is_inferred);
+struct pipe_screen *
+virgl_init_screen(struct dri_screen *screen, bool driver_name_is_inferred);
 
 extern const struct __DriverAPIRec dri_swrast_kms_driver_api;
 extern const __DRIextension *dri_swrast_kms_driver_extensions[];

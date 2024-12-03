@@ -261,6 +261,7 @@ struct dri2_egl_display {
    bool kopper_without_modifiers;
    bool swrast;
    bool swrast_not_kms;
+   bool virgl;
    int min_swap_interval;
    int max_swap_interval;
    int default_swap_interval;

@@ -982,6 +982,9 @@ dri_screen_init(struct glx_screen *psc, struct glx_display *priv, int screen, in
    case GLX_DRIVER_DRI2:
       type = DRI_SCREEN_DRI3;
       break;
+   case GLX_DRIVER_VIRGL:
+      type = DRI_SCREEN_VIRGL;
+      break;
    case GLX_DRIVER_ZINK_YES:
       type = DRI_SCREEN_KOPPER;
       break;

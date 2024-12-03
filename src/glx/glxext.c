@@ -875,6 +875,8 @@ AllocAndFetchScreenConfigs(Display * dpy, struct glx_display * priv, enum glx_dr
 #if defined(GLX_USE_DRM)
       if (glx_driver & GLX_DRIVER_DRI3) {
          bool use_zink;
+	 if (glx_driver & GLX_DRIVER_VIRGL)
+            priv->driver = GLX_DRIVER_VIRGL;
          psc = dri3_create_screen(i, priv, driver_name_is_inferred, &use_zink);
          if (use_zink) {
             glx_driver |= GLX_DRIVER_ZINK_YES;
@@ -988,6 +990,7 @@ __glXInitialize(Display * dpy)
 
    enum glx_driver glx_driver = 0;
    const char *env = getenv("MESA_LOADER_DRIVER_OVERRIDE");
+   const char *gallium = getenv("GALLIUM_DRIVER");
 
 #if defined(GLX_DIRECT_RENDERING) && (!defined(GLX_USE_APPLEGL) || defined(GLX_USE_APPLE))
    Bool glx_direct = !debug_get_bool_option("LIBGL_ALWAYS_INDIRECT", false);
@@ -997,6 +1000,9 @@ __glXInitialize(Display * dpy)
 
    if (env && !strcmp(env, "zink"))
       glx_driver |= GLX_DRIVER_ZINK_YES;
+
+   if (gallium && !strcmp(gallium, "virpipe"))
+      glx_driver |= GLX_DRIVER_VIRGL;
 
    dpyPriv->drawHash = __glxHashCreate();
 

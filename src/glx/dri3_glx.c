@@ -519,7 +519,13 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
 
    loader_get_user_preferred_fd(&psc->fd_render_gpu, &psc->fd_display_gpu);
 
-   driverName = loader_get_driver_for_fd(psc->fd_render_gpu);
+   if (priv->driver == GLX_DRIVER_VIRGL) {
+      driverName = strdup("virgl");
+   } else {
+      driverName = loader_get_driver_for_fd(psc->fd_render_gpu);
+      priv->driver = GLX_DRIVER_DRI3;
+   }
+
    if (!driverName) {
       ErrorMessageF("No driver found\n");
       goto handle_error;
@@ -551,7 +557,6 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
          free(driverNameDisplayGPU);
       }
    }
-   priv->driver = GLX_DRIVER_DRI3;
 
    if (!dri_screen_init(&psc->base, priv, screen, psc->fd_render_gpu, loader_extensions, driver_name_is_inferred)) {
       ErrorMessageF("glx: failed to create dri3 screen\n");
@@ -596,6 +601,7 @@ dri3_create_screen(int screen, struct glx_display * priv, bool driver_name_is_in
    return &psc->base;
 
 handle_error:
+   priv->driver = GLX_DRIVER_NONE;
    if (!*return_zink)
       CriticalErrorMessageF("failed to load driver: %s\n", driverName ? driverName : "(null)");
 

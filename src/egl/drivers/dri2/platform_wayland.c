@@ -938,6 +938,13 @@ get_surface_specific_modifiers(struct dri2_egl_surface *dri2_surf,
    int rate = dri2_surf->base.CompressionRate;
    uint64_t *modifiers;
 
+   if (dri2_dpy->virgl) {
+      modifiers = malloc(sizeof(uint64_t));
+      *modifiers = DRM_FORMAT_MOD_INVALID;
+      *modifiers_count = 1;
+      return modifiers;
+   }
+
    if (rate == EGL_SURFACE_COMPRESSION_FIXED_RATE_NONE_EXT ||
        !dri2_surf->wl_win)
       return NULL;
@@ -2303,7 +2310,12 @@ dri2_initialize_wayland_drm(_EGLDisplay *disp)
    dri2_dpy->is_render_node =
       drmGetNodeTypeFromFd(dri2_dpy->fd_render_gpu) == DRM_NODE_RENDER;
 
-   dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
+   if (!strcmp(getenv("GALLIUM_DRIVER"), "virpipe"))
+      dri2_dpy->driver_name = strdup("virgl");
+
+   if (!dri2_dpy->driver_name)
+      dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
+
    if (dri2_dpy->driver_name == NULL) {
       _eglError(EGL_BAD_ALLOC, "DRI2: failed to get driver name");
       goto cleanup;

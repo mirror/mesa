@@ -547,6 +547,11 @@ dri3_x11_connect(struct dri2_egl_display *dri2_dpy, bool zink, bool swrast)
    loader_get_user_preferred_fd(&dri2_dpy->fd_render_gpu,
                                 &dri2_dpy->fd_display_gpu);
 
+   const char *driver = getenv("GALLIUM_DRIVER");
+
+   if (driver && !strcmp(driver, "virpipe"))
+      dri2_dpy->driver_name = strdup("virgl");
+
    if (!dri2_dpy->driver_name)
       dri2_dpy->driver_name = loader_get_driver_for_fd(dri2_dpy->fd_render_gpu);
 

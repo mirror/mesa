@@ -295,7 +295,7 @@ virgl_vtest_winsys_resource_create(struct virgl_winsys *vws,
    if (!res)
       return NULL;
 
-   if (bind & (VIRGL_BIND_DISPLAY_TARGET | VIRGL_BIND_SCANOUT)) {
+   if (vtws->sws && (bind & (VIRGL_BIND_DISPLAY_TARGET | VIRGL_BIND_SCANOUT))) {
       res->dt = vtws->sws->displaytarget_create(vtws->sws, bind, format,
                                                 width, height, 64, map_front_private,
                                                 &res->stride);
@@ -661,6 +661,11 @@ static int virgl_vtest_get_caps(struct virgl_winsys *vws,
    // vtest doesn't support that
    if (caps->caps.v2.capability_bits_v2 & VIRGL_CAP_V2_COPY_TRANSFER_BOTH_DIRECTIONS)
       caps->caps.v2.capability_bits_v2 &= ~VIRGL_CAP_V2_COPY_TRANSFER_BOTH_DIRECTIONS;
+
+   /* If resource are not exportable, only swrast if supported */
+   if (!vtws->sws && !(caps->caps.v2.capability_bits_v2 & VIRGL_CAP_V2_EXPORTABLE_RESOURCE))
+      return -EINVAL;
+
    return ret;
 }
 

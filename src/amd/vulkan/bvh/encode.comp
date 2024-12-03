@@ -52,10 +52,12 @@ main()
       REF(radv_bvh_triangle_node) dst_node =
          REF(radv_bvh_triangle_node)(OFFSET(args.output_bvh, dst_leaf_offset + gl_GlobalInvocationID.x * output_leaf_node_size));
 
+      bool opaque = (src_node.geometry_id_and_flags & VK_GEOMETRY_OPAQUE) != 0;
+
       DEREF(dst_node).coords = src_node.coords;
       DEREF(dst_node).triangle_id = src_node.triangle_id;
       DEREF(dst_node).geometry_id_and_flags = src_node.geometry_id_and_flags;
-      DEREF(dst_node).id = 9;
+      DEREF(dst_node).id = 9 | (opaque ? 128 : 0);
 
       break;
    }

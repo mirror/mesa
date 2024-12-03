@@ -118,9 +118,11 @@ build_triangle(inout vk_aabb bounds, VOID_REF dst_ptr, vk_bvh_geometry_data geom
          bounds.max[comp] = max(bounds.max[comp], vertices.vertex[coord][comp]);
       }
 
+   bool opaque = (geom_data.geometry_id & VK_GEOMETRY_OPAQUE) != 0;
+
    DEREF(node).triangle_id = global_id;
    DEREF(node).geometry_id_and_flags = geom_data.geometry_id;
-   DEREF(node).id = 9;
+   DEREF(node).id = 9 | (opaque ? 128 : 0);
 
    return is_valid;
 }

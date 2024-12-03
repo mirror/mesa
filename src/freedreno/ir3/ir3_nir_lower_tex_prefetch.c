@@ -158,7 +158,8 @@ lower_tex_prefetch_block(nir_block *block)
          continue;
 
       /* only prefetch for simple 2d tex fetch case */
-      if (tex->sampler_dim != GLSL_SAMPLER_DIM_2D || tex->is_array)
+      if (tex->sampler_dim != GLSL_SAMPLER_DIM_2D || tex->is_array ||
+          tex->is_sparse)
          continue;
 
       if (!ok_tex_samp(tex))

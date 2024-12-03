@@ -549,6 +549,36 @@ ir3_nir_lower_array_sampler(nir_shader *shader)
       nir_metadata_control_flow, NULL);
 }
 
+static bool
+ir3_nir_lower_sparse_residency_cb(nir_builder *b, nir_intrinsic_instr *instr,
+                                  void *data)
+{
+   b->cursor = nir_before_instr(&instr->instr);
+
+   nir_def *def;
+   switch (instr->intrinsic) {
+   case nir_intrinsic_is_sparse_texels_resident:
+      def = nir_ieq_imm(b, instr->src[0].ssa, 0);
+      break;
+   case nir_intrinsic_sparse_residency_code_and:
+      def = nir_ior(b, instr->src[0].ssa, instr->src[1].ssa);
+      break;
+   default:
+      return false;
+   }
+
+   nir_def_rewrite_uses(&instr->def, def);
+   return true;
+}
+
+static bool
+ir3_nir_lower_sparse_residency(nir_shader *shader)
+{
+   return nir_shader_intrinsics_pass(
+      shader, ir3_nir_lower_sparse_residency_cb,
+      nir_metadata_control_flow, NULL);
+}
+
 void
 ir3_finalize_nir(struct ir3_compiler *compiler,
                  const struct ir3_shader_nir_options *options,
@@ -587,6 +617,8 @@ ir3_finalize_nir(struct ir3_compiler *compiler,
 
    OPT_V(s, nir_lower_tex, &tex_options);
    OPT_V(s, nir_lower_load_const_to_scalar);
+
+   NIR_PASS_V(s, ir3_nir_lower_sparse_residency);
 
    if (compiler->array_index_add_half)
       OPT_V(s, ir3_nir_lower_array_sampler);

@@ -80,6 +80,7 @@ struct shim_fd {
    mtx_t handle_lock;
    /* mapping from int gem handle to struct shim_bo *. */
    struct hash_table *handles;
+   int last_handle;
 };
 
 struct shim_bo {

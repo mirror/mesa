@@ -21,6 +21,7 @@
  * IN THE SOFTWARE.
  */
 
+#include <dlfcn.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +44,9 @@
 #if DETECT_OS_WINDOWS
 #include <windows.h>
 #endif
+
+
+int is_drm_shim;
 
 enum mesa_log_control {
    MESA_LOG_CONTROL_NULL = 1 << 0,
@@ -110,6 +114,8 @@ mesa_log_init_once(void)
    if (mesa_log_control & MESA_LOG_CONTROL_SYSLOG)
       openlog(util_get_process_name(), LOG_NDELAY | LOG_PID, LOG_USER);
 #endif
+
+   is_drm_shim = !!dlsym(RTLD_DEFAULT, "drm_shim_device_init");
 }
 
 static void

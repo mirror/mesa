@@ -1669,7 +1669,7 @@ static void amdgpu_cs_submit_ib(void *job, void *gdata, int thread_index)
 
    /* If there was an error, signal the fence, because it won't be signalled
     * by the hardware. */
-   if (r || noop)
+   if (r || noop || is_drm_shim)
       amdgpu_fence_signalled(cs->fence);
 
    if (unlikely(aws->info.has_fw_based_shadowing && acs->mcbp_fw_shadow_chunk.flags && r == 0))

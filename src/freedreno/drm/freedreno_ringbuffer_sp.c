@@ -251,6 +251,14 @@ static void
 fd_submit_sp_flush_cleanup(void *job, void *gdata, int thread_index)
 {
    struct fd_submit *submit = job;
+
+   if (is_drm_shim) {
+      /* If we have drm-shim, we need fake the fence write that the
+       * GPU would normally do:
+       */
+      submit->pipe->control->fence = submit->fence;
+   }
+
    fd_submit_del(submit);
 }
 

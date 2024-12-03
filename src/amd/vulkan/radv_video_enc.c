@@ -2576,15 +2576,16 @@ radv_video_patch_encode_session_parameters(struct vk_video_session_parameters *p
        * TODO: use the reported codedPictureAlignment to do this alignment. */
       int frame_width = params->av1_enc.seq_hdr.base.max_frame_width_minus_1 + 1;
       int frame_height = params->av1_enc.seq_hdr.base.max_frame_height_minus_1 + 1;
-      if (((frame_width + 7) & ~7) % 64) {
-         frame_width = (frame_width + 64 - 1) & ~(64 - 1);
+      if (align(frame_width, 8) % 64) {
+         frame_width = align(frame_width, 64);
       }
-      if (((frame_height + 7) & ~7) % 16) {
-         frame_height = (frame_height + 16 - 1) & ~(16 - 1);
+      if (align(frame_height, 8) % 16) {
+         frame_height = align(frame_height, 16);
       }
       params->av1_enc.seq_hdr.base.max_frame_width_minus_1 = frame_width - 1;
       params->av1_enc.seq_hdr.base.max_frame_height_minus_1 = frame_height - 1;
 
+      /* Also override the bit length if they're too small now */
       if (frame_width >= (1 << (params->av1_enc.seq_hdr.base.frame_width_bits_minus_1 + 1))) {
          params->av1_enc.seq_hdr.base.frame_width_bits_minus_1++;
       }

@@ -82,6 +82,7 @@
 #define VCMD_SYNC_WRITE 22
 #define VCMD_SYNC_WAIT 23
 #define VCMD_SUBMIT_CMD2 24
+#define VCMD_RESOURCE_EXPORT 25
 #endif /* VIRGL_RENDERER_UNSTABLE_APIS */
 
 #define VCMD_RES_CREATE_SIZE 10
@@ -240,6 +241,10 @@ struct vcmd_submit_cmd2_batch {
 #define VCMD_SUBMIT_CMD2_BATCH_SYNC_OFFSET(n)      (1 + 8 * (n) + 3)
 #define VCMD_SUBMIT_CMD2_BATCH_SYNC_COUNT(n)       (1 + 8 * (n) + 4)
 #define VCMD_SUBMIT_CMD2_BATCH_RING_IDX(n)         (1 + 8 * (n) + 5)
+
+#define VCMD_RES_EXPORT_SIZE 1
+#define VCMD_RES_EXPORT_RES_HANDLE 0
+/* resp stride, offset, modifier, fd */
 
 #endif /* VIRGL_RENDERER_UNSTABLE_APIS */
 

@@ -122,6 +122,10 @@ int virgl_vtest_send_resource_create(struct virgl_vtest_winsys *vws,
 int virgl_vtest_send_resource_unref(struct virgl_vtest_winsys *vws,
                                     uint32_t handle);
 
+int virgl_vtest_export_resource(struct virgl_vtest_winsys *vws, uint32_t handle,
+                                int *fd, uint32_t *stride, uint32_t *offset,
+                                uint64_t *modifier);
+
 int virgl_vtest_submit_cmd(struct virgl_vtest_winsys *vws,
                            uint32_t *buf, uint32_t buf_len);
 

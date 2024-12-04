@@ -161,6 +161,13 @@ option(
 )
 
 option(
+  'vcl',
+  type : 'boolean',
+  value : false,
+  description : 'build "vcl" OpenCL driver.',
+)
+
+option(
   'gallium-rusticl-enable-drivers',
   type : 'array',
   value : ['auto', 'asahi'],

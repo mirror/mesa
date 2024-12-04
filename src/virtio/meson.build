@@ -8,3 +8,8 @@ if with_virtio_vk
   subdir('vulkan')
 endif
 subdir('vdrm')
+
+if with_vcl
+  subdir('vcl')
+  subdir('targets/vcl')
+endif

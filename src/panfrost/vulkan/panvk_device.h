@@ -25,6 +25,8 @@
 
 #include "util/vma.h"
 
+#include "nir.h"
+
 #define PANVK_MAX_QUEUE_FAMILIES 1
 
 struct panvk_device {
@@ -62,6 +64,8 @@ struct panvk_device {
 
    struct panvk_queue *queues[PANVK_MAX_QUEUE_FAMILIES];
    int queue_count[PANVK_MAX_QUEUE_FAMILIES];
+
+   const struct nir_shader *libpan;
 
    struct {
       struct u_trace_context utctx;

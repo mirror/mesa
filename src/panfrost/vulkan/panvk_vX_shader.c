@@ -47,6 +47,7 @@
 #include "vk_graphics_state.h"
 #include "vk_shader_module.h"
 
+#include "compiler/bifrost_compile.h"
 #include "compiler/bifrost_nir.h"
 #include "pan_shader.h"
 
@@ -649,6 +650,7 @@ panvk_lower_nir(struct panvk_device *dev, nir_shader *nir,
                nir_shader_get_entrypoint(nir), true, false);
    }
 #endif
+   pan_link_cl_library(nir, dev->libpan, compile_input->gpu_id);
 
    panvk_per_arch(nir_lower_descriptors)(nir, dev, rs, set_layout_count,
                                          set_layouts, shader);

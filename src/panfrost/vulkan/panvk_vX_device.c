@@ -30,8 +30,14 @@
 #include "genxml/gen_macros.h"
 
 #include "kmod/pan_kmod.h"
+#include "util/blob.h"
+#include "util/ralloc.h"
+#include "glsl_types.h"
+#include "libpan_shaders.h"
+#include "nir_serialize.h"
 #include "pan_props.h"
 #include "pan_samples.h"
+#include "pan_shader.h"
 
 static void *
 panvk_kmod_zalloc(const struct pan_kmod_allocator *allocator, size_t size,
@@ -152,6 +158,27 @@ static void
 panvk_meta_cleanup(struct panvk_device *device)
 {
    vk_meta_device_finish(&device->vk, &device->meta);
+}
+
+static VkResult
+panvk_libpan_init(struct panvk_device *device)
+{
+   glsl_type_singleton_init_or_ref();
+
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)GENX(libpan_shaders_0_nir),
+                    sizeof(GENX(libpan_shaders_0_nir)));
+   device->libpan =
+      nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
+
+   return VK_SUCCESS;
+}
+
+static void
+panvk_libpan_cleanup(struct panvk_device *device)
+{
+   ralloc_free((void *)device->libpan);
+   glsl_type_singleton_decref();
 }
 
 /* Always reserve the lower 32MB. */
@@ -326,9 +353,13 @@ panvk_per_arch(create_device)(struct panvk_physical_device *physical_device,
 
    vk_device_set_drm_fd(&device->vk, device->kmod.dev->fd);
 
-   result = panvk_meta_init(device);
+   result = panvk_libpan_init(device);
    if (result != VK_SUCCESS)
       goto err_free_priv_bos;
+
+   result = panvk_meta_init(device);
+   if (result != VK_SUCCESS)
+      goto err_free_libpan;
 
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
       const VkDeviceQueueCreateInfo *queue_create =
@@ -378,6 +409,8 @@ err_finish_queues:
 
    panvk_meta_cleanup(device);
 
+err_free_libpan:
+   panvk_libpan_cleanup(device);
 err_free_priv_bos:
    panvk_priv_bo_unref(device->tiler_oom.handlers_bo);
    panvk_priv_bo_unref(device->sample_positions);
@@ -414,6 +447,7 @@ panvk_per_arch(destroy_device)(struct panvk_device *device,
          vk_free(&device->vk.alloc, device->queues[i]);
    }
 
+   panvk_libpan_cleanup(device);
    panvk_meta_cleanup(device);
    panvk_priv_bo_unref(device->tiler_oom.handlers_bo);
    panvk_priv_bo_unref(device->tiler_heap);

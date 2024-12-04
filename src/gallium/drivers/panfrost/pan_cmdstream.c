@@ -40,6 +40,11 @@
 
 #include "genxml/gen_macros.h"
 
+#include "util/blob.h"
+#include "util/ralloc.h"
+#include "glsl_types.h"
+#include "libpan_shaders.h"
+#include "nir_serialize.h"
 #include "pan_afbc_cso.h"
 #include "pan_blend.h"
 #include "pan_bo.h"
@@ -3930,6 +3935,10 @@ static void
 screen_destroy(struct pipe_screen *pscreen)
 {
    struct panfrost_device *dev = pan_device(pscreen);
+
+   ralloc_free((void *)dev->libpan);
+   glsl_type_singleton_decref();
+
    GENX(pan_fb_preload_cache_cleanup)(&dev->fb_preload_cache);
 }
 
@@ -4089,6 +4098,14 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
    GENX(pan_fb_preload_cache_init)
    (&dev->fb_preload_cache, panfrost_device_gpu_id(dev), &dev->blend_shaders,
     &screen->mempools.bin.base, &screen->mempools.desc.base);
+
+   glsl_type_singleton_init_or_ref();
+
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)GENX(libpan_shaders_0_nir),
+                    sizeof(GENX(libpan_shaders_0_nir)));
+   dev->libpan =
+      nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
 
 #if PAN_GPU_SUPPORTS_DISPATCH_INDIRECT
    pan_indirect_dispatch_meta_init(

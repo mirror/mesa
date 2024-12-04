@@ -50,6 +50,8 @@
 
 #include <genxml/gen_macros.h>
 
+#include "nir.h"
+
 #if defined(__cplusplus)
 extern "C" {
 #endif
@@ -177,6 +179,8 @@ struct panfrost_device {
     * unconditionally on Bifrost, and useful for sharing with Midgard */
 
    struct panfrost_bo *sample_positions;
+
+   const struct nir_shader *libpan;
 };
 
 static inline int

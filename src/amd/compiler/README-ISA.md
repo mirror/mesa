@@ -380,4 +380,5 @@ SALU writing then SALU or VALU reading a SGPR that was previously used as a lane
 
 Mitigated by:
 A VALU instruction reading a non-exec SGPR before the SALU write, or a sa_sdst=0 wait after the
-SALU write: `s_waitcnt_depctr 0xfffe`
+SALU write: `s_waitcnt_depctr 0xfffe` or at least 6 independent SALU instructions after the SALU
+write.

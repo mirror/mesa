@@ -257,7 +257,7 @@ struct NOP_ctx_gfx11 {
 
    /* VALUMaskWriteHazard */
    std::bitset<128> sgpr_read_by_valu_as_lanemask;
-   std::bitset<128> sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
+   RegCounterMap<6> sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
 
    /* WMMAHazards */
    std::bitset<256> vgpr_written_by_wmma;
@@ -277,8 +277,8 @@ struct NOP_ctx_gfx11 {
       valu_since_wr_by_trans.join_min(other.valu_since_wr_by_trans);
       trans_since_wr_by_trans.join_min(other.trans_since_wr_by_trans);
       sgpr_read_by_valu_as_lanemask |= other.sgpr_read_by_valu_as_lanemask;
-      sgpr_read_by_valu_as_lanemask_then_wr_by_salu |=
-         other.sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
+      sgpr_read_by_valu_as_lanemask_then_wr_by_salu.join_min(
+         other.sgpr_read_by_valu_as_lanemask_then_wr_by_salu);
       vgpr_written_by_wmma |= other.vgpr_written_by_wmma;
       sgpr_read_by_valu |= other.sgpr_read_by_valu;
       sgpr_read_by_valu_then_wr_by_salu.join_min(other.sgpr_read_by_valu_then_wr_by_salu);
@@ -1456,10 +1456,17 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
        * VALU reads SGPR as a lane mask and later written by SALU cannot safely be read by SALU or
        * VALU.
        */
-      if (state.program->wave_size == 64 && (instr->isSALU() || instr->isVALU()) &&
-          check_read_regs(instr, ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu)) {
-         depctr_imm &= 0xfffe;
-         wait.sa_sdst = 0;
+      if (state.program->wave_size == 64 && (instr->isSALU() || instr->isVALU())) {
+         for (Operand& op : instr->operands) {
+            for (unsigned i = 0; i < op.size(); i++) {
+               PhysReg reg = op.physReg().advance(4 * i);
+               /* Hazard expires after 6 SALU instructions. */
+               if (ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.get(reg) < 6) {
+                  depctr_imm &= 0xfffe;
+                  wait.sa_sdst = 0;
+               }
+            }
+         }
       }
 
       if (wait.va_vdst == 0) {
@@ -1470,11 +1477,14 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       if (wait.sa_sdst == 0)
          ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.reset();
 
-      if (state.program->wave_size == 64 && instr->isSALU() &&
-          check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
-         unsigned reg = instr->definitions[0].physReg().reg();
-         for (unsigned i = 0; i < instr->definitions[0].size(); i++)
-            ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu[reg + i] = 1;
+      if (state.program->wave_size == 64 && instr->isSALU() && !instr->isSOPP()) {
+         ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.inc();
+         if (check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
+            for (unsigned i = 0; i < instr->definitions[0].size(); i++) {
+               PhysReg reg = instr->definitions[0].physReg().advance(4 * i);
+               ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.set(reg);
+            }
+         }
       }
 
       if (instr->isVALU()) {
@@ -1709,7 +1719,7 @@ resolve_all_gfx11(State& state, NOP_ctx_gfx11& ctx,
 
    /* VALUMaskWriteHazard */
    if (state.program->gfx_level < GFX12 && state.program->wave_size == 64) {
-      if (ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.any()) {
+      if (!ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.empty()) {
          waitcnt_depctr &= 0xfffe;
          ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.reset();
       }

@@ -562,8 +562,7 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
          cs_wait_slots(b, deps.src[i].wait_sb_mask, false);
 
       struct panvk_cache_flush_info cache_flush = deps.src[i].cache_flush;
-      if (cache_flush.l2 != MALI_CS_FLUSH_MODE_NONE ||
-          cache_flush.lsc != MALI_CS_FLUSH_MODE_NONE || cache_flush.others) {
+      if (!panvk_cache_flush_is_nop(&cache_flush)) {
          struct cs_index flush_id = cs_scratch_reg32(b, 0);
 
          cs_move32_to(b, flush_id, 0);

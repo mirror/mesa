@@ -1229,7 +1229,6 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[4] = s_mov_b32 %0:s[0]
    //! s1: %0:s[0] = s_mov_b32 0
-   //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[5] = s_mov_b32 %0:s[0]
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(11));
    bld.vop2_e64(aco_opcode::v_cndmask_b32, Definition(PhysReg(256), v1), Operand::zero(),
@@ -2049,8 +2048,6 @@ BEGIN_TEST(insert_nops.setpc_gfx11)
    //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:vcc
    //! s2: %0:vcc = s_mov_b64 0
    //! s_waitcnt_depctr va_vdst(0) sa_sdst(0)
-   //! v1: %0:v[0] = v_xor3_b32 %0:v[0], %0:s[0], %0:s[0]
-   //! s_waitcnt_depctr va_vdst(0)
    //! s_setpc_b64 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(5));
    bld.vop2(aco_opcode::v_cndmask_b32, Definition(PhysReg(256), v1), Operand::zero(),

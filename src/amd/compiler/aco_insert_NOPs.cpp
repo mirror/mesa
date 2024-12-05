@@ -1482,6 +1482,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
          if (check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
             for (unsigned i = 0; i < instr->definitions[0].size(); i++) {
                PhysReg reg = instr->definitions[0].physReg().advance(4 * i);
+               ctx.sgpr_read_by_valu_as_lanemask[reg] = 0;
                ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.set(reg);
             }
          }

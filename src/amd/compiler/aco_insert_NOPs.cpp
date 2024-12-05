@@ -1477,13 +1477,22 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       if (wait.sa_sdst == 0)
          ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.reset();
 
-      if (state.program->wave_size == 64 && instr->isSALU() && !instr->isSOPP()) {
-         ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.inc();
-         if (check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
-            for (unsigned i = 0; i < instr->definitions[0].size(); i++) {
-               PhysReg reg = instr->definitions[0].physReg().advance(4 * i);
-               ctx.sgpr_read_by_valu_as_lanemask[reg] = 0;
-               ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.set(reg);
+      if (state.program->wave_size == 64 && !instr->isSOPP()) {
+         if (instr->isSALU()) {
+            ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.inc();
+            if (check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
+               for (unsigned i = 0; i < instr->definitions[0].size(); i++) {
+                  PhysReg reg = instr->definitions[0].physReg().advance(4 * i);
+                  ctx.sgpr_read_by_valu_as_lanemask[reg] = 0;
+                  ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.set(reg);
+               }
+            }
+         } else {
+            for (Definition& def : instr->definitions) {
+               if (def.physReg() < exec) {
+                  for (unsigned i = 0; i < instr->definitions[0].size(); i++)
+                     ctx.sgpr_read_by_valu_as_lanemask[def.physReg() + i] = 0;
+               }
             }
          }
       }

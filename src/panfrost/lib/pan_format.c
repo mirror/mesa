@@ -184,6 +184,10 @@ const struct panfrost_format GENX(panfrost_pipe_format)[PIPE_FORMAT_COUNT] = {
 
    FMT_YUV(R10_G10B10_420_UNORM, Y10_UV10_420, YUVA, NO_SWAP, CENTER, _T__),
    FMT_YUV(R10_G10B10_422_UNORM, Y10_UV10_422, YUVA, NO_SWAP, CENTER, _T__),
+
+   /* special internal formats */
+   FMT_YUV(R8G8B8_420_UNORM, Y8_UV8_420, YUVA, NO_SWAP, CENTER, _T__),
+   FMT_YUV(R10G10B10_420_UNORM, Y10_UV10_420, YUVA, NO_SWAP, CENTER, _T__),
 #endif
 
    FMTC(ETC1_RGB8,               ETC2_RGB8,       RGBA8_UNORM, RGB1, L),

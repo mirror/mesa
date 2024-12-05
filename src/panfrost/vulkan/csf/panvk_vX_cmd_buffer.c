@@ -540,10 +540,8 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
 
    panvk_per_arch(get_cs_deps)(cmdbuf, pDependencyInfo, &deps);
 
-   if (deps.needs_draw_flush)
-      panvk_per_arch(cmd_flush_draws)(cmdbuf);
-
    uint32_t wait_subqueue_mask = 0;
+   uint32_t utrace_subqueue_mask = 0;
    for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
       /* no need to perform both types of waits on the same subqueue */
       if (deps.src[i].wait_sb_mask)
@@ -551,10 +549,19 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
       assert(!(deps.dst[i].wait_subqueue_mask & BITFIELD_BIT(i)));
 
       wait_subqueue_mask |= deps.dst[i].wait_subqueue_mask;
+
+      if (deps.src[i].wait_sb_mask || deps.dst[i].wait_subqueue_mask ||
+          !panvk_cache_flush_is_nop(&deps.src[i].cache_flush))
+         utrace_subqueue_mask |= BITFIELD_BIT(i);
    }
 
-   for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
+   u_foreach_bit(i, utrace_subqueue_mask)
+      trace_begin_barrier(&cmdbuf->utrace.uts[i], cmdbuf);
 
+   if (deps.needs_draw_flush)
+      panvk_per_arch(cmd_flush_draws)(cmdbuf);
+
+   for (uint32_t i = 0; i < PANVK_SUBQUEUE_COUNT; i++) {
       struct cs_builder *b = panvk_get_cs_builder(cmdbuf, i);
       struct panvk_cs_state *cs_state = &cmdbuf->state.cs[i];
 
@@ -606,6 +613,13 @@ panvk_per_arch(CmdPipelineBarrier2)(VkCommandBuffer commandBuffer,
          cs_sync64_wait(b, false, MALI_CS_CONDITION_GREATER, wait_val,
                         sync_addr);
       }
+   }
+
+   u_foreach_bit(i, utrace_subqueue_mask) {
+      trace_end_barrier(
+         &cmdbuf->utrace.uts[i], cmdbuf, deps.src[i].wait_sb_mask,
+         deps.dst[i].wait_subqueue_mask, deps.src[i].cache_flush.l2,
+         deps.src[i].cache_flush.lsc, deps.src[i].cache_flush.others);
    }
 }
 

@@ -820,7 +820,7 @@ bi_emit_load_blend_input(bi_builder *b, nir_intrinsic_instr *instr)
 
 static void
 bi_emit_blend_op(bi_builder *b, bi_index rgba, nir_alu_type T, bi_index rgba2,
-                 nir_alu_type T2, unsigned rt)
+                 nir_alu_type T2, unsigned rt, bi_index bd)
 {
    /* Reads 2 or 4 staging registers to cover the input */
    unsigned size = nir_alu_type_get_type_size(T);
@@ -849,6 +849,10 @@ bi_emit_blend_op(bi_builder *b, bi_index rgba, nir_alu_type T, bi_index rgba2,
       bi_blend_to(b, bi_temp(b->shader), rgba, bi_coverage(b),
                   bi_imm_u32(blend_desc), bi_imm_u32(blend_desc >> 32),
                   bi_null(), regfmt, sr_count, 0);
+   } else if (!bi_is_null(bd)) {
+      bi_blend_to(b, bi_temp(b->shader), rgba, bi_coverage(b),
+                  bi_extract(b, bd, 0), bi_extract(b, bd, 1), rgba2, regfmt,
+                  sr_count, sr_count_2);
    } else {
       /* Blend descriptor comes from the FAU RAM. By convention, the
        * return address on Bifrost is stored in r48 and will be used
@@ -1008,7 +1012,15 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
             nir_alu_type_get_type_size(nir_intrinsic_src_type(instr)));
       }
 
-      bi_emit_blend_op(b, color, nir_intrinsic_src_type(instr), color2, T2, rt);
+      bi_index explicit_bd = bi_null();
+      if (instr->intrinsic == nir_intrinsic_store_remapped_output_pan)
+         explicit_bd = bi_src_index(&instr->src[1]);
+      else if (instr->intrinsic ==
+               nir_intrinsic_store_combined_remapped_output_pan)
+         explicit_bd = bi_src_index(&instr->src[4]);
+
+      bi_emit_blend_op(b, color, nir_intrinsic_src_type(instr), color2, T2, rt,
+                       explicit_bd);
    }
 
    if (b->shader->inputs->is_blend) {
@@ -1804,6 +1816,11 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
          bi_emit_store_vary(b, instr);
       else
          unreachable("Unsupported shader stage");
+      break;
+
+   case nir_intrinsic_store_remapped_output_pan:
+      assert(stage == MESA_SHADER_FRAGMENT || !"Unsupported shader stage");
+      bi_emit_fragment_out(b, instr);
       break;
 
    case nir_intrinsic_store_combined_output_pan:

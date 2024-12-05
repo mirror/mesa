@@ -1531,6 +1531,12 @@ load("sampler_lod_parameters_pan", [1], flags=[CAN_ELIMINATE, CAN_REORDER])
 # 254:  Stencil
 load("converted_output_pan", [1, 1], indices=[DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
 
+# Like store_output but using an explicit blend descriptor
+# src[] = { value, blend_desc }
+store("remapped_output_pan", [2], indices=[IO_SEMANTICS, SRC_TYPE])
+# src[] = { color_value, rt_index, z_value, stencil_value, second_color_value, blend_desc }
+store("combined_remapped_output_pan", [1, 1, 4, 2], [IO_SEMANTICS, COMPONENT, SRC_TYPE, DEST_TYPE])
+
 # Load the render target conversion descriptor for a given render target given
 # in the BASE index. Converts to a type with size given by the source type.
 # Valid in fragment and blend stages.

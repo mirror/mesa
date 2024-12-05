@@ -49,12 +49,16 @@ static void
 pan_nir_emit_combined_store(nir_builder *b, nir_intrinsic_instr *rt0_store,
                             unsigned writeout, nir_intrinsic_instr **stores)
 {
-   nir_intrinsic_instr *intr = nir_intrinsic_instr_create(
-      b->shader, nir_intrinsic_store_combined_output_pan);
+   bool remapped = rt0_store && rt0_store->intrinsic ==
+                                   nir_intrinsic_store_remapped_output_pan;
+   nir_intrinsic_op op = remapped
+                            ? nir_intrinsic_store_combined_remapped_output_pan
+                            : nir_intrinsic_store_combined_output_pan;
+   nir_intrinsic_instr *intr = nir_intrinsic_instr_create(b->shader, op);
 
    intr->num_components = rt0_store ? rt0_store->src[0].ssa->num_components : 4;
 
-   if (rt0_store) {
+   if (rt0_store && !remapped) {
       assert(nir_src_is_const(rt0_store->src[1]) &&
              "RT store offset must be constant");
       nir_io_semantics io_sem = nir_intrinsic_io_semantics(rt0_store);
@@ -82,6 +86,9 @@ pan_nir_emit_combined_store(nir_builder *b, nir_intrinsic_instr *rt0_store,
 
    for (int i = 0; i < ARRAY_SIZE(src); ++i)
       intr->src[i] = nir_src_for_ssa(src[i]);
+
+   if (remapped)
+      intr->src[4] = nir_src_for_ssa(rt0_store->src[2].ssa);
 
    nir_builder_instr_insert(b, &intr->instr);
 }
@@ -124,7 +131,8 @@ pan_nir_lower_zs_store(nir_shader *nir)
                continue;
 
             nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-            if (intr->intrinsic != nir_intrinsic_store_output)
+            if (intr->intrinsic != nir_intrinsic_store_output &&
+                intr->intrinsic != nir_intrinsic_store_remapped_output_pan)
                continue;
 
             nir_io_semantics sem = nir_intrinsic_io_semantics(intr);

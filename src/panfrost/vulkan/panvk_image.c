@@ -232,6 +232,7 @@ panvk_image_init_layouts(struct panvk_image *image,
 
       image->planes[plane].layout = (struct pan_image_layout){
          .format = vk_format_to_pipe_format(format),
+         .plane = plane,
          .dim = panvk_image_type_to_mali_tex_dim(image->vk.image_type),
          .width = image->vk.extent.width,
          .height = image->vk.extent.height,

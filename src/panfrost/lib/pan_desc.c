@@ -554,7 +554,7 @@ pan_prepare_rt(const struct pan_fb_info *fb, unsigned layer_idx,
       cfg->afbc.body_offset = surf.afbc.body - surf.afbc.header;
       assert(surf.afbc.body >= surf.afbc.header);
 
-      cfg->afbc.compression_mode = GENX(pan_afbc_compression_mode)(rt->format);
+      cfg->afbc.compression_mode = GENX(pan_afbc_compression_mode)(rt->format, 0);
       cfg->afbc.row_stride = row_stride;
 #else
       const struct pan_image_slice_layout *slice = &image->layout.slices[level];

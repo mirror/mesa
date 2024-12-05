@@ -132,9 +132,15 @@ panfrost_afbc_format(unsigned arch, enum pipe_format format, int plane)
    case PIPE_FORMAT_R8_G8_B8_420_UNORM:
    case PIPE_FORMAT_R8_B8_G8_420_UNORM:
       return PAN_AFBC_MODE_YUV420_1C8;
+   case PIPE_FORMAT_R8_G8B8_422_UNORM:
+      return plane == 0 ? PAN_AFBC_MODE_YUV422_1C8
+         : PAN_AFBC_MODE_YUV422_2C8;
    case PIPE_FORMAT_R10_G10B10_420_UNORM:
       return plane == 0 ? PAN_AFBC_MODE_YUV420_1C10
          : PAN_AFBC_MODE_YUV420_2C10;
+   case PIPE_FORMAT_R10_G10B10_422_UNORM:
+      return plane == 0 ? PAN_AFBC_MODE_YUV422_1C10
+         : PAN_AFBC_MODE_YUV422_2C10;
    default:
       break;
    }
@@ -179,6 +185,8 @@ panfrost_afbc_format(unsigned arch, enum pipe_format format, int plane)
    case PIPE_FORMAT_Z24X8_UNORM:       return PAN_AFBC_MODE_R8G8B8A8;
    case PIPE_FORMAT_X24S8_UINT:        return PAN_AFBC_MODE_R8G8B8A8;
 
+   case PIPE_FORMAT_R8G8B8_420_UNORM:  return PAN_AFBC_MODE_YUV420_6C8;
+   case PIPE_FORMAT_R10G10B10_420_UNORM: return PAN_AFBC_MODE_YUV420_6C10;
    default:                            return PAN_AFBC_MODE_INVALID;
    }
    /* clang-format on */

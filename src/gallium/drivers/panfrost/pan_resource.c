@@ -126,6 +126,7 @@ panfrost_resource_from_handle(struct pipe_screen *pscreen,
    rsc->image.layout = (struct pan_image_layout){
       .modifier = mod,
       .format = templat->format,
+      .plane = whandle->plane,
       .dim = dim,
       .width = prsc->width0,
       .height = prsc->height0,

@@ -348,16 +348,21 @@ panfrost_clump_format(enum pipe_format format)
       case PIPE_FORMAT_G8R8_B8R8_UNORM:
       case PIPE_FORMAT_R8B8_R8G8_UNORM:
       case PIPE_FORMAT_B8R8_G8R8_UNORM:
+      case PIPE_FORMAT_R8_G8B8_422_UNORM:
+      case PIPE_FORMAT_R8_B8G8_422_UNORM:
          return MALI_CLUMP_FORMAT_Y8_UV8_422;
       case PIPE_FORMAT_R8_G8B8_420_UNORM:
       case PIPE_FORMAT_R8_B8G8_420_UNORM:
       case PIPE_FORMAT_R8_G8_B8_420_UNORM:
       case PIPE_FORMAT_R8_B8_G8_420_UNORM:
+      case PIPE_FORMAT_R8G8B8_420_UNORM:
          return MALI_CLUMP_FORMAT_Y8_UV8_420;
       case PIPE_FORMAT_R10_G10B10_420_UNORM:
          return MALI_CLUMP_FORMAT_Y10_UV10_420;
       case PIPE_FORMAT_R10_G10B10_422_UNORM:
          return MALI_CLUMP_FORMAT_Y10_UV10_422;
+      case PIPE_FORMAT_R10G10B10_420_UNORM:
+         return MALI_CLUMP_FORMAT_Y10_UV10_420;
       default:
          unreachable("unhandled clump format");
       }
@@ -475,7 +480,7 @@ panfrost_emit_plane(const struct pan_image_view *iview,
          cfg.afbc.tiled_header = (layout->modifier & AFBC_FORMAT_MOD_TILED);
          cfg.afbc.prefetch = true;
          cfg.afbc.compression_mode =
-            GENX(pan_afbc_compression_mode)(iview->format);
+            GENX(pan_afbc_compression_mode)(iview->format, plane_index);
          cfg.afbc.header_stride = layout->slices[level].afbc.header_size;
       } else if (afrc) {
 #if PAN_ARCH >= 10
@@ -793,13 +798,28 @@ GENX(panfrost_new_texture)(const struct pan_image_view *iview,
 
 #if PAN_ARCH >= 9
 enum mali_afbc_compression_mode
-GENX(pan_afbc_compression_mode)(enum pipe_format format)
+GENX(pan_afbc_compression_mode)(enum pipe_format format, int plane)
 {
    /* There's a special case for texturing the stencil part from a combined
     * depth/stencil texture, handle it separately.
     */
    if (format == PIPE_FORMAT_X24S8_UINT)
       return MALI_AFBC_COMPRESSION_MODE_X24S8;
+
+   /* handle multi-planar YUV formats */
+   switch (format) {
+   case PIPE_FORMAT_R8G8B8_420_UNORM:
+      return MALI_AFBC_COMPRESSION_MODE_YUV420_6C8;
+   case PIPE_FORMAT_R8_G8B8_420_UNORM:
+   case PIPE_FORMAT_R8_B8G8_420_UNORM:
+      return (plane == 0) ? MALI_AFBC_COMPRESSION_MODE_YUV420_1C8
+                          : MALI_AFBC_COMPRESSION_MODE_YUV420_2C8;
+   case PIPE_FORMAT_R8_G8_B8_420_UNORM:
+   case PIPE_FORMAT_R8_B8_G8_420_UNORM:
+      return MALI_AFBC_COMPRESSION_MODE_YUV420_1C8;
+   default:
+      break;
+   }
 
    /* Otherwise, map canonical formats to the hardware enum. This only
     * needs to handle the subset of formats returned by
@@ -817,6 +837,18 @@ GENX(pan_afbc_compression_mode)(enum pipe_format format)
    case PAN_AFBC_MODE_R10G10B10A2: return MALI_AFBC_COMPRESSION_MODE_R10G10B10A2;
    case PAN_AFBC_MODE_R11G11B10:   return MALI_AFBC_COMPRESSION_MODE_R11G11B10;
    case PAN_AFBC_MODE_S8:          return MALI_AFBC_COMPRESSION_MODE_S8;
+   case PAN_AFBC_MODE_YUV420_6C8:  return MALI_AFBC_COMPRESSION_MODE_YUV420_6C8;
+   case PAN_AFBC_MODE_YUV420_2C8:  return MALI_AFBC_COMPRESSION_MODE_YUV420_2C8;
+   case PAN_AFBC_MODE_YUV420_1C8:  return MALI_AFBC_COMPRESSION_MODE_YUV420_1C8;
+   case PAN_AFBC_MODE_YUV420_6C10: return MALI_AFBC_COMPRESSION_MODE_YUV420_6C10;
+   case PAN_AFBC_MODE_YUV420_2C10: return MALI_AFBC_COMPRESSION_MODE_YUV420_2C10;
+   case PAN_AFBC_MODE_YUV420_1C10: return MALI_AFBC_COMPRESSION_MODE_YUV420_1C10;
+   case PAN_AFBC_MODE_YUV422_4C8:  return MALI_AFBC_COMPRESSION_MODE_YUV422_4C8;
+   case PAN_AFBC_MODE_YUV422_2C8:  return MALI_AFBC_COMPRESSION_MODE_YUV422_2C8;
+   case PAN_AFBC_MODE_YUV422_1C8:  return MALI_AFBC_COMPRESSION_MODE_YUV422_1C8;
+   case PAN_AFBC_MODE_YUV422_4C10: return MALI_AFBC_COMPRESSION_MODE_YUV422_4C10;
+   case PAN_AFBC_MODE_YUV422_2C10: return MALI_AFBC_COMPRESSION_MODE_YUV422_2C10;
+   case PAN_AFBC_MODE_YUV422_1C10: return MALI_AFBC_COMPRESSION_MODE_YUV422_1C10;
    case PAN_AFBC_MODE_INVALID:     unreachable("Invalid AFBC format");
    }
    /* clang-format on */

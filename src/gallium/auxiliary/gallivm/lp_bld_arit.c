@@ -114,9 +114,13 @@ lp_build_min_simple(struct lp_build_context *bld,
             intrinsic = "llvm.x86.sse.min.ps";
             intr_size = 128;
          }
-         else {
+         else if (type.length >= 4 && type.length < 8 && util_get_cpu_caps()->has_avx) {
             intrinsic = "llvm.x86.avx.min.ps.256";
             intr_size = 256;
+         }
+         else if(type.length >= 8 && util_get_cpu_caps()->has_avx512f) {
+            intrinsic = "llvm.x86.avx512.min.ps.512";
+            intr_size = 512;
          }
       }
       if (type.width == 64 && util_get_cpu_caps()->has_sse2) {
@@ -128,9 +132,13 @@ lp_build_min_simple(struct lp_build_context *bld,
             intrinsic = "llvm.x86.sse2.min.pd";
             intr_size = 128;
          }
-         else {
+         else if (type.length >= 2 && type.length < 4 && util_get_cpu_caps()->has_avx) {
             intrinsic = "llvm.x86.avx.min.pd.256";
             intr_size = 256;
+         }
+         else if(type.length >= 4 && util_get_cpu_caps()->has_avx512f) {
+            intrinsic = "llvm.x86.avx512.min.pd.512";
+            intr_size = 512;
          }
       }
    }
@@ -268,9 +276,13 @@ lp_build_max_simple(struct lp_build_context *bld,
             intrinsic = "llvm.x86.sse.max.ps";
             intr_size = 128;
          }
-         else {
+         else if (type.length >= 4 && type.length < 8 && util_get_cpu_caps()->has_avx) {
             intrinsic = "llvm.x86.avx.max.ps.256";
             intr_size = 256;
+         }
+         else if(type.length >= 8 && util_get_cpu_caps()->has_avx512f) {
+            intrinsic = "llvm.x86.avx512.max.ps.512";
+            intr_size = 512;
          }
       }
       if (type.width == 64 && util_get_cpu_caps()->has_sse2) {
@@ -282,9 +294,13 @@ lp_build_max_simple(struct lp_build_context *bld,
             intrinsic = "llvm.x86.sse2.max.pd";
             intr_size = 128;
          }
-         else {
+         else if (type.length >= 2 && type.length < 4 && util_get_cpu_caps()->has_avx) {
             intrinsic = "llvm.x86.avx.max.pd.256";
             intr_size = 256;
+         }
+         else if(type.length >= 4 && util_get_cpu_caps()->has_avx512f) {
+            intrinsic = "llvm.x86.avx512.max.pd.512";
+            intr_size = 512;
          }
       }
    }

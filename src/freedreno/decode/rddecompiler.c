@@ -134,10 +134,9 @@ main(int argc, char **argv)
 
    while (optind < argc) {
       ret = handle_file(argv[optind], submit_to_decompile);
-      if (ret) {
-         fprintf(stderr, "error reading: %s\n", argv[optind]);
+      if (ret)
          break;
-      }
+
       optind++;
    }
 
@@ -586,10 +585,8 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
    else
       io = io_open(filename);
 
-   if (!io) {
-      fprintf(stderr, "could not open: %s\n", filename);
+   if (!io)
       return -1;
-   }
 
    type0_reg = reg_a6xx;
    mem_ctx = ralloc_context(NULL);

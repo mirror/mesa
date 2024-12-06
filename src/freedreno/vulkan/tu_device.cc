@@ -391,6 +391,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->shaderInt16 = true;
    features->sparseBinding = pdevice->has_sparse;
    features->sparseResidencyBuffer = pdevice->has_sparse;
+   features->sparseResidencyAliased = pdevice->has_sparse;
    features->variableMultisampleRate = true;
    features->inheritedQueries = true;
 

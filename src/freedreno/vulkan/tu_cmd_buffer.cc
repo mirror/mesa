@@ -3821,6 +3821,7 @@ tu_flush_for_access(struct tu_cache_state *cache,
 
    SRC_INCOHERENT_FLUSH(CCU_COLOR, CCU_CLEAN_COLOR, CCU_INVALIDATE_COLOR)
    SRC_INCOHERENT_FLUSH(CCU_DEPTH, CCU_CLEAN_DEPTH, CCU_INVALIDATE_DEPTH)
+   SRC_INCOHERENT_FLUSH(UCHE, CACHE_CLEAN, CACHE_INVALIDATE)
 
 #undef SRC_INCOHERENT_FLUSH
 
@@ -3855,6 +3856,7 @@ tu_flush_for_access(struct tu_cache_state *cache,
 
    DST_INCOHERENT_FLUSH(CCU_COLOR, CCU_CLEAN_COLOR, CCU_INVALIDATE_COLOR)
    DST_INCOHERENT_FLUSH(CCU_DEPTH, CCU_CLEAN_DEPTH, CCU_INVALIDATE_DEPTH)
+   DST_INCOHERENT_FLUSH(UCHE, CACHE_CLEAN, CACHE_INVALIDATE)
 
    if (dst_mask & TU_ACCESS_BINDLESS_DESCRIPTOR_READ) {
       flush_bits |= TU_CMD_FLAG_BINDLESS_DESCRIPTOR_INVALIDATE;
@@ -3948,7 +3950,8 @@ gfx_write_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages,
 }
 
 static enum tu_cmd_access_mask
-vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only, bool gmem)
+vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages,
+             bool image_only, bool gmem, bool sparse_aliasing)
 {
    BITMASK_ENUM(tu_cmd_access_mask) mask = 0;
 
@@ -3998,8 +4001,13 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
                        VK_PIPELINE_STAGE_2_VERTEX_ATTRIBUTE_INPUT_BIT |
                        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_BUILD_BIT_KHR |
                        VK_PIPELINE_STAGE_2_ACCELERATION_STRUCTURE_COPY_BIT_KHR |
-                       SHADER_STAGES))
-       mask |= TU_ACCESS_UCHE_READ | TU_ACCESS_CCHE_READ;
+                       SHADER_STAGES)) {
+      if (sparse_aliasing)
+         mask |= TU_ACCESS_UCHE_INCOHERENT_READ;
+      else
+         mask |= TU_ACCESS_UCHE_READ;
+      mask |= TU_ACCESS_CCHE_READ;
+   }
 
    if (gfx_read_access(flags, stages,
                        VK_ACCESS_2_ACCELERATION_STRUCTURE_READ_BIT_KHR,
@@ -4019,13 +4027,20 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
 
    if (gfx_read_access(flags, stages,
                        VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
-                       SHADER_STAGES))
+                       SHADER_STAGES)) {
        mask |= TU_ACCESS_UCHE_READ_GMEM;
+       if (sparse_aliasing)
+          mask |= TU_ACCESS_UCHE_INCOHERENT_READ;
+   }
 
    if (gfx_read_access(flags, stages,
                        VK_ACCESS_2_DESCRIPTOR_BUFFER_READ_BIT_EXT,
                        SHADER_STAGES)) {
-      mask |= TU_ACCESS_UCHE_READ | TU_ACCESS_BINDLESS_DESCRIPTOR_READ |
+      if (sparse_aliasing)
+         mask |= TU_ACCESS_UCHE_INCOHERENT_READ;
+      else
+         mask |= TU_ACCESS_UCHE_READ;
+      mask |= TU_ACCESS_BINDLESS_DESCRIPTOR_READ |
               TU_ACCESS_CCHE_READ;
    }
 
@@ -4034,8 +4049,12 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
                         VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT |
                         VK_ACCESS_2_TRANSFORM_FEEDBACK_WRITE_BIT_EXT,
                         VK_PIPELINE_STAGE_2_TRANSFORM_FEEDBACK_BIT_EXT |
-                        SHADER_STAGES))
-       mask |= TU_ACCESS_UCHE_WRITE;
+                        SHADER_STAGES)) {
+      if (sparse_aliasing)
+         mask |= TU_ACCESS_UCHE_INCOHERENT_WRITE;
+      else
+         mask |= TU_ACCESS_UCHE_WRITE;
+   }
 
    if (gfx_write_access(flags, stages,
                         VK_ACCESS_2_ACCELERATION_STRUCTURE_WRITE_BIT_KHR,
@@ -4099,7 +4118,7 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
                            VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT)) {
       if (gmem) {
          mask |= TU_ACCESS_SYSMEM_WRITE;
-      } else if (image_only) {
+      } else if (image_only && !sparse_aliasing) {
          /* Because we always split up blits/copies of images involving
           * multiple layers, we always access each layer in the same way, with
           * the same base address, same format, etc. This means we can avoid
@@ -4118,7 +4137,11 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
                           VK_PIPELINE_STAGE_2_BLIT_BIT |
                           VK_PIPELINE_STAGE_2_RESOLVE_BIT |
                           VK_PIPELINE_STAGE_2_ALL_TRANSFER_BIT)) {
-      mask |= TU_ACCESS_UCHE_READ | TU_ACCESS_CCHE_READ;
+      if (sparse_aliasing)
+         mask |= TU_ACCESS_UCHE_INCOHERENT_READ;
+      else
+         mask |= TU_ACCESS_UCHE_READ;
+      mask |= TU_ACCESS_CCHE_READ;
    }
 
    return mask;
@@ -4554,9 +4577,11 @@ tu_subpass_barrier(struct tu_cmd_buffer *cmd_buffer,
    VkPipelineStageFlags2 dst_stage_vk =
       sanitize_dst_stage(barrier->dst_stage_mask);
    BITMASK_ENUM(tu_cmd_access_mask) src_flags =
-      vk2tu_access(barrier->src_access_mask, src_stage_vk, false, false);
+      vk2tu_access(barrier->src_access_mask, src_stage_vk, false, false,
+                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
    BITMASK_ENUM(tu_cmd_access_mask) dst_flags =
-      vk2tu_access(barrier->dst_access_mask, dst_stage_vk, false, false);
+      vk2tu_access(barrier->dst_access_mask, dst_stage_vk, false, false,
+                   cmd_buffer->device->vk.enabled_features.sparseResidencyAliased);
 
    if (barrier->incoherent_ccu_color)
       src_flags |= TU_ACCESS_CCU_COLOR_INCOHERENT_WRITE;
@@ -7195,27 +7220,39 @@ tu_barrier(struct tu_cmd_buffer *cmd,
          VkPipelineStageFlags2 sanitized_dst_stage =
             sanitize_dst_stage(dep_info->pMemoryBarriers[i].dstStageMask);
          src_flags |= vk2tu_access(dep_info->pMemoryBarriers[i].srcAccessMask,
-                                   sanitized_src_stage, false, gmem);
+                                   sanitized_src_stage, false, gmem,
+                                   cmd->device->vk.enabled_features.sparseResidencyAliased);
          dst_flags |= vk2tu_access(dep_info->pMemoryBarriers[i].dstAccessMask,
-                                   sanitized_dst_stage, false, gmem);
+                                   sanitized_dst_stage, false, gmem,
+                                   cmd->device->vk.enabled_features.sparseResidencyAliased);
          srcStage |= sanitized_src_stage;
          dstStage |= sanitized_dst_stage;
       }
 
       for (uint32_t i = 0; i < dep_info->bufferMemoryBarrierCount; i++) {
+         VK_FROM_HANDLE(tu_buffer, buffer,
+                        dep_info->pBufferMemoryBarriers[i].buffer);
+         bool sparse_aliasing =
+            buffer->vk.create_flags & VK_BUFFER_CREATE_SPARSE_ALIASED_BIT;
          VkPipelineStageFlags2 sanitized_src_stage =
             sanitize_src_stage(dep_info->pBufferMemoryBarriers[i].srcStageMask);
          VkPipelineStageFlags2 sanitized_dst_stage =
             sanitize_dst_stage(dep_info->pBufferMemoryBarriers[i].dstStageMask);
          src_flags |= vk2tu_access(dep_info->pBufferMemoryBarriers[i].srcAccessMask,
-                                   sanitized_src_stage, false, gmem);
+                                   sanitized_src_stage, false, gmem,
+                                   sparse_aliasing);
          dst_flags |= vk2tu_access(dep_info->pBufferMemoryBarriers[i].dstAccessMask,
-                                   sanitized_dst_stage, false, gmem);
+                                   sanitized_dst_stage, false, gmem,
+                                   sparse_aliasing);
          srcStage |= sanitized_src_stage;
          dstStage |= sanitized_dst_stage;
       }
 
       for (uint32_t i = 0; i < dep_info->imageMemoryBarrierCount; i++) {
+         VK_FROM_HANDLE(tu_image, image,
+                        dep_info->pImageMemoryBarriers[i].image);
+         bool sparse_aliasing =
+            image->vk.create_flags & VK_BUFFER_CREATE_SPARSE_ALIASED_BIT;
          VkImageLayout old_layout = dep_info->pImageMemoryBarriers[i].oldLayout;
          if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED) {
             /* The underlying memory for this image may have been used earlier
@@ -7238,9 +7275,11 @@ tu_barrier(struct tu_cmd_buffer *cmd,
          VkPipelineStageFlags2 sanitized_dst_stage =
             sanitize_dst_stage(dep_info->pImageMemoryBarriers[i].dstStageMask);
          src_flags |= vk2tu_access(dep_info->pImageMemoryBarriers[i].srcAccessMask,
-                                   sanitized_src_stage, true, gmem);
+                                   sanitized_src_stage, true, gmem,
+                                   sparse_aliasing);
          dst_flags |= vk2tu_access(dep_info->pImageMemoryBarriers[i].dstAccessMask,
-                                   sanitized_dst_stage, true, gmem);
+                                   sanitized_dst_stage, true, gmem,
+                                   sparse_aliasing);
          srcStage |= sanitized_src_stage;
          dstStage |= sanitized_dst_stage;
       }

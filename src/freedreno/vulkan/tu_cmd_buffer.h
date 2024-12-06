@@ -150,6 +150,10 @@ enum tu_cmd_access_mask {
 
    TU_ACCESS_RTU_READ = 1 << 17,
 
+   /* An access through UCHE that must always be flushed/invalidated */
+   TU_ACCESS_UCHE_INCOHERENT_READ = 1 << 18,
+   TU_ACCESS_UCHE_INCOHERENT_WRITE = 1 << 19,
+
    TU_ACCESS_READ =
       TU_ACCESS_UCHE_READ |
       TU_ACCESS_CCU_COLOR_READ |
@@ -158,7 +162,8 @@ enum tu_cmd_access_mask {
       TU_ACCESS_CCU_DEPTH_INCOHERENT_READ |
       TU_ACCESS_SYSMEM_READ |
       TU_ACCESS_BINDLESS_DESCRIPTOR_READ |
-      TU_ACCESS_CCHE_READ,
+      TU_ACCESS_CCHE_READ |
+      TU_ACCESS_UCHE_INCOHERENT_READ,
 
    TU_ACCESS_WRITE =
       TU_ACCESS_UCHE_WRITE |
@@ -167,7 +172,8 @@ enum tu_cmd_access_mask {
       TU_ACCESS_CCU_DEPTH_WRITE |
       TU_ACCESS_CCU_DEPTH_INCOHERENT_WRITE |
       TU_ACCESS_SYSMEM_WRITE |
-      TU_ACCESS_CP_WRITE,
+      TU_ACCESS_CP_WRITE |
+      TU_ACCESS_UCHE_INCOHERENT_WRITE,
 
    TU_ACCESS_ALL =
       TU_ACCESS_READ |

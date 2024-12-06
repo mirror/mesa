@@ -333,6 +333,7 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_shader_atomic_float               = true,
       .EXT_shader_atomic_float2              = true,
       .EXT_shader_demote_to_helper_invocation = true,
+      .EXT_shader_image_atomic_int64         = device->emu_img_atomic64,
       .EXT_shader_module_identifier          = true,
       .EXT_shader_replicated_composites      = true,
       .EXT_shader_stencil_export             = true,
@@ -905,6 +906,10 @@ get_features(const struct anv_physical_device *pdevice,
 
       /* VK_EXT_host_image_copy */
       .hostImageCopy = true,
+
+      /* VK_EXT_shader_image_atomic_int64 */
+      .shaderImageInt64Atomics = pdevice->emu_img_atomic64,
+      .sparseImageInt64Atomics = false,
    };
 
    /* The new DOOM and Wolfenstein games require depthBounds without
@@ -2516,6 +2521,9 @@ anv_physical_device_try_create(struct vk_instance *vk_instance,
    }
    device->disable_fcv = device->info.verx10 >= 125 ||
                          instance->disable_fcv;
+
+   /*Image atomic 64 emulation, supported platforms: DG2 and MTL.*/
+   device->emu_img_atomic64 = device->info.verx10 == 125;
 
    result = anv_physical_device_init_heaps(device, fd);
    if (result != VK_SUCCESS)

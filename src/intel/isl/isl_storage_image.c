@@ -71,6 +71,8 @@ isl_is_storage_image_format(const struct intel_device_info *devinfo,
    case ISL_FORMAT_R8_UNORM:
    case ISL_FORMAT_R8_SNORM:
       return true;
+   case ISL_FORMAT_R64_PASSTHRU:
+      return devinfo->verx10 == 125 ? true : false;
    default:
       return false;
    }
@@ -223,7 +225,8 @@ isl_lower_storage_image_format(const struct intel_device_info *devinfo,
    case ISL_FORMAT_R8_UNORM:
    case ISL_FORMAT_R8_SNORM:
       return (devinfo->ver >= 11 ? format : ISL_FORMAT_R8_UINT);
-
+   case ISL_FORMAT_R64_PASSTHRU:
+      return (devinfo->verx10 == 125 ? ISL_FORMAT_R32G32_UINT : format);;
    default:
       assert(!"Unknown image format");
       return ISL_FORMAT_UNSUPPORTED;

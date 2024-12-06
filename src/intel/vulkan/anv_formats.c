@@ -680,7 +680,9 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
 
    if (base_isl_format == ISL_FORMAT_R32_SINT ||
        base_isl_format == ISL_FORMAT_R32_UINT ||
-       base_isl_format == ISL_FORMAT_R32_FLOAT)
+       base_isl_format == ISL_FORMAT_R32_FLOAT ||
+       (physical_device->emu_img_atomic64 &&
+        base_isl_format == ISL_FORMAT_R64_PASSTHRU))
       flags |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
 
    if (flags) {

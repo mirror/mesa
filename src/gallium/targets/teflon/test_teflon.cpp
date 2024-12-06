@@ -11,15 +11,17 @@
 #include <xtensor/xrandom.hpp>
 
 #include <iostream>
+#include <sstream>
+#include <string>
+#include <vector>
 #include "tensorflow/lite/c/c_api.h"
 #include "test_executor.h"
 
 #define TEST_CONV2D           1
 #define TEST_DEPTHWISE        1
 #define TEST_ADD              1
-#define TEST_MOBILENETV1      1
-#define TEST_MOBILEDET        1
-#define TEST_YOLOX            1
+#define TEST_FULLY_CONNECTED  1
+#define TEST_MODELS           1
 
 #define TOLERANCE       2
 #define MODEL_TOLERANCE 8
@@ -35,6 +37,8 @@ std::vector<int> dw_channels{1, 32, 120, 128, 256};
 std::vector<int> dw_weight_size{3, 5};
 std::vector<int> weight_size{1, 3, 5};
 std::vector<int> input_size{3, 5, 8, 80, 112};
+std::vector<int> fc_channels{23, 46, 128, 256, 512};
+std::vector<int> fc_size{128, 1280, 25088, 62720};
 
 static void
 set_seed(unsigned seed)
@@ -80,7 +84,24 @@ test_model(void *buf, size_t buf_size, std::string cache_dir, unsigned tolerance
                }
                break;
             }
-            default: {
+            case kTfLiteInt8: {
+               int8_t *cpu = ((int8_t**)cpu_output)[i];
+               int8_t *npu = ((int8_t**)npu_output)[i];
+               if (abs(cpu[j] - npu[j]) > tolerance) {
+                  std::cout << "CPU: ";
+                  for (int k = 0; k < std::min(int(output_sizes[i]), 24); k++)
+                     std::cout << std::setfill('0') << std::setw(2) << std::hex << int(cpu[k]) << " ";
+                  std::cout << "\n";
+                  std::cout << "NPU: ";
+                  for (int k = 0; k < std::min(int(output_sizes[i]), 24); k++)
+                     std::cout << std::setfill('0') << std::setw(2) << std::hex << int(npu[k]) << " ";
+                  std::cout << "\n";
+
+                  FAIL() << "Output at " << j << " from the NPU (" << std::setfill('0') << std::setw(2) << std::hex << int(npu[j]) << ") doesn't match that from the CPU (" << std::setfill('0') << std::setw(2) << std::hex << int(cpu[j]) << ").";
+               }
+               break;
+            }
+            case kTfLiteUInt8: {
                uint8_t *cpu = ((uint8_t**)cpu_output)[i];
                uint8_t *npu = ((uint8_t**)npu_output)[i];
                if (abs(cpu[j] - npu[j]) > tolerance) {
@@ -97,6 +118,8 @@ test_model(void *buf, size_t buf_size, std::string cache_dir, unsigned tolerance
                }
                break;
             }
+            default:
+               assert(!"Unsupported data type for output tensor");
          }
       }
    }
@@ -124,8 +147,13 @@ test_model_file(std::string file_name, unsigned tolerance, bool use_cache)
 {
    std::ostringstream cache_dir;
 
-   if (use_cache)
-      cache_dir << "/var/cache/teflon_tests/" << std::filesystem::path(file_name).stem().c_str();
+   if (use_cache) {
+      auto path = std::filesystem::path(file_name);
+      cache_dir << "/var/cache/teflon_tests/";
+      cache_dir << path.parent_path().filename().string();
+      cache_dir << "_";
+      cache_dir << path.stem().string();
+   }
 
    set_seed(4);
 
@@ -220,6 +248,41 @@ test_add(int input_size, int weight_size, int input_channels, int output_channel
    }
 
    test_model(buf, buf_size, cache_dir.str(), tolerance);
+   free(buf);
+}
+
+void
+test_fully_connected(int input_size, int output_channels, bool is_signed, int seed)
+{
+   void *buf = NULL;
+   size_t buf_size;
+   std::ostringstream cache_dir, model_cache;
+   cache_dir << "/var/cache/teflon_tests/fc_" << input_size << "_" << output_channels << "_" << is_signed << "_" << seed;
+   model_cache << cache_dir.str() << "/"
+               << "model.tflite";
+
+   set_seed(seed);
+
+   if (cache_is_enabled()) {
+      if (access(model_cache.str().c_str(), F_OK) == 0) {
+         buf = read_buf(model_cache.str().c_str(), &buf_size);
+      }
+   }
+
+   if (buf == 0) {
+      buf = fully_connected_generate_model(input_size, output_channels, is_signed, &buf_size);
+
+      if (cache_is_enabled()) {
+         if (access(cache_dir.str().c_str(), F_OK) != 0) {
+            ASSERT_TRUE(std::filesystem::create_directories(cache_dir.str().c_str()));
+         }
+         std::ofstream file(model_cache.str().c_str(), std::ios::out | std::ios::binary);
+         file.write(reinterpret_cast<const char *>(buf), buf_size);
+         file.close();
+      }
+   }
+
+   test_model(buf, buf_size, cache_dir.str(), TOLERANCE);
    free(buf);
 }
 
@@ -383,138 +446,96 @@ INSTANTIATE_TEST_SUITE_P(
 
 #endif
 
-#if TEST_MOBILENETV1
+#if TEST_FULLY_CONNECTED
 
-class MobileNetV1 : public ::testing::Test {};
+class FullyConnected : public testing::TestWithParam<std::tuple<bool, int, int>> {};
 
-class MobileNetV1Param : public testing::TestWithParam<int> {};
-
-TEST(MobileNetV1, Whole)
+TEST_P(FullyConnected, Op)
 {
-   std::ostringstream file_path;
-   assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/mobilenet_v1_1.0_224_quant.tflite";
-
-   test_model_file(file_path.str(), MODEL_TOLERANCE, true);
-}
-
-TEST_P(MobileNetV1Param, Op)
-{
-   std::ostringstream file_path;
-   assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/mb-" << std::setfill('0') << std::setw(3) << GetParam() << ".tflite";
-
-   test_model_file(file_path.str(), MODEL_TOLERANCE, true);
+   test_fully_connected(
+             std::get<2>(GetParam()),
+             std::get<1>(GetParam()),
+             std::get<0>(GetParam()),
+             4);
 }
 
 static inline std::string
-MobileNetV1TestCaseName(
-   const testing::TestParamInfo<int> &info)
+FullyConnectedTestCaseName(
+   const testing::TestParamInfo<std::tuple<bool, int, int>> &info)
 {
    std::string name = "";
-   std::string param = std::to_string(info.param);
 
-   name += "mb";
-   name += std::string(3 - param.length(), '0');
-   name += param;
+   name += "input_size_" + std::to_string(std::get<2>(info.param));
+   name += "_output_channels_" + std::to_string(std::get<1>(info.param));
+   name += "_is_signed_" + std::to_string(std::get<0>(info.param));
 
    return name;
 }
 
 INSTANTIATE_TEST_SUITE_P(
-   , MobileNetV1Param,
-   ::testing::Range(0, 31),
-   MobileNetV1TestCaseName);
+   , FullyConnected,
+   ::testing::Combine(::testing::ValuesIn(is_signed),
+                      ::testing::ValuesIn(output_channels),
+                      ::testing::ValuesIn(fc_size)),
+   FullyConnectedTestCaseName);
 
 #endif
 
-#if TEST_MOBILEDET
+#if TEST_MODELS
 
-class MobileDet : public ::testing::Test {};
+class Models : public testing::TestWithParam<std::string> {};
 
-class MobileDetParam : public testing::TestWithParam<int> {};
-
-TEST(MobileDet, Whole)
+TEST_P(Models, Op)
 {
    std::ostringstream file_path;
+   auto test_name = GetParam();
+   test_name.replace(test_name.find("_"), 1, "/");
    assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/ssdlite_mobiledet_coco_qat_postprocess.tflite";
+   file_path << getenv("TEFLON_TEST_DATA") << "/models/" << test_name << ".tflite";
 
-   test_model_file(file_path.str(), MODEL_TOLERANCE, true);
+   unsigned tolerance = MODEL_TOLERANCE;
+
+   if (test_name.find("yolox") != std::string::npos)
+      tolerance = YOLOX_TOLERANCE;
+
+   test_model_file(file_path.str(), tolerance, true);
 }
 
-TEST_P(MobileDetParam, Op)
+std::vector<std::string>
+get_model_files(void)
 {
-   std::ostringstream file_path;
    assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/mobiledet-" << std::setfill('0') << std::setw(3) << GetParam() << ".tflite";
+   std::stringstream dir;
+   dir << getenv("TEFLON_TEST_DATA") << "/models";
 
-   test_model_file(file_path.str(), MODEL_TOLERANCE, true);
+   std::vector<std::string> paths;
+   std::filesystem::recursive_directory_iterator b(dir.str());
+   for (auto const& f : b) {
+      if (f.path().extension() != ".tflite")
+         continue;
+
+      std::stringstream path;
+      path << f.path().parent_path().filename().string();
+      path << "_" << f.path().stem().string();
+      paths.push_back(path.str());
+   }
+
+   std::sort(paths.begin(), paths.end());
+
+   return paths;
 }
 
 static inline std::string
-MobileDetTestCaseName(
-   const testing::TestParamInfo<int> &info)
+ModelsTestCaseName(
+   const testing::TestParamInfo<std::string> &info)
 {
-   std::string name = "";
-   std::string param = std::to_string(info.param);
-
-   name += "mobiledet";
-   name += std::string(3 - param.length(), '0');
-   name += param;
-
-   return name;
+   return info.param;
 }
 
 INSTANTIATE_TEST_SUITE_P(
-   , MobileDetParam,
-   ::testing::Range(0, 124),
-   MobileDetTestCaseName);
-
-#endif
-
-#if TEST_YOLOX
-
-class YoloX : public ::testing::Test {};
-
-class YoloXParam : public testing::TestWithParam<int> {};
-
-TEST(YoloX, Whole)
-{
-   std::ostringstream file_path;
-   assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/yolox.tflite";
-
-   test_model_file(file_path.str(), YOLOX_TOLERANCE, true);
-}
-
-TEST_P(YoloXParam, Op)
-{
-   std::ostringstream file_path;
-   assert(getenv("TEFLON_TEST_DATA"));
-   file_path << getenv("TEFLON_TEST_DATA") << "/yolox-" << std::setfill('0') << std::setw(3) << GetParam() << ".tflite";
-
-   test_model_file(file_path.str(), MODEL_TOLERANCE, true);
-}
-
-static inline std::string
-YoloXTestCaseName(
-   const testing::TestParamInfo<int> &info)
-{
-   std::string name = "";
-   std::string param = std::to_string(info.param);
-
-   name += "yolox";
-   name += std::string(3 - param.length(), '0');
-   name += param;
-
-   return name;
-}
-
-INSTANTIATE_TEST_SUITE_P(
-   , YoloXParam,
-   ::testing::Range(0, 128),
-   YoloXTestCaseName);
+   , Models,
+   ::testing::ValuesIn(get_model_files()),
+   ModelsTestCaseName);
 
 #endif
 

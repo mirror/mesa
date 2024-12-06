@@ -1061,6 +1061,9 @@ enum pipe_ml_operation_type {
    PIPE_ML_OPERATION_TYPE_POOLING,
    PIPE_ML_OPERATION_TYPE_CONCATENATION,
    PIPE_ML_OPERATION_TYPE_SPLIT,
+   PIPE_ML_OPERATION_TYPE_PAD,
+   PIPE_ML_OPERATION_TYPE_FULLY_CONNECTED,
+   PIPE_ML_OPERATION_TYPE_RELU,
 };
 
 /**
@@ -1091,6 +1094,7 @@ struct pipe_ml_operation
           * For convolutions, tensor containing the weights.
           */
          struct pipe_tensor *weight_tensor;
+
          /**
           * For convolutions, tensor containing the biases.
           */
@@ -1152,6 +1156,42 @@ struct pipe_ml_operation
           */
          bool padding_same;
       } pooling;
+      struct {
+         /**
+          * Left padding.
+          */
+         unsigned before_x;
+
+         /**
+          * Right padding.
+          */
+         unsigned after_x;
+
+         /**
+          * Top padding.
+          */
+         unsigned before_y;
+         /**
+          * Bottom padding.
+          */
+         unsigned after_y;
+      } pad;
+
+      struct {
+         /**
+          * Tensor containing the weights.
+          */
+         struct pipe_tensor *weight_tensor;
+         /**
+          * Tensor containing the biases.
+          */
+         struct pipe_tensor *bias_tensor;
+
+         /**
+          * Whether a ReLU activation should be applied to the output.
+          */
+         bool relu;
+      } fcon;
    };
 };
 

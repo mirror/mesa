@@ -33,6 +33,8 @@ enum etna_ml_tp_type {
    ETNA_ML_TP_TRANSPOSE,
    ETNA_ML_TP_DETRANSPOSE,
    ETNA_ML_TP_RESHUFFLE,
+   ETNA_ML_TP_PAD,
+   ETNA_ML_TP_RELU,
 };
 
 struct etna_ml_subgraph {
@@ -48,9 +50,11 @@ struct etna_ml_subgraph {
 
 struct etna_vip_instruction {
    enum etna_job_type type;
+   enum etna_ml_tp_type tp_type;
 
    struct etna_bo *configs[MAX_CONFIG_BOS];
    struct etna_bo *coefficients;
+   struct etna_bo *pwl_lut;
    struct pipe_resource *input;
    unsigned input_offset;
    struct pipe_resource *output;
@@ -69,6 +73,7 @@ struct etna_operation {
    bool addition;
    bool depthwise;
    bool pointwise;
+   bool fully_connected;
    bool pooling_first_pixel;
    bool padding_same;
    bool relu;
@@ -125,6 +130,10 @@ struct etna_bo *etna_ml_create_bo(struct pipe_context *pctx, size_t size);
 struct pipe_resource *etna_ml_create_resource(struct pipe_context *pctx, size_t size);
 
 struct etna_core_npu_info *etna_ml_get_core_info(struct etna_context *context);
+
+void etna_ml_reorder_dimensions(const struct etna_operation *operation,
+                                unsigned *input_width, unsigned *input_height,
+                                unsigned *output_width, unsigned *output_height);
 
 struct pipe_ml_subgraph *
 etna_ml_subgraph_create(struct pipe_context *context,

@@ -270,8 +270,14 @@ anv_image_view_init(struct anv_device *device,
          view_format =
             anv_get_emulation_format(device->physical, view_format);
       }
-      const struct anv_format_plane format = anv_get_format_plane(
+      struct anv_format_plane format = anv_get_format_plane(
             device->info, view_format, vplane, image->vk.tiling);
+
+      if (device->physical->emu_img_atomic64 &&
+         (iview->vk.usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
+         format.isl_format == ISL_FORMAT_R64_PASSTHRU) {
+         format.isl_format = ISL_FORMAT_R32G32_UINT;
+      }
 
       iview->planes[vplane].isl = (struct isl_view) {
          .format = format.isl_format,

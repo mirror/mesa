@@ -1931,6 +1931,12 @@ struct isl_cpb_emit_info {
    uint32_t mocs;
 };
 
+enum isl_load_image_param_indice {
+   ISL_IMG_PARAM_SURF_SIZE,
+   ISL_IMG_PARAM_TILE_MODE,
+   ISL_IMG_PARAM_SURF_PITCH,
+};
+
 /*
  * Image metadata structure as laid out in the shader parameter
  * buffer.  Entries have to be 16B-aligned for the vec4 back-end to be

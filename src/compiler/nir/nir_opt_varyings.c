@@ -1308,6 +1308,26 @@ gather_inputs(struct nir_builder *builder, nir_intrinsic_instr *intr, void *cb_d
    if (linkage->consumer_stage == MESA_SHADER_FRAGMENT) {
       switch (intr->intrinsic) {
       case nir_intrinsic_load_input:
+         if (linkage->producer_stage == MESA_SHADER_MESH) {
+            /* These outputs are per-primitive in mesh shaders,
+             * but the spec doesn't define them as per-primitive in fragment shaders.
+             * Treat them as per-primitive for the sake of varying optimization.
+             */
+            switch (sem.location) {
+            case VARYING_SLOT_PRIMITIVE_ID:
+            case VARYING_SLOT_LAYER:
+            case VARYING_SLOT_VIEWPORT: {
+               intr->intrinsic = nir_intrinsic_load_per_primitive_input;
+               fs_vec4_type = FS_VEC4_TYPE_PER_PRIMITIVE;
+               break;
+            }
+            default:
+               fs_vec4_type = FS_VEC4_TYPE_FLAT;
+               break;
+            }
+            break;
+         }
+
          fs_vec4_type = FS_VEC4_TYPE_FLAT;
          break;
       case nir_intrinsic_load_per_primitive_input:
@@ -1500,10 +1520,7 @@ gather_outputs(struct nir_builder *builder, nir_intrinsic_instr *intr, void *cb_
        intr->intrinsic != nir_intrinsic_load_per_primitive_output)
       return false;
 
-   bool is_store =
-      intr->intrinsic == nir_intrinsic_store_output ||
-      intr->intrinsic == nir_intrinsic_store_per_vertex_output ||
-      intr->intrinsic == nir_intrinsic_store_per_primitive_output;
+   const bool is_store = !nir_intrinsic_infos[intr->intrinsic].has_dest;
 
    if (is_store) {
       /* nir_lower_io_to_scalar is required before this */
@@ -4179,9 +4196,7 @@ relocate_slot(struct linkage_info *linkage, struct scalar_slot *slot,
 
 #if PRINT_RELOCATE_SLOT
          unsigned bit_size =
-            (intr->intrinsic == nir_intrinsic_load_input ||
-             intr->intrinsic == nir_intrinsic_load_input_vertex ||
-             intr->intrinsic == nir_intrinsic_load_interpolated_input)
+            nir_intrinsic_infos[intr->intrinsic].has_dest
             ? intr->def.bit_size : intr->src[0].ssa->bit_size;
 
          assert(bit_size == 16 || bit_size == 32);

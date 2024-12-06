@@ -370,8 +370,10 @@ emit_load(struct lower_io_state *state,
    nir_intrinsic_set_base(load, var->data.driver_location);
    if (nir_intrinsic_has_range(load)) {
       const struct glsl_type *type = var->type;
-      if (array_index)
+      if (nir_is_arrayed_io(var, state->builder.shader->info.stage)) {
+         assert(array_index);
          type = glsl_get_array_element(type);
+      }
       unsigned var_size = state->type_size(type, var->data.bindless);
       nir_intrinsic_set_range(load, var_size);
    }

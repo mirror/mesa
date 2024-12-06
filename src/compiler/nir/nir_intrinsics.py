@@ -1163,27 +1163,44 @@ load("uniform", [1], [BASE, RANGE, DEST_TYPE], [CAN_ELIMINATE, CAN_REORDER])
 load("ubo", [-1, 1], [ACCESS, ALIGN_MUL, ALIGN_OFFSET, RANGE_BASE, RANGE], flags=[CAN_ELIMINATE, CAN_REORDER])
 # src[] = { buffer_index, offset in vec4 units }.  base is also in vec4 units.
 load("ubo_vec4", [-1, 1], [ACCESS, BASE, COMPONENT], flags=[CAN_ELIMINATE, CAN_REORDER])
-# src[] = { offset }.
-load("input", [1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
-# src[] = { vertex_id, offset }.
-load("input_vertex", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
-# src[] = { vertex, offset }.
-load("per_vertex_input", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
-# src[] = { barycoord, offset }.
-load("interpolated_input", [2, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
-# src[] = { offset }.
-load("per_primitive_input", [1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 
+# These indices are shared between all explicit I/O load intrinsics.
+# BASE - driver-defined location of the I/O access, in vec4 (16 byte) units.
+# RANGE - the maximum value of the offset source, in vec4 (16 byte) units.
+# COMPONENT - the component being accessed, in dword (4 byte) units.
+# DEST_TYPE - data type of the destination.
+# IO_SEMANTICS - I/O semantic information.
+io_intrin_indices = [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS]
+
+# Explicit I/O intrinsics below are created from variable deref instructions by nir_lower_io.
+# They are meant as a more practical way for backends to handle shader inputs and outputs
+# instead of having to deal with I/O variables.
+# Shader I/O is handled differently by almost every driver. Some backends implement them
+# using memory access, in which case further backend-specific lowering is needed.
+# src[] = { offset }.
+load("input", [1], io_intrin_indices, [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { vertex_id, offset }.
+load("input_vertex", [1, 1], io_intrin_indices, [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { vertex, offset }.
+load("per_vertex_input", [1, 1], io_intrin_indices, [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { barycoord, offset }.
+load("interpolated_input", [2, 1], io_intrin_indices, [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { offset }.
+load("per_primitive_input", [1], io_intrin_indices, [CAN_ELIMINATE, CAN_REORDER])
+# src[] = { offset }.
+load("output", [1], io_intrin_indices, flags=[CAN_ELIMINATE])
+# src[] = { vertex, offset }.
+load("per_vertex_output", [1, 1], io_intrin_indices, [CAN_ELIMINATE])
+# src[] = { primitive, offset }.
+load("per_primitive_output", [1, 1], io_intrin_indices, [CAN_ELIMINATE])
+
+# Explicit I/O intrinsics below are created from variable deref instructions by nir_lower_explicit_io.
+# They are meant as a more practical way for backends to handle shader memory access
+# instead of having to deal with memory variables.
 # src[] = { buffer_index, offset }.
 load("ssbo", [-1, 1], [ACCESS, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # src[] = { buffer_index, offset }
 load("ssbo_address", [1, 1], [], [CAN_ELIMINATE, CAN_REORDER])
-# src[] = { offset }.
-load("output", [1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], flags=[CAN_ELIMINATE])
-# src[] = { vertex, offset }.
-load("per_vertex_output", [1, 1], [BASE, RANGE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE])
-# src[] = { primitive, offset }.
-load("per_primitive_output", [1, 1], [BASE, COMPONENT, DEST_TYPE, IO_SEMANTICS], [CAN_ELIMINATE])
 # src[] = { offset }.
 load("shared", [1], [BASE, ALIGN_MUL, ALIGN_OFFSET], [CAN_ELIMINATE])
 # src[] = { offset }.

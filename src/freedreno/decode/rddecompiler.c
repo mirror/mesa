@@ -51,8 +51,6 @@
  * For how-to see freedreno.rst
  */
 
-static FILE *out_file;
-
 static int handle_file(const char *filename, uint32_t submit_to_decompile);
 
 static const char *levels[] = {
@@ -67,7 +65,29 @@ static const char *levels[] = {
    "\t\t\t\t\t\t\t\t\t",
 };
 
-#define emit(...) fprintf(out_file, __VA_ARGS__)
+static struct {
+   struct {
+      int no_reg_bunch;
+   } options;
+
+   struct rnn *rnn;
+   struct fd_dev_id dev_id;
+   void *mem_ctx;
+
+   struct set decompiled_shaders;
+
+   FILE *out_file;
+} rddc_ctx;
+
+/* clang-format off */
+static const struct option opts[] = {
+      { "submit",       required_argument,   0, 's' },
+      { "no-reg-bunch", no_argument,         &rddc_ctx.options.no_reg_bunch, 1 },
+      { "help",         no_argument,         0, 'h' },
+};
+/* clang-format on */
+
+#define emit(...) fprintf(rddc_ctx.out_file, __VA_ARGS__)
 
 static void
 emitlvl(int lvl, const char *fmt, ...)
@@ -76,8 +96,8 @@ emitlvl(int lvl, const char *fmt, ...)
 
    va_list args;
    va_start(args, fmt);
-   fputs(levels[lvl], out_file);
-   vfprintf(out_file, fmt, args);
+   fputs(levels[lvl], rddc_ctx.out_file);
+   vfprintf(rddc_ctx.out_file, fmt, args);
    va_end(args);
 }
 
@@ -96,20 +116,6 @@ print_usage(const char *name)
    exit(2);
 }
 
-struct decompiler_options {
-   int no_reg_bunch;
-};
-
-static struct decompiler_options options = {};
-
-/* clang-format off */
-static const struct option opts[] = {
-      { "submit",       required_argument,   0, 's' },
-      { "no-reg-bunch", no_argument,         &options.no_reg_bunch, 1 },
-      { "help",         no_argument,         0, 'h' },
-};
-/* clang-format on */
-
 int
 main(int argc, char **argv)
 {
@@ -117,7 +123,7 @@ main(int argc, char **argv)
    int c;
    uint32_t submit_to_decompile = -1;
 
-   out_file = stdout;
+   rddc_ctx.out_file = stdout;
 
    while ((c = getopt_long(argc, argv, "s:h", opts, NULL)) != -1) {
       switch (c) {
@@ -146,8 +152,8 @@ main(int argc, char **argv)
       optind++;
    }
 
-   if (out_file != stdout)
-      fclose(out_file);
+   if (rddc_ctx.out_file != stdout)
+      fclose(rddc_ctx.out_file);
 
    if (ret)
       print_usage(argv[0]);
@@ -155,23 +161,17 @@ main(int argc, char **argv)
    return ret;
 }
 
-static struct rnn *rnn;
-static struct fd_dev_id dev_id;
-static void *mem_ctx;
-
-static struct set decompiled_shaders;
-
 static void
 init_rnn(const char *gpuname)
 {
-   rnn = rnn_new(true);
-   rnn_load(rnn, gpuname);
+   rddc_ctx.rnn = rnn_new(true);
+   rnn_load(rddc_ctx.rnn, gpuname);
 }
 
 const char *
 pktname(unsigned opc)
 {
-   return rnn_enumname(rnn, "adreno_pm4_type3_packets", opc);
+   return rnn_enumname(rddc_ctx.rnn, "adreno_pm4_type3_packets", opc);
 }
 
 static uint32_t
@@ -181,12 +181,12 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
    gpuaddr &= 0xfffffffffffffff0;
 
    /* Shader's iova is referenced in two places, so we have to remember it. */
-   if (_mesa_set_search(&decompiled_shaders, &gpuaddr)) {
+   if (_mesa_set_search(&rddc_ctx.decompiled_shaders, &gpuaddr)) {
       emitlvl(level, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
    } else {
-      uint64_t *key = ralloc(mem_ctx, uint64_t);
+      uint64_t *key = ralloc(rddc_ctx.mem_ctx, uint64_t);
       *key = gpuaddr;
-      _mesa_set_add(&decompiled_shaders, key);
+      _mesa_set_add(&rddc_ctx.decompiled_shaders, key);
 
       void *buf = hostptr(gpuaddr);
       assert(buf);
@@ -197,7 +197,8 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
       size_t stream_size = 0;
       FILE *stream = open_memstream(&stream_data, &stream_size);
 
-      try_disasm_a3xx(buf, sizedwords, 0, stream, fd_dev_gen(&dev_id) * 100);
+      try_disasm_a3xx(buf, sizedwords, 0, stream,
+                      fd_dev_gen(&rddc_ctx.dev_id) * 100);
       fclose(stream);
 
       emitlvl(level, "{\n");
@@ -232,7 +233,7 @@ static struct {
 static uint32_t
 decompile_register(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
 {
-   struct rnndecaddrinfo *info = rnn_reginfo(rnn, regbase);
+   struct rnndecaddrinfo *info = rnn_reginfo(rddc_ctx.rnn, regbase);
 
    for (unsigned idx = 0; type0_reg[idx].regbase; idx++) {
       if (type0_reg[idx].regbase == regbase) {
@@ -243,7 +244,7 @@ decompile_register(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
    const uint32_t dword = *dwords;
 
    if (info && info->typeinfo) {
-      char *decoded = rnndec_decodeval(rnn->vc, info->typeinfo, dword);
+      char *decoded = rnndec_decodeval(rddc_ctx.rnn->vc, info->typeinfo, dword);
       emitlvl(level, "/* pkt4: %s = %s */\n", info->name, decoded);
 
       if (cnt == 0) {
@@ -286,11 +287,11 @@ decompile_register(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
 static uint32_t
 decompile_register_reg_bunch(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
 {
-   struct rnndecaddrinfo *info = rnn_reginfo(rnn, regbase);
+   struct rnndecaddrinfo *info = rnn_reginfo(rddc_ctx.rnn, regbase);
    const uint32_t dword = *dwords;
 
    if (info && info->typeinfo) {
-      char *decoded = rnndec_decodeval(rnn->vc, info->typeinfo, dword);
+      char *decoded = rnndec_decodeval(rddc_ctx.rnn->vc, info->typeinfo, dword);
       emitlvl(level, "/* reg: %s = %s */\n", info->name, decoded);
    } else {
       emitlvl(level, "/* unknown pkt4 */\n");
@@ -327,7 +328,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
    struct rnndomain *dom;
    int i;
 
-   dom = rnn_finddomain(rnn->db, dom_name);
+   dom = rnn_finddomain(rddc_ctx.rnn->db, dom_name);
 
    emitlvl(level, "pkt7(cs, %s, %u);\n", packet_name, sizedwords);
 
@@ -350,7 +351,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
    for (i = 0; i < sizedwords; i++) {
       struct rnndecaddrinfo *info = NULL;
       if (dom) {
-         info = rnndec_decodeaddr(rnn->vc, dom, i, 0);
+         info = rnndec_decodeaddr(rddc_ctx.rnn->vc, dom, i, 0);
       }
 
       char *decoded;
@@ -363,7 +364,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
       if (reg64) {
          value |= (uint64_t)dwords[i + 1] << 32;
       }
-      decoded = rnndec_decodeval(rnn->vc, info->typeinfo, value);
+      decoded = rnndec_decodeval(rddc_ctx.rnn->vc, info->typeinfo, value);
 
       emitlvl(level, "/* %s */\n", decoded);
       emitlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
@@ -436,7 +437,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
             uint32_t cnt = count - 1;
 
             if (val == CP_CONTEXT_REG_BUNCH2) {
-               if (options.no_reg_bunch) {
+               if (rddc_ctx.options.no_reg_bunch) {
                   emitlvl(level, "// CP_CONTEXT_REG_BUNCH2\n");
                   emitlvl(level, "{\n");
                } else {
@@ -450,7 +451,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
                dw += 2;
                cnt -= 2;
             } else {
-               if (options.no_reg_bunch) {
+               if (rddc_ctx.options.no_reg_bunch) {
                   emitlvl(level, "// CP_CONTEXT_REG_BUNCH\n");
                   emitlvl(level, "{\n");
                } else {
@@ -461,7 +462,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
             }
 
             for (uint32_t i = 0; i < cnt; i += 2) {
-               if (options.no_reg_bunch) {
+               if (rddc_ctx.options.no_reg_bunch) {
                   decompile_register(dw[i], &dw[i + 1], 1, level + 1);
                } else {
                   decompile_register_reg_bunch(dw[i], &dw[i + 1], 1, level + 1);
@@ -544,7 +545,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
 static void
 emit_header()
 {
-   if (!dev_id.gpu_id && !dev_id.chip_id)
+   if (!rddc_ctx.dev_id.gpu_id && !rddc_ctx.dev_id.chip_id)
       return;
 
    static bool emitted = false;
@@ -552,7 +553,7 @@ emit_header()
       return;
    emitted = true;
 
-   switch (fd_dev_gen(&dev_id)) {
+   switch (fd_dev_gen(&rddc_ctx.dev_id)) {
    case 6:
       init_rnn("a6xx");
       break;
@@ -560,7 +561,7 @@ emit_header()
       init_rnn("a7xx");
       break;
    default:
-      errx(-1, "unsupported gpu: %u", dev_id.gpu_id);
+      errx(-1, "unsupported gpu: %u", rddc_ctx.dev_id.gpu_id);
    }
 
    emit("#include \"decode/rdcompiler-utils.h\"\n"
@@ -570,7 +571,7 @@ emit_header()
         "\tstruct fd_dev_id dev_id = {%u, 0x%" PRIx64 "};\n"
         "\treplay_context_init(&ctx, &dev_id, argc, argv);\n"
         "\tstruct cmdstream *cs = ctx.submit_cs;\n\n",
-        dev_id.gpu_id, dev_id.chip_id);
+        rddc_ctx.dev_id.gpu_id, rddc_ctx.dev_id.chip_id);
 }
 
 static inline uint32_t
@@ -602,8 +603,9 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
       return -1;
 
    type0_reg = reg_a6xx;
-   mem_ctx = ralloc_context(NULL);
-   _mesa_set_init(&decompiled_shaders, mem_ctx, u64_hash, u64_compare);
+   rddc_ctx.mem_ctx = ralloc_context(NULL);
+   _mesa_set_init(&rddc_ctx.decompiled_shaders, rddc_ctx.mem_ctx, u64_hash,
+                  u64_compare);
 
    struct {
       unsigned int len;
@@ -644,14 +646,14 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
          break;
       }
       case RD_GPU_ID: {
-         dev_id.gpu_id = parse_gpu_id(ps.buf);
-         if (fd_dev_info_raw(&dev_id))
+         rddc_ctx.dev_id.gpu_id = parse_gpu_id(ps.buf);
+         if (fd_dev_info_raw(&rddc_ctx.dev_id))
             emit_header();
          break;
       }
       case RD_CHIP_ID: {
-         dev_id.chip_id = parse_chip_id(ps.buf);
-         if (fd_dev_info_raw(&dev_id))
+         rddc_ctx.dev_id.chip_id = parse_chip_id(ps.buf);
+         if (fd_dev_info_raw(&rddc_ctx.dev_id))
             emit_header();
          break;
       }
@@ -663,7 +665,7 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
    emit("\treplay_context_finish(&ctx);\n}");
 
    io_close(io);
-   fflush(out_file);
+   fflush(rddc_ctx.out_file);
 
    if (ps.ret < 0) {
       fprintf(stderr, "corrupt file\n");

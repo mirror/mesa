@@ -884,6 +884,24 @@ tu_CreateImage(VkDevice _device,
          goto fail;
    }
 
+   if (pCreateInfo->flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) {
+      struct tu_instance *instance = device->physical_device->instance;
+      BITMASK_ENUM(tu_sparse_vma_flags) flags = 0;
+
+      if (pCreateInfo->flags & VK_BUFFER_CREATE_SPARSE_RESIDENCY_BIT)
+         flags |= TU_SPARSE_VMA_MAP_ZERO;
+
+      result = tu_sparse_vma_init(device, &image->vk.base, &image->vma,
+                                  &image->iova, flags, image->total_size, 0);
+
+      if (result != VK_SUCCESS)
+         goto fail;
+
+      vk_address_binding_report(&instance->vk, &image->vk.base,
+                                image->iova, image->total_size,
+                                VK_DEVICE_ADDRESS_BINDING_TYPE_BIND_EXT);
+   }
+
    TU_RMV(image_create, device, image);
 
 #ifdef HAVE_PERFETTO
@@ -915,6 +933,10 @@ tu_DestroyImage(VkDevice _device,
 #ifdef HAVE_PERFETTO
    tu_perfetto_log_destroy_image(device, image);
 #endif
+
+   if (image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT) {
+      tu_sparse_vma_finish(device, &image->vma);
+   }
 
    if (image->iova)
       vk_address_binding_report(&instance->vk, &image->vk.base,
@@ -1029,9 +1051,13 @@ static void
 tu_get_image_memory_requirements(struct tu_device *dev, struct tu_image *image,
                                  VkMemoryRequirements2 *pMemoryRequirements)
 {
+   uint32_t alignment = image->layout[0].base_align;
+   if (image->vk.create_flags & VK_IMAGE_CREATE_SPARSE_BINDING_BIT)
+      alignment = MAX2(alignment, os_page_size);
+
    pMemoryRequirements->memoryRequirements = (VkMemoryRequirements) {
       .size = image->total_size,
-      .alignment = image->layout[0].base_align,
+      .alignment = alignment,
       .memoryTypeBits = (1 << dev->physical_device->memory.type_count) - 1,
    };
 

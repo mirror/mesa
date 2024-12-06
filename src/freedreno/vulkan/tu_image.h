@@ -12,6 +12,8 @@
 
 #include "tu_common.h"
 
+#include "tu_knl.h"
+
 #define TU_MAX_PLANE_COUNT 3
 
 #define tu_fdl_view_stencil(view, x) \
@@ -34,9 +36,14 @@ struct tu_image
    uint64_t total_size;
 
    /* Set when bound */
-   struct tu_bo *bo;
-   uint64_t bo_offset;
    uint64_t iova;
+   union {
+      struct {
+         struct tu_bo *bo;
+         uint64_t bo_offset;
+      };
+      struct tu_sparse_vma vma;
+   };
 
    /* For fragment density map */
    void *map;

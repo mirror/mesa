@@ -51,6 +51,8 @@
  * For how-to see freedreno.rst
  */
 
+static FILE *out_file;
+
 static int handle_file(const char *filename, uint32_t submit_to_decompile);
 
 static const char *levels[] = {
@@ -65,15 +67,17 @@ static const char *levels[] = {
    "\t\t\t\t\t\t\t\t\t",
 };
 
+#define emit(...) fprintf(out_file, __VA_ARGS__)
+
 static void
-printlvl(int lvl, const char *fmt, ...)
+emitlvl(int lvl, const char *fmt, ...)
 {
    assert(lvl < ARRAY_SIZE(levels));
 
    va_list args;
    va_start(args, fmt);
-   fputs(levels[lvl], stdout);
-   vprintf(fmt, args);
+   fputs(levels[lvl], out_file);
+   vfprintf(out_file, fmt, args);
    va_end(args);
 }
 
@@ -113,6 +117,8 @@ main(int argc, char **argv)
    int c;
    uint32_t submit_to_decompile = -1;
 
+   out_file = stdout;
+
    while ((c = getopt_long(argc, argv, "s:h", opts, NULL)) != -1) {
       switch (c) {
       case 0:
@@ -139,6 +145,9 @@ main(int argc, char **argv)
 
       optind++;
    }
+
+   if (out_file != stdout)
+      fclose(out_file);
 
    if (ret)
       print_usage(argv[0]);
@@ -173,7 +182,7 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
 
    /* Shader's iova is referenced in two places, so we have to remember it. */
    if (_mesa_set_search(&decompiled_shaders, &gpuaddr)) {
-      printlvl(level, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
+      emitlvl(level, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
    } else {
       uint64_t *key = ralloc(mem_ctx, uint64_t);
       *key = gpuaddr;
@@ -191,13 +200,15 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
       try_disasm_a3xx(buf, sizedwords, 0, stream, fd_dev_gen(&dev_id) * 100);
       fclose(stream);
 
-      printlvl(level, "{\n");
-      printlvl(level + 1, "const char *source = R\"(\n");
-      printf("%s", stream_data);
-      printlvl(level + 1, ")\";\n");
-      printlvl(level + 1, "upload_shader(&ctx, 0x%" PRIx64 ", source);\n", gpuaddr);
-      printlvl(level + 1, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
-      printlvl(level, "}\n");
+      emitlvl(level, "{\n");
+      emitlvl(level + 1, "const char *source = R\"(\n");
+      emit("%s", stream_data);
+      emitlvl(level + 1, ")\";\n");
+      emitlvl(level + 1, "upload_shader(&ctx, 0x%" PRIx64 ", source);\n",
+              gpuaddr);
+      emitlvl(level + 1, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n",
+              gpuaddr);
+      emitlvl(level, "}\n");
       free(stream_data);
    }
 
@@ -233,10 +244,10 @@ decompile_register(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
 
    if (info && info->typeinfo) {
       char *decoded = rnndec_decodeval(rnn->vc, info->typeinfo, dword);
-      printlvl(level, "/* pkt4: %s = %s */\n", info->name, decoded);
+      emitlvl(level, "/* pkt4: %s = %s */\n", info->name, decoded);
 
       if (cnt == 0) {
-         printlvl(level, "pkt(cs, 0x%x);\n", dword);
+         emitlvl(level, "pkt(cs, 0x%x);\n", dword);
       } else {
 #if 0
          char reg_name[33];
@@ -249,22 +260,22 @@ decompile_register(uint32_t regbase, uint32_t *dwords, uint16_t cnt, int level)
           */
          if (sscanf(info->name, "%32[A-Z0-6_][%32[x0-9]].%32s", reg_name,
                     reg_idx, field_name) != 3) {
-            printlvl(level, "pkt4(cs, REG_%s_%s, (%u), %u);\n", rnn->variant,
+            emitlvl(level, "pkt4(cs, REG_%s_%s, (%u), %u);\n", rnn->variant,
                      info->name, cnt, dword);
          } else {
-            printlvl(level, "pkt4(cs, REG_%s_%s_%s(%s), (%u), %u);\n",
+            emitlvl(level, "pkt4(cs, REG_%s_%s_%s(%s), (%u), %u);\n",
                      rnn->variant, reg_name, field_name, reg_idx, cnt, dword);
          }
 #else
          /* TODO: We don't have easy way to get chip generation prefix,
           * so just emit raw packet offset as a workaround.
           */
-         printlvl(level, "pkt4(cs, 0x%04x, (%u), 0x%x);\n", regbase, cnt, dword);
+         emitlvl(level, "pkt4(cs, 0x%04x, (%u), 0x%x);\n", regbase, cnt, dword);
 #endif
       }
    } else {
-      printlvl(level, "/* unknown pkt4 */\n");
-      printlvl(level, "pkt4(cs, 0x%04x, (%u), 0x%x);\n", regbase, 1, dword);
+      emitlvl(level, "/* unknown pkt4 */\n");
+      emitlvl(level, "pkt4(cs, 0x%04x, (%u), 0x%x);\n", regbase, 1, dword);
    }
 
    rnn_reginfo_free(info);
@@ -280,13 +291,13 @@ decompile_register_reg_bunch(uint32_t regbase, uint32_t *dwords, uint16_t cnt, i
 
    if (info && info->typeinfo) {
       char *decoded = rnndec_decodeval(rnn->vc, info->typeinfo, dword);
-      printlvl(level, "/* reg: %s = %s */\n", info->name, decoded);
+      emitlvl(level, "/* reg: %s = %s */\n", info->name, decoded);
    } else {
-      printlvl(level, "/* unknown pkt4 */\n");
+      emitlvl(level, "/* unknown pkt4 */\n");
    }
 
-   printlvl(level, "pkt(cs, 0x%04x);\n", regbase);
-   printlvl(level, "pkt(cs, 0x%x);\n", dword);
+   emitlvl(level, "pkt(cs, 0x%04x);\n", regbase);
+   emitlvl(level, "pkt(cs, 0x%x);\n", dword);
 
    rnn_reginfo_free(info);
 
@@ -318,7 +329,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
 
    dom = rnn_finddomain(rnn->db, dom_name);
 
-   printlvl(level, "pkt7(cs, %s, %u);\n", packet_name, sizedwords);
+   emitlvl(level, "pkt7(cs, %s, %u);\n", packet_name, sizedwords);
 
    if (pkt == CP_LOAD_STATE6_FRAG || pkt == CP_LOAD_STATE6_GEOM) {
       enum a6xx_state_type state_type =
@@ -330,7 +341,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
 
       /* TODO: decompile all other state */
       if (state_type == ST6_SHADER && state_src == SS6_INDIRECT) {
-         printlvl(level, "pkt(cs, 0x%x);\n", dwords[0]);
+         emitlvl(level, "pkt(cs, 0x%x);\n", dwords[0]);
          decompile_shader(NULL, 0, dwords + 1, level);
          return;
       }
@@ -344,7 +355,7 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
 
       char *decoded;
       if (!(info && info->typeinfo)) {
-         printlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
+         emitlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
          continue;
       }
       uint64_t value = dwords[i];
@@ -354,10 +365,10 @@ decompile_domain(uint32_t pkt, uint32_t *dwords, uint32_t sizedwords,
       }
       decoded = rnndec_decodeval(rnn->vc, info->typeinfo, value);
 
-      printlvl(level, "/* %s */\n", decoded);
-      printlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
+      emitlvl(level, "/* %s */\n", decoded);
+      emitlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
       if (reg64) {
-         printlvl(level, "pkt(cs, 0x%x);\n", dwords[i + 1]);
+         emitlvl(level, "pkt(cs, 0x%x);\n", dwords[i + 1]);
          i++;
       }
 
@@ -391,14 +402,14 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
             ibaddr |= ((uint64_t)dwords[2]) << 32;
             ibsize = dwords[3];
 
-            printlvl(level, "{\n");
-            printlvl(level + 1, "begin_ib();\n");
+            emitlvl(level, "{\n");
+            emitlvl(level + 1, "begin_ib();\n");
 
             uint32_t *ptr = hostptr(ibaddr);
             decompile_commands(ptr, ibsize, level + 1, NULL);
 
-            printlvl(level + 1, "end_ib();\n");
-            printlvl(level, "}\n");
+            emitlvl(level + 1, "end_ib();\n");
+            emitlvl(level, "}\n");
          } else if (val == CP_SET_DRAW_STATE) {
             for (int i = 1; i < count; i += 3) {
                uint32_t state_count = dwords[i] & 0xffff;
@@ -407,14 +418,14 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
                   uint64_t ibaddr = dwords[i + 1];
                   ibaddr |= ((uint64_t)dwords[i + 2]) << 32;
 
-                  printlvl(level, "{\n");
-                  printlvl(level + 1, "begin_draw_state();\n");
+                  emitlvl(level, "{\n");
+                  emitlvl(level + 1, "begin_draw_state();\n");
 
                   uint32_t *ptr = hostptr(ibaddr);
                   decompile_commands(ptr, state_count, level + 1, NULL);
 
-                  printlvl(level + 1, "end_draw_state(%u);\n", unchanged);
-                  printlvl(level, "}\n");
+                  emitlvl(level + 1, "end_draw_state(%u);\n", unchanged);
+                  emitlvl(level, "}\n");
                } else {
                   decompile_domain(val, dwords + i, 3, "CP_SET_DRAW_STATE",
                                    "CP_SET_DRAW_STATE", level);
@@ -426,24 +437,26 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
 
             if (val == CP_CONTEXT_REG_BUNCH2) {
                if (options.no_reg_bunch) {
-                  printlvl(level, "// CP_CONTEXT_REG_BUNCH2\n");
-                  printlvl(level, "{\n");
+                  emitlvl(level, "// CP_CONTEXT_REG_BUNCH2\n");
+                  emitlvl(level, "{\n");
                } else {
-                  printlvl(level, "pkt7(cs, %s, %u);\n", "CP_CONTEXT_REG_BUNCH2", cnt);
-                  printlvl(level, "{\n");
-                  printlvl(level + 1, "pkt(cs, 0x%x);\n", dw[0]);
-                  printlvl(level + 1, "pkt(cs, 0x%x);\n", dw[1]);
+                  emitlvl(level, "pkt7(cs, %s, %u);\n", "CP_CONTEXT_REG_BUNCH2",
+                          cnt);
+                  emitlvl(level, "{\n");
+                  emitlvl(level + 1, "pkt(cs, 0x%x);\n", dw[0]);
+                  emitlvl(level + 1, "pkt(cs, 0x%x);\n", dw[1]);
                }
 
                dw += 2;
                cnt -= 2;
             } else {
                if (options.no_reg_bunch) {
-                  printlvl(level, "// CP_CONTEXT_REG_BUNCH\n");
-                  printlvl(level, "{\n");
+                  emitlvl(level, "// CP_CONTEXT_REG_BUNCH\n");
+                  emitlvl(level, "{\n");
                } else {
-                  printlvl(level, "pkt7(cs, %s, %u);\n", "CP_CONTEXT_REG_BUNCH", cnt);
-                  printlvl(level, "{\n");
+                  emitlvl(level, "pkt7(cs, %s, %u);\n", "CP_CONTEXT_REG_BUNCH",
+                          cnt);
+                  emitlvl(level, "{\n");
                }
             }
 
@@ -454,7 +467,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
                   decompile_register_reg_bunch(dw[i], &dw[i + 1], 1, level + 1);
                }
             }
-            printlvl(level, "}\n");
+            emitlvl(level, "}\n");
          } else if (val == CP_COND_REG_EXEC) {
             const char *packet_name = pktname(val);
             const char *dom_name = packet_name;
@@ -462,14 +475,14 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
 
             decompile_domain(val, dwords + 1, count - 1, dom_name, packet_name, level);
 
-            printlvl(level, "{\n");
-            printlvl(level + 1, "/* BEGIN COND (%d DWORDS) */\n", cond_count);
+            emitlvl(level, "{\n");
+            emitlvl(level + 1, "/* BEGIN COND (%d DWORDS) */\n", cond_count);
 
             decompile_commands(dwords + count, cond_count, level + 1, &cond_count);
             count += cond_count;
 
-            printlvl(level + 1, "/* END COND */\n");
-            printlvl(level, "}\n");
+            emitlvl(level + 1, "/* END COND */\n");
+            emitlvl(level, "}\n");
          } else if (val == CP_NOP) {
             /* Prop will often use NOP past the end of cond execs
              * which basically create an else path for the cond exec
@@ -483,16 +496,16 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
                assert(cond_count);
                *cond_count += else_cond_count;
 
-               printlvl(level, "pkt7(cs, %s, %u);\n", packet_name, count - 1);
+               emitlvl(level, "pkt7(cs, %s, %u);\n", packet_name, count - 1);
                for (int i = 1; i < dwords_left; i++) {
-                  printlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
+                  emitlvl(level, "pkt(cs, 0x%x);\n", dwords[i]);
                }
 
-               printlvl(level, "/* TO ELSE COND */\n");
-               printlvl(level - 1, "}\n");
+               emitlvl(level, "/* TO ELSE COND */\n");
+               emitlvl(level - 1, "}\n");
 
-               printlvl(level - 1, "{\n");
-               printlvl(level, "/* ELSE COND (%d DWORDS) */\n", else_cond_count);
+               emitlvl(level - 1, "{\n");
+               emitlvl(level, "/* ELSE COND (%d DWORDS) */\n", else_cond_count);
                decompile_commands(dwords + dwords_left, else_cond_count, level, NULL);
 
                return;
@@ -550,14 +563,14 @@ emit_header()
       errx(-1, "unsupported gpu: %u", dev_id.gpu_id);
    }
 
-   printf("#include \"decode/rdcompiler-utils.h\"\n"
-          "int main(int argc, char **argv)\n"
-          "{\n"
-          "\tstruct replay_context ctx;\n"
-          "\tstruct fd_dev_id dev_id = {%u, 0x%" PRIx64 "};\n"
-          "\treplay_context_init(&ctx, &dev_id, argc, argv);\n"
-          "\tstruct cmdstream *cs = ctx.submit_cs;\n\n",
-          dev_id.gpu_id, dev_id.chip_id);
+   emit("#include \"decode/rdcompiler-utils.h\"\n"
+        "int main(int argc, char **argv)\n"
+        "{\n"
+        "\tstruct replay_context ctx;\n"
+        "\tstruct fd_dev_id dev_id = {%u, 0x%" PRIx64 "};\n"
+        "\treplay_context_init(&ctx, &dev_id, argc, argv);\n"
+        "\tstruct cmdstream *cs = ctx.submit_cs;\n\n",
+        dev_id.gpu_id, dev_id.chip_id);
 }
 
 static inline uint32_t
@@ -647,10 +660,10 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
       }
    }
 
-   printf("\treplay_context_finish(&ctx);\n}");
+   emit("\treplay_context_finish(&ctx);\n}");
 
    io_close(io);
-   fflush(stdout);
+   fflush(out_file);
 
    if (ps.ret < 0) {
       fprintf(stderr, "corrupt file\n");

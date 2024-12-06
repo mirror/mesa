@@ -1663,6 +1663,100 @@ lower_get_ssbo_size(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 static bool
+lower_image_load_intel_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
+                      struct apply_pipeline_layout_state *state)
+{
+   nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+   nir_variable *var = nir_deref_instr_get_variable(deref);
+
+   unsigned set = var->data.descriptor_set;
+   unsigned binding = var->data.binding;
+
+   assert(intrin->intrinsic == nir_intrinsic_image_deref_load_param_intel
+   || intrin->intrinsic == nir_intrinsic_image_deref_load_base_address_intel);
+
+   b->cursor = nir_instr_remove(&intrin->instr);
+
+   nir_def *array_index;
+   if (deref->deref_type != nir_deref_type_var) {
+      assert(deref->deref_type == nir_deref_type_array);
+      assert(nir_deref_instr_parent(deref)->deref_type == nir_deref_type_var);
+      array_index = deref->arr.index.ssa;
+   } else {
+      array_index = nir_imm_int(b, 0);
+   }
+
+   nir_def *desc_addr = build_desc_addr_for_binding(
+      b, set, binding, array_index, 0 /* plane */, state);
+
+   nir_def *desc;
+   const struct intel_device_info *devinfo = &state->pdevice->info;
+   if (intrin->intrinsic == nir_intrinsic_image_deref_load_base_address_intel) {
+      desc = build_load_descriptor_mem(b, desc_addr,
+                     RENDER_SURFACE_STATE_SurfaceBaseAddress_start(devinfo) / 8,
+                     intrin->def.num_components,
+                     intrin->def.bit_size, state);
+   }
+
+   if (intrin->intrinsic == nir_intrinsic_image_deref_load_param_intel) {
+      switch(nir_intrinsic_base(intrin)) {
+         case ISL_IMG_PARAM_SURF_SIZE: {
+            nir_def *size_dword =
+               build_load_descriptor_mem(b, desc_addr,
+                                 RENDER_SURFACE_STATE_Width_start(devinfo) / 8,
+                                 1, 32, state);
+
+            nir_def *size[2];
+            const unsigned width_bits = RENDER_SURFACE_STATE_Width_bits(devinfo);
+            size[0] =
+               nir_iand_imm(b, size_dword, (1u << width_bits) - 1);
+
+            const unsigned height_start = RENDER_SURFACE_STATE_Height_start(devinfo);
+            const unsigned height_bits = RENDER_SURFACE_STATE_Height_bits(devinfo);
+            size[1] = nir_iand_imm(b,
+                                 nir_ishr_imm(b, size_dword, height_start % 32),
+                                 (1u << height_bits) - 1);
+
+            size[0] = nir_iadd_imm(b, size[0], 1);
+            size[1] = nir_iadd_imm(b, size[1], 1);
+
+            desc = nir_vec(b, size, 2);
+            break;
+         }
+         case ISL_IMG_PARAM_TILE_MODE: {
+            // tile mode [13:12] is in the first dword
+            nir_def *type_dword =
+               build_load_descriptor_mem(b, desc_addr, 0, 1, 32, state);
+
+            const unsigned tile_mode_bits = 2;
+            const unsigned tile_mode_start = 12;
+            desc = nir_iand_imm(b,
+                              nir_ishr_imm(b, type_dword, tile_mode_start % 32),
+                              (1u << tile_mode_bits) - 1);
+            break;
+         }
+         case ISL_IMG_PARAM_SURF_PITCH: {
+            const unsigned surfPitch_bits = RENDER_SURFACE_STATE_SurfacePitch_bits(devinfo);
+            nir_def *pitch_dword =
+               build_load_descriptor_mem(b,
+                                       desc_addr,
+                                       RENDER_SURFACE_STATE_SurfacePitch_start(devinfo) / 8,
+                                       1, 32, state);
+            desc = nir_iand_imm(b, pitch_dword, (1u << surfPitch_bits) - 1);
+            desc = nir_iadd_imm(b, desc, 1);
+            break;
+         }
+         default: {
+            unreachable("Invalid intrinsic!");
+         }
+      }
+   }
+
+   nir_def_rewrite_uses(&intrin->def, desc);
+   return true;
+}
+
+static bool
 lower_image_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
                       struct apply_pipeline_layout_state *state)
 {
@@ -1956,11 +2050,13 @@ apply_pipeline_layout(nir_builder *b, nir_instr *instr, void *_state)
       case nir_intrinsic_image_deref_atomic:
       case nir_intrinsic_image_deref_atomic_swap:
       case nir_intrinsic_image_deref_samples:
-      case nir_intrinsic_image_deref_load_param_intel:
       case nir_intrinsic_image_deref_load_raw_intel:
       case nir_intrinsic_image_deref_store_raw_intel:
       case nir_intrinsic_image_deref_sparse_load:
          return lower_image_intrinsic(b, intrin, state);
+      case nir_intrinsic_image_deref_load_param_intel:
+      case nir_intrinsic_image_deref_load_base_address_intel:
+         return lower_image_load_intel_intrinsic(b, intrin, state);
       case nir_intrinsic_image_deref_size:
          return lower_image_size_intrinsic(b, intrin, state);
       case nir_intrinsic_load_constant:

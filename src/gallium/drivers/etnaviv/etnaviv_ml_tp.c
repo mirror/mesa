@@ -1028,14 +1028,14 @@ etna_ml_lower_pad(struct etna_ml_subgraph *subgraph,
    operation->input_tensor_sizes[0] = operation->input_width *
                                       operation->input_height *
                                       operation->input_channels;
-   operation->input_zero_point = pad->input_tensors[0]->zero_point;
+   operation->input_zero_point = etna_tensor_zero_point(pad->input_tensors[0]);
    operation->input_scale = pad->input_tensors[0]->scale;
 
    operation->output_tensors[0] = pad->output_tensors[0]->index;
    operation->output_width = pad->output_tensors[0]->dims[1];
    operation->output_height = pad->output_tensors[0]->dims[2];
    operation->output_channels = pad->output_tensors[0]->dims[3];
-   operation->output_zero_point = pad->output_tensors[0]->zero_point;
+   operation->output_zero_point = etna_tensor_zero_point(pad->output_tensors[0]);
    operation->output_scale = pad->output_tensors[0]->scale;
    operation->output_tensor_sizes[0] = operation->output_width *
                                        operation->output_height *
@@ -1059,14 +1059,14 @@ etna_ml_lower_relu(struct etna_ml_subgraph *subgraph,
    relu->input_tensor_sizes[0] = relu->input_width *
                                  relu->input_height *
                                  relu->input_channels;
-   relu->input_zero_point = input_tensor->zero_point;
+   relu->input_zero_point = etna_tensor_zero_point(input_tensor);
    relu->input_scale = input_tensor->scale;
 
    relu->output_tensors[0] = operation->output_tensors[0]->index;
    relu->output_width = operation->output_tensors[0]->dims[1];
    relu->output_height = operation->output_tensors[0]->dims[2];
    relu->output_channels = operation->output_tensors[0]->dims[3];
-   relu->output_zero_point = operation->output_tensors[0]->zero_point;
+   relu->output_zero_point = etna_tensor_zero_point(operation->output_tensors[0]);
    relu->output_scale = operation->output_tensors[0]->scale;
 }
 

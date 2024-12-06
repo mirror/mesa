@@ -144,13 +144,13 @@ main(int argc, char **argv)
       print_usage(argv[0]);
    }
 
-   while (optind < argc) {
-      ret = handle_file(argv[optind], submit_to_decompile);
-      if (ret)
-         break;
-
-      optind++;
+   if (optind + 1 != argc) {
+      fprintf(stderr, "Multiple RD input files specified or none\n");
+      print_usage(argv[0]);
    }
+
+   ret = handle_file(argv[optind], submit_to_decompile);
+   optind++;
 
    if (rddc_ctx.out_file != stdout)
       fclose(rddc_ctx.out_file);
@@ -547,11 +547,6 @@ emit_header()
 {
    if (!rddc_ctx.dev_id.gpu_id && !rddc_ctx.dev_id.chip_id)
       return;
-
-   static bool emitted = false;
-   if (emitted)
-      return;
-   emitted = true;
 
    switch (fd_dev_gen(&rddc_ctx.dev_id)) {
    case 6:

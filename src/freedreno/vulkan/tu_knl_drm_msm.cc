@@ -292,9 +292,10 @@ msm_submitqueue_new(struct tu_device *dev,
    assert(priority >= 0 &&
           priority < dev->physical_device->submitqueue_priority_count);
    struct drm_msm_submitqueue req = {
-      .flags = dev->physical_device->info->chip >= 7 &&
-         dev->physical_device->has_preemption ?
-         MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0,
+      .flags = type == TU_QUEUE_SPARSE ? MSM_SUBMITQUEUE_VM_BIND :
+            (dev->physical_device->info->chip >= 7 &&
+             dev->physical_device->has_preemption ?
+             MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0),
       .prio = priority,
    };
 
@@ -991,6 +992,51 @@ msm_bo_finish(struct tu_device *dev, struct tu_bo *bo)
 }
 
 static VkResult
+msm_sparse_vma_init(struct tu_device *dev,
+                    struct vk_object_base *base,
+                    struct tu_sparse_vma *out_vma,
+                    uint64_t *out_iova,
+                    enum tu_sparse_vma_flags flags,
+                    uint64_t size, uint64_t client_iova)
+{
+   VkResult result;
+   enum tu_bo_alloc_flags bo_flags =
+      (flags & TU_SPARSE_VMA_REPLAYABLE) ? TU_BO_ALLOC_REPLAYABLE :
+      (enum tu_bo_alloc_flags)0;
+
+   out_vma->msm.size = size;
+
+   mtx_lock(&dev->vma_mutex);
+   result = tu_allocate_userspace_iova(dev, size, client_iova, bo_flags,
+                                       &out_vma->msm.iova);
+   mtx_unlock(&dev->vma_mutex);
+
+   if (result != VK_SUCCESS)
+      return result;
+
+   if (flags & TU_SPARSE_VMA_MAP_ZERO) {
+      result = tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_MAP_NULL, out_vma->msm.iova,
+                              0, 0, size);
+   }
+
+   *out_iova = out_vma->msm.iova;
+
+   return result;
+}
+
+static void
+msm_sparse_vma_finish(struct tu_device *dev,
+                      struct tu_sparse_vma *vma)
+{
+   tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_UNMAP, vma->msm.iova, 0, 0,
+                  vma->msm.size);
+
+   mtx_lock(&dev->vma_mutex);
+   util_vma_heap_free(&dev->vma, vma->msm.iova, vma->msm.size);
+   mtx_unlock(&dev->vma_mutex);
+}
+
+static VkResult
 msm_queue_submit(struct tu_queue *queue, void *_submit,
                  struct vk_sync_wait *waits, uint32_t wait_count,
                  struct vk_sync_signal *signals, uint32_t signal_count,
@@ -1082,19 +1128,39 @@ msm_queue_submit(struct tu_queue *queue, void *_submit,
       }
    }
 
-   req = (struct drm_msm_gem_submit) {
-      .flags = flags,
-      .nr_bos = entry_count ? queue->device->submit_bo_count : 0,
-      .nr_cmds = entry_count,
-      .bos = (uint64_t)(uintptr_t) queue->device->submit_bo_list,
-      .cmds = (uint64_t)(uintptr_t)submit->commands.data,
-      .queueid = queue->msm_queue_id,
-      .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
-      .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
-      .nr_in_syncobjs = wait_count,
-      .nr_out_syncobjs = signal_count,
-      .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
-   };
+   if (submit->binds.size == 0) {
+      req = (struct drm_msm_gem_submit) {
+         .flags = flags,
+         .nr_bos = entry_count ? queue->device->submit_bo_count : 0,
+         .nr_cmds = entry_count,
+         .bos = (uint64_t)(uintptr_t) queue->device->submit_bo_list,
+         .cmds = (uint64_t)(uintptr_t)submit->commands.data,
+         .queueid = queue->msm_queue_id,
+         .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
+         .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
+         .nr_in_syncobjs = wait_count,
+         .nr_out_syncobjs = signal_count,
+         .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
+      };
+   } else {
+      uint32_t bind_count =
+         util_dynarray_num_elements(&submit->binds,
+                                    struct drm_msm_gem_submit_bo_v2);
+      req = (struct drm_msm_gem_submit) {
+         .flags = flags,
+         .nr_bos = bind_count,
+         .nr_cmds = 0,
+         .bos = (uint64_t)(uintptr_t)submit->binds.data,
+         .cmds = 0,
+         .queueid = queue->msm_queue_id,
+         .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
+         .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
+         .nr_in_syncobjs = wait_count,
+         .nr_out_syncobjs = signal_count,
+         .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
+         .bos_stride = sizeof(struct drm_msm_gem_submit_bo_v2),
+      };
+   }
 
    ret = drmCommandWriteRead(queue->device->fd,
                              DRM_MSM_GEM_SUBMIT,
@@ -1178,8 +1244,11 @@ static const struct tu_knl msm_knl_funcs = {
       .submit_create = msm_submit_create,
       .submit_finish = msm_submit_finish,
       .submit_add_entries = msm_submit_add_entries,
+      .submit_add_bind = msm_submit_add_bind,
       .queue_submit = msm_queue_submit,
       .queue_wait_fence = msm_queue_wait_fence,
+      .sparse_vma_init = msm_sparse_vma_init,
+      .sparse_vma_finish = msm_sparse_vma_finish,
 };
 
 VkResult

@@ -112,6 +112,7 @@ msm_submit_finish(struct tu_device *device,
 
    util_dynarray_fini(&submit->commands);
    util_dynarray_fini(&submit->command_bos);
+   util_dynarray_fini(&submit->binds);
    vk_free(&device->vk.alloc, submit);
 }
 
@@ -145,6 +146,30 @@ msm_submit_add_entries(struct tu_device *device, void *_submit,
          cmds[i].relocs = 0;
       bos[i] = entries[i].bo;
    }
+}
+
+void
+msm_submit_add_bind(struct tu_device *device,
+                    void *_submit,
+                    struct tu_sparse_vma *vma, uint64_t vma_offset,
+                    struct tu_bo *bo, uint64_t bo_offset,
+                    uint64_t size)
+{
+   struct tu_msm_queue_submit *submit =
+      (struct tu_msm_queue_submit *)_submit;
+
+   struct drm_msm_gem_submit_bo_v2 bind = {
+      .flags = bo ? MSM_SUBMIT_BO_OP_MAP :
+         ((vma->flags & TU_SPARSE_VMA_MAP_ZERO) ?
+            MSM_SUBMIT_BO_OP_MAP_NULL : MSM_SUBMIT_BO_OP_UNMAP),
+      .handle = bo ? bo->gem_handle : 0,
+      .address = vma->msm.iova + vma_offset,
+      .bo_offset = bo_offset,
+      .range = size,
+   };
+
+   util_dynarray_append(&submit->binds, struct drm_msm_gem_submit_bo_v2,
+                        bind);
 }
 
 uint32_t

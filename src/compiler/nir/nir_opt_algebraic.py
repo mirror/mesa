@@ -3300,6 +3300,9 @@ late_optimizations = [
 
    # combine imul and iadd to imad
    (('iadd@32', ('imul(is_only_used_by_iadd)', a, b), c), ('imad', a, b, c), 'options->has_imad32'),
+
+   # combine ishl and iadd to imad
+   (('iadd@32', c, ('ishl(is_only_used_by_iadd)', a, b)), ('imad', a, ('ishl', 1, b), c), 'options->has_imad32'),
 ]
 
 # re-combine inexact mul+add to ffma. Do this before fsub so that a * b - c

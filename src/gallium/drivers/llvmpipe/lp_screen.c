@@ -1101,6 +1101,12 @@ llvmpipe_screen_late_init(struct llvmpipe_screen *screen)
    if (screen->late_init_done)
       goto out;
 
+   screen->num_threads = util_get_cpu_caps()->nr_cpus > 1
+      ? util_get_cpu_caps()->nr_cpus : 0;
+   screen->num_threads = debug_get_num_option("LP_NUM_THREADS",
+                                              screen->num_threads);
+   screen->num_threads = MIN2(screen->num_threads, LP_MAX_THREADS);
+
    screen->rast = lp_rast_create(screen->num_threads);
    if (!screen->rast) {
       ret = false;
@@ -1181,12 +1187,6 @@ llvmpipe_create_screen(struct sw_winsys *winsys)
    llvmpipe_init_screen_resource_funcs(&screen->base);
 
    screen->allow_cl = !!getenv("LP_CL");
-   screen->num_threads = util_get_cpu_caps()->nr_cpus > 1
-      ? util_get_cpu_caps()->nr_cpus : 0;
-   screen->num_threads = debug_get_num_option("LP_NUM_THREADS",
-                                              screen->num_threads);
-   screen->num_threads = MIN2(screen->num_threads, LP_MAX_THREADS);
-
 #if defined(HAVE_LIBDRM) && defined(HAVE_LINUX_UDMABUF_H)
    screen->udmabuf_fd = open("/dev/udmabuf", O_RDWR);
    llvmpipe_init_screen_fence_funcs(&screen->base);

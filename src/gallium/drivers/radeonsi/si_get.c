@@ -1092,7 +1092,7 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
 
    if (profile == PIPE_VIDEO_PROFILE_AV1_MAIN && entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM)
       return (format == PIPE_FORMAT_P010) || (format == PIPE_FORMAT_P016) ||
-             (format == PIPE_FORMAT_NV12);
+             (format == PIPE_FORMAT_NV12) || (format == PIPE_FORMAT_Y8_400_UNORM);
 
    if (profile == PIPE_VIDEO_PROFILE_AV1_PROFILE2 && entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
       if (sscreen->info.vcn_ip_version < VCN_5_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_0)

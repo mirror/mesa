@@ -1737,10 +1737,11 @@ static struct pb_buffer_lean *rvcn_dec_message_decode(struct radeon_decoder *dec
 
    decode->dpb_size = (dec->dpb_type != DPB_DYNAMIC_TIER_2) ? dec->dpb.res->buf->size : 0;
 
-   /* When texture being created, the bo will be created with total size of planes,
-    * and all planes point to the same buffer */
-   assert(si_resource(((struct vl_video_buffer *)out_surf)->resources[0])->buf->size ==
-      si_resource(((struct vl_video_buffer *)out_surf)->resources[1])->buf->size);
+   if (chroma) {
+      /* When texture being created, the bo will be created with total size of planes,
+       * and all planes point to the same buffer */
+      assert(luma->buffer.buf == chroma->buffer.buf);
+   }
 
    decode->dt_size = si_resource(((struct vl_video_buffer *)out_surf)->resources[0])->buf->size;
 
@@ -1759,7 +1760,8 @@ static struct pb_buffer_lean *rvcn_dec_message_decode(struct radeon_decoder *dec
    decode->db_array_mode = dec->addr_gfx_mode;
 
    decode->dt_pitch = luma->surface.u.gfx9.surf_pitch * luma->surface.blk_w;
-   decode->dt_uv_pitch = chroma->surface.u.gfx9.surf_pitch * chroma->surface.blk_w;
+   if (chroma)
+      decode->dt_uv_pitch = chroma->surface.u.gfx9.surf_pitch * chroma->surface.blk_w;
 
    if (luma->surface.meta_offset) {
       RADEON_DEC_ERR("DCC surfaces not supported.\n");
@@ -1773,10 +1775,10 @@ static struct pb_buffer_lean *rvcn_dec_message_decode(struct radeon_decoder *dec
    decode->dt_uv_surf_tile_config = 0;
 
    decode->dt_luma_top_offset = luma->surface.u.gfx9.surf_offset;
-   decode->dt_chroma_top_offset = chroma->surface.u.gfx9.surf_offset;
+   decode->dt_chroma_top_offset = chroma ? chroma->surface.u.gfx9.surf_offset : decode->dt_size;
    decode->dt_luma_bottom_offset = decode->dt_luma_top_offset;
    decode->dt_chroma_bottom_offset = decode->dt_chroma_top_offset;
-   if (dec->stream_type == RDECODE_CODEC_AV1)
+   if (dec->stream_type == RDECODE_CODEC_AV1 && chroma)
       decode->db_pitch_uv = chroma->surface.u.gfx9.surf_pitch * chroma->surface.blk_w;
 
    if (encrypted) {

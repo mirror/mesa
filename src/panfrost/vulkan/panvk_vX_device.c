@@ -21,6 +21,7 @@
 #include "panvk_instance.h"
 #include "panvk_macros.h"
 #include "panvk_physical_device.h"
+#include "panvk_precomp_cache.h"
 #include "panvk_priv_bo.h"
 #include "panvk_queue.h"
 #include "panvk_utrace.h"
@@ -171,12 +172,21 @@ panvk_libpan_init(struct panvk_device *device)
    device->libpan =
       nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
 
+   device->precomp_cache = panvk_per_arch(precomp_cache_init)(device);
+
+   if (device->precomp_cache == NULL) {
+      ralloc_free((void *)device->libpan);
+      glsl_type_singleton_decref();
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
    return VK_SUCCESS;
 }
 
 static void
 panvk_libpan_cleanup(struct panvk_device *device)
 {
+   panvk_per_arch(precomp_cache_cleanup)(device->precomp_cache);
    ralloc_free((void *)device->libpan);
    glsl_type_singleton_decref();
 }

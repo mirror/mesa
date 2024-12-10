@@ -68,6 +68,7 @@ static const char *levels[] = {
 static struct {
    struct {
       int no_reg_bunch;
+      bool split_into_files;
    } options;
 
    struct rnn *rnn;
@@ -77,10 +78,12 @@ static struct {
    struct set decompiled_shaders;
 
    FILE *out_file;
+   int out_dir_fd; /* Only valid if `split_into_files. */
 } rddc_ctx;
 
 /* clang-format off */
 static const struct option opts[] = {
+      { "multi",        required_argument,   0, 'm' },
       { "submit",       required_argument,   0, 's' },
       { "no-reg-bunch", no_argument,         &rddc_ctx.options.no_reg_bunch, 1 },
       { "help",         no_argument,         0, 'h' },
@@ -108,12 +111,38 @@ print_usage(const char *name)
    fprintf(stderr, "Usage:\n\n"
            "\t%s [OPTIONS]... FILE...\n\n"
            "Options:\n"
-           "\t-s, --submit=№   - № of the submit to decompile\n"
-           "\t--no-reg-bunch   - Use pkt4 for each reg in CP_CONTEXT_REG_BUNCH\n"
-           "\t-h, --help       - show this message\n"
+           "\t-m, --multi=<dir>   - Split into multiple translation units\n"
+           "\t-s, --submit=№      - № of the submit to decompile\n"
+           "\t--no-reg-bunch      - Use pkt4 for each reg in CP_CONTEXT_REG_BUNCH\n"
+           "\t-h, --help          - show this message\n"
            , name);
    /* clang-format on */
-   exit(2);
+}
+
+static FILE *
+fopen_output_file(const char *name)
+{
+   assert(rddc_ctx.options.split_into_files);
+
+   int fd;
+   errno = 0;
+   fd = openat(rddc_ctx.out_dir_fd, name, O_CREAT | O_EXCL | O_WRONLY, 0600);
+   if (fd < 0 && errno == EEXIST) {
+      fprintf(stderr, "File already exists: %s\n", name);
+      return NULL;
+   } else if (fd < 0) {
+      fprintf(stderr, "Failed to create file: %s\n", name);
+      return NULL;
+   }
+
+   FILE *file = fdopen(fd, "w");
+   if (!file) {
+      close(fd);
+      fprintf(stderr, "Failed to create file: %s\n", name);
+      return NULL;
+   }
+
+   return file;
 }
 
 int
@@ -124,41 +153,85 @@ main(int argc, char **argv)
    uint32_t submit_to_decompile = -1;
 
    rddc_ctx.out_file = stdout;
+   rddc_ctx.options.split_into_files = false;
+   rddc_ctx.out_dir_fd = -1;
 
-   while ((c = getopt_long(argc, argv, "s:h", opts, NULL)) != -1) {
+   while ((c = getopt_long(argc, argv, "m:s:h", opts, NULL)) != -1) {
       switch (c) {
       case 0:
          /* option that set a flag, nothing to do */
+         break;
+      case 'm':
+         rddc_ctx.options.split_into_files = true;
+
+         errno = 0;
+         ret = mkdir(optarg, 0700);
+         if (ret && errno != EEXIST) {
+            fprintf(stderr, "Failed to create the output directory: %s.\n",
+                    optarg);
+            goto err_return;
+         }
+
+         rddc_ctx.out_dir_fd = open(optarg, O_PATH | O_DIRECTORY);
+         if (rddc_ctx.out_dir_fd < 0) {
+            fprintf(stderr, "Failed to open the output directory: %s.\n",
+                    optarg);
+            goto err_return;
+         }
          break;
       case 's':
          submit_to_decompile = strtoul(optarg, NULL, 0);
          break;
       case 'h':
       default:
-         print_usage(argv[0]);
+         goto err_return;
       }
    }
 
    if (submit_to_decompile == -1) {
       fprintf(stderr, "Submit to decompile has to be specified\n");
-      print_usage(argv[0]);
+      goto err_close_out_dir_fd;
+   }
+
+   if (rddc_ctx.options.split_into_files) {
+      const char *out_file_name = "generate-rd.cc";
+      rddc_ctx.out_file = fopen_output_file(out_file_name);
+      if (!rddc_ctx.out_file)
+         goto err_close_out_dir_fd;
+   } else {
+      rddc_ctx.out_file = stdout;
    }
 
    if (optind + 1 != argc) {
       fprintf(stderr, "Multiple RD input files specified or none\n");
-      print_usage(argv[0]);
+      goto err_close_out_file;
    }
 
    ret = handle_file(argv[optind], submit_to_decompile);
+   if (ret)
+      goto err_close_out_file;
+
    optind++;
 
    if (rddc_ctx.out_file != stdout)
       fclose(rddc_ctx.out_file);
 
-   if (ret)
-      print_usage(argv[0]);
+   if (rddc_ctx.out_dir_fd >= 0)
+      close(rddc_ctx.out_dir_fd);
 
-   return ret;
+   return 0;
+
+err_close_out_file:
+   if (rddc_ctx.out_file != stdout)
+      fclose(rddc_ctx.out_file);
+
+err_close_out_dir_fd:
+   if (rddc_ctx.out_dir_fd >= 0)
+      close(rddc_ctx.out_dir_fd);
+
+err_return:
+   print_usage(argv[0]);
+   return EXIT_FAILURE;
 }
 
 static void

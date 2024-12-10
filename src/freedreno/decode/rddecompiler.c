@@ -81,6 +81,7 @@ static struct {
 
    FILE *out_file;
    int out_dir_fd; /* Only valid if `split_into_files. */
+   unsigned ib_file_count; /* Only valid if `split_into_files. */
 } rddc_ctx;
 
 /* clang-format off */
@@ -180,6 +181,8 @@ main(int argc, char **argv)
                     optarg);
             goto err_return;
          }
+
+         rddc_ctx.ib_file_count = 0;
          break;
       case 's':
          submit_to_decompile = strtoul(optarg, NULL, 0);
@@ -258,6 +261,9 @@ pktname(unsigned opc)
 enum name_type {
    SHADER_ASM_STR,
    SHADER_SRC_FILE,
+   IB_FUNC,
+   IB_FUNC_PROTOTYPE,
+   IB_SRC_FILE,
 };
 
 static char *
@@ -272,6 +278,18 @@ gen_name(enum name_type name_type, uint64_t key)
    case SHADER_SRC_FILE:
       sprintf(name, "generate-rd-shader-%016" PRIx64 ".cc", key);
       break;
+   case IB_FUNC:
+      sprintf(name, "ib_%" PRIu64, key);
+      break;
+   case IB_FUNC_PROTOTYPE:
+      sprintf(name,
+              "void ib_%" PRIu64
+              "(struct replay_context *ctx, struct cmdstream *cs)",
+              key);
+      break;
+   case IB_SRC_FILE:
+      sprintf(name, "generate-rd-ib-%" PRIu64 ".cc", key);
+      break;
    }
 
    return strdup(name);
@@ -285,6 +303,20 @@ emit_generate_rd_resources_h(void)
    FILE *stream = fopen_output_file(file_name);
    if (!stream)
       return -1;
+
+   for (unsigned id = 0; id < rddc_ctx.ib_file_count; id++) {
+      char *ib_func = gen_name(IB_FUNC_PROTOTYPE, id);
+
+      int ret = fprintf(stream, "%s;\n", ib_func);
+      if (ret < 0) {
+         fprintf(stderr, "Failed writing \"%s\"to %s\n", ib_func, file_name);
+         free(ib_func);
+         fclose(stream);
+         return -1;
+      }
+
+      free(ib_func);
+   }
 
    set_foreach (&rddc_ctx.decompiled_shaders, entry) {
       const uint64_t key = *(uint64_t *)entry->key;
@@ -562,8 +594,46 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
             emitlvl(level, "{\n");
             emitlvl(level + 1, "begin_ib(ctx);\n");
 
-            uint32_t *ptr = hostptr(ibaddr);
-            decompile_commands(ptr, ibsize, level + 1, NULL);
+            /* Arbitrarily chosen limit. */
+            if (ibsize > 512 && rddc_ctx.options.split_into_files) {
+               const unsigned id = rddc_ctx.ib_file_count++;
+
+               char *ib_func_name = gen_name(IB_FUNC, id);
+               emitlvl(level + 1, "%s(ctx, cs);\n", ib_func_name);
+               free(ib_func_name);
+
+               char *ib_file_name = gen_name(IB_SRC_FILE, id);
+               FILE *ib_file = fopen_output_file(ib_file_name);
+               free(ib_file_name);
+
+               FILE *old_out_file = rddc_ctx.out_file;
+               rddc_ctx.out_file = ib_file;
+
+               int old_level = level;
+               level = 0;
+
+               char *ib_func_prototype = gen_name(IB_FUNC_PROTOTYPE, id);
+
+               /* Have to use emit. decompile_commands() will indent code. */
+               emit("#include \"decode/rdcompiler-utils.h\"\n");
+               emit("#include \"generate-rd-resources.h\"\n");
+               emit("%s\n{\n", ib_func_prototype);
+
+               free(ib_func_prototype);
+
+               uint32_t *ptr = hostptr(ibaddr);
+               decompile_commands(ptr, ibsize, level, NULL);
+
+               emit("}\n");
+
+               fclose(ib_file);
+
+               rddc_ctx.out_file = old_out_file;
+               level = old_level;
+            } else {
+               uint32_t *ptr = hostptr(ibaddr);
+               decompile_commands(ptr, ibsize, level + 1, NULL);
+            }
 
             emitlvl(level + 1, "end_ib();\n");
             emitlvl(level, "}\n");

@@ -9,6 +9,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <signal.h>
 #include <stdarg.h>
 #include <stdbool.h>
@@ -52,6 +53,7 @@
  */
 
 static int handle_file(const char *filename, uint32_t submit_to_decompile);
+static int emit_generate_rd_resources_h(void);
 
 static const char *levels[] = {
    "\t",
@@ -213,6 +215,12 @@ main(int argc, char **argv)
 
    optind++;
 
+   if (rddc_ctx.options.split_into_files) {
+      ret = emit_generate_rd_resources_h();
+      if (ret)
+         goto err_close_out_file;
+   }
+
    if (rddc_ctx.out_file != stdout)
       fclose(rddc_ctx.out_file);
 
@@ -247,6 +255,58 @@ pktname(unsigned opc)
    return rnn_enumname(rddc_ctx.rnn, "adreno_pm4_type3_packets", opc);
 }
 
+enum name_type {
+   SHADER_ASM_STR,
+   SHADER_SRC_FILE,
+};
+
+static char *
+gen_name(enum name_type name_type, uint64_t key)
+{
+   char name[100];
+
+   switch (name_type) {
+   case SHADER_ASM_STR:
+      sprintf(name, "shader_source_%016" PRIx64, key);
+      break;
+   case SHADER_SRC_FILE:
+      sprintf(name, "generate-rd-shader-%016" PRIx64 ".cc", key);
+      break;
+   }
+
+   return strdup(name);
+}
+
+static int
+emit_generate_rd_resources_h(void)
+{
+   const char *file_name = "generate-rd-resources.h";
+
+   FILE *stream = fopen_output_file(file_name);
+   if (!stream)
+      return -1;
+
+   set_foreach (&rddc_ctx.decompiled_shaders, entry) {
+      const uint64_t key = *(uint64_t *)entry->key;
+      char *shader_name = gen_name(SHADER_ASM_STR, key);
+
+      int ret = fprintf(stream, "const char *get_%s(void);\n", shader_name);
+      if (ret < 0) {
+         fprintf(stderr, "Failed writing \"%s\"to %s\n", shader_name,
+                 file_name);
+         free(shader_name);
+         fclose(stream);
+         return -1;
+      }
+
+      free(shader_name);
+   }
+
+   fclose(stream);
+
+   return 0;
+}
+
 static uint32_t
 decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level)
 {
@@ -274,16 +334,39 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
                       fd_dev_gen(&rddc_ctx.dev_id) * 100);
       fclose(stream);
 
+      char *shader_name = gen_name(SHADER_ASM_STR, *key);
+
       emitlvl(level, "{\n");
-      emitlvl(level + 1, "const char *source = R\"(\n");
-      emit("%s", stream_data);
-      emitlvl(level + 1, ")\";\n");
-      emitlvl(level + 1, "upload_shader(ctx, 0x%" PRIx64 ", source);\n",
-              gpuaddr);
+
+      if (rddc_ctx.out_dir_fd >= 0) {
+         char *shader_file_name = gen_name(SHADER_SRC_FILE, *key);
+         FILE *shader_file = fopen_output_file(shader_file_name);
+
+         fprintf(shader_file,
+                 "static const char *%s = R\"(\n"
+                 "%s)\";\n"
+                 "const char *get_%s(void) { return %s; }\n",
+                 shader_name, stream_data, shader_name, shader_name);
+
+         fclose(shader_file);
+         free(shader_file_name);
+
+         emitlvl(level + 1, "upload_shader(ctx, 0x%" PRIx64 ", get_%s());\n",
+                 gpuaddr, shader_name);
+      } else {
+         emitlvl(level + 1, "const char *%s = R\"(\n", shader_name);
+         emit("%s", stream_data);
+         emitlvl(level + 1, ")\";\n");
+         emitlvl(level + 1, "upload_shader(ctx, 0x%" PRIx64 ", %s);\n", gpuaddr,
+                 shader_name);
+      }
+
       emitlvl(level + 1, "emit_shader_iova(ctx, cs, 0x%" PRIx64 ");\n",
               gpuaddr);
       emitlvl(level, "}\n");
+
       free(stream_data);
+      free(shader_name);
    }
 
    return 2;
@@ -632,8 +715,12 @@ emit_header()
       errx(-1, "unsupported gpu: %u", rddc_ctx.dev_id.gpu_id);
    }
 
-   emit("#include \"decode/rdcompiler-utils.h\"\n"
-        "int main(int argc, char **argv)\n"
+   emit("#include \"decode/rdcompiler-utils.h\"\n");
+
+   if (rddc_ctx.options.split_into_files)
+      emit("#include \"generate-rd-resources.h\"\n");
+
+   emit("int main(int argc, char **argv)\n"
         "{\n"
         "\tstruct replay_context _ctx;\n"
         "\tstruct replay_context *ctx = &_ctx;\n"

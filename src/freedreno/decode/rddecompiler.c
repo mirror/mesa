@@ -182,7 +182,7 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
 
    /* Shader's iova is referenced in two places, so we have to remember it. */
    if (_mesa_set_search(&rddc_ctx.decompiled_shaders, &gpuaddr)) {
-      emitlvl(level, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
+      emitlvl(level, "emit_shader_iova(ctx, cs, 0x%" PRIx64 ");\n", gpuaddr);
    } else {
       uint64_t *key = ralloc(rddc_ctx.mem_ctx, uint64_t);
       *key = gpuaddr;
@@ -205,9 +205,9 @@ decompile_shader(const char *name, uint32_t regbase, uint32_t *dwords, int level
       emitlvl(level + 1, "const char *source = R\"(\n");
       emit("%s", stream_data);
       emitlvl(level + 1, ")\";\n");
-      emitlvl(level + 1, "upload_shader(&ctx, 0x%" PRIx64 ", source);\n",
+      emitlvl(level + 1, "upload_shader(ctx, 0x%" PRIx64 ", source);\n",
               gpuaddr);
-      emitlvl(level + 1, "emit_shader_iova(&ctx, cs, 0x%" PRIx64 ");\n",
+      emitlvl(level + 1, "emit_shader_iova(ctx, cs, 0x%" PRIx64 ");\n",
               gpuaddr);
       emitlvl(level, "}\n");
       free(stream_data);
@@ -404,7 +404,7 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
             ibsize = dwords[3];
 
             emitlvl(level, "{\n");
-            emitlvl(level + 1, "begin_ib();\n");
+            emitlvl(level + 1, "begin_ib(ctx);\n");
 
             uint32_t *ptr = hostptr(ibaddr);
             decompile_commands(ptr, ibsize, level + 1, NULL);
@@ -420,12 +420,12 @@ decompile_commands(uint32_t *dwords, uint32_t sizedwords, int level, uint32_t *c
                   ibaddr |= ((uint64_t)dwords[i + 2]) << 32;
 
                   emitlvl(level, "{\n");
-                  emitlvl(level + 1, "begin_draw_state();\n");
+                  emitlvl(level + 1, "begin_draw_state(ctx);\n");
 
                   uint32_t *ptr = hostptr(ibaddr);
                   decompile_commands(ptr, state_count, level + 1, NULL);
 
-                  emitlvl(level + 1, "end_draw_state(%u);\n", unchanged);
+                  emitlvl(level + 1, "end_draw_state(ctx, %u);\n", unchanged);
                   emitlvl(level, "}\n");
                } else {
                   decompile_domain(val, dwords + i, 3, "CP_SET_DRAW_STATE",
@@ -562,10 +562,11 @@ emit_header()
    emit("#include \"decode/rdcompiler-utils.h\"\n"
         "int main(int argc, char **argv)\n"
         "{\n"
-        "\tstruct replay_context ctx;\n"
+        "\tstruct replay_context _ctx;\n"
+        "\tstruct replay_context *ctx = &_ctx;\n"
         "\tstruct fd_dev_id dev_id = {%u, 0x%" PRIx64 "};\n"
-        "\treplay_context_init(&ctx, &dev_id, argc, argv);\n"
-        "\tstruct cmdstream *cs = ctx.submit_cs;\n\n",
+        "\treplay_context_init(ctx, &dev_id, argc, argv);\n"
+        "\tstruct cmdstream *cs = ctx->submit_cs;\n\n",
         rddc_ctx.dev_id.gpu_id, rddc_ctx.dev_id.chip_id);
 }
 
@@ -657,7 +658,7 @@ handle_file(const char *filename, uint32_t submit_to_decompile)
       }
    }
 
-   emit("\treplay_context_finish(&ctx);\n}");
+   emit("\treplay_context_finish(ctx);\n}");
 
    io_close(io);
    fflush(rddc_ctx.out_file);

@@ -53,6 +53,7 @@
  */
 
 static int handle_file(const char *filename, uint32_t submit_to_decompile);
+static int emit_input_resources_txt(void);
 static int emit_generate_rd_resources_h(void);
 
 static const char *levels[] = {
@@ -219,6 +220,10 @@ main(int argc, char **argv)
    optind++;
 
    if (rddc_ctx.options.split_into_files) {
+      ret = emit_input_resources_txt();
+      if (ret)
+         goto err_close_out_file;
+
       ret = emit_generate_rd_resources_h();
       if (ret)
          goto err_close_out_file;
@@ -293,6 +298,66 @@ gen_name(enum name_type name_type, uint64_t key)
    }
 
    return strdup(name);
+}
+
+static int
+emit_input_resources_txt(void)
+{
+   const char *file_name = "input_resources.txt";
+   int ret;
+
+   FILE *stream = fopen_output_file(file_name);
+   if (!stream)
+      return -1;
+
+   ret = fprintf(stream, "[\n");
+   if (ret < 0) {
+      fprintf(stderr, "Failed writing to %s\n", file_name);
+      fclose(stream);
+      return -1;
+   }
+
+   set_foreach (&rddc_ctx.decompiled_shaders, entry) {
+      const uint64_t key = *(uint64_t *)entry->key;
+      char *shader_file_name = gen_name(SHADER_SRC_FILE, key);
+
+      int ret = fprintf(stream, "'%s',\n", shader_file_name);
+      if (ret < 0) {
+         fprintf(stderr, "Failed writing \"%s\"to %s\n", shader_file_name,
+                 file_name);
+         free(shader_file_name);
+         fclose(stream);
+         return -1;
+      }
+
+      free(shader_file_name);
+   }
+
+   for (unsigned id = 0; id < rddc_ctx.ib_file_count; id++) {
+      char *ib_file_name = gen_name(IB_SRC_FILE, id);
+
+      int ret = fprintf(stream, "'%s',\n", ib_file_name);
+      if (ret < 0) {
+         fprintf(stderr, "Failed writing \"%s\"to %s\n", ib_file_name,
+                 file_name);
+         free(ib_file_name);
+         fclose(stream);
+         return -1;
+      }
+
+      free(ib_file_name);
+   }
+
+   ret = fprintf(stream, "],");
+   if (ret < 0) {
+      fprintf(stderr, "Failed writing to %s\n", file_name);
+      fclose(stream);
+      return -1;
+   }
+
+   fclose(stream);
+
+   return 0;
 }
 
 static int

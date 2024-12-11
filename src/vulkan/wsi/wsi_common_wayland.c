@@ -144,7 +144,7 @@ struct wsi_wayland {
 
 struct wsi_wl_image {
    struct wsi_image base;
-   struct wl_buffer *buffer;
+   struct loader_wayland_buffer wayland_buffer;
    bool busy;
    int shm_fd;
    void *shm_ptr;
@@ -2489,7 +2489,8 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
    }
 
    assert(image_index < chain->base.image_count);
-   wl_surface_attach(wsi_wl_surface->surface, chain->images[image_index].buffer, 0, 0);
+   wl_surface_attach(wsi_wl_surface->surface,
+                     chain->images[image_index].wayland_buffer.buffer, 0, 0);
 
    if (wl_surface_get_version(wsi_wl_surface->surface) >= 4 && damage &&
        damage->pRectangles && damage->rectangleCount > 0) {
@@ -2513,8 +2514,7 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
       id->present_id = present_id;
       id->alloc = chain->wsi_wl_surface->display->wsi_wl->alloc;
       id->flow_id = flow_id;
-      id->buffer_id =
-         wl_proxy_get_id((struct wl_proxy *)chain->images[image_index].buffer);
+      id->buffer_id = chain->images[image_index].wayland_buffer.id;
 
       id->submission_time = os_time_get_nano();
 
@@ -2654,7 +2654,7 @@ buffer_handle_release(void *data, struct wl_buffer *buffer)
 {
    struct wsi_wl_image *image = data;
 
-   assert(image->buffer == buffer);
+   assert(image->wayland_buffer.buffer == buffer);
 
    image->busy = false;
 }
@@ -2714,10 +2714,12 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
                                                     image->shm_fd,
                                                     image->shm_size);
       wl_proxy_set_queue((struct wl_proxy *)pool, display->queue);
-      image->buffer = wl_shm_pool_create_buffer(pool, 0, chain->extent.width,
-                                                chain->extent.height,
-                                                image->base.row_pitches[0],
-                                                chain->shm_format);
+      struct wl_buffer *buffer =
+         wl_shm_pool_create_buffer(pool, 0, chain->extent.width,
+                                   chain->extent.height,
+                                   image->base.row_pitches[0],
+                                   chain->shm_format);
+      loader_wayland_wrap_buffer(&image->wayland_buffer, buffer);
       wl_shm_pool_destroy(pool);
       break;
    }
@@ -2740,13 +2742,14 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
                                         image->base.drm_modifier & 0xffffffff);
       }
 
-      image->buffer =
+      struct wl_buffer *buffer =
          zwp_linux_buffer_params_v1_create_immed(params,
                                                  chain->extent.width,
                                                  chain->extent.height,
                                                  chain->drm_format,
                                                  0);
       zwp_linux_buffer_params_v1_destroy(params);
+      loader_wayland_wrap_buffer(&image->wayland_buffer, buffer);
 
       if (chain->base.image_info.explicit_sync) {
          for (uint32_t i = 0; i < WSI_ES_COUNT; i++) {
@@ -2765,12 +2768,12 @@ wsi_wl_image_init(struct wsi_wl_swapchain *chain,
       unreachable("Invalid buffer type");
    }
 
-   if (!image->buffer)
+   if (!image->wayland_buffer.buffer)
       goto fail_image;
 
    /* No need to listen for release if we are explicit sync. */
    if (!chain->base.image_info.explicit_sync)
-      wl_buffer_add_listener(image->buffer, &buffer_listener, image);
+      wl_buffer_add_listener(image->wayland_buffer.buffer, &buffer_listener, image);
 
    return VK_SUCCESS;
 
@@ -2792,8 +2795,8 @@ wsi_wl_swapchain_images_free(struct wsi_wl_swapchain *chain)
          if (chain->images[i].wl_syncobj_timeline[j])
             wp_linux_drm_syncobj_timeline_v1_destroy(chain->images[i].wl_syncobj_timeline[j]);
       }
-      if (chain->images[i].buffer) {
-         wl_buffer_destroy(chain->images[i].buffer);
+      if (chain->images[i].wayland_buffer.buffer) {
+         loader_wayland_buffer_destroy(&chain->images[i].wayland_buffer);
          wsi_destroy_image(&chain->base, &chain->images[i].base);
          if (chain->images[i].shm_size) {
             close(chain->images[i].shm_fd);

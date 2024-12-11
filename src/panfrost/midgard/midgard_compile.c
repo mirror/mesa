@@ -366,6 +366,22 @@ lower_vec816_alu(const nir_instr *instr, const void *cb_data)
 }
 
 void
+midgard_link_cl_library(nir_shader *nir, const nir_shader *library)
+{
+   nir_link_shader_functions(nir, library);
+   NIR_PASS(_, nir, nir_inline_functions);
+   nir_remove_non_entrypoints(nir);
+   NIR_PASS(_, nir, nir_opt_deref);
+   NIR_PASS(_, nir, nir_lower_vars_to_ssa);
+   NIR_PASS(_, nir, nir_remove_dead_derefs);
+   NIR_PASS(_, nir, nir_remove_dead_variables,
+            nir_var_function_temp | nir_var_shader_temp, NULL);
+   NIR_PASS(_, nir, nir_lower_vars_to_explicit_types,
+            nir_var_shader_temp | nir_var_function_temp,
+            glsl_get_cl_type_size_align);
+}
+
+void
 midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 {
    unsigned quirks = midgard_get_quirks(gpu_id);

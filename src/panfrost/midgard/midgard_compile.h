@@ -29,6 +29,7 @@
 #include "panfrost/util/pan_ir.h"
 #include "util/u_dynarray.h"
 
+void midgard_link_cl_library(nir_shader *nir, const nir_shader *library);
 void midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id);
 
 void midgard_compile_shader_nir(nir_shader *nir,

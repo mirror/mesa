@@ -105,10 +105,10 @@ isl_genX(emit_cpb_control_s)(const struct isl_device *dev, void *batch,
       cpb.SurfaceBaseAddress     = info->address;
 
       cpb.MipTailStartLOD        = info->surf->miptail_start_level;
-      /* TODO:
+      /* TODO (Pre-Xe2):
        *
        * cpb.CPCBCompressionEnable is this CCS compression? Currently disabled
-       * in isl_surf_supports_ccs() for CPB buffers.
+       * in _isl_surf_info_supports_ccs() for CPB buffers.
        */
 #if GFX_VER >= 20
       cpb.CompressionFormat  =

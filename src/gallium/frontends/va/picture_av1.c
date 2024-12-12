@@ -136,6 +136,12 @@ void vlVaHandlePictureParameterBufferAV1(vlVaDriver *drv, vlVaContext *context, 
    context->desc.av1.picture_parameter.order_hint_bits_minus_1 = av1->order_hint_bits_minus_1;
    context->desc.av1.picture_parameter.max_width = av1->frame_width_minus1 + 1;
    context->desc.av1.picture_parameter.max_height = av1->frame_height_minus1 + 1;
+#if VA_CHECK_VERSION(1, 22, 0)
+   if (av1->max_frame_width_minus_1) {
+      context->desc.av1.picture_parameter.max_width = av1->max_frame_width_minus_1 + 1;
+      context->desc.av1.picture_parameter.max_height = av1->max_frame_height_minus_1 + 1;
+   }
+#endif
    context->desc.av1.picture_parameter.seq_info_fields.enable_interintra_compound =
       av1->seq_info_fields.fields.enable_interintra_compound;
    context->desc.av1.picture_parameter.seq_info_fields.enable_masked_compound =

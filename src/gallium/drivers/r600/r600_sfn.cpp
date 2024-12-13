@@ -37,6 +37,49 @@ public:
    ~MallocPoolRelease() { r600::release_pool(); }
 };
 
+static void
+r600_nir_emit_polygon_stipple_ubo(nir_shader *nir,
+				  const unsigned ubo_index,
+				  const unsigned stride,
+				  const unsigned offset_base,
+				  const bool use_ubfe)
+{
+	nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+	nir_builder builder = nir_builder_at(nir_before_impl(impl));
+	nir_builder *b = &builder;
+	nir_def *zero = nir_imm_int(b, 0);
+
+	assert(nir->info.stage == MESA_SHADER_FRAGMENT);
+	assert(stride >= sizeof(unsigned) && util_is_power_of_two_nonzero(stride));
+
+	nir_variable *pos_var = nir_variable_create(nir, nir_var_shader_in,
+						    glsl_vec4_type(), "gl_FragCoord");
+	pos_var->data.location = VARYING_SLOT_POS;
+	pos_var->data.interpolation = INTERP_MODE_NONE;
+
+	nir_def *pos = nir_load_var(b, pos_var);
+	nir_def *pos_x = nir_f2u32(b, nir_channel(b, pos, 0));
+	nir_def *pos_y = nir_f2u32(b, nir_channel(b, pos, 1));
+	nir_def *thirtyone = nir_imm_int(b, 31);
+	nir_def *mod_y = nir_iand(b, pos_y, thirtyone);
+
+	const unsigned polygon_stipple_offset = stride * offset_base;
+	nir_def *offset = nir_ishl_imm(b, mod_y, util_logbase2(stride));
+	nir_def *row = nir_load_ubo(b, 1, 32,
+				    nir_imm_int(b, ubo_index),
+				    nir_iadd_imm(b, offset, polygon_stipple_offset),
+				    .align_mul = stride,
+				    .align_offset = 0,
+				    .range_base = polygon_stipple_offset,
+				    .range = R600_POLYGON_STIPPLE_SIZE * stride);
+
+	nir_def *bit = use_ubfe ?
+		nir_ubfe(b, row, pos_x, nir_imm_int(b, 1)) :
+		nir_iand(b, nir_ushr(b, row, pos_x), nir_imm_int(b, 1));
+
+	nir_discard_if(b, nir_ieq(b, bit, zero));
+}
+
 int
 r600_shader_from_nir(struct r600_context *rctx,
                      struct r600_pipe_shader *pipeshader,
@@ -44,6 +87,7 @@ r600_shader_from_nir(struct r600_context *rctx,
 {
 
    MallocPoolRelease pool_release;
+   bool force_fragcoord_input = false;
 
    struct r600_pipe_shader_selector *sel = pipeshader->selector;
 
@@ -54,6 +98,20 @@ r600_shader_from_nir(struct r600_context *rctx,
    }
 
    auto sh = nir_shader_clone(sel->nir, sel->nir);
+
+   if (unlikely(sel->nir->info.stage == MESA_SHADER_FRAGMENT &&
+		key->ps.poly_stipple)) {
+	   if (rctx->b.gfx_level >= EVERGREEN) {
+		   NIR_PASS_V(sh, r600_nir_emit_polygon_stipple_ubo,
+			      R600_POLY_STIPPLE_INFO_CONST_BUFFER,
+			      sizeof(unsigned), 0, true);
+		   force_fragcoord_input = true;
+	   } else {
+		   NIR_PASS_V(sh, r600_nir_emit_polygon_stipple_ubo,
+			      R600_POLY_STIPPLE_INFO_CONST_BUFFER,
+			      sizeof(unsigned), 0, false);
+	   }
+   }
 
    r600_lower_and_optimize_nir(sh, key, rctx->b.gfx_level, &sel->so);
 
@@ -142,9 +200,32 @@ r600_shader_from_nir(struct r600_context *rctx,
             sh->info.vs.window_space_position;
    }
 
-   if (sh->info.stage == MESA_SHADER_FRAGMENT)
+   if (sh->info.stage == MESA_SHADER_FRAGMENT) {
       pipeshader->shader.ps_conservative_z =
             sh->info.fs.depth_layout;
+
+      if (unlikely(force_fragcoord_input)) {
+	      unsigned k;
+
+	      for (k = 0; k < pipeshader->shader.ninput; ++k) {
+		      if(pipeshader->shader.input[k].system_value == SYSTEM_VALUE_MAX &&
+			 pipeshader->shader.input[k].varying_slot == VARYING_SLOT_TEX0 &&
+			 pipeshader->shader.input[k].spi_sid == VARYING_SLOT_TEX0 + 1 &&
+			 pipeshader->shader.input[k].interpolate == TGSI_INTERPOLATE_PERSPECTIVE)
+			      break;
+
+		      assert(pipeshader->shader.input[k].spi_sid != VARYING_SLOT_TEX0 + 1);
+	      }
+
+	      if (pipeshader->shader.ninput == k) {
+		      pipeshader->shader.input[k].system_value = SYSTEM_VALUE_MAX;
+		      pipeshader->shader.input[k].varying_slot = VARYING_SLOT_TEX0;
+		      pipeshader->shader.input[k].spi_sid = VARYING_SLOT_TEX0 + 1;
+		      pipeshader->shader.input[k].interpolate = TGSI_INTERPOLATE_PERSPECTIVE;
+		      pipeshader->shader.ninput++;
+	      }
+      }
+   }
 
    if (sh->info.stage == MESA_SHADER_GEOMETRY) {
       r600::sfn_log << r600::SfnLog::shader_info

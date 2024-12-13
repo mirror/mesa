@@ -472,6 +472,7 @@ static void *r600_create_rs_state(struct pipe_context *ctx,
 	rs->pa_sc_line_stipple = state->line_stipple_enable ?
 				S_028A0C_LINE_PATTERN(state->line_stipple_pattern) |
 				S_028A0C_REPEAT_COUNT(state->line_stipple_factor) : 0;
+	rs->poly_stipple_enable = state->poly_stipple_enable;
 	rs->pa_cl_clip_cntl =
 		S_028810_DX_CLIP_SPACE_DEF(state->clip_halfz) |
 		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip_near) |
@@ -792,9 +793,25 @@ static void r600_emit_clip_state(struct r600_context *rctx, struct r600_atom *at
 	radeon_emit_array(cs, (unsigned*)state, 6*4);
 }
 
-static void r600_set_polygon_stipple(struct pipe_context *ctx,
-					 const struct pipe_poly_stipple *state)
+void r600_set_polygon_stipple(struct pipe_context *ctx,
+			      const struct pipe_poly_stipple *state)
 {
+	struct r600_context *rctx = (struct r600_context *)ctx;
+	unsigned array[R600_POLYGON_STIPPLE_SIZE];
+	struct pipe_constant_buffer cb = {
+		.buffer_offset = 0,
+		.buffer_size = sizeof(array),
+		.user_buffer = &array,
+	};
+
+	for (unsigned k = 0; k < R600_POLYGON_STIPPLE_SIZE; k++)
+		array[k] = util_bitreverse(state->stipple[k]);
+
+	rctx->b.b.set_constant_buffer(&rctx->b.b,
+				      PIPE_SHADER_FRAGMENT,
+				      R600_POLY_STIPPLE_INFO_CONST_BUFFER,
+				      false,
+				      &cb);
 }
 
 static void r600_init_color_surface(struct r600_context *rctx,

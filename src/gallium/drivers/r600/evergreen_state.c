@@ -499,6 +499,7 @@ static void *evergreen_create_rs_state(struct pipe_context *ctx,
 	rs->pa_sc_line_stipple = state->line_stipple_enable ?
 				S_028A0C_LINE_PATTERN(state->line_stipple_pattern) |
 				S_028A0C_REPEAT_COUNT(state->line_stipple_factor) : 0;
+	rs->poly_stipple_enable = state->poly_stipple_enable;
 	rs->pa_cl_clip_cntl =
 		S_028810_DX_CLIP_SPACE_DEF(state->clip_halfz) |
 		S_028810_ZCLIP_NEAR_DISABLE(!state->depth_clip_near) |
@@ -1017,11 +1018,6 @@ static void evergreen_emit_clip_state(struct r600_context *rctx, struct r600_ato
 
 	radeon_set_context_reg_seq(cs, R_0285BC_PA_CL_UCP0_X, 6*4);
 	radeon_emit_array(cs, (unsigned*)state, 6*4);
-}
-
-static void evergreen_set_polygon_stipple(struct pipe_context *ctx,
-					 const struct pipe_poly_stipple *state)
-{
 }
 
 static void evergreen_get_scissor_rect(struct r600_context *rctx,
@@ -4566,7 +4562,7 @@ void evergreen_init_state_functions(struct r600_context *rctx)
 	rctx->b.b.create_sampler_state = evergreen_create_sampler_state;
 	rctx->b.b.create_sampler_view = evergreen_create_sampler_view;
 	rctx->b.b.set_framebuffer_state = evergreen_set_framebuffer_state;
-	rctx->b.b.set_polygon_stipple = evergreen_set_polygon_stipple;
+	rctx->b.b.set_polygon_stipple = r600_set_polygon_stipple;
 	rctx->b.b.set_min_samples = evergreen_set_min_samples;
 	rctx->b.b.set_tess_state = evergreen_set_tess_state;
 	rctx->b.b.set_patch_vertices = evergreen_set_patch_vertices;

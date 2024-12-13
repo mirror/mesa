@@ -468,6 +468,12 @@ typedef struct {
    };
 } vlVaQualityBits;
 
+#ifndef VA_DRIVER_INIT_FUNC
+#define VA_DRIVER_INIT_FUNC__(major, minor) __vaDriverInit_##major##_##minor
+#define VA_DRIVER_INIT_FUNC_(major, minor) VA_DRIVER_INIT_FUNC__(major, minor)
+#define VA_DRIVER_INIT_FUNC VA_DRIVER_INIT_FUNC_(VA_MAJOR_VERSION, VA_MINOR_VERSION)
+#endif
+
 // Public functions:
 VAStatus VA_DRIVER_INIT_FUNC(VADriverContextP ctx);
 

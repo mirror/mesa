@@ -1,7 +1,15 @@
 # Copyright © 2017-2019 Intel Corporation
 # SPDX-License-Identifier: MIT
 
-libva_version = dep_va.version().split('.')
+libva_st_c_args = []
+
+if host_machine.system() == 'windows'
+  libva_version = dep_va.version().split('.')
+  libva_st_c_args +=
+    '-DVA_DRIVER_INIT_FUNC=__vaDriverInit_@0@_@1@'.format(
+      libva_version[0], libva_version[1]
+    )
+endif
 
 libva_st = static_library(
   'va_st',
@@ -12,11 +20,7 @@ libva_st = static_library(
     'subpicture.c', 'surface.c', 'picture_h264_enc.c', 'picture_hevc_enc.c',
     'picture_av1_enc.c',
   ),
-  c_args : [
-    '-DVA_DRIVER_INIT_FUNC=__vaDriverInit_@0@_@1@'.format(
-      libva_version[0], libva_version[1]
-    ),
-  ],
+  c_args : libva_st_c_args,
   gnu_symbol_visibility : 'hidden',
   include_directories : [inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux],
   dependencies : [

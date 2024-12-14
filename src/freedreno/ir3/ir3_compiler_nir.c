@@ -3218,6 +3218,25 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       break;
    }
 
+   case nir_intrinsic_read_invocation: {
+      struct ir3_instruction *const *srcs = ir3_get_src(ctx, &intr->src[0]);
+      nir_src *nir_invocation = &intr->src[1];
+      struct ir3_instruction *invocation = ir3_get_src(ctx, nir_invocation)[0];
+
+      if (!nir_src_is_const(*nir_invocation)) {
+         invocation = ir3_get_addr0(ctx, invocation, 1);
+      }
+
+      for (unsigned i = 0; i < intr->def.num_components; i++) {
+         dst[i] = ir3_MOVS(b, srcs[i], invocation,
+                           type_uint_size(intr->def.bit_size));
+         dst[i] = apply_mov_half_shared_quirk(ctx, srcs[i], dst[i]);
+      }
+
+      create_rpt = true;
+      break;
+   }
+
    case nir_intrinsic_read_first_invocation: {
       struct ir3_instruction *src = ir3_get_src(ctx, &intr->src[0])[0];
       dst[0] = ir3_READ_FIRST_MACRO(b, src, 0);

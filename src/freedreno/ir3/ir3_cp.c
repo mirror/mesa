@@ -561,6 +561,20 @@ instr_cp(struct ir3_cp_ctx *ctx, struct ir3_instruction *instr)
       ctx->progress = true;
    }
 
+   /* If a shared src gets folded into a movs, it will behave the same as a mov.
+    * Make it a mov to allow further optimizations.
+    *
+    * TODO: maybe this should actually be done at the NIR level: whenever the
+    * source of read_invocation is convergent, it becomes a no-op and can be
+    * removed.
+    */
+   if (instr->opc == OPC_MOVS && (instr->srcs[0]->flags & IR3_REG_SHARED)) {
+      instr->opc = OPC_MOV;
+
+      /* Remove invocation. */
+      instr->srcs_count--;
+   }
+
    /* Handle converting a sam.s2en (taking samp/tex idx params via register)
     * into a normal sam (encoding immediate samp/tex idx) if they are
     * immediate. This saves some instructions and regs in the common case

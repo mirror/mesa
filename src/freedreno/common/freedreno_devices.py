@@ -435,6 +435,7 @@ a6xx_gen4 = A6XXProps(
         prede_nop_quirk = True,
         predtf_nop_quirk = True,
         has_sad = True,
+        mov_half_shared_quirk = True,
     )
 
 add_gpus([

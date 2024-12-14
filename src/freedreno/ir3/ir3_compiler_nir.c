@@ -2645,6 +2645,10 @@ apply_mov_half_shared_quirk(struct ir3_context *ctx,
                             struct ir3_instruction *src,
                             struct ir3_instruction *dst)
 {
+   if (!ctx->compiler->mov_half_shared_quirk) {
+      return dst;
+   }
+
    /* Work around a bug with half-register shared -> non-shared moves by
     * adding an extra mov here so that the original destination stays full.
     */

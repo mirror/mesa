@@ -1058,8 +1058,7 @@ void
 disk_cache_touch_cache_user_marker(char *path)
 {
    char *marker_path = NULL;
-   UNUSED int _unused = asprintf(&marker_path, "%s/marker", path);
-   if (!marker_path)
+   if (asprintf(&marker_path, "%s/marker", path) == -1)
       return;
 
    time_t now = time(NULL);
@@ -1206,8 +1205,7 @@ delete_dir(const char* path)
       if (strcmp(p->d_name, ".") == 0 || strcmp(p->d_name, "..") == 0)
          continue;
 
-      UNUSED int _unused = asprintf(&entry_path, "%s/%s", path, p->d_name);
-      if (!entry_path)
+      if (asprintf(&entry_path, "%s/%s", path, p->d_name) == -1)
          continue;
 
       struct stat st;

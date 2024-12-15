@@ -393,6 +393,34 @@ vma_alloc(struct iris_bufmgr *bufmgr,
    return intel_canonical_address(addr);
 }
 
+bool
+iris_bufmgr_alloc_heap(struct iris_bufmgr *bufmgr, uint64_t start, uint64_t size)
+{
+   simple_mtx_lock(&bufmgr->lock);
+   bool res = util_vma_heap_alloc_addr(&bufmgr->vma_allocator[IRIS_MEMZONE_OTHER], start, size);
+   simple_mtx_unlock(&bufmgr->lock);
+   return res;
+}
+
+void
+iris_bufmgr_free_heap(struct iris_bufmgr *bufmgr, uint64_t start, uint64_t size)
+{
+   simple_mtx_lock(&bufmgr->lock);
+   util_vma_heap_free(&bufmgr->vma_allocator[IRIS_MEMZONE_OTHER], start, size);
+   simple_mtx_unlock(&bufmgr->lock);
+}
+
+bool
+iris_bufmgr_assign_vma(struct iris_bufmgr *bufmgr, struct iris_bo *bo, uint64_t address)
+{
+   bo->address = intel_canonical_address(address);
+
+   if (address)
+      return bufmgr->kmd_backend->gem_vm_bind(bo);
+   else
+      return bufmgr->kmd_backend->gem_vm_unbind(bo);
+}
+
 static void
 vma_free(struct iris_bufmgr *bufmgr,
          uint64_t address,
@@ -1257,7 +1285,13 @@ iris_bo_alloc(struct iris_bufmgr *bufmgr,
          return NULL;
    }
 
-   if (bo->address == 0ull) {
+   if (flags & BO_ALLOC_NO_VMA) {
+       if (bo->address) {
+         simple_mtx_lock(&bufmgr->lock);
+         vma_free(bufmgr, bo->address, bo->size);
+         simple_mtx_unlock(&bufmgr->lock);
+       }
+   } else if (bo->address == 0ull) {
       simple_mtx_lock(&bufmgr->lock);
       bo->address = vma_alloc(bufmgr, memzone, bo->size, alignment);
       simple_mtx_unlock(&bufmgr->lock);
@@ -1316,7 +1350,7 @@ iris_bo_close(int fd, uint32_t gem_handle)
 
 struct iris_bo *
 iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
-                       void *ptr, size_t size,
+                       void *ptr, size_t size, unsigned flags,
                        enum iris_memory_zone memzone)
 {
    struct iris_bo *bo;
@@ -1339,9 +1373,11 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.capture = true;
 
-   simple_mtx_lock(&bufmgr->lock);
-   bo->address = vma_alloc(bufmgr, memzone, size, 1);
-   simple_mtx_unlock(&bufmgr->lock);
+   if (!(flags & BO_ALLOC_NO_VMA)) {
+      simple_mtx_lock(&bufmgr->lock);
+      bo->address = vma_alloc(bufmgr, memzone, size, 1);
+      simple_mtx_unlock(&bufmgr->lock);
+   }
 
    if (bo->address == 0ull)
       goto err_close;
@@ -1359,9 +1395,11 @@ iris_bo_create_userptr(struct iris_bufmgr *bufmgr, const char *name,
    return bo;
 
 err_vma_free:
-   simple_mtx_lock(&bufmgr->lock);
-   vma_free(bufmgr, bo->address, bo->size);
-   simple_mtx_unlock(&bufmgr->lock);
+   if (bo->address) {
+      simple_mtx_lock(&bufmgr->lock);
+      vma_free(bufmgr, bo->address, bo->size);
+      simple_mtx_unlock(&bufmgr->lock);
+   }
 err_close:
    bufmgr->kmd_backend->gem_close(bufmgr, bo);
 err_free:

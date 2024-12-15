@@ -160,6 +160,12 @@ nvk_get_image_format_features(struct nvk_physical_device *pdev,
    if (cosited_chroma)
       features |= VK_FORMAT_FEATURE_COSITED_CHROMA_SAMPLES_BIT;
 
+   /* At least advertise support for NV12. This is incomplete. */
+   if (vk_format == VK_FORMAT_G8_B8R8_2PLANE_420_UNORM) {
+         features |= VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR;
+         features |= VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR;
+       }
+
    return features;
 }
 

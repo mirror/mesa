@@ -1289,6 +1289,15 @@ struct pipe_memory_object
    bool dedicated;
 };
 
+/**
+ * Structure that contains information about a vm allocation
+ */
+struct pipe_vm_allocation
+{
+   uint64_t start;
+   uint64_t size;
+};
+
 #ifdef __cplusplus
 }
 #endif

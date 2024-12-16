@@ -5109,6 +5109,8 @@ tu_choose_gmem_layout(struct tu_cmd_buffer *cmd)
          cmd->state.gmem_layout = TU_GMEM_LAYOUT_AVOID_CCU;
       if (att->will_be_resolved && !blit_can_resolve(att->format))
          cmd->state.gmem_layout = TU_GMEM_LAYOUT_AVOID_CCU;
+      if (att->is_downsampling_resolve_dst && vk_format_is_srgb(att->format))
+         cmd->state.gmem_layout = TU_GMEM_LAYOUT_AVOID_CCU;
    }
 
    for (unsigned i = 0; i < cmd->state.pass->subpass_count; i++) {
@@ -5210,10 +5212,14 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
       src->format == VK_FORMAT_D24_UNORM_S8_UINT &&
       dst->format == VK_FORMAT_S8_UINT;
 
+   /* Fast path doesn't support sRGB downsampling resolves. */
+   bool resolve_downsampling_srgb =
+      dst->is_downsampling_resolve_dst && vk_format_is_srgb(dst->format);
+
    bool store_common = dst->store && !resolve_d32s8_s8;
    bool store_separate_stencil = dst->store_stencil || resolve_d32s8_s8;
 
-   bool use_fast_path = !unaligned && !mismatched_swap && !resolve_d24s8_s8 &&
+   bool use_fast_path = !unaligned && !mismatched_swap && !resolve_d24s8_s8 && !resolve_downsampling_srgb &&
                         (a == gmem_a || blit_can_resolve(dst->format));
 
    trace_start_gmem_store(&cmd->trace, cs, dst->format, use_fast_path, unaligned);

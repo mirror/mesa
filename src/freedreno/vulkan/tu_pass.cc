@@ -801,6 +801,7 @@ tu_subpass_resolve_attachment(struct tu_render_pass *pass, int i, uint32_t dst_a
       struct tu_render_pass_attachment *src_att = &pass->attachments[src_a];
       struct tu_render_pass_attachment *dst_att = &pass->attachments[dst_a];
       src_att->will_be_resolved = true;
+      dst_att->is_downsampling_resolve_dst = src_att->samples > dst_att->samples;
 
       src_att->first_subpass_idx = MIN2(i, src_att->first_subpass_idx);
       src_att->last_subpass_idx = MAX2(i, src_att->last_subpass_idx);
@@ -1158,6 +1159,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
             VK_ATTACHMENT_STORE_OP_DONT_CARE);
          subpass->resolve_attachments[i].attachment = a++;
          att->will_be_resolved = true;
+         resolve_att->is_downsampling_resolve_dst = att->samples > resolve_att->samples;
       } else {
          subpass->resolve_attachments[i].attachment = VK_ATTACHMENT_UNUSED;
          att->will_be_resolved = false;
@@ -1213,6 +1215,7 @@ tu_setup_dynamic_render_pass(struct tu_cmd_buffer *cmd_buffer,
                                VK_ATTACHMENT_STORE_OP_STORE);
             subpass->resolve_attachments[i].attachment = a++;
             att->will_be_resolved = true;
+            resolve_att->is_downsampling_resolve_dst = att->samples > resolve_att->samples;
             subpass->resolve_depth_stencil = true;
          } else {
             att->will_be_resolved = false;

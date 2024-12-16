@@ -218,35 +218,26 @@ name, so the name of that library will need to match the tag used in the build.
 
 .. code-block:: sh
 
-   mkdir prebuilts/mesa
-   mkdir prebuilts/mesa/x86_64
-   mkdir prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_64}/lib/libEGL.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libglapi.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libgallium-24.3.0-devel.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libGLESv1_CM.so  prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libGLESv2.so  prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_64}/lib/libvulkan_lvp.so prebuilts/mesa/x86_64/
-   cp ${INSTALL_PREFIX_32}/lib/libEGL.so prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libglapi.so prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libgallium-24.3.0-devel.so prebuilts/mesa/x86/
-   cp ${INSTALL_PREFIX_32}/lib/libGLESv1_CM.so  prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libGLESv2.so  prebuilts/mesa/x86
-   cp ${INSTALL_PREFIX_32}/lib/libvulkan_lvp.so prebuilts/mesa/x86
+   mkdir -p prebuilts/mesa/{x86,x86_64}
 
-   patchelf --set-soname libEGL_lp.so prebuilts/mesa/x86_64/libEGL.so
-   patchelf --set-soname libGLESv1_CM_lp.so prebuilts/mesa/x86_64/libGLESv1_CM.so
-   patchelf --set-soname libGLESv2_lp.so prebuilts/mesa/x86_64/libGLESv2.so
-   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/x86_64/libvulkan_lvp.so
-   patchelf --set-soname libEGL_lp.so prebuilts/mesa/x86/libEGL.so
-   patchelf --set-soname libGLESv1_CM_lp.so prebuilts/mesa/x86/libGLESv1_CM.so
-   patchelf --set-soname libGLESv2_lp.so prebuilts/mesa/x86/libGLESv2.so
-   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/x86/libvulkan_lvp.so
+   for libname in gallium-24.3.0-devel glapi EGL GLESv1_CM GLESv2 vulkan_lvp; do
+      cp ${INSTALL_PREFIX_32}/lib/lib${libname}.so prebuilts/mesa/x86/
+      cp ${INSTALL_PREFIX_64}/lib/lib${libname}.so prebuilts/mesa/x86_64/
+   done
+
+   for libname in EGL GLESv1_CM GLESv2; do
+      patchelf --set-soname lib${libname}_lp.so prebuilts/mesa/{x86,x86_64}/lib${libname}.so
+   done
+
+   patchelf --set-soname vulkan.lvp.so prebuilts/mesa/{x86,x86_64}/libvulkan_lvp.so
 
 We then need to create an ``prebuilts/mesa/Android.bp`` build file to include
 the libraries in the build.
 
 .. code-block::
+
+   soong_namespace {
+   }
 
    cc_prebuilt_library_shared {
        name: "libglapi",
@@ -330,7 +321,7 @@ the libraries in the build.
                srcs: ["x86_64/libGLESv2.so"],
            },
            x86: {
-               srcs: ["x86_64/libGLESv2.so"],
+               srcs: ["x86/libGLESv2.so"],
            },
        },
        strip: {
@@ -374,16 +365,15 @@ create the file
                        libGLESv1_CM_lp \
                        libGLESv2_lp \
                        libEGL_lp \
-                       libgallium-24.3.0-devel.so \
+                       libgallium-24.3.0-devel \
                        vulkan.lvp
    PRODUCT_VENDOR_PROPERTIES += \
            ro.hardware.egl=lp \
            ro.hardware.vulkan=lvp \
            mesa.libgl.always.software=true \
            mesa.android.no.kms.swrast=true \
-           debug.hwui.renderer=opengl \
+           debug.hwui.renderer=skiagl \
            ro.gfx.angle.supported=false \
-           debug.sf.disable_hwc_vds=1 \
            ro.vendor.hwcomposer.mode=client
 
 Also the file ``device/google/cuttlefish/shared/mesa/BoardConfig.mk``
@@ -395,7 +385,7 @@ Also the file ``device/google/cuttlefish/shared/mesa/BoardConfig.mk``
 
 Next the file ``device/google/cuttlefish/shared/mesa/sepolicy/file_contexts``
 
-.. code-block:: sh
+.. code-block::
 
    /vendor/lib(64)?/egl/libEGL_lp\.so u:object_r:same_process_hal_file:s0
    /vendor/lib(64)?/egl/libGLESv1_CM_lp\.so u:object_r:same_process_hal_file:s0
@@ -410,7 +400,7 @@ to include these build files. First we modify
 to add the below code in the spot where other device_vendor
 files are included.
 
-.. code-block:: sh
+.. code-block:: makefile
 
    $(call inherit-product, device/google/cuttlefish/shared/mesa/device_vendor.mk)
 
@@ -418,9 +408,9 @@ Lastly we modify
 ``device/google/cuttlefish/vsoc_x86_64/BoardConfig.mk`` to include
 the following line where the other BoardConfig files are included
 
-.. code-block:: sh
+.. code-block:: makefile
 
-   -include device/google/cuttlefish/shared/mesa/BoardConfig.mk
+   include device/google/cuttlefish/shared/mesa/BoardConfig.mk
 
 Then we are set to continue following the official instructions to
 build the cuttlefish target and run it in the cuttlefish emulator.

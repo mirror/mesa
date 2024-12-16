@@ -131,11 +131,15 @@ endif
 
 #-------------------------------------------------------------------------------
 
+MESA3D_LIBS :=
+
 # $1: name
 # $2: subdir
 # $3: source prebuilt
 # $4: export headers
 define mesa3d-lib
+MESA3D_LIBS += $1
+
 include $(CLEAR_VARS)
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_MODULE := $1
@@ -189,6 +193,12 @@ ifneq ($(filter true, $(BOARD_MESA3D_BUILD_LIBGBM)),)
 $(eval $(call mesa3d-lib,$(MESA_LIBGBM_NAME),,MESA3D_LIBGBM_BIN,$(MESA3D_TOP)/src/gbm/main))
 $(eval $(call mesa3d-lib,dri_gbm,,MESA3D_DRI_GBM_BIN))
 endif
+
+include $(CLEAR_VARS)
+LOCAL_MODULE := mesa3d
+LOCAL_MODULE_TAGS := optional
+LOCAL_REQUIRED_MODULES := $(MESA3D_LIBS)
+include $(BUILD_PHONY_PACKAGE)
 
 #-------------------------------------------------------------------------------
 

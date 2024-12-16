@@ -163,9 +163,10 @@ os_log_message(const char *message)
 static char *
 os_get_android_option(const char *name)
 {
+#define LOCAL_PROPERTY_KEY_MAX 50
    static thread_local char os_android_option_value[PROPERTY_VALUE_MAX];
-   char key[PROPERTY_KEY_MAX];
-   char *p = key, *end = key + PROPERTY_KEY_MAX;
+   char key[LOCAL_PROPERTY_KEY_MAX];
+   char *p = key, *end = key + LOCAL_PROPERTY_KEY_MAX;
    /* add "mesa." prefix if necessary: */
    if (strstr(name, "MESA_") != name)
       p += strlcpy(p, "mesa.", end - p);
@@ -180,11 +181,11 @@ os_get_android_option(const char *name)
 
    /* prefixes to search sorted by preference */
    const char *prefices[] = { "debug.", "vendor.", "" };
-   char full_key[PROPERTY_KEY_MAX];
+   char full_key[LOCAL_PROPERTY_KEY_MAX];
    int len = 0;
    for (int i = 0; i < ARRAY_SIZE(prefices); i++) {
-      strlcpy(full_key, prefices[i], PROPERTY_KEY_MAX);
-      strlcat(full_key, key, PROPERTY_KEY_MAX);
+      strlcpy(full_key, prefices[i], LOCAL_PROPERTY_KEY_MAX);
+      strlcat(full_key, key, LOCAL_PROPERTY_KEY_MAX);
       len = property_get(full_key, os_android_option_value, NULL);
       if (len > 0)
          return os_android_option_value;

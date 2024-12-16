@@ -6,7 +6,6 @@ libpanfrost_util_files = files(
   'pan_collect_varyings.c',
   'pan_ir.c',
   'pan_ir.h',
-  'pan_liveness.c',
   'pan_lower_framebuffer.c',
   'pan_lower_helper_invocation.c',
   'pan_lower_image_ms.c',

@@ -904,6 +904,25 @@ set_scissor(struct fd_ringbuffer *ring, uint32_t x1, uint32_t y1, uint32_t x2,
            A6XX_GRAS_2D_RESOLVE_CNTL_2(.x = x2, .y = y2));
 }
 
+template <chip CHIP>
+static void
+set_tessfactor_bo(struct fd_ringbuffer *ring, struct fd_batch *batch)
+{
+   /* This happens after all drawing has been emitted to the draw CS, so we know
+    * whether we need the tess BO pointers.
+    */
+   if (!batch->tessellation)
+      return;
+
+   struct fd_screen *screen = batch->ctx->screen;
+
+   assert(screen->tess_bo);
+   fd_ringbuffer_attach_bo(ring, screen->tess_bo);
+   OUT_REG(ring, PC_TESSFACTOR_ADDR(CHIP, screen->tess_bo));
+   /* Updating PC_TESSFACTOR_ADDR could race with the next draw which uses it. */
+   OUT_WFI5(ring);
+}
+
 struct bin_size_params {
    enum a6xx_render_mode render_mode;
    bool force_lrz_write_dis;
@@ -1070,6 +1089,48 @@ static void prepare_tile_setup(struct fd_batch *batch);
 template <chip CHIP>
 static void prepare_tile_fini(struct fd_batch *batch);
 
+static void
+fd7_emit_static_binning_regs(struct fd_ringbuffer *ring)
+{
+   OUT_REG(ring, A7XX_RB_UNKNOWN_8812(0x0));
+   OUT_REG(ring, A7XX_RB_UNKNOWN_8E06(0x0));
+   OUT_REG(ring, A7XX_GRAS_UNKNOWN_8007(0x0));
+   OUT_REG(ring, A6XX_GRAS_UNKNOWN_8110(0x2));
+   OUT_REG(ring, A7XX_RB_UNKNOWN_8E09(0x4));
+   OUT_REG(ring, A7XX_RB_UNKNOWN_88E4(.unk0 = 1));
+}
+
+template <chip CHIP>
+struct fd_ringbuffer *
+fd6_build_preemption_preamble(struct fd_context *ctx)
+{
+   struct fd_screen *screen = ctx->screen;
+   struct fd_ringbuffer *ring;
+
+   ring = fd_ringbuffer_new_object(ctx->pipe, 0x1000);
+   fd6_emit_static_regs<CHIP>(ctx, ring);
+   fd6_emit_ccu_cntl<CHIP>(ring, screen, false);
+
+   if (CHIP == A6XX) {
+      OUT_REG(ring, A6XX_PC_POWER_CNTL(screen->info->a6xx.magic.PC_POWER_CNTL));
+      OUT_REG(ring, A6XX_VFD_POWER_CNTL(screen->info->a6xx.magic.PC_POWER_CNTL));
+   } else if (CHIP >= A7XX) {
+      fd7_emit_static_binning_regs(ring);
+   }
+
+   /* TODO use CP_MEM_TO_SCRATCH_MEM on a7xx. The VSC scratch mem should be
+    * automatically saved, unlike GPU registers, so we wouldn't have to
+    * manually restore this state.
+    */
+   OUT_PKT7(ring, CP_MEM_TO_REG, 3);
+   OUT_RING(ring, CP_MEM_TO_REG_0_REG(REG_A6XX_VSC_STATE(0)) |
+                  CP_MEM_TO_REG_0_CNT(32));
+   OUT_RELOC(ring, control_ptr(fd6_context(ctx), vsc_state));
+
+   return ring;
+}
+FD_GENX(fd6_build_preemption_preamble);
+
 /* before first tile */
 template <chip CHIP>
 static void
@@ -1112,13 +1173,8 @@ fd6_emit_tile_init(struct fd_batch *batch) assert_dt
    emit_msaa(ring, pfb->samples);
    patch_fb_read_gmem(batch);
 
-   if (CHIP >= A7XX) {
-      OUT_REG(ring, A7XX_RB_UNKNOWN_8812(0x0));
-      OUT_REG(ring, A7XX_RB_UNKNOWN_8E06(0x0));
-      OUT_REG(ring, A7XX_GRAS_UNKNOWN_8007(0x0));
-      OUT_REG(ring, A6XX_GRAS_UNKNOWN_8110(0x2));
-      OUT_REG(ring, A7XX_RB_UNKNOWN_8E09(0x4));
-   }
+   if (CHIP >= A7XX)
+      fd7_emit_static_binning_regs(ring);
 
    if (use_hw_binning(batch)) {
       /* enable stream-out during binning pass: */
@@ -1161,6 +1217,14 @@ fd6_emit_tile_init(struct fd_batch *batch) assert_dt
 
       OUT_PKT7(ring, CP_SKIP_IB2_ENABLE_GLOBAL, 1);
       OUT_RING(ring, 0x1);
+
+      /* Upload state regs to memory to be restored on skipsaverestore
+       * preemption.
+       */
+      OUT_PKT7(ring, CP_REG_TO_MEM, 3);
+      OUT_RING(ring, CP_REG_TO_MEM_0_REG(REG_A6XX_VSC_STATE_REG(0)) |
+                     CP_REG_TO_MEM_0_CNT(32));
+      OUT_RELOC(ring, control_ptr(fd6_context(batch->ctx), vsc_state));
    } else {
       /* no binning pass, so enable stream-out for draw pass:: */
       OUT_REG(ring, A6XX_VPC_SO_DISABLE(false));
@@ -1219,6 +1283,7 @@ fd6_emit_tile_prep(struct fd_batch *batch, const struct fd_tile *tile)
    uint32_t y2 = tile->yoff + tile->bin_h - 1;
 
    set_scissor(ring, x1, y1, x2, y2);
+   set_tessfactor_bo<CHIP>(ring, batch);
 
    if (use_hw_binning(batch)) {
       const struct fd_vsc_pipe *pipe = &gmem->vsc_pipe[tile->p];
@@ -1934,6 +1999,7 @@ fd6_emit_sysmem_prep(struct fd_batch *batch) assert_dt
    else
       set_scissor(ring, 0, 0, 0, 0);
 
+   set_tessfactor_bo<CHIP>(ring, batch);
    set_window_offset<CHIP>(ring, 0, 0);
 
    set_bin_size<CHIP>(ring, NULL, {

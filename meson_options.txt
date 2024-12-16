@@ -783,3 +783,10 @@ option(
   value : false,
   description : 'Install the drivers internal shader compilers (if needed for cross builds).'
 )
+
+option(
+  'magma',
+  type : 'boolean',
+  value : false,
+  description : 'Build Magma backends of Mesa3D'
+)

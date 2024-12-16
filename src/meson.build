@@ -103,7 +103,10 @@ if with_gfxstream_vk
   subdir('gfxstream')
 endif
 if with_magma
-  subdir('rust/mesa3d_util/src')
+  subdir('rust/mesa3d_util')
+  subdir('rust/mesa3d_virtio_gpu')
+  subdir('rust/mesa3d_magma')
+  subdir('rust/mesa3d_magma_ffi')
 endif
 if with_gallium_asahi or with_tools.contains('asahi')
   subdir('asahi')

@@ -783,7 +783,10 @@ if with_gallium_rusticl
   endif
 endif
 
-if with_gallium_rusticl or with_nouveau_vk or with_tools.contains('etnaviv')
+with_magma = get_option('magma')
+pre_args += '-DHAVE_MAGMA=@0@'.format(with_magma.to_int())
+
+if with_gallium_rusticl or with_nouveau_vk or with_tools.contains('etnaviv') or with_magma
   if with_gallium_rusticl
     # uses rust.bindgen.output_inline_wrapper needing 1.4.0
     if meson.version().version_compare('< 1.4.0')

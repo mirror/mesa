@@ -322,6 +322,12 @@ rusticl_mesa_bindings = rust.bindgen(
     '--allowlist-function',     'rusticl_.*',
     '--allowlist-function',     'std(err|out)_ptr',
 
+    # libc
+    '--allowlist-function',     'mmap',
+    '--allowlist-function',     'munmap',
+    '--allowlist-var',          'MAP_.*',
+    '--allowlist-var',          'PROT_.*',
+
     # winsys
     '--allowlist-var',          'WINSYS_HANDLE_TYPE_.*',
   ],

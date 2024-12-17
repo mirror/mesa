@@ -1693,7 +1693,7 @@ lower_image_load_intel_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
    const struct intel_device_info *devinfo = &state->pdevice->info;
    if (intrin->intrinsic == nir_intrinsic_image_deref_load_base_address_intel) {
       desc = build_load_descriptor_mem(b, desc_addr,
-                     RENDER_SURFACE_STATE_SurfaceBaseAddress_start(devinfo) / 8,
+                     (RENDER_SURFACE_STATE_SurfaceBaseAddress_start(devinfo) / 32) * 4,
                      intrin->def.num_components,
                      intrin->def.bit_size, state);
    }
@@ -1703,7 +1703,7 @@ lower_image_load_intel_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
          case ISL_IMG_PARAM_SURF_SIZE: {
             nir_def *size_dword =
                build_load_descriptor_mem(b, desc_addr,
-                                 RENDER_SURFACE_STATE_Width_start(devinfo) / 8,
+                                 (RENDER_SURFACE_STATE_Width_start(devinfo) / 32) * 4,
                                  1, 32, state);
 
             nir_def *size[2];
@@ -1724,12 +1724,15 @@ lower_image_load_intel_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
             break;
          }
          case ISL_IMG_PARAM_TILE_MODE: {
-            // tile mode [13:12] is in the first dword
-            nir_def *type_dword =
-               build_load_descriptor_mem(b, desc_addr, 0, 1, 32, state);
+            const unsigned tile_mode_bits = RENDER_SURFACE_STATE_TileMode_bits(devinfo);
+            const unsigned tile_mode_start = RENDER_SURFACE_STATE_TileMode_start(devinfo);
 
-            const unsigned tile_mode_bits = 2;
-            const unsigned tile_mode_start = 12;
+            nir_def *type_dword =
+               build_load_descriptor_mem(b,
+                                       desc_addr,
+                                       (tile_mode_start / 32) * 4,
+                                       1, 32, state);
+
             desc = nir_iand_imm(b,
                               nir_ishr_imm(b, type_dword, tile_mode_start % 32),
                               (1u << tile_mode_bits) - 1);
@@ -1740,7 +1743,7 @@ lower_image_load_intel_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
             nir_def *pitch_dword =
                build_load_descriptor_mem(b,
                                        desc_addr,
-                                       RENDER_SURFACE_STATE_SurfacePitch_start(devinfo) / 8,
+                                       (RENDER_SURFACE_STATE_SurfacePitch_start(devinfo) / 32) * 4,
                                        1, 32, state);
             desc = nir_iand_imm(b, pitch_dword, (1u << surfPitch_bits) - 1);
             desc = nir_iadd_imm(b, desc, 1);

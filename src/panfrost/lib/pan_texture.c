@@ -806,7 +806,7 @@ GENX(pan_afbc_compression_mode)(enum pipe_format format)
     * panfrost_afbc_format.
     */
    /* clang-format off */
-   switch (panfrost_afbc_format(PAN_ARCH, format)) {
+   switch (panfrost_afbc_format(PAN_ARCH, format, plane)) {
    case PAN_AFBC_MODE_R8:          return MALI_AFBC_COMPRESSION_MODE_R8;
    case PAN_AFBC_MODE_R8G8:        return MALI_AFBC_COMPRESSION_MODE_R8G8;
    case PAN_AFBC_MODE_R5G6B5:      return MALI_AFBC_COMPRESSION_MODE_R5G6B5;

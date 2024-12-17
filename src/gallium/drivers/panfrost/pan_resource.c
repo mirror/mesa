@@ -1522,8 +1522,8 @@ pan_legalize_format(struct panfrost_context *ctx,
       return;
 
    if (drm_is_afbc(rsrc->image.layout.modifier)) {
-      compatible = (panfrost_afbc_format(dev->arch, old_format) ==
-                    panfrost_afbc_format(dev->arch, new_format));
+      compatible = (panfrost_afbc_format(dev->arch, old_format, 0) ==
+                    panfrost_afbc_format(dev->arch, new_format, 0));
    } else if (drm_is_afrc(rsrc->image.layout.modifier)) {
       struct pan_afrc_format_info old_info =
          panfrost_afrc_get_format_info(old_format);

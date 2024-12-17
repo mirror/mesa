@@ -120,8 +120,25 @@ unswizzled_format(unsigned arch, enum pipe_format format)
  * cannot be compressed. */
 
 enum pan_afbc_mode
-panfrost_afbc_format(unsigned arch, enum pipe_format format)
+panfrost_afbc_format(unsigned arch, enum pipe_format format, int plane)
 {
+   /* handle multi-planar YUV formats here */
+   /* the single planar ones are in the general switch below */
+   switch (format) {
+   case PIPE_FORMAT_R8_G8B8_420_UNORM:
+   case PIPE_FORMAT_R8_B8G8_420_UNORM:
+      return plane == 0 ? PAN_AFBC_MODE_YUV420_1C8
+         : PAN_AFBC_MODE_YUV420_2C8;
+   case PIPE_FORMAT_R8_G8_B8_420_UNORM:
+   case PIPE_FORMAT_R8_B8_G8_420_UNORM:
+      return PAN_AFBC_MODE_YUV420_1C8;
+   case PIPE_FORMAT_R10_G10B10_420_UNORM:
+      return plane == 0 ? PAN_AFBC_MODE_YUV420_1C10
+         : PAN_AFBC_MODE_YUV420_2C10;
+   default:
+      break;
+   }
+
    /* sRGB does not change the pixel format itself, only the
     * interpretation. The interpretation is handled by conversion hardware
     * independent to the compression hardware, so we can compress sRGB
@@ -194,7 +211,7 @@ panfrost_afbc_can_split(unsigned arch, enum pipe_format format,
    if (block_width == 16) {
       return true;
    } else if (block_width == 32) {
-      enum pan_afbc_mode mode = panfrost_afbc_format(arch, format);
+      enum pan_afbc_mode mode = panfrost_afbc_format(arch, format, 0);
       return (mode == PAN_AFBC_MODE_R8G8B8A8 ||
               mode == PAN_AFBC_MODE_R10G10B10A2);
    }

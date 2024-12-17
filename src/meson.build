@@ -102,6 +102,9 @@ endif
 if with_gfxstream_vk
   subdir('gfxstream')
 endif
+if with_magma
+  subdir('rust/mesa3d_util/src')
+endif
 if with_gallium_asahi or with_tools.contains('asahi')
   subdir('asahi')
 endif

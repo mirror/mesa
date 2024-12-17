@@ -1,0 +1,6 @@
+[wrap-file]
+directory = nix-0.28.0
+source_url = https://crates.io/api/v1/crates/nix/0.28.0/download
+source_filename = nix-0.28.0.tar.gz
+source_hash = ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4
+patch_directory = nix

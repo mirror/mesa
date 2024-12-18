@@ -65,10 +65,10 @@ prepare_driver_set(struct panvk_cmd_buffer *cmdbuf)
    return VK_SUCCESS;
 }
 
-static void
-calculate_task_axis_and_increment(const struct panvk_shader *shader,
-                                  struct panvk_physical_device *phys_dev,
-                                  unsigned *task_axis, unsigned *task_increment)
+void
+panvk_per_arch(calculate_task_axis_and_increment)(
+   const struct panvk_shader *shader, struct panvk_physical_device *phys_dev,
+   unsigned *task_axis, unsigned *task_increment)
 {
    /* Pick the task_axis and task_increment to maximize thread
     * utilization. */
@@ -357,8 +357,8 @@ cmd_dispatch(struct panvk_cmd_buffer *cmdbuf, struct panvk_dispatch_info *info)
    } else {
       unsigned task_axis = MALI_TASK_AXIS_X;
       unsigned task_increment = 0;
-      calculate_task_axis_and_increment(shader, phys_dev, &task_axis,
-                                        &task_increment);
+      panvk_per_arch(calculate_task_axis_and_increment)(
+         shader, phys_dev, &task_axis, &task_increment);
       cs_trace_run_compute(b, tracing_ctx, cs_scratch_reg_tuple(b, 0, 4),
                            task_increment, task_axis, false,
                            cs_shader_res_sel(0, 0, 0, 0));

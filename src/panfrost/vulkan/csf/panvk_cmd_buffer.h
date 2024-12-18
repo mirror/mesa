@@ -441,4 +441,8 @@ void panvk_per_arch(cmd_inherit_render_state)(
    struct panvk_cmd_buffer *cmdbuf,
    const VkCommandBufferBeginInfo *pBeginInfo);
 
+void panvk_per_arch(calculate_task_axis_and_increment)(
+   const struct panvk_shader *shader, struct panvk_physical_device *phys_dev,
+   unsigned *task_axis, unsigned *task_increment);
+
 #endif /* PANVK_CMD_BUFFER_H */

@@ -1406,6 +1406,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
    }
 
    depctr_wait wait = parse_depctr_wait(instr.get());
+   uint16_t depctr_imm = 0xFFFF;
 
    if (debug_flags & DEBUG_FORCE_WAITDEPS) {
       wait = parse_depctr_wait(bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0000));
@@ -1439,14 +1440,14 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
          }
       }
       if (num_trans <= 1 && num_valu <= 5) {
-         bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0fff);
+         depctr_imm &= 0x0fff;
          wait.va_vdst = 0;
       }
    }
 
    if (wait.va_vdst > 0 && state.program->gfx_level < GFX12 &&
        handle_valu_partial_forwarding_hazard(state, instr)) {
-      bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0fff);
+      depctr_imm &= 0x0fff;
       wait.va_vdst = 0;
    }
 
@@ -1457,7 +1458,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
        */
       if (state.program->wave_size == 64 && (instr->isSALU() || instr->isVALU()) &&
           check_read_regs(instr, ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu)) {
-         bld.sopp(aco_opcode::s_waitcnt_depctr, 0xfffe);
+         depctr_imm &= 0xfffe;
          wait.sa_sdst = 0;
       }
 
@@ -1529,7 +1530,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
             for (unsigned i = 0; i < op.size(); i++) {
                PhysReg reg = op.physReg().advance(i * 4);
                if (reg <= m0 && ctx.sgpr_read_by_valu_then_wr_by_salu.get(reg) < expiry_count) {
-                  bld.sopp(aco_opcode::s_waitcnt_depctr, 0xfffe);
+                  depctr_imm &= 0xfffe;
                   wait.sa_sdst = 0;
                   break;
                }
@@ -1641,6 +1642,11 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
                        instr->definitions[0].bytes());
    } else if (instr->isVALU()) {
       ctx.vgpr_written_by_wmma.reset();
+   }
+
+   /* Emit wait instruction if necessary */
+   if (depctr_imm != 0xFFFF) {
+      bld.sopp(aco_opcode::s_waitcnt_depctr, depctr_imm);
    }
 }
 

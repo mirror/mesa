@@ -12,6 +12,8 @@
 
 #include "tu_common.h"
 
+#include "util/rb_tree.h"
+
 struct tu_u_trace_syncobj;
 struct vdrm_bo;
 
@@ -57,6 +59,8 @@ struct tu_bo {
    const char *name; /* pointer to device->bo_sizes's entry's name */
    int32_t refcnt;
 
+   struct rb_node node;
+
    uint32_t bo_list_idx;
 
 #ifdef TU_HAS_KGSL
@@ -96,6 +100,7 @@ struct tu_knl {
    int (*bo_export_dmabuf)(struct tu_device *dev, struct tu_bo *bo);
    VkResult (*bo_map)(struct tu_device *dev, struct tu_bo *bo, void *placed_addr);
    void (*bo_allow_dump)(struct tu_device *dev, struct tu_bo *bo);
+   void (*iova_allow_dump)(struct tu_device *dev, uint64_t iova, uint64_t range);
    void (*bo_finish)(struct tu_device *dev, struct tu_bo *bo);
    void (*bo_set_metadata)(struct tu_device *dev, struct tu_bo *bo,
                            void *metadata, uint32_t metadata_size);
@@ -151,6 +156,43 @@ tu_bo_init_new(struct tu_device *dev, struct vk_object_base *base,
       flags, name);
 }
 
+static inline const struct tu_bo *
+tu_bo_from_node_const(const struct rb_node *node)
+{
+   return rb_node_data(const struct tu_bo, node, node);
+}
+
+static inline struct tu_bo *
+tu_bo_from_node(struct rb_node *node)
+{
+   return rb_node_data(struct tu_bo, node, node);
+}
+
+static inline int
+tu_bo_insert_cmp(const struct rb_node *n1, const struct rb_node *n2)
+{
+   const struct tu_bo *bo1 = tu_bo_from_node_const(n1);
+   const struct tu_bo *bo2 = tu_bo_from_node_const(n2);
+   /* Note that iova comparisions can overflow an int: */
+   if (bo1->iova < bo2->iova)
+      return 1;
+   else if (bo1->iova > bo2->iova)
+      return -1;
+   return 0;
+}
+
+static inline int
+tu_bo_search_cmp(const struct rb_node *node, const void *addrptr)
+{
+   const struct tu_bo *bo = tu_bo_from_node_const(node);
+   uint64_t iova = *(uint64_t *)addrptr;
+   if (bo->iova + bo->size <= iova)
+      return 1;
+   else if (bo->iova > iova)
+      return -1;
+   return 0;
+}
+
 VkResult
 tu_bo_init_dmabuf(struct tu_device *dev,
                   struct tu_bo **bo,
@@ -179,6 +221,8 @@ tu_bo_sync_cache(struct tu_device *dev,
 uint32_t tu_get_l1_dcache_size();
 
 void tu_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo);
+
+void tu_iova_allow_dump(struct tu_device *dev, uint64_t iova, uint64_t range);
 
 void tu_bo_set_metadata(struct tu_device *dev, struct tu_bo *bo,
                         void *metadata, uint32_t metadata_size);

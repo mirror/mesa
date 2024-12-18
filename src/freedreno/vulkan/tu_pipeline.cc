@@ -1111,7 +1111,7 @@ static const enum mesa_vk_dynamic_graphics_state tu_patch_control_points_state[]
 #define HS_PARAMS_SIZE 8
 
 template <chip CHIP>
-static unsigned
+unsigned
 tu6_patch_control_points_size(struct tu_device *dev,
                               const struct tu_shader *vs,
                               const struct tu_shader *tcs,
@@ -1131,6 +1131,7 @@ tu6_patch_control_points_size(struct tu_device *dev,
 #undef EMIT_CONST_DWORDS
    }
 }
+TU_GENX(tu6_patch_control_points_size);
 
 template <chip CHIP>
 void
@@ -1216,6 +1217,7 @@ tu6_emit_patch_control_points(struct tu_cs *cs,
    tu_cs_emit_pkt7(cs, CP_SET_SUBDRAW_SIZE, 1);
    tu_cs_emit(cs, subdraw_size);
 }
+TU_GENX(tu6_emit_patch_control_points);
 
 static void
 tu6_emit_geom_tess_consts(struct tu_cs *cs,

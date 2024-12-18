@@ -19,6 +19,7 @@ tu_entrypoints = custom_target(
 
 
 libtu_files = files(
+  'dgc/tu_dgc.h',
   'layers/tu_rmv_layer.cc',
   'tu_autotune.cc',
   'tu_buffer.cc',
@@ -28,6 +29,7 @@ libtu_files = files(
   'tu_cs_breadcrumbs.cc',
   'tu_cs.cc',
   'tu_device.cc',
+  'tu_device_generated_commands.cc',
   'tu_descriptor_set.cc',
   'tu_dynamic_rendering.cc',
   'tu_event.cc',
@@ -55,6 +57,8 @@ libtu_includes = [
 tu_link_with = []
 tu_deps = []
 tu_flags = []
+
+subdir('dgc')
 
 tu_wsi = false
 
@@ -159,7 +163,7 @@ endif
 
 libvulkan_freedreno = shared_library(
   'vulkan_freedreno',
-  [libtu_files, tu_entrypoints, tu_tracepoints, freedreno_xml_header_files, sha1_h, u_format_pack_h],
+  [libtu_files, tu_entrypoints, tu_tracepoints, freedreno_xml_header_files, sha1_h, u_format_pack_h, preprocess_spv],
   include_directories : libtu_includes,
   link_with : [
     libfreedreno_ir3,

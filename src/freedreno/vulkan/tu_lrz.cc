@@ -8,6 +8,7 @@
 #include "tu_clear_blit.h"
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
+#include "tu_device_generated_commands.h"
 #include "tu_image.h"
 
 #include "common/freedreno_gpu_event.h"
@@ -691,12 +692,27 @@ static struct A6XX_GRAS_LRZ_CNTL
 tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
                         const uint32_t a)
 {
-   const struct tu_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
    bool z_test_enable = cmd->vk.dynamic_graphics_state.ds.depth.test_enable;
    bool z_write_enable = cmd->vk.dynamic_graphics_state.ds.depth.write_enable;
    bool z_bounds_enable = cmd->vk.dynamic_graphics_state.ds.depth.bounds_test.enable;
    VkCompareOp depth_compare_op =
       cmd->vk.dynamic_graphics_state.ds.depth.compare_op;
+   uint32_t lrz_status = 0;
+
+   if (cmd->state.ies) {
+      for (unsigned i = 0; i < cmd->state.ies->pipeline_count; i++) {
+         if (!cmd->state.ies->pipelines[i])
+            continue;
+         if (!cmd->state.ies->pipelines[i]->shaders[MESA_SHADER_FRAGMENT]->variant)
+            continue;
+         struct tu_shader *fs =
+            cmd->state.ies->pipelines[i]->shaders[MESA_SHADER_FRAGMENT];
+         lrz_status |= fs->fs.lrz.status;
+      }
+   } else {
+      const struct tu_shader *fs = cmd->state.shaders[MESA_SHADER_FRAGMENT];
+      lrz_status = fs->fs.lrz.status;
+   }
 
    struct A6XX_GRAS_LRZ_CNTL gras_lrz_cntl = { 0 };
 
@@ -724,7 +740,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
    gras_lrz_cntl.lrz_write =
       z_write_enable &&
       !reads_dest &&
-      !(fs->fs.lrz.status & TU_LRZ_FORCE_DISABLE_WRITE);
+      !(lrz_status & TU_LRZ_FORCE_DISABLE_WRITE);
    gras_lrz_cntl.z_test_enable = z_write_enable;
    gras_lrz_cntl.z_bounds_enable = z_bounds_enable;
    gras_lrz_cntl.fc_enable = cmd->state.lrz.fast_clear;
@@ -744,7 +760,7 @@ tu6_calculate_lrz_state(struct tu_cmd_buffer *cmd,
     * fragment tests.  We have to skip LRZ testing and updating, but as long as
     * the depth direction stayed the same we can continue with LRZ testing later.
     */
-   if (fs->fs.lrz.status & TU_LRZ_FORCE_DISABLE_LRZ) {
+   if (lrz_status & TU_LRZ_FORCE_DISABLE_LRZ) {
       if (cmd->state.lrz.prev_direction != TU_LRZ_UNKNOWN || !cmd->state.lrz.gpu_dir_tracking) {
          perf_debug(cmd->device, "Skipping LRZ due to FS");
          temporary_disable_lrz = true;

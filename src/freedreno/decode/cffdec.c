@@ -55,7 +55,7 @@ is_64b(void)
    return options->info->chip >= 5;
 }
 
-static int draws[4];
+static int draws[5];
 static struct {
    uint64_t base;
    uint32_t size; /* in dwords */
@@ -80,7 +80,7 @@ static struct {
     */
    bool triggered : 1;
    bool base_seen : 1;
-} ibs[4];
+} ibs[5];
 static int ib;
 
 static int draw_count;
@@ -2410,6 +2410,23 @@ cp_indirect(uint32_t *dwords, uint32_t sizedwords, int level)
 }
 
 static void
+cp_indirect_chain(uint32_t *dwords, uint32_t sizedwords, int level)
+{
+   uint64_t ibaddr;
+   uint32_t ibsize;
+
+   dwords = parse_cp_indirect(dwords, sizedwords, &ibaddr, &ibsize);
+
+   if (!quiet(3)) {
+      if (is_64b()) {
+         printf("%sibaddr:%016" PRIx64 "\n", levels[level], ibaddr);
+      } else {
+         printf("%sibaddr:%08x\n", levels[level], (uint32_t)ibaddr);
+      }
+      printf("%sibsize:%08x\n", levels[level], ibsize);
+   }
+}
+static void
 cp_start_bin(uint32_t *dwords, uint32_t sizedwords, int level)
 {
    uint64_t ibaddr;
@@ -2964,6 +2981,7 @@ static const struct type3_op {
    CP(NOP, cp_nop),
    CP(INDIRECT_BUFFER, cp_indirect),
    CP(INDIRECT_BUFFER_PFD, cp_indirect),
+   CP(INDIRECT_BUFFER_CHAIN, cp_indirect_chain),
    CP(WAIT_FOR_IDLE, cp_wfi),
    CP(REG_RMW, cp_rmw),
    CP(REG_TO_MEM, cp_reg_mem),
@@ -3110,6 +3128,23 @@ dump_commands(uint32_t *dwords, uint32_t sizedwords, int level)
          op->fxn(dwords + 1, count - 1, level + 1);
          if (!quiet(2))
             dump_hex(dwords, count, level + 1);
+
+         if (name && !strcmp(name, "CP_INDIRECT_BUFFER_CHAIN") &&
+             dwords_left == count) {
+            uint64_t ibaddr;
+            uint32_t ibsize;
+            parse_cp_indirect(dwords + 1, count - 1, &ibaddr, &ibsize);
+
+            dwords = hostptr(ibaddr);
+            if (!dwords) {
+               fprintf(stderr, "could not find: %016" PRIx64 " (%d)\n", ibaddr, ibsize);
+               return;
+            }
+
+            dwords_left = ibsize;
+            /* Don't subtract this packet's size from the new IB */
+            continue;
+         }
       } else if (pkt_is_type2(dwords[0])) {
          printl(3, "%snop\n", levels[level + 1]);
          count = 1;

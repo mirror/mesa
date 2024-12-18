@@ -362,6 +362,11 @@ kgsl_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
 }
 
 static void
+kgsl_iova_allow_dump(struct tu_device *dev, uint64_t iova, uint64_t range)
+{
+}
+
+static void
 kgsl_bo_finish(struct tu_device *dev, struct tu_bo *bo)
 {
    assert(bo->gem_handle);
@@ -387,6 +392,7 @@ kgsl_bo_finish(struct tu_device *dev, struct tu_bo *bo)
    memset(bo, 0, sizeof(*bo));
 
    safe_ioctl(dev->physical_device->local_fd, IOCTL_KGSL_GPUMEM_FREE_ID, &req);
+
 }
 
 static VkResult
@@ -1506,6 +1512,7 @@ static const struct tu_knl kgsl_knl_funcs = {
       .bo_export_dmabuf = kgsl_bo_export_dmabuf,
       .bo_map = kgsl_bo_map,
       .bo_allow_dump = kgsl_bo_allow_dump,
+      .iova_allow_dump = kgsl_iova_allow_dump,
       .bo_finish = kgsl_bo_finish,
       .device_wait_u_trace = kgsl_device_wait_u_trace,
       .queue_submit = kgsl_queue_submit,

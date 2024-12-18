@@ -34,6 +34,7 @@
 #include "tu_cmd_buffer.h"
 #include "tu_cs.h"
 #include "tu_descriptor_set.h"
+#include "tu_device_generated_commands.h"
 #include "tu_dynamic_rendering.h"
 #include "tu_image.h"
 #include "tu_pass.h"
@@ -246,6 +247,8 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_descriptor_buffer = true,
       .EXT_descriptor_indexing = true,
       .EXT_device_address_binding_report = true,
+      .EXT_device_generated_commands =
+         device->info->a7xx.load_shader_consts_via_preamble,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
 #endif
@@ -380,7 +383,7 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* Vulkan 1.1 */
    features->storageBuffer16BitAccess            = pdevice->info->a6xx.storage_16bit;
-   features->uniformAndStorageBuffer16BitAccess  = false;
+   features->uniformAndStorageBuffer16BitAccess  = pdevice->info->a6xx.storage_16bit;
    features->storagePushConstant16               = false;
    features->storageInputOutput16                = false;
    features->multiview                           = true;
@@ -559,6 +562,10 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_EXT_depth_clip_enable */
    features->depthClipEnable = true;
+
+   /* VK_EXT_device_generated_commands */
+   features->deviceGeneratedCommands =
+      pdevice->info->a7xx.load_shader_consts_via_preamble;
 
    /* VK_EXT_descriptor_buffer */
    features->descriptorBuffer = true;
@@ -1303,6 +1310,34 @@ tu_get_properties(struct tu_physical_device *pdevice,
 
       memcpy(props->optimalTilingLayoutUUID, sha1, VK_UUID_SIZE);
    }
+
+   /* VK_EXT_device_generated_commands */
+   props->maxIndirectPipelineCount = TU_DGC_MAX_PIPELINES;
+   props->maxIndirectShaderObjectCount = 0;
+   props->maxIndirectSequenceCount = UINT32_MAX;
+   props->maxIndirectCommandsTokenCount = UINT32_MAX;
+   props->maxIndirectCommandsIndirectStride = UINT32_MAX;
+   props->maxIndirectCommandsTokenOffset = UINT32_MAX;
+   props->supportedIndirectCommandsInputModes =
+      VK_INDIRECT_COMMANDS_INPUT_MODE_VULKAN_INDEX_BUFFER_EXT |
+      VK_INDIRECT_COMMANDS_INPUT_MODE_DXGI_INDEX_BUFFER_EXT;
+   props->supportedIndirectCommandsShaderStages =
+      VK_SHADER_STAGE_COMPUTE_BIT |
+      VK_SHADER_STAGE_VERTEX_BIT |
+      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+      VK_SHADER_STAGE_GEOMETRY_BIT |
+      VK_SHADER_STAGE_FRAGMENT_BIT;
+   props->supportedIndirectCommandsShaderStagesPipelineBinding =
+      VK_SHADER_STAGE_COMPUTE_BIT |
+      VK_SHADER_STAGE_VERTEX_BIT |
+      VK_SHADER_STAGE_TESSELLATION_CONTROL_BIT |
+      VK_SHADER_STAGE_TESSELLATION_EVALUATION_BIT |
+      VK_SHADER_STAGE_GEOMETRY_BIT |
+      VK_SHADER_STAGE_FRAGMENT_BIT;
+   props->supportedIndirectCommandsShaderStagesShaderBinding = 0;
+   props->deviceGeneratedCommandsTransformFeedback = true;
+   props->deviceGeneratedCommandsMultiDrawIndirectCount = true;
 }
 
 static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {
@@ -2542,6 +2577,10 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       }
    }
 
+   result = vk_meta_device_init(&device->vk, &device->meta);
+   if (result != VK_SUCCESS)
+      goto fail_queues;
+
    {
       struct ir3_compiler_options ir3_options = {
          .push_ubo_with_preamble = true,
@@ -2559,7 +2598,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       result = vk_startup_errorf(physical_device->instance,
                                  VK_ERROR_INITIALIZATION_FAILED,
                                  "failed to initialize ir3 compiler");
-      goto fail_queues;
+      goto fail_compiler;
    }
 
    /* Initialize sparse array for refcounting imported BOs */
@@ -2802,12 +2841,14 @@ fail_global_bo_map:
    tu_bo_finish(device, device->global_bo);
    vk_free(&device->vk.alloc, device->bo_list);
 fail_global_bo:
-   ir3_compiler_destroy(device->compiler);
-   util_sparse_array_finish(&device->bo_map);
    if (physical_device->has_set_iova)
       util_vma_heap_finish(&device->vma);
 fail_free_zombie_vma:
+   util_sparse_array_finish(&device->bo_map);
    u_vector_finish(&device->zombie_vmas);
+   ir3_compiler_destroy(device->compiler);
+fail_compiler:
+   vk_meta_device_finish(&device->vk, &device->meta);
 fail_queues:
    for (unsigned i = 0; i < TU_MAX_QUEUE_FAMILIES; i++) {
       for (unsigned q = 0; q < device->queue_count[i]; q++)
@@ -2856,6 +2897,8 @@ tu_DestroyDevice(VkDevice _device, const VkAllocationCallbacks *pAllocator)
    tu_destroy_empty_shaders(device);
 
    tu_destroy_dynamic_rendering(device);
+
+   vk_meta_device_finish(&device->vk, &device->meta);
 
    ir3_compiler_destroy(device->compiler);
 

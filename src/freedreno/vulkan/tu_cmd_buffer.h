@@ -407,11 +407,14 @@ enum tu_suspend_resume_state
    SR_IN_CHAIN_AFTER_PRE_CHAIN,
 };
 
+struct tu_indirect_execution_set;
+
 struct tu_cmd_state
 {
    uint32_t dirty;
 
    struct tu_shader *shaders[MESA_SHADER_STAGES];
+   struct tu_indirect_execution_set *ies;
 
    struct tu_program_state program;
 
@@ -664,6 +667,9 @@ void tu_emit_cache_flush_ccu(struct tu_cmd_buffer *cmd_buffer,
                              struct tu_cs *cs,
                              enum tu_cmd_ccu_state ccu_state);
 
+struct tu_draw_state
+tu_emit_consts(struct tu_cmd_buffer *cmd, bool compute);
+
 void
 tu_append_pre_chain(struct tu_cmd_buffer *cmd,
                     struct tu_cmd_buffer *secondary);
@@ -702,6 +708,21 @@ void
 tu_flush_for_access(struct tu_cache_state *cache,
                     enum tu_cmd_access_mask src_mask,
                     enum tu_cmd_access_mask dst_mask);
+
+void
+tu_emit_inline_ubo(struct tu_cs *cs,
+                   const struct tu_const_state *const_state,
+                   const struct ir3_const_state *ir_const_state,
+                   unsigned constlen,
+                   gl_shader_stage type,
+                   struct tu_descriptor_state *descriptors);
+
+uint32_t
+tu_draw_initiator_from_state(VkPrimitiveTopology topology,
+                             unsigned patch_control_points,
+                             struct tu_shader **shaders,
+                             enum a4xx_index_size index_size,
+                             enum pc_di_src_sel src_sel);
 
 static inline struct tu_descriptor_state *
 tu_get_descriptors_state(struct tu_cmd_buffer *cmd_buffer,

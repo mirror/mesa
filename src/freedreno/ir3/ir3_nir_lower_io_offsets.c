@@ -252,6 +252,40 @@ lower_offset_for_ssbo(nir_intrinsic_instr *intrinsic, nir_builder *b,
 }
 
 static bool
+lower_ubo_bitsize(nir_intrinsic_instr *load_ubo, nir_builder *b)
+{
+   nir_def *def = &load_ubo->def;
+
+   if (def->bit_size == 32)
+      return false;
+
+   b->cursor = nir_before_instr(&load_ubo->instr);
+
+   unsigned start = nir_intrinsic_component(load_ubo) * def->bit_size;
+   unsigned end = start + def->num_components * def->bit_size;
+
+   unsigned start32 = start / 32;
+   unsigned end32 = DIV_ROUND_UP(end - start32 * 32, 32);
+
+   /* Create a 32-bit load and then cast it to the required bitsize. */
+   nir_def *new_def =
+      nir_load_ubo_vec4(b, end32 - start32, 32, load_ubo->src[0].ssa,
+                        load_ubo->src[1].ssa,
+                        .access = nir_intrinsic_access(load_ubo),
+                        .base = nir_intrinsic_base(load_ubo),
+                        .component = start32);
+
+   new_def =
+      nir_extract_bits(b, &new_def, 1,
+                       start - start32 * 32, def->num_components,
+                       def->bit_size);
+
+   nir_def_rewrite_uses(def, new_def);
+   nir_instr_remove(&load_ubo->instr);
+   return true;
+}
+
+static bool
 lower_io_offsets_block(nir_block *block, nir_builder *b, void *mem_ctx)
 {
    bool progress = false;
@@ -261,6 +295,11 @@ lower_io_offsets_block(nir_block *block, nir_builder *b, void *mem_ctx)
          continue;
 
       nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+
+      if (intr->intrinsic == nir_intrinsic_load_ubo_vec4) {
+         progress |= lower_ubo_bitsize(intr, b);
+         continue;
+      }
 
       /* SSBO */
       int ir3_intrinsic;

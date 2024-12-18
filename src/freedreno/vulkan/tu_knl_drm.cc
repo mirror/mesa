@@ -87,6 +87,8 @@ tu_drm_bo_finish(struct tu_device *dev, struct tu_bo *bo)
    if (bo->implicit_sync)
       dev->implicit_sync_bo_count--;
 
+   rb_tree_remove(&dev->bo_iova_map, &bo->node);
+
    mtx_unlock(&dev->bo_mutex);
 
    if (dev->physical_device->has_set_iova) {
@@ -126,6 +128,27 @@ tu_drm_bo_finish(struct tu_device *dev, struct tu_bo *bo)
    }
 
    u_rwlock_rdunlock(&dev->dma_bo_lock);
+}
+
+void
+tu_drm_iova_allow_dump(struct tu_device *dev, uint64_t iova, uint64_t range)
+{
+   mtx_lock(&dev->bo_mutex);
+
+   struct rb_node *node =
+      rb_tree_search_sloppy(&dev->bo_iova_map, &iova, tu_bo_search_cmp);
+
+   for (; node; node = rb_node_next(node)) {
+      struct tu_bo *bo = tu_bo_from_node(node);
+      if (bo->iova + bo->size <= iova)
+         continue;
+      if (bo->iova >= iova + range)
+         break;
+
+      dev->bo_list[bo->bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
+   }
+
+   mtx_unlock(&dev->bo_mutex);
 }
 
 uint32_t

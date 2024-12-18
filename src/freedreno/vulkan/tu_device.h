@@ -13,6 +13,7 @@
 #include "tu_common.h"
 
 #include "vk_device_memory.h"
+#include "vk_meta.h"
 
 #include "tu_autotune.h"
 #include "tu_cs.h"
@@ -24,6 +25,7 @@
 #include "common/freedreno_rd_output.h"
 #include "util/vma.h"
 #include "util/u_vector.h"
+#include "util/rb_tree.h"
 
 /* queue types */
 #define TU_QUEUE_GENERAL 0
@@ -298,6 +300,8 @@ struct tu_device
    /* Backup in-memory cache to be used if the app doesn't provide one */
    struct vk_pipeline_cache *mem_cache;
 
+   struct vk_meta_device meta;
+
 #define MIN_SCRATCH_BO_SIZE_LOG2 12 /* A page */
 
    /* Currently the kernel driver uses a 32-bit GPU address space, but it
@@ -362,6 +366,9 @@ struct tu_device
    mtx_t bo_mutex;
    /* protects imported BOs creation/freeing */
    struct u_rwlock dma_bo_lock;
+
+   /* Map of iova to BO */
+   struct rb_tree bo_iova_map;
 
    /* Tracking of name -> size allocated for TU_DEBUG_BOS */
    struct hash_table *bo_sizes;

@@ -17,6 +17,7 @@
 #include "tu_clear_blit.h"
 #include "tu_cs.h"
 #include "tu_event.h"
+#include "tu_device_generated_commands.h"
 #include "tu_image.h"
 #include "tu_tracepoints.h"
 
@@ -1389,6 +1390,7 @@ tu6_init_static_regs(struct tu_device *dev, struct tu_cs *cs)
    tu_cs_emit_write_reg(cs, REG_A6XX_RB_UNKNOWN_8811, 0x00000010);
    tu_cs_emit_write_reg(cs, REG_A6XX_PC_MODE_CNTL,
                         phys_dev->info->a6xx.magic.PC_MODE_CNTL);
+   tu_cs_emit_write_reg(cs, REG_A6XX_PC_RESTART_INDEX, ~0);
 
    tu_cs_emit_write_reg(cs, REG_A6XX_GRAS_UNKNOWN_8110, 0);
 
@@ -2795,7 +2797,6 @@ tu_CmdBindIndexBuffer2KHR(VkCommandBuffer commandBuffer,
    size = buf ? vk_buffer_range(&buf->vk, offset, size) : 0;
 
    uint32_t index_size, index_shift;
-   uint32_t restart_index = vk_index_to_restart(indexType);
 
    switch (indexType) {
    case VK_INDEX_TYPE_UINT16:
@@ -2815,10 +2816,6 @@ tu_CmdBindIndexBuffer2KHR(VkCommandBuffer commandBuffer,
    }
 
    if (buf) {
-      /* initialize/update the restart index */
-      if (cmd->state.index_size != index_size)
-         tu_cs_emit_regs(&cmd->draw_cs, A6XX_PC_RESTART_INDEX(restart_index));
-
       cmd->state.index_va = buf->iova + offset;
       cmd->state.max_index_count = size >> index_shift;
       cmd->state.index_size = index_size;
@@ -3959,6 +3956,16 @@ vk2tu_access(VkAccessFlags2 flags, VkPipelineStageFlags2 stages, bool image_only
        mask |= TU_ACCESS_UCHE_READ | TU_ACCESS_CCHE_READ;
 
    if (gfx_read_access(flags, stages,
+                       VK_ACCESS_2_COMMAND_PREPROCESS_READ_BIT_EXT,
+                       VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_EXT))
+      mask |= TU_ACCESS_UCHE_READ | TU_ACCESS_SYSMEM_READ;
+
+   if (gfx_read_access(flags, stages,
+                       VK_ACCESS_2_COMMAND_PREPROCESS_WRITE_BIT_EXT,
+                       VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_EXT))
+      mask |= TU_ACCESS_UCHE_WRITE | TU_ACCESS_CP_WRITE;
+
+   if (gfx_read_access(flags, stages,
                        VK_ACCESS_2_INPUT_ATTACHMENT_READ_BIT,
                        SHADER_STAGES))
        mask |= TU_ACCESS_UCHE_READ_GMEM;
@@ -4128,7 +4135,8 @@ vk2tu_single_stage(VkPipelineStageFlags2 vk_stage, bool dst)
       return TU_STAGE_CP;
 
    if (vk_stage == VK_PIPELINE_STAGE_2_ALL_GRAPHICS_BIT ||
-       vk_stage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT)
+       vk_stage == VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT ||
+       vk_stage == VK_PIPELINE_STAGE_2_COMMAND_PREPROCESS_BIT_EXT)
       return dst ? TU_STAGE_CP : TU_STAGE_GPU;
 
    if (vk_stage == VK_PIPELINE_STAGE_2_HOST_BIT)
@@ -5238,7 +5246,7 @@ tu7_emit_inline_ubo(struct tu_cs *cs,
    tu_cs_emit_qw(cs, iova | ((uint64_t)A6XX_UBO_1_SIZE(size_vec4s) << 32));
 }
 
-static void
+void
 tu_emit_inline_ubo(struct tu_cs *cs,
                    const struct tu_const_state *const_state,
                    const struct ir3_const_state *ir_const_state,
@@ -5321,7 +5329,7 @@ tu6_const_size(struct tu_cmd_buffer *cmd,
    return dwords;
 }
 
-static struct tu_draw_state
+struct tu_draw_state
 tu_emit_consts(struct tu_cmd_buffer *cmd, bool compute)
 {
    uint32_t dwords = 0;
@@ -5457,7 +5465,32 @@ tu6_build_depth_plane_z_mode(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
    const struct tu_render_pass *pass = cmd->state.pass;
    const struct tu_subpass *subpass = cmd->state.subpass;
 
-   if ((fs->variant->has_kill ||
+   bool has_kill = false;
+   bool fs_force_late_z = false;
+   bool early_fragment_tests = false;
+
+   if (cmd->state.ies) {
+      for (unsigned i = 0; i < cmd->state.ies->pipeline_count; i++) {
+         if (!cmd->state.ies->pipelines[i])
+            continue;
+         if (!cmd->state.ies->pipelines[i]->shaders[MESA_SHADER_FRAGMENT]->variant)
+            continue;
+         struct tu_shader *fs =
+            cmd->state.ies->pipelines[i]->shaders[MESA_SHADER_FRAGMENT];
+         has_kill |= fs->variant->has_kill;
+         fs_force_late_z |= fs->fs.lrz.force_late_z;
+         /* Note: Because different pipelines can have different
+          * early_fragment_test state, we need to override it in the DGC
+          * command buffer.
+          */
+      }
+   } else {
+      has_kill = fs->variant->has_kill;
+      fs_force_late_z = fs->fs.lrz.force_late_z;
+      early_fragment_tests = fs->variant->fs.early_fragment_tests;
+   }
+
+   if ((has_kill ||
         (cmd->state.pipeline_feedback_loops & VK_IMAGE_ASPECT_DEPTH_BIT) ||
         (cmd->vk.dynamic_graphics_state.feedback_loops &
          VK_IMAGE_ASPECT_DEPTH_BIT) ||
@@ -5472,15 +5505,15 @@ tu6_build_depth_plane_z_mode(struct tu_cmd_buffer *cmd, struct tu_cs *cs)
       (subpass->depth_stencil_attachment.attachment != VK_ATTACHMENT_UNUSED &&
        pass->attachments[subpass->depth_stencil_attachment.attachment].format
        == VK_FORMAT_S8_UINT) ||
-      fs->fs.lrz.force_late_z ||
+      fs_force_late_z ||
       /* alpha-to-coverage can behave like a discard. */
       cmd->vk.dynamic_graphics_state.ms.alpha_to_coverage_enable;
-   if ((force_late_z && !fs->variant->fs.early_fragment_tests) ||
+   if ((force_late_z && !early_fragment_tests) ||
        !depth_test_enable)
       zmode = A6XX_LATE_Z;
 
    /* User defined early tests take precedence above all else */
-   if (fs->variant->fs.early_fragment_tests)
+   if (early_fragment_tests)
       zmode = A6XX_EARLY_Z;
 
    tu_cs_emit_pkt4(cs, REG_A6XX_GRAS_SU_DEPTH_PLANE_CNTL, 1);
@@ -5960,26 +5993,28 @@ tu6_draw_common(struct tu_cmd_buffer *cmd,
    return VK_SUCCESS;
 }
 
-static uint32_t
-tu_draw_initiator(struct tu_cmd_buffer *cmd, enum pc_di_src_sel src_sel)
+uint32_t
+tu_draw_initiator_from_state(VkPrimitiveTopology topology,
+                             unsigned patch_control_points,
+                             struct tu_shader **shaders,
+                             enum a4xx_index_size index_size,
+                             enum pc_di_src_sel src_sel)
 {
-   enum pc_di_primtype primtype =
-      tu6_primtype((VkPrimitiveTopology)cmd->vk.dynamic_graphics_state.ia.primitive_topology);
+   enum pc_di_primtype primtype = tu6_primtype(topology);
 
    if (primtype == DI_PT_PATCHES0)
-      primtype = (enum pc_di_primtype) (primtype +
-                                        cmd->vk.dynamic_graphics_state.ts.patch_control_points);
+      primtype = (enum pc_di_primtype) (primtype + patch_control_points);
 
    uint32_t initiator =
       CP_DRAW_INDX_OFFSET_0_PRIM_TYPE(primtype) |
       CP_DRAW_INDX_OFFSET_0_SOURCE_SELECT(src_sel) |
-      CP_DRAW_INDX_OFFSET_0_INDEX_SIZE((enum a4xx_index_size) cmd->state.index_size) |
+      CP_DRAW_INDX_OFFSET_0_INDEX_SIZE(index_size) |
       CP_DRAW_INDX_OFFSET_0_VIS_CULL(USE_VISIBILITY);
 
-   if (cmd->state.shaders[MESA_SHADER_GEOMETRY]->variant)
+   if (shaders[MESA_SHADER_GEOMETRY]->variant)
       initiator |= CP_DRAW_INDX_OFFSET_0_GS_ENABLE;
 
-   const struct tu_shader *tes = cmd->state.shaders[MESA_SHADER_TESS_EVAL];
+   const struct tu_shader *tes = shaders[MESA_SHADER_TESS_EVAL];
    if (tes->variant) {
       switch (tes->variant->key.tessellation) {
       case IR3_TESS_TRIANGLES:
@@ -5997,6 +6032,17 @@ tu_draw_initiator(struct tu_cmd_buffer *cmd, enum pc_di_src_sel src_sel)
       }
    }
    return initiator;
+}
+
+static uint32_t
+tu_draw_initiator(struct tu_cmd_buffer *cmd, enum pc_di_src_sel src_sel)
+{
+   return tu_draw_initiator_from_state(
+      (VkPrimitiveTopology)cmd->vk.dynamic_graphics_state.ia.primitive_topology,
+      cmd->vk.dynamic_graphics_state.ts.patch_control_points,
+      cmd->state.shaders,
+      (enum a4xx_index_size)cmd->state.index_size,
+      src_sel);
 }
 
 
@@ -6257,9 +6303,10 @@ TU_GENX(tu_CmdDrawMultiIndexedEXT);
 static void
 draw_wfm(struct tu_cmd_buffer *cmd)
 {
-   cmd->state.renderpass_cache.flush_bits |=
-      cmd->state.renderpass_cache.pending_flush_bits & TU_CMD_FLAG_WAIT_FOR_ME;
-   cmd->state.renderpass_cache.pending_flush_bits &= ~TU_CMD_FLAG_WAIT_FOR_ME;
+   struct tu_cache_state *cache =
+      cmd->state.pass ? &cmd->state.renderpass_cache : &cmd->state.cache;
+   cache->flush_bits |= cache->pending_flush_bits & TU_CMD_FLAG_WAIT_FOR_ME;
+   cache->pending_flush_bits &= ~TU_CMD_FLAG_WAIT_FOR_ME;
 }
 
 template <chip CHIP>
@@ -6674,7 +6721,10 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
        (info->blocks[0] == 0 || info->blocks[1] == 0 || info->blocks[2] == 0))
       return;
 
-   struct tu_cs *cs = &cmd->cs;
+   /* Note: This can only be called inside a render pass when called by
+    * CmdExecuteGeneratedCommands() to run the preprocess shader.
+    */
+   struct tu_cs *cs = cmd->state.pass ? &cmd->draw_cs : &cmd->cs;
    struct tu_shader *shader = cmd->state.shaders[MESA_SHADER_COMPUTE];
 
    bool emit_instrlen_workaround =
@@ -6711,7 +6761,10 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
    /* TODO: We could probably flush less if we add a compute_flush_bits
     * bitfield.
     */
-   tu_emit_cache_flush<CHIP>(cmd);
+   if (cmd->state.pass)
+      tu_emit_cache_flush_renderpass<CHIP>(cmd);
+   else
+      tu_emit_cache_flush<CHIP>(cmd);
 
    /* note: no reason to have this in a separate IB */
    tu_cs_emit_state_ib(cs, tu_emit_consts(cmd, true));
@@ -6725,8 +6778,10 @@ tu_dispatch(struct tu_cmd_buffer *cmd,
 
    cmd->state.dirty &= ~TU_CMD_DIRTY_COMPUTE_DESC_SETS;
 
-   tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
-   tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));
+   if (!cmd->state.pass) {
+      tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
+      tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));
+   }
 
    const uint16_t *local_size = shader->variant->local_size;
    const uint32_t *num_groups = info->blocks;
@@ -6830,6 +6885,116 @@ tu_CmdDispatchIndirect(VkCommandBuffer commandBuffer,
    tu_dispatch<CHIP>(cmd_buffer, &info);
 }
 TU_GENX(tu_CmdDispatchIndirect);
+
+template <chip CHIP>
+VKAPI_ATTR void VKAPI_CALL
+tu_CmdExecuteGeneratedCommandsEXT(
+    VkCommandBuffer                             commandBuffer,
+    VkBool32                                    isPreprocessed,
+    const VkGeneratedCommandsInfoEXT*           pGeneratedCommandsInfo)
+{
+   VK_FROM_HANDLE(tu_cmd_buffer, cmd, commandBuffer);
+   VK_FROM_HANDLE(tu_indirect_command_layout, layout,
+                  pGeneratedCommandsInfo->indirectCommandsLayout);
+
+   if (!isPreprocessed) {
+      tu_preprocess<CHIP>(cmd, cmd, pGeneratedCommandsInfo);
+
+      struct tu_cache_state *cache =
+         cmd->state.pass ? &cmd->state.renderpass_cache : &cmd->state.cache;
+      tu_flush_for_access(cache,
+                          (enum tu_cmd_access_mask) (TU_ACCESS_UCHE_WRITE | TU_ACCESS_CP_WRITE),
+                          (enum tu_cmd_access_mask) (TU_ACCESS_UCHE_READ | TU_ACCESS_SYSMEM_READ));
+      cache->flush_bits |=
+         TU_CMD_FLAG_WAIT_FOR_IDLE |
+         TU_CMD_FLAG_WAIT_FOR_ME;
+   }
+
+   draw_wfm(cmd);
+
+   tu_dgc_begin(cmd, pGeneratedCommandsInfo);
+
+   struct tu_cs *cs = cmd->state.pass ? &cmd->draw_cs : &cmd->cs;
+
+   /* With indirect execution sets, we don't know which pipeline we will use
+    * and have to conservatively use the pipeline layout, which is the same
+    * for all pipelines, to determine the push const size when emitting push
+    * constants.
+    */
+   struct tu_push_constant_range old_range;
+   if (layout->bind_pipeline) {
+      old_range = cmd->state.program.shared_consts;
+      cmd->state.program.shared_consts = (tu_push_constant_range) {
+         .lo = 0,
+         .dwords = layout->push_constant_size / 4,
+         .type = IR3_PUSH_CONSTS_SHARED_PREAMBLE,
+      };
+      if (!layout->dispatch)
+         cmd->state.dirty |= TU_CMD_DIRTY_SHADER_CONSTS;
+   }
+
+   if (layout->dispatch) {
+      if (cmd->state.dirty & TU_CMD_DIRTY_COMPUTE_DESC_SETS) {
+         tu6_emit_descriptor_sets<CHIP>(cmd, VK_PIPELINE_BIND_POINT_COMPUTE);
+         tu_cs_emit_state_ib(cs, cmd->state.compute_load_state);
+      }
+
+      cmd->state.dirty &= ~TU_CMD_DIRTY_COMPUTE_DESC_SETS;
+
+      tu_cs_emit_pkt7(cs, CP_SET_MARKER, 1);
+      tu_cs_emit(cs, A6XX_CP_SET_MARKER_0_MODE(RM6_COMPUTE));
+
+      tu_emit_cache_flush<CHIP>(cmd);
+   } else {
+      /* Recalculate LRZ based on the IES pipelines */
+      if (layout->bind_pipeline) {
+         VK_FROM_HANDLE(tu_indirect_execution_set, ies,
+                        pGeneratedCommandsInfo->indirectExecutionSet);
+         cmd->state.dirty |= TU_CMD_DIRTY_LRZ;
+         cmd->state.ies = ies;
+      }
+
+      tu6_emit_empty_vs_params(cmd);
+
+      tu6_draw_common<CHIP>(cmd, cs, layout->draw_indexed, 0);
+
+      tu_emit_cache_flush_renderpass<CHIP>(cmd);
+   }
+
+   if (layout->bind_pipeline) {
+      cmd->state.program.shared_consts = old_range;
+   }
+
+   /* Call the trampoline buffer.
+    *
+    * TODO: for draw_cs (IB2), add it to the list of entries instead. This
+    * will be necessary for a6xx (to avoid IB3) and to use FSDT on a7xx (since
+    * the trampoline needs to execute in IB2 to be able to execute the IB
+    * indirectly, instead of a jump).
+    *
+    * In theory we could also include it directly in IB1, but that would
+    * require a new kernel submit ABI that uses addresses instead of BO
+    * indices and it's not as important.
+    */
+   tu_cs_emit_pkt7(cs, CP_INDIRECT_BUFFER, 3);
+   tu_cs_emit_qw(cs, pGeneratedCommandsInfo->preprocessAddress);
+   tu_cs_emit(cs, 4 /* CP_INDIRECT_BUFFER_CHAIN size */);
+
+   /* This NOP is necessary because of how the IB prefetching works: the SQE
+    * will look for another CP_INDIRECT_BUFFER packet immediately after the
+    * one above and start prefetching its contents before we encounter the
+    * CP_INDIRECT_BUFFER_CHAIN, resulting in commands fetched in the wrong
+    * order. This means we cannot have the IB above followed by another IB.
+    * The NOP acts a barrier for IB prefetching in case the next command emits
+    * an IB at the beginning.
+    */
+   tu_cs_emit_pkt7(cs, CP_NOP, 0);
+
+   tu_dgc_end(cmd, pGeneratedCommandsInfo);
+
+   cmd->state.ies = NULL;
+}
+TU_GENX(tu_CmdExecuteGeneratedCommandsEXT);
 
 VKAPI_ATTR void VKAPI_CALL
 tu_CmdEndRenderPass2(VkCommandBuffer commandBuffer,

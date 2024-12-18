@@ -528,10 +528,9 @@ crocus_is_format_supported(struct pipe_screen *pscreen,
          ignore_filtering = true;
 
       /* I said them, but I lied them. */
-      if (devinfo->ver < 5 && (format == ISL_FORMAT_R32G32B32A32_FLOAT ||
-                               format == ISL_FORMAT_R24_UNORM_X8_TYPELESS ||
-                               format == ISL_FORMAT_R32_FLOAT ||
-                               format == ISL_FORMAT_R32_FLOAT_X8X24_TYPELESS))
+      if (devinfo->ver < 5 && (format == ISL_FORMAT_R24_UNORM_X8_TYPELESS ||
+                               format == ISL_FORMAT_R32_FLOAT_X8X24_TYPELESS ||
+                               pformat == PIPE_FORMAT_Z32_FLOAT))
          ignore_filtering = true;
       if (!ignore_filtering)
          supported &= isl_format_supports_filtering(devinfo, format);

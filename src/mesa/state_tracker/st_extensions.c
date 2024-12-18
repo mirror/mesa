@@ -1734,8 +1734,9 @@ void st_init_extensions(struct pipe_screen *screen,
       }
    }
 
+   /* Older hardware wants to expose this even if can't fully support it (intel gen4) */
    extensions->ARB_texture_float =
-      extensions->OES_texture_half_float &&
+      extensions->OES_texture_half_float ||
       extensions->OES_texture_float;
 
    if (extensions->EXT_texture_filter_anisotropic &&

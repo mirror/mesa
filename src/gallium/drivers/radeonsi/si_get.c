@@ -1015,15 +1015,8 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
          return PIPE_FORMAT_NV12;
 
    case PIPE_VIDEO_CAP_PREFERS_INTERLACED:
+   case PIPE_VIDEO_CAP_SUPPORTS_INTERLACED:
       return false;
-   case PIPE_VIDEO_CAP_SUPPORTS_INTERLACED: {
-      enum pipe_video_format format = u_reduce_video_profile(profile);
-
-      if (format >= PIPE_VIDEO_FORMAT_HEVC)
-         return false;
-
-      return true;
-   }
    case PIPE_VIDEO_CAP_SUPPORTS_PROGRESSIVE:
       return true;
    case PIPE_VIDEO_CAP_MAX_LEVEL:
@@ -1109,7 +1102,7 @@ static bool si_vid_is_format_supported(struct pipe_screen *screen, enum pipe_for
 
    if (profile == PIPE_VIDEO_PROFILE_AV1_MAIN && entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM)
       return (format == PIPE_FORMAT_P010) || (format == PIPE_FORMAT_P016) ||
-             (format == PIPE_FORMAT_NV12);
+             (format == PIPE_FORMAT_NV12) || (format == PIPE_FORMAT_Y8_400_UNORM);
 
    if (profile == PIPE_VIDEO_PROFILE_AV1_PROFILE2 && entrypoint == PIPE_VIDEO_ENTRYPOINT_BITSTREAM) {
       if (sscreen->info.vcn_ip_version < VCN_5_0_0 && sscreen->info.vcn_ip_version != VCN_4_0_0)

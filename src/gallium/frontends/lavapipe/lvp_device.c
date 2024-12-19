@@ -193,6 +193,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_calibrated_timestamps             = true,
    .EXT_color_write_enable                = true,
    .EXT_conditional_rendering             = true,
+   .EXT_debug_marker                      = true,
    .EXT_depth_clip_enable                 = true,
    .EXT_depth_clip_control                = true,
    .EXT_depth_range_unrestricted          = true,

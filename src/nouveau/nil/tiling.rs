@@ -70,6 +70,7 @@ impl Tiling {
         let ceil_d = extent_GOB.depth.ilog2_ceil() as u8;
 
         tiling.y_log2 = std::cmp::min(tiling.y_log2, ceil_h);
+        tiling.y_log2 = 4;
         tiling.z_log2 = std::cmp::min(tiling.z_log2, ceil_d);
         tiling
     }
@@ -183,7 +184,7 @@ impl Tiling {
         let mut tiling = Tiling {
             gob_type: GOBType::Fermi8,
             x_log2: 0,
-            y_log2: 5,
+            y_log2: 4,
             z_log2: 5,
         };
 

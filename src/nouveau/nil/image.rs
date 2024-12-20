@@ -336,7 +336,7 @@ impl Image {
 
         image.size_B =
             image.array_stride_B * u64::from(image.extent_px.array_len);
-        image.align_B = lvl0_tiling_size_B;
+        image.align_B = image.levels[0].row_stride_B.next_power_of_two();
 
         // If the client requested sparse residency, we need a 64K alignment
         // or else sparse binding may fail.  This is true regardless of
@@ -685,7 +685,8 @@ impl Image {
                     NV_MMU_PTE_KIND_S8
                 }
             }
-            _ => NV_MMU_PTE_KIND_GENERIC_MEMORY,
+            _ => 0,
+            // _ => NV_MMU_PTE_KIND_GENERIC_MEMORY,
         }
         .try_into()
         .unwrap()

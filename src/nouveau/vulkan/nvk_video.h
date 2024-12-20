@@ -17,9 +17,16 @@ struct nvk_vid_mem {
 };
 
 struct nvk_video_session {
+   /** The parent object */
    struct vk_video_session vk;
-
+   /** Opaque memory objects needed by the GPU.
+    *
+    * We must ensure they're allocated and that the size is correctly computed
+    * from codec parameters.
+    */
    struct nvk_vid_mem mems[3];
+   /** Opaque pointer to data managed by the Rust side. */
+   void *rust;
 };
 
 struct nvk_video_session_params {

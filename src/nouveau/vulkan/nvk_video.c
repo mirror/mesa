@@ -10,9 +10,9 @@
 #include "nvk_entrypoints.h"
 
 #include "nv_push_cl906f.h"
-#include "nv_push_clc5b0.h"
 
 #include "nvidia/nvdec_drv.h"
+#include "video/video.h"
 
 VKAPI_ATTR VkResult VKAPI_CALL
 nvk_CreateVideoSessionKHR(VkDevice _device, const VkVideoSessionCreateInfoKHR *pCreateInfo,
@@ -32,6 +32,9 @@ nvk_CreateVideoSessionKHR(VkDevice _device, const VkVideoSessionCreateInfoKHR *p
       vk_free2(&dev->vk.alloc, pAllocator, vid);
       return result;
    }
+
+   nvk_video_create_video_session(vid);
+
    *pVideoSession = nvk_video_session_to_handle(vid);
    return VK_SUCCESS;
 }
@@ -45,6 +48,7 @@ nvk_DestroyVideoSessionKHR(VkDevice _device, VkVideoSessionKHR _session, const V
    if (!_session)
       return;
 
+   nvk_video_destroy_video_session(vid);
    vk_object_base_finish(&vid->vk.base);
    vk_free2(&dev->vk.alloc, pAllocator, vid);
 }
@@ -237,19 +241,12 @@ nvk_CmdBeginVideoCodingKHR(VkCommandBuffer commandBuffer, const VkVideoBeginCodi
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd_buffer, commandBuffer);
    VK_FROM_HANDLE(nvk_video_session, vid, pBeginInfo->videoSession);
    VK_FROM_HANDLE(nvk_video_session_params, params, pBeginInfo->videoSessionParameters);
-   struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
 
    cmd_buffer->video.vid = vid;
    cmd_buffer->video.params = params;
 
-   struct nv_push *p = nvk_cmd_buffer_push(cmd, 6);
 
-   /* assign nvdec to sub channel 4 */
-   __push_mthd(p, SUBC_NVC5B0, NV906F_SET_OBJECT);
-   P_NV906F_SET_OBJECT(p, { .nvclass = dev->nvkmd->pdev->dev_info.cls_video,
-                            .engine = 0 });
-
-
+   nvk_video_cmd_begin_video_coding_khr(cmd, pBeginInfo);
 }
 
 VKAPI_ATTR void VKAPI_CALL
@@ -269,201 +266,7 @@ nvk_CmdDecodeVideoKHR(VkCommandBuffer commandBuffer, const VkVideoDecodeInfoKHR 
 {
    VK_FROM_HANDLE(nvk_cmd_buffer, cmd, commandBuffer);
    VK_FROM_HANDLE(nvk_buffer, src_buffer, frame_info->srcBuffer);
-   struct nvk_video_session *vid = cmd->video.vid;
-   struct nvk_video_session_params *params = cmd->video.params;
    struct nvk_image_view *dst_iv = nvk_image_view_from_handle(frame_info->dstPictureResource.imageViewBinding);
-   struct nvk_image *dst_img = (struct nvk_image *)dst_iv->vk.image;
-   nvdec_h264_pic_s *nvh264;
-   uint64_t *slice_offsets;
-   uint64_t *mbstatus;
-   VkResult status;
-   uint64_t pic_gpu_addr, slice_offsets_address, mbstatus_address;
-   const struct VkVideoDecodeH264PictureInfoKHR *h264_pic_info =
-      vk_find_struct_const(frame_info->pNext, VIDEO_DECODE_H264_PICTURE_INFO_KHR);
 
-   const StdVideoH264SequenceParameterSet *sps =
-      vk_video_find_h264_dec_std_sps(&params->vk, h264_pic_info->pStdPictureInfo->seq_parameter_set_id);
-   const StdVideoH264PictureParameterSet *pps =
-      vk_video_find_h264_dec_std_pps(&params->vk, h264_pic_info->pStdPictureInfo->pic_parameter_set_id);
-   status = nvk_cmd_buffer_upload_alloc(cmd, sizeof(nvdec_h264_pic_s), 256,
-                                        &pic_gpu_addr, (void **)&nvh264);
-   assert(status == VK_SUCCESS);
-
-   status = nvk_cmd_buffer_upload_alloc(cmd, 32, 256,
-                                        &slice_offsets_address, (void **)&slice_offsets);
-   assert(status == VK_SUCCESS);
-
-   status = nvk_cmd_buffer_upload_alloc(cmd, 4096, 4096,
-                                        &mbstatus_address, (void **)&mbstatus);
-
-   memset(nvh264, 0, sizeof(nvdec_h264_pic_s));
-
-   nvh264->slice_count = 1;
-   nvh264->stream_len = frame_info->srcBufferRange;
-   nvh264->mbhist_buffer_size = 4096;
-   nvh264->log2_max_pic_order_cnt_lsb_minus4 = sps->log2_max_pic_order_cnt_lsb_minus4;
-   nvh264->delta_pic_order_always_zero_flag = sps->flags.delta_pic_order_always_zero_flag;
-   nvh264->frame_mbs_only_flag = sps->flags.frame_mbs_only_flag;
-   nvh264->PicWidthInMbs = sps->pic_width_in_mbs_minus1 + 1;
-   nvh264->FrameHeightInMbs = sps->pic_height_in_map_units_minus1 + 1;
-
-   nvh264->tileFormat = 1;
-   nvh264->gob_height = 3;
-
-   nvh264->entropy_coding_mode_flag = pps->flags.entropy_coding_mode_flag;
-   nvh264->pic_order_present_flag = pps->flags.bottom_field_pic_order_in_frame_present_flag;
-   nvh264->num_ref_idx_l0_active_minus1 = pps->num_ref_idx_l0_default_active_minus1;
-   nvh264->num_ref_idx_l1_active_minus1 = pps->num_ref_idx_l1_default_active_minus1;
-   nvh264->deblocking_filter_control_present_flag = pps->flags.deblocking_filter_control_present_flag;
-   nvh264->redundant_pic_cnt_present_flag = pps->flags.redundant_pic_cnt_present_flag;
-   nvh264->transform_8x8_mode_flag = pps->flags.transform_8x8_mode_flag;
-   nvh264->pitch_luma = dst_img->planes[0].nil.levels[0].row_stride_B;
-   nvh264->pitch_chroma = dst_img->planes[1].nil.levels[0].row_stride_B;
-   nvh264->luma_top_offset = 0;
-   nvh264->luma_bot_offset = 0;
-   nvh264->luma_frame_offset = 0;
-   nvh264->chroma_top_offset = 0;
-   nvh264->chroma_bot_offset = 0;
-   nvh264->chroma_frame_offset = 0;
-
-   nvh264->HistBufferSize = 0;
-
-   nvh264->MbaffFrameFlag = sps->flags.mb_adaptive_frame_field_flag;
-   nvh264->direct_8x8_inference_flag = sps->flags.direct_8x8_inference_flag;
-   nvh264->weighted_pred_flag = pps->flags.weighted_pred_flag;
-   nvh264->constrained_intra_pred_flag = pps->flags.constrained_intra_pred_flag;
-   nvh264->ref_pic_flag = h264_pic_info->pStdPictureInfo->flags.is_reference;
-   nvh264->field_pic_flag = h264_pic_info->pStdPictureInfo->flags.field_pic_flag;
-   nvh264->bottom_field_flag = h264_pic_info->pStdPictureInfo->flags.bottom_field_flag;
-   nvh264->second_field = h264_pic_info->pStdPictureInfo->flags.complementary_field_pair;
-   nvh264->log2_max_frame_num_minus4 = sps->log2_max_frame_num_minus4;
-   nvh264->chroma_format_idc = sps->chroma_format_idc;
-   nvh264->pic_order_cnt_type = sps->pic_order_cnt_type;
-   nvh264->pic_init_qp_minus26 = pps->pic_init_qp_minus26;
-   nvh264->chroma_qp_index_offset = pps->chroma_qp_index_offset;
-   nvh264->second_chroma_qp_index_offset = pps->second_chroma_qp_index_offset;
-
-   nvh264->weighted_bipred_idc = pps->weighted_bipred_idc;
-   nvh264->CurrPicIdx = frame_info->pSetupReferenceSlot->slotIndex;
-   nvh264->CurrColIdx = frame_info->pSetupReferenceSlot->slotIndex;
-   nvh264->frame_num = h264_pic_info->pStdPictureInfo->frame_num;
-   nvh264->frame_surfaces = 0;
-   nvh264->output_memory_layout = 0;
-
-   nvh264->CurrFieldOrderCnt[0] = h264_pic_info->pStdPictureInfo->PicOrderCnt[0];
-   nvh264->CurrFieldOrderCnt[1] = h264_pic_info->pStdPictureInfo->PicOrderCnt[1];
-
-   memset(nvh264->WeightScale, 0x10, 6*4*4);
-   memset(nvh264->WeightScale8x8, 0x10, 2*8*8);
-   memset(slice_offsets, 0, 64);
-
-   uint64_t luma_base[17] = { 0 };
-   uint64_t chroma_base[17] = { 0 };
-
-   /* DPB */
-   for (unsigned i = 0; i < frame_info->referenceSlotCount; i++) {
-      int idx = frame_info->pReferenceSlots[i].slotIndex;
-      const struct VkVideoDecodeH264DpbSlotInfoKHR *dpb_slot =
-         vk_find_struct_const(frame_info->pReferenceSlots[i].pNext, VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR);
-      struct nvk_image_view *f_dpb_iv =
-         nvk_image_view_from_handle(frame_info->pReferenceSlots[i].pPictureResource->imageViewBinding);
-      struct nvk_image *dpb_img = (struct nvk_image *)f_dpb_iv->vk.image;
-
-      nvh264->dpb[i].index = idx;
-      nvh264->dpb[i].col_idx = idx;
-      nvh264->dpb[i].FieldOrderCnt[0] = dpb_slot->pStdReferenceInfo->PicOrderCnt[0];
-      nvh264->dpb[i].FieldOrderCnt[1] = dpb_slot->pStdReferenceInfo->PicOrderCnt[1];
-      nvh264->dpb[i].FrameIdx = dpb_slot->pStdReferenceInfo->FrameNum;
-
-      nvh264->dpb[i].is_long_term = dpb_slot->pStdReferenceInfo->flags.used_for_long_term_reference;
-      nvh264->dpb[i].not_existing = dpb_slot->pStdReferenceInfo->flags.is_non_existing;
-      luma_base[idx] = nvk_image_base_address(dpb_img, 0) >> 8;
-      chroma_base[idx] = nvk_image_base_address(dpb_img, 1) >> 8;
-   }
-
-   /* weights scale, scale 8x8 - raster scan */
-
-   nvh264->lossless_ipred8x8_filter_enable = 0;
-   nvh264->qpprime_y_zero_transform_bypass_flag = 0;
-
-   int slot_idx = frame_info->pSetupReferenceSlot->slotIndex;
-   luma_base[slot_idx] = nvk_image_base_address(dst_img, 0) >> 8;
-   chroma_base[slot_idx] = nvk_image_base_address(dst_img, 1) >> 8;
-   uint64_t mem0_addr = (vid->mems[0].mem->mem->va->addr + vid->mems[0].offset) >> 8;
-   uint64_t mem1_addr = (vid->mems[1].mem->mem->va->addr + vid->mems[1].offset) >> 8;
-   uint64_t mem2_addr = (vid->mems[2].mem->mem->va->addr + vid->mems[2].offset) >> 8;
-   uint64_t src_address = nvk_buffer_address(src_buffer, frame_info->srcBufferOffset);
-   struct nv_push *p = nvk_cmd_buffer_push(cmd, 64);
-   /* display param */
-   /* SET DRV PIC SETUP OFFSET */
-   P_MTHD(p, NVC5B0, SET_APPLICATION_ID);
-   P_NVC5B0_SET_APPLICATION_ID(p, ID_H264);
-
-   P_MTHD(p, NVC5B0, SET_CONTROL_PARAMS);
-   P_NVC5B0_SET_CONTROL_PARAMS(p, { .codec_type = CODEC_TYPE_H264,
-                                    .gptimer_on = 1,
-                                    .err_conceal_on = 1,
-                                    .mbtimer_on = 1
-      });
-
-   P_MTHD(p, NVC5B0, SET_DRV_PIC_SETUP_OFFSET);
-   P_NVC5B0_SET_DRV_PIC_SETUP_OFFSET(p, pic_gpu_addr >> 8);
-   P_NVC5B0_SET_IN_BUF_BASE_OFFSET(p, src_address >> 8);
-   P_NVC5B0_SET_PICTURE_INDEX(p, slot_idx);
-   P_NVC5B0_SET_SLICE_OFFSETS_BUF_OFFSET(p, slice_offsets_address >> 8);
-   P_NVC5B0_SET_COLOC_DATA_OFFSET(p, mem0_addr);
-   P_NVC5B0_SET_HISTORY_OFFSET(p, mem2_addr);
-//   P_NVC5B0_SET_DISPLAY_BUF_SIZE(p, 0);
-//   P_NVC5B0_SET_HISTOGRAM_OFFSET(p, 0);
-
-   P_MTHD(p, NVC5B0, SET_NVDEC_STATUS_OFFSET);
-   P_NVC5B0_SET_NVDEC_STATUS_OFFSET(p, mbstatus_address >> 8);
-
-//   P_NVC5B0_SET_DISPLAY_BUF_LUMA_OFFSET(p, 0);//luma_addr >> 8);
-//   P_NVC5B0_SET_DISPLAY_BUF_CHROMA_OFFSET(p, 0);//chroma_addr >> 8);
-   P_MTHD(p, NVC5B0, SET_PICTURE_LUMA_OFFSET0);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET0(p, luma_base[0]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET1(p, luma_base[1]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET2(p, luma_base[2]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET3(p, luma_base[3]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET4(p, luma_base[4]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET5(p, luma_base[5]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET6(p, luma_base[6]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET7(p, luma_base[7]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET8(p, luma_base[8]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET9(p, luma_base[9]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET10(p, luma_base[10]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET11(p, luma_base[11]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET12(p, luma_base[12]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET13(p, luma_base[13]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET14(p, luma_base[14]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET15(p, luma_base[15]);
-   P_NVC5B0_SET_PICTURE_LUMA_OFFSET16(p, luma_base[16]);
-
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET0(p, chroma_base[0]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET1(p, chroma_base[1]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET2(p, chroma_base[2]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET3(p, chroma_base[3]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET4(p, chroma_base[4]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET5(p, chroma_base[5]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET6(p, chroma_base[6]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET7(p, chroma_base[7]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET8(p, chroma_base[8]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET9(p, chroma_base[9]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET10(p, chroma_base[10]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET11(p, chroma_base[11]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET12(p, chroma_base[12]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET13(p, chroma_base[13]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET14(p, chroma_base[14]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET15(p, chroma_base[15]);
-   P_NVC5B0_SET_PICTURE_CHROMA_OFFSET16(p, chroma_base[16]);
-
-   P_MTHD(p, NVC5B0, H264_SET_MBHIST_BUF_OFFSET);
-   P_NVC5B0_H264_SET_MBHIST_BUF_OFFSET(p, mem1_addr);
-
-   P_MTHD(p, NVC5B0, EXECUTE);
-   P_NVC5B0_EXECUTE(p, { .notify = NOTIFY_DISABLE,
-                         .notify_on = NOTIFY_ON_END,
-                         .awaken = AWAKEN_DISABLE });
-   /* EXECUTE */
+   nvk_video_cmd_decode_video_khr(cmd, frame_info, src_buffer, dst_iv);
 }

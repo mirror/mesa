@@ -1,5 +1,8 @@
 # Copyright © 2022 Collabora Ltd. and Red Hat Inc.
 # SPDX-License-Identifier: MIT
+
+subdir('video')
+
 nvk_files = files(
   '../../gallium/auxiliary/tgsi/tgsi_from_mesa.c',
   'nvk_acceleration_structure.c',
@@ -101,6 +104,7 @@ nvk_deps = [
   idep_vulkan_util,
   idep_vulkan_wsi,
   idep_vulkan_wsi_headers,
+  idep_nvk_video,
 ]
 
 nvk_flags = []

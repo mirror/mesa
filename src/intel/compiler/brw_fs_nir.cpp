@@ -1071,6 +1071,14 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
          }
       }
 
+      /* If narrowing (e.g. 32 -> 16), don't do a D -> W or UD -> UW mov,
+       * instead just read the source as W/UW with a stride (discarding
+       * the top bits).  This avoids the need for the destination to be
+       * DWord aligned due to regioning restrictions.
+       */
+      if (brw_type_size_bits(result.type) < brw_type_size_bits(op[0].type))
+         op[0] = subscript(op[0], brw_type_with_size(op[0].type, 16), 0);
+
       bld.MOV(result, op[0]);
       break;
    }
@@ -1293,7 +1301,7 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
       const uint32_t bit_size =  nir_src_bit_size(instr->src[0].src);
       if (bit_size != 32) {
          dest = bld.vgrf(op[0].type);
-         bld.UNDEF(dest);
+         bld.emit_undef_for_partial_reg(dest);
       }
 
       bld.CMP(dest, op[0], op[1], brw_cmod_for_nir_comparison(instr->op));
@@ -1323,7 +1331,7 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
       const uint32_t bit_size = brw_type_size_bits(op[0].type);
       if (bit_size != 32) {
          dest = bld.vgrf(op[0].type);
-         bld.UNDEF(dest);
+         bld.emit_undef_for_partial_reg(dest);
       }
 
       bld.CMP(dest, op[0], op[1],
@@ -1635,9 +1643,9 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
     */
    case nir_op_ishl:
       if (instr->def.bit_size < 32) {
-         bld.SHL(result,
-                 op[0],
-                 bld.AND(op[1], brw_imm_ud(instr->def.bit_size - 1)));
+         bld.SHL(result, op[0],
+                 bld.AND(subscript(op[1], BRW_TYPE_UW, 0),
+                         brw_imm_uw(instr->def.bit_size - 1)));
       } else {
          bld.SHL(result, op[0], op[1]);
       }
@@ -1645,9 +1653,9 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
       break;
    case nir_op_ishr:
       if (instr->def.bit_size < 32) {
-         bld.ASR(result,
-                 op[0],
-                 bld.AND(op[1], brw_imm_ud(instr->def.bit_size - 1)));
+         bld.ASR(result, op[0],
+                 bld.AND(subscript(op[1], BRW_TYPE_UW, 0),
+                         brw_imm_uw(instr->def.bit_size - 1)));
       } else {
          bld.ASR(result, op[0], op[1]);
       }
@@ -1655,9 +1663,9 @@ fs_nir_emit_alu(nir_to_brw_state &ntb, nir_alu_instr *instr,
       break;
    case nir_op_ushr:
       if (instr->def.bit_size < 32) {
-         bld.SHR(result,
-                 op[0],
-                 bld.AND(op[1], brw_imm_ud(instr->def.bit_size - 1)));
+         bld.SHR(result, op[0],
+                 bld.AND(subscript(op[1], BRW_TYPE_UW, 0),
+                         brw_imm_uw(instr->def.bit_size - 1)));
       } else {
          bld.SHR(result, op[0], op[1]);
       }
@@ -1931,8 +1939,7 @@ get_nir_def(nir_to_brw_state &ntb, const nir_def &def)
       ntb.ssa_values[def.index] =
          bld.vgrf(reg_type, def.num_components);
 
-      if (def.bit_size * bld.dispatch_width() < 8 * REG_SIZE)
-         bld.UNDEF(ntb.ssa_values[def.index]);
+      bld.emit_undef_for_partial_reg(ntb.ssa_values[def.index]);
 
       return ntb.ssa_values[def.index];
    } else {

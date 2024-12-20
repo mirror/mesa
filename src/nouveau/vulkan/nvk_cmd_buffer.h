@@ -226,6 +226,15 @@ struct nvk_cmd_buffer {
    uint32_t *push_mem_limit;
    struct nv_push push;
 
+   struct {
+      /** The BO backing our Rust push buffer */
+      struct nvk_cmd_mem *mem;
+      /** The number of u32s currently written in `mem` */
+      size_t dw_count;
+      /** This variable keeps track of how much has been sent to the GPU. */
+      size_t bytes_submitted;
+   } rust;
+
    /** Array of struct nvk_cmd_push
     *
     * This acts both as a BO reference as well as provides a range in the
@@ -272,9 +281,16 @@ nvk_cmd_buffer_push(struct nvk_cmd_buffer *cmd, uint32_t dw_count)
       nvk_cmd_buffer_new_push(cmd);
 
    cmd->push.limit = cmd->push.end + dw_count;
-   
+
    return &cmd->push;
 }
+
+/**
+ * Append a Rust-generated pushbuffer to the command buffer.
+ */
+VkResult nvk_cmd_buffer_append_rust_push(struct nvk_cmd_buffer *cmd,
+                                         uint32_t *data,
+                                         uint32_t dw_count);
 
 void
 nvk_cmd_buffer_push_indirect(struct nvk_cmd_buffer *cmd,

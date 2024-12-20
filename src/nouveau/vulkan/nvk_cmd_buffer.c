@@ -506,8 +506,10 @@ nvk_cmd_flush_wait_dep(struct nvk_cmd_buffer *cmd,
          });
       }
    } else if (barriers & NVK_BARRIER_RENDER_WFI) {
+      bool is_video = cmd->vk.pool->queue_family_index == 1;
+
       /* If this comes from a vkCmdSetEvent, we don't need to wait */
-      if (wait)
+      if (wait && !is_video)
          P_IMMD(p, NVA097, WAIT_FOR_IDLE, 0);
    } else {
       /* Compute WFI only happens when shader data is flushed */

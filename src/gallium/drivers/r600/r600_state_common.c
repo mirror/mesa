@@ -2264,9 +2264,9 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 			index_offset -= start_offset;
 			has_user_indices = false;
 		}
-		index_bias = draws->index_bias;
+		index_bias = unlikely(indirect) ? 0 : draws->index_bias;
 	} else {
-		index_bias = indirect ? 0 : draws[0].start;
+		index_bias = unlikely(indirect) ? 0 : draws[0].start;
 	}
 
 	/* Set the index offset and primitive restart. */

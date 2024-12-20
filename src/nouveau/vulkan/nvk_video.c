@@ -169,27 +169,33 @@ nvk_GetVideoSessionMemoryRequirementsKHR(VkDevice _device, VkVideoSessionKHR vid
                                           uint32_t *pMemoryRequirementsCount,
                                           VkVideoSessionMemoryRequirementsKHR *pMemoryRequirements)
 {
-//   VK_FROM_HANDLE(nvk_device, dev, _device);
-//   VK_FROM_HANDLE(nvk_video_session, vid, videoSession);
+   VK_FROM_HANDLE(nvk_video_session, vid, videoSession);
    uint32_t memory_type_bits = (1u << 2) - 1;
    VK_OUTARRAY_MAKE_TYPED(VkVideoSessionMemoryRequirementsKHR, out, pMemoryRequirements, pMemoryRequirementsCount);
+   size_t max_width_in_mb = vid->vk.max_coded.width / 16;
+   size_t max_height_in_mb = vid->vk.max_coded.height / 16;
+   size_t coloc_size   = align(align(max_height_in_mb, 2) * (max_width_in_mb * 64) - 63, 0x100);
+   coloc_size  *= vid->vk.max_active_ref_pics + 1; /* Max number of references frames, plus current frame */
+   size_t mbhist_size  = align(max_width_in_mb * 104, 0x100);
+   size_t history_size = align(max_width_in_mb * 0x300, 0x200);
+
 
    vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
       m->memoryBindIndex = 0;
-      m->memoryRequirements.size = 16384;
-      m->memoryRequirements.alignment = 4096;
+      m->memoryRequirements.size = coloc_size;
+      m->memoryRequirements.alignment = 256;
       m->memoryRequirements.memoryTypeBits = memory_type_bits;
    }
    vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
       m->memoryBindIndex = 1;
-      m->memoryRequirements.size = 122880;
-      m->memoryRequirements.alignment = 4096;
+      m->memoryRequirements.size = mbhist_size;
+      m->memoryRequirements.alignment = 256;
       m->memoryRequirements.memoryTypeBits = memory_type_bits;
    }
    vk_outarray_append_typed(VkVideoSessionMemoryRequirementsKHR, &out, m) {
       m->memoryBindIndex = 2;
-      m->memoryRequirements.size = 12288;
-      m->memoryRequirements.alignment = 4096;
+      m->memoryRequirements.size = history_size;
+      m->memoryRequirements.alignment = 256;
       m->memoryRequirements.memoryTypeBits = memory_type_bits;
    }
    return vk_outarray_status(&out);

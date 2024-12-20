@@ -1385,6 +1385,7 @@ nvk_create_drm_physical_device(struct vk_instance *_instance,
       goto fail_disk_cache;
    }
 
+   uint32_t sysmem_heap_idx = pdev->mem_heap_count++;
    if (pdev->info.vram_size_B > 0) {
       uint32_t vram_heap_idx = pdev->mem_heap_count++;
       uint32_t bar_heap_idx = vram_heap_idx;
@@ -1411,6 +1412,12 @@ nvk_create_drm_physical_device(struct vk_instance *_instance,
          .heapIndex = vram_heap_idx,
       };
 
+      pdev->mem_types[pdev->mem_type_count++] = (VkMemoryType) {
+         .propertyFlags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT |
+                          VK_MEMORY_PROPERTY_HOST_COHERENT_BIT |
+         .heapIndex = sysmem_heap_idx,
+      };
+
       if (pdev->info.cls_eng3d >= MAXWELL_A) {
          pdev->mem_types[pdev->mem_type_count++] = (VkMemoryType) {
             .propertyFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT |
@@ -1421,7 +1428,6 @@ nvk_create_drm_physical_device(struct vk_instance *_instance,
       }
    }
 
-   uint32_t sysmem_heap_idx = pdev->mem_heap_count++;
    pdev->mem_heaps[sysmem_heap_idx] = (struct nvk_memory_heap) {
       .size = sysmem_size_B,
       /* If we don't have any VRAM (iGPU), claim sysmem as DEVICE_LOCAL */

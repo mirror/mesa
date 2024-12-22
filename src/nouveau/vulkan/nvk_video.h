@@ -23,8 +23,10 @@ struct nvk_video_session {
     *
     * We must ensure they're allocated and that the size is correctly computed
     * from codec parameters.
+    *
+    * Not all memories are bound for all codecs.
     */
-   struct nvk_vid_mem mems[3];
+   struct nvk_vid_mem mems[5];
    /** Opaque pointer to data managed by the Rust side. */
    void *rust;
 };

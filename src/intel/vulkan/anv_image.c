@@ -1896,6 +1896,16 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
       assert(image->num_view_formats == 1);
    }
 
+   const VkImageAlignmentControlCreateInfoMESA *alignment =
+         vk_find_struct_const(pCreateInfo->pNext, IMAGE_ALIGNMENT_CONTROL_CREATE_INFO_MESA);
+
+   const bool prefer_64k_alignment = alignment &&
+       alignment->maximumRequestedAlignment > 4096 &&
+       alignment->maximumRequestedAlignment <= 64 * 1024;
+
+   if (!INTEL_DEBUG(DEBUG_NO_CCS) && prefer_64k_alignment)
+      isl_extra_usage_flags |= ISL_SURF_USAGE_PREFER_TILE64;
+
    if (mod_explicit_info) {
       r = add_all_surfaces_explicit_layout(device, image, fmt_list,
                                            mod_explicit_info, isl_tiling_flags,

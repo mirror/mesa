@@ -1144,6 +1144,12 @@ isl_surf_choose_tiling(const struct isl_device *dev,
       CHOOSE(ISL_TILING_SKL_Ys);
    }
 
+   /* Choose 64K tiling if prefered */
+   if (info->usage & ISL_SURF_USAGE_PREFER_TILE64) {
+      CHOOSE(ISL_TILING_64);
+      CHOOSE(ISL_TILING_64_XE2);
+   }
+
    /* Choose suggested 4K tilings first, then 64K tilings:
     *
     * Then following quotes can be found in the SKL PRMs,

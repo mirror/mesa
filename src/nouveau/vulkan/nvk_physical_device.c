@@ -200,6 +200,7 @@ nvk_get_device_extensions(const struct nvk_instance *instance,
       .KHR_video_queue = true,
       .KHR_video_decode_queue = true,
       .KHR_video_decode_h264 = true,
+      .KHR_video_decode_h265 = true,
       .KHR_workgroup_memory_explicit_layout = true,
       .KHR_zero_initialize_workgroup_memory = true,
       .EXT_4444_formats = true,
@@ -1639,7 +1640,7 @@ nvk_GetPhysicalDeviceQueueFamilyProperties2(
           VkQueueFamilyVideoPropertiesKHR *prop = (VkQueueFamilyVideoPropertiesKHR *)ext;
           if (pQueueFamilyProperties[i].queueFamilyProperties.queueFlags & VK_QUEUE_VIDEO_DECODE_BIT_KHR)
              prop->videoCodecOperations =
-                VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR;
+                VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR | VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR;
           break;
        }
        default:

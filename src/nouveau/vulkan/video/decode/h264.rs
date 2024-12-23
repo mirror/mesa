@@ -545,9 +545,11 @@ impl VideoDecoder for Decoder {
             sps.flags.delta_pic_order_always_zero_flag() as i32;
         nvh264.frame_mbs_only_flag =
             sps.flags.frame_mbs_only_flag().try_into().unwrap();
-        nvh264.PicWidthInMbs = sps.pic_width_in_mbs_minus1 + 1;
+        nvh264.PicWidthInMbs =
+            (sps.pic_width_in_mbs_minus1 + 1).try_into().unwrap();
 
-        nvh264.FrameHeightInMbs = sps.pic_height_in_map_units_minus1 + 1;
+        nvh264.FrameHeightInMbs =
+            (sps.pic_height_in_map_units_minus1 + 1).try_into().unwrap();
         if nvh264.frame_mbs_only_flag == 0 {
             nvh264.FrameHeightInMbs *= 2;
         }
@@ -573,7 +575,8 @@ impl VideoDecoder for Decoder {
             pps.flags.transform_8x8_mode_flag() as _;
         nvh264.pitch_luma = dst_img.planes[0].nil.levels[0].row_stride_B;
         nvh264.pitch_chroma = dst_img.planes[1].nil.levels[0].row_stride_B;
-        nvh264.luma_bot_offset = nvh264.PicWidthInMbs * 16;
+        nvh264.luma_bot_offset =
+            u32::try_from(nvh264.PicWidthInMbs).unwrap() * 16;
         nvh264.chroma_bot_offset = nvh264.pitch_chroma / 2;
 
         nvh264.HistBufferSize = history_size >> 8;

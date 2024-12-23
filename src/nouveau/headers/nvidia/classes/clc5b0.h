@@ -98,7 +98,6 @@ extern "C" {
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_VC1                                (0x00000002)
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_H264                               (0x00000003)
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_MPEG4                              (0x00000004)
-// #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_DIVX3                              (0x00000004)
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_VP8                                (0x00000005)
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_HEVC                               (0x00000007)
 #define NVC5B0_SET_CONTROL_PARAMS_CODEC_TYPE_VP9                                (0x00000009)

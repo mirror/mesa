@@ -4791,12 +4791,21 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
          if (nir_op_infos[alu->op].num_inputs > 3)
             break;
 
+         enum brw_reg_type result_type = brw_type_for_nir_type(
+            ntb.devinfo,
+            (nir_alu_type)(nir_op_infos[alu->op].output_type |
+                           alu->def.bit_size));
+
          brw_reg srcs[3];
          for (unsigned s = 0; s < nir_op_infos[alu->op].num_inputs; s++) {
             srcs[s] = offset(
                ntb.resource_insts[alu->src[s].src.ssa->index]->dst,
                ubld, alu->src[s].swizzle[0]);
             assert(srcs[s].file != BAD_FILE);
+            srcs[s].type = brw_type_for_nir_type(
+               ntb.devinfo,
+               (nir_alu_type)(nir_op_infos[alu->op].input_types[s] |
+                              nir_src_bit_size(alu->src[s].src)));
          }
 
          switch (alu->op) {
@@ -4814,15 +4823,10 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
                          srcs[2]);
             break;
          }
-         case nir_op_ushr: {
-            enum brw_reg_type utype =
-               brw_type_with_size(BRW_TYPE_UD,
-                                  brw_type_size_bits(srcs[0].type));
-            ubld.SHR(retype(srcs[0], utype),
-                     retype(srcs[1], utype),
-                     &ntb.resource_insts[def->index]);
+         case nir_op_ushr:
+            ubld.SHR(srcs[0], srcs[1], &ntb.resource_insts[def->index]);
             break;
-         }
+
          case nir_op_iand:
             ubld.AND(srcs[0], srcs[1], &ntb.resource_insts[def->index]);
             break;
@@ -4834,19 +4838,14 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
          case nir_op_ult32: {
             if (brw_type_size_bits(srcs[0].type) != 32)
                break;
-            enum brw_reg_type utype =
-               brw_type_with_size(BRW_TYPE_UD,
-                                  brw_type_size_bits(srcs[0].type));
-            brw_reg dst = ubld.vgrf(utype);
+            brw_reg dst = ubld.vgrf(result_type);
             ntb.resource_insts[def->index] =
-               ubld.CMP(dst,
-                        retype(srcs[0], utype),
-                        retype(srcs[1], utype),
+               ubld.CMP(dst, srcs[0], srcs[1],
                         brw_cmod_for_nir_comparison(alu->op));
             break;
          }
          case nir_op_b2i32:
-            ubld.MOV(negate(retype(srcs[0], BRW_TYPE_D)),
+            ubld.MOV(negate(srcs[0]),
                      &ntb.resource_insts[def->index]);
             break;
          case nir_op_unpack_64_2x32_split_x:
@@ -4858,7 +4857,7 @@ try_rebuild_source(nir_to_brw_state &ntb, const brw::fs_builder &bld,
                      &ntb.resource_insts[def->index]);
             break;
          case nir_op_pack_64_2x32_split: {
-            brw_reg dst = ubld.vgrf(BRW_TYPE_Q);
+            brw_reg dst = ubld.vgrf(result_type);
             ntb.resource_insts[def->index] =
                ubld.emit(FS_OPCODE_PACK, dst, srcs[0], srcs[1]);
          }

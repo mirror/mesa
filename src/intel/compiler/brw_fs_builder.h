@@ -456,7 +456,9 @@ namespace brw {
       alu2(opcode op, const brw_reg &src0, const brw_reg &src1, fs_inst **out = NULL) const
       {
          enum brw_reg_type inferred_dst_type =
-            brw_type_larger_of(src0.type, src1.type);
+            brw_type_with_size(src0.type,
+                               MAX2(brw_type_size_bits(src0.type),
+                                    brw_type_size_bits(src1.type)));
          fs_inst *inst = alu2(op, vgrf(inferred_dst_type), src0, src1);
          if (out) *out = inst;
          return inst->dst;

@@ -107,6 +107,10 @@ void genX(batch_emit_vertex_input)(struct anv_batch *batch,
                                    struct anv_graphics_pipeline *pipeline,
                                    const struct vk_vertex_input_state *vi);
 
+void genX(batch_emit_gfx_pipeline_push_alloc)(struct anv_batch *batch,
+                                              struct anv_device *device,
+                                              struct anv_graphics_pipeline *pipeline);
+
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,

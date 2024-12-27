@@ -275,21 +275,136 @@ emit_ves_vf_instancing(struct anv_batch *batch,
    }
 }
 
+static void
+emit_independent_ves_vf_instancing(struct anv_batch *batch,
+                                   struct anv_device *device,
+                                   uint32_t *vertex_element_dws,
+                                   const struct vk_vertex_input_state *vi)
+{
+   for (uint32_t a = 0; a < 34; a++) {
+      if (!(vi->attributes_valid & BITFIELD_BIT(a))) {
+         /* The SKL docs for VERTEX_ELEMENT_STATE say:
+          *
+          *    "All elements must be valid from Element[0] to the last valid
+          *    element. (I.e. if Element[2] is valid then Element[1] and
+          *    Element[0] must also be valid)."
+          *
+          * The SKL docs for 3D_Vertex_Component_Control say:
+          *
+          *    "Don't store this component. (Not valid for Component 0, but can
+          *    be used for Component 1-3)."
+          *
+          * So we can't just leave a vertex element blank and hope for the best.
+          * We have to tell the VF hardware to put something in it; so we just
+          * store a bunch of zero.
+          */
+         struct GENX(VERTEX_ELEMENT_STATE) element = {
+            .Valid = true,
+            .Component0Control = VFCOMP_STORE_0,
+            .Component1Control = VFCOMP_STORE_0,
+            .Component2Control = VFCOMP_STORE_0,
+            .Component3Control = VFCOMP_STORE_0,
+         };
+         GENX(VERTEX_ELEMENT_STATE_pack)(NULL,
+                                         &vertex_element_dws[a * 2],
+                                         &element);
+
+         anv_batch_emit(batch, GENX(3DSTATE_VF_INSTANCING), vfi) {
+            vfi.VertexElementIndex = a;
+         }
+         continue;
+      }
+
+      if (a == BRW_SVGS_VE_INDEX) {
+         struct GENX(VERTEX_ELEMENT_STATE) element = {
+            .Valid = true,
+            .VertexBufferIndex = BRW_SVGS_VE_INDEX,
+            .SourceElementFormat = ISL_FORMAT_R32G32_UINT,
+            .Component0Control = VFCOMP_STORE_0,
+            .Component1Control = VFCOMP_STORE_0,
+            .Component2Control = VFCOMP_STORE_0,
+            .Component3Control = VFCOMP_STORE_0,
+         };
+         GENX(VERTEX_ELEMENT_STATE_pack)(NULL,
+                                         &vertex_element_dws[a * 2],
+                                         &element);
+         continue;
+      }
+
+      if (a == BRW_DRAWID_VE_INDEX) {
+         struct GENX(VERTEX_ELEMENT_STATE) element = {
+            .VertexBufferIndex = BRW_DRAWID_VE_INDEX,
+            .Valid = true,
+            .SourceElementFormat = ISL_FORMAT_R32_UINT,
+            .Component0Control = VFCOMP_STORE_0,
+            .Component1Control = VFCOMP_STORE_0,
+            .Component2Control = VFCOMP_STORE_0,
+            .Component3Control = VFCOMP_STORE_0,
+         };
+         GENX(VERTEX_ELEMENT_STATE_pack)(NULL,
+                                         &vertex_element_dws[a * 2],
+                                         &element);
+         continue;
+      }
+
+      enum isl_format format =
+         a >= 32 ? ISL_FORMAT_R32G32B32A32_UINT :
+         anv_get_isl_format(device->physical,
+                            vi->attributes[a].format,
+                            VK_IMAGE_ASPECT_COLOR_BIT,
+                            VK_IMAGE_TILING_LINEAR);
+      assume(format < ISL_NUM_FORMATS);
+
+      uint32_t binding = vi->attributes[a].binding;
+      assert(binding < MAX_VBS);
+
+      struct GENX(VERTEX_ELEMENT_STATE) element = {
+         .VertexBufferIndex = vi->attributes[a].binding,
+         .Valid = true,
+         .SourceElementFormat = format,
+         .EdgeFlagEnable = false,
+         .SourceElementOffset = vi->attributes[a].offset,
+         .Component0Control = vertex_element_comp_control(format, 0),
+         .Component1Control = vertex_element_comp_control(format, 1),
+         .Component2Control = vertex_element_comp_control(format, 2),
+         .Component3Control = vertex_element_comp_control(format, 3),
+      };
+      GENX(VERTEX_ELEMENT_STATE_pack)(NULL,
+                                      &vertex_element_dws[a * 2],
+                                      &element);
+
+      anv_batch_emit(batch, GENX(3DSTATE_VF_INSTANCING), vfi) {
+         bool per_instance = vi->bindings[binding].input_rate ==
+            VK_VERTEX_INPUT_RATE_INSTANCE;
+         uint32_t divisor = vi->bindings[binding].divisor;
+
+         vfi.VertexElementIndex = a;
+         vfi.InstancingEnable = per_instance;
+         vfi.InstanceDataStepRate = per_instance ? divisor : 1;
+      }
+   }
+}
+
 void
 genX(batch_emit_vertex_input)(struct anv_batch *batch,
                               struct anv_device *device,
                               struct anv_graphics_pipeline *pipeline,
                               const struct vk_vertex_input_state *vi)
 {
+   const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
    const uint32_t ve_count =
-      pipeline->vs_input_elements + pipeline->svgs_count;
-   const uint32_t num_dwords = 1 + 2 * MAX2(1, ve_count);
+      vs_prog_data && vs_prog_data->no_vf_slot_compaction ?
+      34 : (pipeline->vs_input_elements + pipeline->svgs_count);
+   const uint32_t num_dwords = 1 +
+      GENX(VERTEX_ELEMENT_STATE_length) * MAX2(1, ve_count);
    uint32_t *p = anv_batch_emitn(batch, num_dwords,
                                  GENX(3DSTATE_VERTEX_ELEMENTS));
    if (p == NULL)
       return;
 
-   if (ve_count == 0) {
+   if (vs_prog_data && vs_prog_data->no_vf_slot_compaction) {
+      emit_independent_ves_vf_instancing(batch, device, p + 1, vi);
+   } else if (ve_count == 0) {
       memcpy(p + 1, device->physical->empty_vs_input,
              sizeof(device->physical->empty_vs_input));
    } else if (ve_count == pipeline->vertex_input_elems) {
@@ -327,8 +442,10 @@ emit_vertex_input(struct anv_graphics_pipeline *pipeline,
    const struct brw_vs_prog_data *vs_prog_data = get_vs_prog_data(pipeline);
    const bool needs_svgs_elem = pipeline->svgs_count > 1 ||
                                 !vs_prog_data->uses_drawid;
-   const uint32_t id_slot = pipeline->vs_input_elements;
-   const uint32_t drawid_slot = id_slot + needs_svgs_elem;
+   const uint32_t id_slot = vs_prog_data->no_vf_slot_compaction ?
+      BRW_SVGS_VE_INDEX : pipeline->vs_input_elements;
+   const uint32_t drawid_slot = vs_prog_data->no_vf_slot_compaction ?
+      BRW_DRAWID_VE_INDEX : (id_slot + needs_svgs_elem);
    if (pipeline->svgs_count > 0) {
       assert(pipeline->vertex_input_elems >= pipeline->svgs_count);
       uint32_t slot_offset =

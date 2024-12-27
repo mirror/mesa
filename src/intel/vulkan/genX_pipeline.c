@@ -2156,33 +2156,6 @@ genX(graphics_pipeline_emit)(struct anv_graphics_pipeline *pipeline,
       emit_3dstate_gs(pipeline);
 
       emit_3dstate_streamout(pipeline, state->rs);
-
-#if GFX_VERx10 >= 125
-      const struct anv_device *device = pipeline->base.base.device;
-      /* Disable Mesh. */
-      if (device->vk.enabled_extensions.EXT_mesh_shader) {
-         anv_pipeline_emit(pipeline, final.mesh_control,
-                           GENX(3DSTATE_MESH_CONTROL), zero);
-         anv_pipeline_emit(pipeline, final.mesh_control_protected,
-                           GENX(3DSTATE_MESH_CONTROL), zero);
-         anv_pipeline_emit(pipeline, final.mesh_shader,
-                           GENX(3DSTATE_MESH_SHADER), zero);
-         anv_pipeline_emit(pipeline, final.mesh_distrib,
-                           GENX(3DSTATE_MESH_DISTRIB), zero);
-         anv_pipeline_emit(pipeline, final.clip_mesh,
-                           GENX(3DSTATE_CLIP_MESH), zero);
-         anv_pipeline_emit(pipeline, final.sbe_mesh,
-                           GENX(3DSTATE_SBE_MESH), zero);
-         anv_pipeline_emit(pipeline, final.task_control,
-                           GENX(3DSTATE_TASK_CONTROL), zero);
-         anv_pipeline_emit(pipeline, final.task_control_protected,
-                           GENX(3DSTATE_TASK_CONTROL), zero);
-         anv_pipeline_emit(pipeline, final.task_shader,
-                           GENX(3DSTATE_TASK_SHADER), zero);
-         anv_pipeline_emit(pipeline, final.task_redistrib,
-                           GENX(3DSTATE_TASK_REDISTRIB), zero);
-      }
-#endif
    } else {
       assert(anv_pipeline_is_mesh(pipeline));
 

@@ -335,7 +335,12 @@ populate_vs_prog_key(struct anv_pipeline_stage *stage,
    populate_base_prog_key(stage, device);
 
    stage->key.vs.vf_component_packing =
-      device->physical->instance->vf_component_packing;
+      device->physical->instance->vf_component_packing ||
+      (stage->pipeline_flags &
+       VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
+   stage->key.vs.no_vf_slot_compaction =
+      (stage->pipeline_flags &
+       VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
 }
 
 static void

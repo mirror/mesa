@@ -546,6 +546,8 @@ anv_cmd_buffer_flush_pipeline_state(struct anv_cmd_buffer *cmd_buffer,
     *
     * We avoid comparing protected packets as all the fields but the scratch
     * surface are identical. we just need to select the right one at emission.
+    *
+    * final.urb_wa_16014912113 is ignored.
     */
    diff_fix_state(URB,                      final.urb);
    diff_fix_state(VF_SGVS,                  final.vf_sgvs);

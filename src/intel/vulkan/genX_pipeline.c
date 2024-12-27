@@ -757,6 +757,33 @@ emit_urb_setup(struct anv_graphics_pipeline *pipeline,
    }
 #endif
 
+#if INTEL_NEEDS_WA_16014912113
+   if (intel_needs_workaround(devinfo, 16014912113)) {
+      for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
+         anv_pipeline_emit(pipeline, final.urb_wa_16014912113,
+                           GENX(3DSTATE_URB_VS), urb) {
+            urb._3DCommandSubOpcode      += i;
+            urb.VSURBStartingAddress      = pipeline->urb_cfg.start[i];
+            urb.VSURBEntryAllocationSize  = pipeline->urb_cfg.size[i] - 1;
+            urb.VSNumberofURBEntries      = i == 0 ? 256 : pipeline->urb_cfg.entries[i];
+         }
+      }
+
+#if GFX_VERx10 >= 125
+      if (device->vk.enabled_extensions.EXT_mesh_shader) {
+         anv_pipeline_emit(pipeline, final.urb_wa_16014912113,
+                           GENX(3DSTATE_URB_ALLOC_TASK), zero);
+         anv_pipeline_emit(pipeline, final.urb_wa_16014912113,
+                           GENX(3DSTATE_URB_ALLOC_MESH), zero);
+      }
+#endif
+
+      anv_pipeline_emit(pipeline, final.urb_wa_16014912113,
+                        GENX(PIPE_CONTROL), pc) {
+         pc.HDCPipelineFlushEnable = true;
+      }
+   }
+#endif
 }
 
 static bool

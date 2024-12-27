@@ -2942,6 +2942,119 @@ genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer)
 }
 
 void
+genX(emit_indirect_dynamic_state)(struct anv_gen_gfx_state *state,
+                                  struct anv_cmd_buffer *cmd_buffer,
+                                  struct anv_indirect_execution_set *indirect_set)
+{
+   struct anv_cmd_graphics_state *gfx = &cmd_buffer->state.gfx;
+   struct anv_gfx_dynamic_state _hw_state = gfx->dyn_state, *hw_state = &_hw_state;
+   struct anv_batch batch = {};
+
+   cmd_buffer_flush_gfx_runtime_state(
+      hw_state,
+      cmd_buffer->device,
+      &cmd_buffer->vk.dynamic_graphics_state,
+      &cmd_buffer->state.gfx,
+      anv_pipeline_to_graphics(indirect_set != NULL ?
+                               indirect_set->template_pipeline :
+                               gfx->base.pipeline),
+      cmd_buffer->vk.level);
+
+#define SET(s, category, name) \
+   s.name = hw_state->category.name
+
+#if GFX_VERx10 >= 125
+   anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                         state->indirect_set.vfg,
+                         sizeof(state->indirect_set.vfg));
+   anv_batch_emit(&batch, GENX(3DSTATE_VFG), vfg) {
+      SET(vfg, vfg, ListCutIndexEnable);
+   }
+#endif
+
+   anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                         state->indirect_set.so,
+                         sizeof(state->indirect_set.so));
+   anv_batch_emit(&batch, GENX(3DSTATE_STREAMOUT), so) {
+      SET(so, so, RenderingDisable);
+      SET(so, so, RenderStreamSelect);
+      SET(so, so, ReorderMode);
+      SET(so, so, ForceRendering);
+   }
+
+   anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                         state->indirect_set.sf,
+                         sizeof(state->indirect_set.sf));
+   anv_batch_emit(&batch, GENX(3DSTATE_SF), sf) {
+      SET(sf, sf, LineWidth);
+      SET(sf, sf, TriangleStripListProvokingVertexSelect);
+      SET(sf, sf, LineStripListProvokingVertexSelect);
+      SET(sf, sf, TriangleFanProvokingVertexSelect);
+      SET(sf, sf, LegacyGlobalDepthBiasEnable);
+   }
+
+   anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                         state->indirect_set.raster,
+                         sizeof(state->indirect_set.raster));
+   anv_batch_emit(&batch, GENX(3DSTATE_RASTER), raster) {
+      raster.ForcedSampleCount = FSC_NUMRASTSAMPLES_0;
+      raster.ForceMultisampling = false;
+      raster.ScissorRectangleEnable = true;
+
+      SET(raster, raster, CullMode);
+      SET(raster, raster, FrontWinding);
+      SET(raster, raster, GlobalDepthOffsetEnableSolid);
+      SET(raster, raster, GlobalDepthOffsetEnableWireframe);
+      SET(raster, raster, GlobalDepthOffsetEnablePoint);
+      SET(raster, raster, GlobalDepthOffsetConstant);
+      SET(raster, raster, GlobalDepthOffsetScale);
+      SET(raster, raster, GlobalDepthOffsetClamp);
+      SET(raster, raster, FrontFaceFillMode);
+      SET(raster, raster, BackFaceFillMode);
+      SET(raster, raster, ViewportZFarClipTestEnable);
+      SET(raster, raster, ViewportZNearClipTestEnable);
+      SET(raster, raster, ConservativeRasterizationEnable);
+   }
+
+   anv_batch_set_storage(&batch, ANV_NULL_ADDRESS,
+                         state->indirect_set.ps_blend,
+                         sizeof(state->indirect_set.ps_blend));
+   anv_batch_emit(&batch, GENX(3DSTATE_PS_BLEND), blend) {
+      SET(blend, ps_blend, ColorBufferBlendEnable);
+      SET(blend, ps_blend, SourceAlphaBlendFactor);
+      SET(blend, ps_blend, DestinationAlphaBlendFactor);
+      SET(blend, ps_blend, SourceBlendFactor);
+      SET(blend, ps_blend, DestinationBlendFactor);
+      SET(blend, ps_blend, AlphaTestEnable);
+      SET(blend, ps_blend, IndependentAlphaBlendEnable);
+      SET(blend, ps_blend, AlphaToCoverageEnable);
+   }
+
+#undef SET
+
+   const struct vk_dynamic_graphics_state *dyn =
+      &cmd_buffer->vk.dynamic_graphics_state;
+   state->dyn.primitive_topology =
+      vk_to_intel_primitive_type[dyn->ia.primitive_topology];
+
+   state->dyn.domain_origin = dyn->ts.domain_origin;
+   state->dyn.patch_control_points = dyn->ts.patch_control_points;
+   state->dyn.samples = dyn->ms.rasterization_samples;
+   state->dyn.alpha_to_coverage = dyn->ms.alpha_to_coverage_enable;
+   state->dyn.coarse_pixel_enabled =
+      !vk_fragment_shading_rate_is_disabled(&dyn->fsr);
+   /* state->line_mode =  */
+   state->dyn.polygon_mode = dyn->rs.polygon_mode;
+   state->dyn.provoking_vertex = dyn->rs.provoking_vertex;
+   state->dyn.color_write_enables = dyn->cb.color_write_enables;
+   state->dyn.depth_clip_negative_one_to_one = dyn->vp.depth_clip_negative_one_to_one;
+   state->dyn.max_vp_index = dyn->vp.viewport_count > 0 ?
+                             dyn->vp.viewport_count - 1 : 0;
+
+   state->dyn.has_feedback_loop = has_ds_feedback_loop(dyn);
+}
+
+void
 genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer, bool enable)
 {
    if (!anv_cmd_buffer_is_render_queue(cmd_buffer))

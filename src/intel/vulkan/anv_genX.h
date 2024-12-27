@@ -111,6 +111,10 @@ void genX(batch_emit_gfx_pipeline_push_alloc)(struct anv_batch *batch,
                                               struct anv_device *device,
                                               struct anv_graphics_pipeline *pipeline);
 
+void genX(emit_indirect_dynamic_state)(struct anv_gen_gfx_state *state,
+                                       struct anv_cmd_buffer *cmd_buffer,
+                                       struct anv_indirect_execution_set *indirect_set);
+
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,

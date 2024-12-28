@@ -25,6 +25,7 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::env;
 use std::ffi::CStr;
+use std::fmt::Debug;
 use std::mem::transmute;
 use std::num::NonZeroU64;
 use std::os::raw::*;
@@ -1196,6 +1197,14 @@ impl Device {
             subgroups_shuffle_relative: subgroups_supported,
             ..Default::default()
         }
+    }
+}
+
+impl Debug for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("Device@{:?}", self as *const _))
+            .field("name", &self.screen().name())
+            .finish()
     }
 }
 

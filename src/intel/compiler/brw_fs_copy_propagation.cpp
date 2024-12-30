@@ -768,6 +768,9 @@ try_copy_propagate(const brw_compiler *compiler, fs_inst *inst,
                         compiler))
       return false;
 
+   if (has_dst_src_region_restriction(devinfo, inst, arg, entry->src))
+      return false;
+
    /* From the Cherry Trail/Braswell PRMs, Volume 7: 3D Media GPGPU:
     *    EU Overview
     *       Register Region Restrictions

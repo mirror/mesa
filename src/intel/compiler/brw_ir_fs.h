@@ -380,6 +380,41 @@ is_unordered(const intel_device_info *devinfo, const fs_inst *inst)
 }
 
 /**
+ * When trying to replace a source in an instruction, verify that the
+ * destination and the source do not overlap. From the Cherryview PRM Vol 7.
+ * "Register Region Restrictions" - "Special Restrictions" :
+ *
+ *   "The src, dst overlapping behavior with the second half src and the first
+ *    half destination to the same register must not be used with any
+ *    compressed instruction."
+ */
+static inline bool
+has_dst_src_region_restriction(const intel_device_info *devinfo,
+                               const fs_inst *inst,
+                               unsigned arg,
+                               const fs_reg &src)
+{
+   if (devinfo->ver < 8)
+      return false;
+
+   if (inst->dst.file != VGRF || src.file != VGRF)
+      return false;
+
+   if (inst->dst.component_size(inst->exec_size) <= REG_SIZE)
+      return false;
+
+   unsigned dst_offset_byte = reg_offset(inst->dst);
+   unsigned src_offset_byte = reg_offset(src);
+
+   unsigned src_read_size = inst->components_read(arg) * type_sz(src.type);
+
+   unsigned first_half_dst_reg = dst_offset_byte / REG_SIZE;
+   unsigned second_half_src_reg = src_offset_byte + src_read_size / REG_SIZE;
+
+   return first_half_dst_reg == second_half_src_reg;
+}
+
+/**
  * Return whether the following regioning restriction applies to the specified
  * instruction.  From the Cherryview PRM Vol 7. "Register Region
  * Restrictions":

@@ -42,6 +42,7 @@ static const driOptionDescription anv_dri_options[] = {
                      DRI_CONF_ENUM(1024, "1024 stackids")
                      DRI_CONF_ENUM(2048, "2048 stackids"))
       DRI_CONF_ANV_UPPER_BOUND_DESCRIPTOR_POOL_SAMPLER(false)
+      DRI_CONF_ANV_FORCE_CS_SIMD32(false)
    DRI_CONF_SECTION_END
 
    DRI_CONF_SECTION_DEBUG
@@ -182,6 +183,8 @@ anv_init_dri_options(struct anv_instance *instance)
     instance->anv_upper_bound_descriptor_pool_sampler =
        driQueryOptionb(&instance->dri_options,
                        "anv_upper_bound_descriptor_pool_sampler");
+   instance->force_cs_simd32 =
+       driQueryOptionb(&instance->dri_options, "force_cs_simd32");
 
     instance->stack_ids = driQueryOptioni(&instance->dri_options, "intel_stack_id");
     switch (instance->stack_ids) {

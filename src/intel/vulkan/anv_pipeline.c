@@ -895,6 +895,23 @@ anv_nir_compute_dynamic_push_bits(nir_shader *shader)
    return ret;
 }
 
+static bool
+should_apply_simd32_wa(struct shader_info *info)
+{
+   uint32_t shader_blake3s[][BLAKE3_OUT_LEN32] = {
+      /*Black Myth: Wukong CS*/
+      {0x7946db0c, 0x3cc2f4a3, 0x44a5ae9b, 0x4924ba6e, 0x385c195d, 0xda218f3c, 0xf7e76af1, 0xb5d2bdfa},
+   };
+
+   for (unsigned i = 0; i < ARRAY_SIZE(shader_blake3s); i++) {
+      if (_mesa_printed_blake3_equal(info->source_blake3, shader_blake3s[i])) {
+         return true;
+      }
+   }
+
+   return false;
+}
+
 static void
 anv_fixup_subgroup_size(struct anv_device *device, struct shader_info *info)
 {
@@ -948,6 +965,13 @@ anv_fixup_subgroup_size(struct anv_device *device, struct shader_info *info)
     */
    if (info->stage == MESA_SHADER_COMPUTE && info->cs.has_cooperative_matrix &&
        info->subgroup_size < SUBGROUP_SIZE_REQUIRE_8) {
+      info->subgroup_size = BRW_SUBGROUP_SIZE;
+   }
+
+   if (device->info->verx10 == 125 &&
+      device->physical->instance->force_cs_simd32 &&
+      should_apply_simd32_wa(info))
+   {
       info->subgroup_size = BRW_SUBGROUP_SIZE;
    }
 }

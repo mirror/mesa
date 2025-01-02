@@ -248,4 +248,10 @@ util_sign_extend(uint64_t val, unsigned width)
    return (int64_t)(val << shift) >> shift;
 }
 
+static inline bool
+util_is_power_of_two_or_zero(uint32_t v)
+{
+   return IS_POT(v);
+}
+
 #endif

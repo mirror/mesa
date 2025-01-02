@@ -4,6 +4,7 @@
 
 libpan_shader_files = files(
   'placeholder.cl',
+  'indirect_dispatch.cl',
 )
 
 prepended_input_args = []

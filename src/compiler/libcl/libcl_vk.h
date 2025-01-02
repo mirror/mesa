@@ -51,3 +51,9 @@ typedef struct VkDrawIndirectCommand {
    uint32_t firstVertex;
    uint32_t firstInstance;
 } VkDrawIndirectCommand __attribute__((aligned(4)));
+
+typedef struct VkDispatchIndirectCommand {
+   uint32_t x;
+   uint32_t y;
+   uint32_t z;
+} VkDispatchIndirectCommand __attribute__((aligned(4)));

@@ -53,7 +53,6 @@
 #include "pan_csf.h"
 #include "pan_fb_preload.h"
 #include "pan_format.h"
-#include "pan_indirect_dispatch.h"
 #include "pan_jm.h"
 #include "pan_job.h"
 #include "pan_pool.h"
@@ -4112,10 +4111,4 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
       nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
 
    dev->precomp_cache = GENX(panfrost_precomp_cache_init)(screen);
-
-#if PAN_GPU_SUPPORTS_DISPATCH_INDIRECT
-   pan_indirect_dispatch_meta_init(
-      &dev->indirect_dispatch, panfrost_device_gpu_id(dev),
-      &screen->mempools.bin.base, &screen->mempools.desc.base);
-#endif
 }

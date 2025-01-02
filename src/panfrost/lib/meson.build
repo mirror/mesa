@@ -2,7 +2,6 @@
 # Copyright © 2019 Collabora
 # SPDX-License-Identifier: MIT
 
-subdir('genxml')
 subdir('kmod')
 
 pixel_format_versions = ['5', '6', '7', '9', '10']
@@ -15,7 +14,7 @@ foreach ver : pixel_format_versions
     'pan-format-v' + ver,
     ['pan_format.c', pan_packers],
     include_directories : [
-      inc_src, inc_include, inc_panfrost_hw, inc_panfrost_hw
+      inc_src, inc_include, inc_panfrost_hw, inc_panfrost
     ],
     c_args : ['-DPAN_ARCH=' + ver],
     gnu_symbol_visibility : 'hidden',
@@ -34,7 +33,7 @@ foreach ver : ['4', '5', '6', '7', '9', '10']
       'pan_shader.c',
       'pan_texture.c',
     ],
-    include_directories : [inc_include, inc_src, inc_panfrost_hw],
+    include_directories : [inc_include, inc_src, inc_panfrost_hw, inc_panfrost],
     c_args : ['-DPAN_ARCH=' + ver],
     gnu_symbol_visibility : 'hidden',
     dependencies : [deps_for_libpanfrost, idep_nir],
@@ -45,7 +44,7 @@ foreach ver : ['7']
   libpanfrost_per_arch += static_library(
     'pan-arch-indirect-v' + ver,
     'pan_indirect_dispatch.c',
-    include_directories : [inc_include, inc_src, inc_panfrost_hw],
+    include_directories : [inc_include, inc_src, inc_panfrost_hw, inc_panfrost],
     c_args : ['-DPAN_ARCH=' + ver],
     gnu_symbol_visibility : 'hidden',
     dependencies : [deps_for_libpanfrost, idep_nir],
@@ -72,7 +71,7 @@ libpanfrost_lib_files = files(
 libpanfrost_lib = static_library(
   'panfrost_lib',
   [libpanfrost_lib_files, pan_packers],
-  include_directories : [inc_include, inc_src, inc_panfrost_hw],
+  include_directories : [inc_include, inc_src, inc_panfrost_hw, inc_panfrost],
   c_args : [no_override_init_args],
   gnu_symbol_visibility : 'hidden',
   dependencies: [dep_libdrm, idep_nir, idep_mesautil],

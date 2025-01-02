@@ -38,7 +38,6 @@
 
 #include "compiler/glsl_types.h"
 #include "compiler/nir/nir.h"
-#include "panfrost/util/lcra.h"
 #include "panfrost/util/pan_ir.h"
 
 /* Forward declare */
@@ -190,7 +189,25 @@ typedef struct midgard_instruction {
 } midgard_instruction;
 
 typedef struct midgard_block {
-   pan_block base;
+   /* Link to next block. Must be first for mir_get_block */
+   struct list_head link;
+
+   /* List of instructions emitted for the current block */
+   struct list_head instructions;
+
+   /* Index of the block in source order */
+   unsigned name;
+
+   /* Control flow graph */
+   struct midgard_block *successors[2];
+   struct set *predecessors;
+   bool unconditional_jumps;
+
+   /* In liveness analysis, these are live masks (per-component) for
+    * indices for the block. Scalar compilers have the luxury of using
+    * simple bit fields, but for us, liveness is a vector idea. */
+   uint16_t *live_in;
+   uint16_t *live_out;
 
    bool scheduled;
 
@@ -327,7 +344,7 @@ emit_mir_instruction(struct compiler_context *ctx,
                      struct midgard_instruction ins)
 {
    midgard_instruction *u = mir_upload_ins(ctx, ins);
-   list_addtail(&u->link, &ctx->current_block->base.instructions);
+   list_addtail(&u->link, &ctx->current_block->instructions);
    return u;
 }
 
@@ -359,34 +376,42 @@ mir_next_op(struct midgard_instruction *ins)
    return list_first_entry(&(ins->link), midgard_instruction, link);
 }
 
+static inline midgard_block *
+mir_exit_block(struct list_head *blocks)
+{
+   midgard_block *last = list_last_entry(blocks, midgard_block, link);
+   assert(!last->successors[0] && !last->successors[1]);
+   return last;
+}
+
 #define mir_foreach_block(ctx, v)                                              \
-   list_for_each_entry(pan_block, v, &ctx->blocks, link)
+   list_for_each_entry(midgard_block, v, &ctx->blocks, link)
 
 #define mir_foreach_block_from(ctx, from, v)                                   \
-   list_for_each_entry_from(pan_block, v, &from->base, &ctx->blocks, link)
+   list_for_each_entry_from(midgard_block, v, from, &ctx->blocks, link)
 
 #define mir_foreach_instr_in_block(block, v)                                   \
    list_for_each_entry(struct midgard_instruction, v,                          \
-                       &block->base.instructions, link)
+                       &block->instructions, link)
 #define mir_foreach_instr_in_block_rev(block, v)                               \
    list_for_each_entry_rev(struct midgard_instruction, v,                      \
-                           &block->base.instructions, link)
+                           &block->instructions, link)
 
 #define mir_foreach_instr_in_block_safe(block, v)                              \
    list_for_each_entry_safe(struct midgard_instruction, v,                     \
-                            &block->base.instructions, link)
+                            &block->instructions, link)
 
 #define mir_foreach_instr_in_block_safe_rev(block, v)                          \
    list_for_each_entry_safe_rev(struct midgard_instruction, v,                 \
-                                &block->base.instructions, link)
+                                &block->instructions, link)
 
 #define mir_foreach_instr_in_block_from(block, v, from)                        \
    list_for_each_entry_from(struct midgard_instruction, v, from,               \
-                            &block->base.instructions, link)
+                            &block->instructions, link)
 
 #define mir_foreach_instr_in_block_from_rev(block, v, from)                    \
    list_for_each_entry_from_rev(struct midgard_instruction, v, from,           \
-                                &block->base.instructions, link)
+                                &block->instructions, link)
 
 #define mir_foreach_bundle_in_block(block, v)                                  \
    util_dynarray_foreach(&block->bundles, midgard_bundle, v)
@@ -411,22 +436,31 @@ mir_next_op(struct midgard_instruction *ins)
 
 /* Based on set_foreach, expanded with automatic type casts */
 
+#define mir_foreach_successor(blk, v)                                          \
+   struct midgard_block *v;                                                    \
+   struct midgard_block **_v;                                                  \
+   for (_v = (midgard_block **)&blk->successors[0], v = *_v;                   \
+        v != NULL && _v < (midgard_block **)&blk->successors[2];               \
+        _v++, v = *_v)
+
 #define mir_foreach_predecessor(blk, v)                                        \
    struct set_entry *_entry_##v;                                               \
    struct midgard_block *v;                                                    \
-   for (_entry_##v = _mesa_set_next_entry(blk->base.predecessors, NULL),       \
+   for (_entry_##v = _mesa_set_next_entry(blk->predecessors, NULL),       \
        v = (struct midgard_block *)(_entry_##v ? _entry_##v->key : NULL);      \
         _entry_##v != NULL;                                                    \
-        _entry_##v = _mesa_set_next_entry(blk->base.predecessors, _entry_##v), \
+        _entry_##v = _mesa_set_next_entry(blk->predecessors, _entry_##v), \
        v = (struct midgard_block *)(_entry_##v ? _entry_##v->key : NULL))
 
 #define mir_foreach_src(ins, v)                                                \
    for (unsigned v = 0; v < ARRAY_SIZE(ins->src); ++v)
 
+void mir_block_add_successor(midgard_block *block, midgard_block *successor);
+
 static inline midgard_instruction *
 mir_last_in_block(struct midgard_block *block)
 {
-   return list_last_entry(&block->base.instructions, struct midgard_instruction,
+   return list_last_entry(&block->instructions, struct midgard_instruction,
                           link);
 }
 
@@ -452,6 +486,9 @@ make_compiler_temp(compiler_context *ctx)
 {
    return (ctx->func->impl->ssa_alloc + ctx->temp_alloc++) << 1;
 }
+
+/* IR indexing */
+#define PAN_IS_REG (1)
 
 static inline unsigned
 make_compiler_temp_reg(compiler_context *ctx)

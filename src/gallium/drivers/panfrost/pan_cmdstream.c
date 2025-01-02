@@ -57,6 +57,7 @@
 #include "pan_jm.h"
 #include "pan_job.h"
 #include "pan_pool.h"
+#include "pan_precomp.h"
 #include "pan_resource.h"
 #include "pan_samples.h"
 #include "pan_shader.h"
@@ -4106,6 +4107,8 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
                     sizeof(GENX(libpan_shaders_0_nir)));
    dev->libpan =
       nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
+
+   dev->precomp_cache = GENX(panfrost_precomp_cache_init)(screen);
 
 #if PAN_GPU_SUPPORTS_DISPATCH_INDIRECT
    pan_indirect_dispatch_meta_init(

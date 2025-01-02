@@ -1070,11 +1070,13 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    NIR_PASS(_, nir, brw_nir_lower_storage_image,
             &(struct brw_nir_lower_storage_image_opts) {
                /* Anv only supports Gfx9+ which has better defined typed read
-                * behavior. It allows us to only have to care about lowering
-                * loads.
+                * behavior.
+                * For image atomic64 emulation, we need to add store and atomic back.
                 */
                .devinfo = compiler->devinfo,
                .lower_loads = true,
+               .lower_stores = pdevice->emu_img_atomic64,
+               .lower_atomics = pdevice->emu_img_atomic64,
             });
 
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_global,

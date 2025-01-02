@@ -2179,11 +2179,17 @@ intrinsic("export_agx", [0], indices=[BASE])
 # at BASE. Must only appear in the first block of the shader part.
 load("exported_agx", [], [BASE], [CAN_ELIMINATE])
 
-# Intel-specific query for loading from the isl_image_param struct passed
-# into the shader as a uniform.  The variable is a deref to the image
+# Intel-specific query for loading from the isl_image_param struct or surface state
+# passed into the shader as a uniform.  The variable is a deref to the image
 # variable. The const index specifies which of the six parameters to load.
 intrinsic("image_deref_load_param_intel", src_comp=[1], dest_comp=0,
           indices=[BASE], flags=[CAN_ELIMINATE, CAN_REORDER])
+
+# Intel-specific query for loading from surface state passsed into the shader
+# as a uniform.
+intrinsic("image_deref_load_base_address_intel", src_comp=[1], dest_comp=1,
+          flags=[CAN_ELIMINATE, CAN_REORDER])
+
 image("load_raw_intel", src_comp=[1], dest_comp=0,
       flags=[CAN_ELIMINATE])
 image("store_raw_intel", src_comp=[1, 0])

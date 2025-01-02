@@ -29,3 +29,4 @@ occlusionQueryPrecise on panvk
 shaderInt16 on panvk
 shaderInt64 on panvk
 imageCubeArray on panvk/v10+
+VK_EXT_shader_image_atomic_int64 on ANV (Gen12.5+)

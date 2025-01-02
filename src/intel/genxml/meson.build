@@ -56,6 +56,7 @@ genX_bits_included_symbols = [
   '3DSTATE_CPSIZE_CONTROL_BUFFER::Surface Pitch',
   # structures
   'RENDER_SURFACE_STATE::Surface Base Address',
+  'RENDER_SURFACE_STATE::Tile Mode',
   'RENDER_SURFACE_STATE::Surface Pitch',
   'RENDER_SURFACE_STATE::Auxiliary Surface Base Address',
   'RENDER_SURFACE_STATE::Auxiliary Surface Pitch',

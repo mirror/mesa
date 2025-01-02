@@ -149,7 +149,7 @@ static const struct surface_format_info format_info[] = {
    SF(  x,   x,   x,   x,   x,   x,   Y,   x,   x,   x,   x,   x,    x,  R32G32_SSCALED)
    SF(  x,   x,   x,   x,   x,   x,   Y,   x,   x,   x,   x,   x,    x,  R32G32_USCALED)
    SF(  x,   x,   x,   x,   x,   x,  75,   x,   x,   x,   x,   x,    x,  R32G32_SFIXED)
-   SF(  x,   x,   x,   x,   x,   x,  80,   x,   x,   x,   x,   x,   90,  R64_PASSTHRU)
+   SF(  x,   x,   x,   x,   x,   x,  80,   x,   x, 125,  125,  x,   90,  R64_PASSTHRU)
    SF(  Y,   Y,   x,   Y,   Y,   Y,   Y,   x,  60,  70, 125,  90,    x,  B8G8R8A8_UNORM)
    SF(  Y,   Y,   x,   x,   Y,   Y,   x,   x,   x,   x,   x, 110,    x,  B8G8R8A8_UNORM_SRGB)
 /*    smpl filt  shad  CK   RT   AB   VB   SO color TW   TR  ccs_e  TA */
@@ -599,6 +599,9 @@ isl_format_for_pipe_format(enum pipe_format pf)
       [PIPE_FORMAT_R32G32_SINT]             = ISL_FORMAT_R32G32_SINT,
       [PIPE_FORMAT_R32G32B32_SINT]          = ISL_FORMAT_R32G32B32_SINT,
       [PIPE_FORMAT_R32G32B32A32_SINT]       = ISL_FORMAT_R32G32B32A32_SINT,
+
+      [PIPE_FORMAT_R64_UINT]                = ISL_FORMAT_R64_PASSTHRU,
+      [PIPE_FORMAT_R64_SINT]                = ISL_FORMAT_R64_PASSTHRU,
 
       [PIPE_FORMAT_B10G10R10A2_UINT]        = ISL_FORMAT_B10G10R10A2_UINT,
 

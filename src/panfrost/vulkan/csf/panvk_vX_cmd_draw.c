@@ -314,6 +314,20 @@ prepare_sysvals(struct panvk_cmd_buffer *cmdbuf,
       sysvals->vs.base_instance = draw->instance.base;
       gfx_state_set_dirty(cmdbuf, PUSH_UNIFORMS);
    }
+
+   if (cmdbuf->state.gfx.render.dirty) {
+      sysvals->fs.multisampled = (fbinfo->nr_samples > 1);
+      cmdbuf->state.gfx.push_uniforms = 0;
+   }
+
+   if (draw->vertex.base != sysvals->vs.first_vertex ||
+       draw->vertex.base != sysvals->vs.base_vertex ||
+       draw->instance.base != sysvals->vs.base_instance) {
+      sysvals->vs.first_vertex = draw->vertex.base;
+      sysvals->vs.base_vertex = draw->vertex.base;
+      sysvals->vs.base_instance = draw->instance.base;
+      cmdbuf->state.gfx.push_uniforms = 0;
+   }
 }
 
 static bool

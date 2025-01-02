@@ -365,12 +365,33 @@ lower_vec816_alu(const nir_instr *instr, const void *cb_data)
   return 4;
 }
 
+static bool
+lower_halt_to_return(nir_builder *b, nir_instr *instr, UNUSED void *_data)
+{
+   if (instr->type != nir_instr_type_jump)
+      return false;
+
+   nir_jump_instr *jump = nir_instr_as_jump(instr);
+   if (jump->type != nir_jump_halt)
+      return false;
+
+   assert(b->impl == nir_shader_get_entrypoint(b->shader));
+   jump->type = nir_jump_return;
+   return true;
+}
+
 void
 midgard_link_cl_library(nir_shader *nir, const nir_shader *library)
 {
    nir_link_shader_functions(nir, library);
    NIR_PASS(_, nir, nir_inline_functions);
    nir_remove_non_entrypoints(nir);
+
+   /* Ensure that halt are translated to returns and get ride of them */
+   NIR_PASS(_, nir, nir_shader_instructions_pass, lower_halt_to_return,
+            nir_metadata_all, NULL);
+   NIR_PASS(_, nir, nir_lower_returns);
+
    NIR_PASS(_, nir, nir_opt_deref);
    NIR_PASS(_, nir, nir_lower_vars_to_ssa);
    NIR_PASS(_, nir, nir_remove_dead_derefs);

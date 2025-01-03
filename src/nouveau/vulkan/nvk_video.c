@@ -92,36 +92,27 @@ VKAPI_ATTR VkResult VKAPI_CALL
 nvk_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, const VkVideoProfileInfoKHR *pVideoProfile,
                                            VkVideoCapabilitiesKHR *pCapabilities)
 {
-   switch (pVideoProfile->videoCodecOperation) {
-   case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR:
-      break;
-   default:
-      unreachable("unsupported operation");
-   }
-
-   pCapabilities->flags = 0;
-   pCapabilities->minBitstreamBufferOffsetAlignment = 256;
-   pCapabilities->minBitstreamBufferSizeAlignment = 256;
-   pCapabilities->pictureAccessGranularity.width = VK_VIDEO_H264_MACROBLOCK_WIDTH;
-   pCapabilities->pictureAccessGranularity.height = VK_VIDEO_H264_MACROBLOCK_HEIGHT;
-   pCapabilities->minCodedExtent.width = 48;
-   pCapabilities->minCodedExtent.height = VK_VIDEO_H264_MACROBLOCK_HEIGHT;
-   pCapabilities->maxCodedExtent.width = 4096;
-   pCapabilities->maxCodedExtent.height = 4096;
-
    struct VkVideoDecodeCapabilitiesKHR *dec_caps =
       (struct VkVideoDecodeCapabilitiesKHR *)vk_find_struct(pCapabilities->pNext, VIDEO_DECODE_CAPABILITIES_KHR);
-   if (dec_caps)
-      dec_caps->flags = VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR;
-   /* H264 allows different luma and chroma bit depths */
-   if (pVideoProfile->lumaBitDepth != pVideoProfile->chromaBitDepth)
-      return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
-
-   if (pVideoProfile->chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
-      return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
    switch (pVideoProfile->videoCodecOperation) {
    case VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR: {
+      pCapabilities->flags = 0;
+      pCapabilities->minBitstreamBufferOffsetAlignment = 256;
+      pCapabilities->minBitstreamBufferSizeAlignment = 256;
+      pCapabilities->pictureAccessGranularity.width = VK_VIDEO_H264_MACROBLOCK_WIDTH;
+      pCapabilities->pictureAccessGranularity.height = VK_VIDEO_H264_MACROBLOCK_HEIGHT;
+      pCapabilities->minCodedExtent.width = 48;
+      pCapabilities->minCodedExtent.height = VK_VIDEO_H264_MACROBLOCK_HEIGHT;
+      pCapabilities->maxCodedExtent.width = 4096;
+      pCapabilities->maxCodedExtent.height = 4096;
+
+      /* H264 allows different luma and chroma bit depths */
+      if (pVideoProfile->lumaBitDepth != pVideoProfile->chromaBitDepth)
+         return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
+
+      if (pVideoProfile->chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+         return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
       struct VkVideoDecodeH264CapabilitiesKHR *ext = (struct VkVideoDecodeH264CapabilitiesKHR *)vk_find_struct(
          pCapabilities->pNext, VIDEO_DECODE_H264_CAPABILITIES_KHR);
@@ -140,16 +131,75 @@ nvk_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, const
       pCapabilities->maxActiveReferencePictures = 16;
       ext->fieldOffsetGranularity.x = 0;
       ext->fieldOffsetGranularity.y = 0;
-      ext->maxLevelIdc = STD_VIDEO_H265_LEVEL_IDC_5_2;
+      ext->maxLevelIdc = STD_VIDEO_H264_LEVEL_IDC_5_2;
       strcpy(pCapabilities->stdHeaderVersion.extensionName, VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_EXTENSION_NAME);
       pCapabilities->stdHeaderVersion.specVersion = VK_STD_VULKAN_VIDEO_CODEC_H264_DECODE_SPEC_VERSION;
       break;
    }
-   default:
+
+   case VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR: {
+      /*
+      * Anything other than 8 bits is not supported by the driver for now.
+      *
+      * Basically, we'd have to advertise
+      * VK_FORMAT_FEATURE_VIDEO_DECODE_OUTPUT_BIT_KHR and
+      * VK_FORMAT_FEATURE_VIDEO_DECODE_DPB_BIT_KHR for some 10bit YUV format.
+      *
+      * The GStreamer support is also not there currently.
+      */
+      if (pVideoProfile->lumaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR ||
+         pVideoProfile->chromaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR)
+         return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
+
+      pCapabilities->flags = 0;
+      pCapabilities->minBitstreamBufferOffsetAlignment = 256;
+      pCapabilities->minBitstreamBufferSizeAlignment = 256;
+      pCapabilities->pictureAccessGranularity.width = VK_VIDEO_H265_CTU_MAX_WIDTH;
+      pCapabilities->pictureAccessGranularity.height = VK_VIDEO_H265_CTU_MAX_HEIGHT;
+      pCapabilities->minCodedExtent.width = 144;
+      pCapabilities->minCodedExtent.height = 144;
+      pCapabilities->maxCodedExtent.width = 8192;
+      pCapabilities->maxCodedExtent.height = 8192;
+
+      struct VkVideoDecodeH265CapabilitiesKHR *ext = (struct VkVideoDecodeH265CapabilitiesKHR *)vk_find_struct(
+         pCapabilities->pNext, VIDEO_DECODE_H265_CAPABILITIES_KHR);
+      const struct VkVideoDecodeH265ProfileInfoKHR *h265_profile =
+         vk_find_struct_const(pVideoProfile->pNext, VIDEO_DECODE_H265_PROFILE_INFO_KHR);
+
+      ext->maxLevelIdc = STD_VIDEO_H265_LEVEL_IDC_5_1;
+
+      /*
+       * XXX: the hw supports MAIN10 and MAIN12, but 10bit is not supported by
+       * the driver now, and MAIN12 is not in the vulkan video spec
+       */
+      if (h265_profile->stdProfileIdc != STD_VIDEO_H265_PROFILE_IDC_MAIN)
+         return VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR;
+
+      /*
+       * XXX: The hw does support both 420 and 444 (not 422, though).
+       */
+      if (pVideoProfile->chromaSubsampling != VK_VIDEO_CHROMA_SUBSAMPLING_420_BIT_KHR)
+         return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
+
+      pCapabilities->flags = VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR;
+      pCapabilities->maxDpbSlots = 17;
+      pCapabilities->maxActiveReferencePictures = 16;
+
+      strcpy(pCapabilities->stdHeaderVersion.extensionName, VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_EXTENSION_NAME);
+      pCapabilities->stdHeaderVersion.specVersion = VK_STD_VULKAN_VIDEO_CODEC_H265_DECODE_SPEC_VERSION;
       break;
    }
+
+   default:
+      return VK_ERROR_VIDEO_PROFILE_OPERATION_NOT_SUPPORTED_KHR;
+   }
+
+   if (dec_caps)
+      dec_caps->flags = VK_VIDEO_DECODE_CAPABILITY_DPB_AND_OUTPUT_COINCIDE_BIT_KHR;
+
    return VK_SUCCESS;
 }
+
 VKAPI_ATTR VkResult VKAPI_CALL
 nvk_GetPhysicalDeviceVideoFormatPropertiesKHR(VkPhysicalDevice physicalDevice,
                                                const VkPhysicalDeviceVideoFormatInfoKHR *pVideoFormatInfo,

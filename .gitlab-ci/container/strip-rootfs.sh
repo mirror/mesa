@@ -10,7 +10,7 @@ section_start strip-rootfs "Stripping rootfs"
 export DEBIAN_FRONTEND=noninteractive
 
 UNNEEDED_PACKAGES=(
-  libfdisk1 git
+  libfdisk1
   python3-dev python3-pip python3-setuptools python3-wheel
 )
 

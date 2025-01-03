@@ -2843,6 +2843,10 @@ nir_get_io_offset_src_number(const nir_intrinsic_instr *instr)
    case nir_intrinsic_global_atomic_swap:
    case nir_intrinsic_global_atomic_swap_2x32:
    case nir_intrinsic_load_coefficients_agx:
+   case nir_intrinsic_load_shared_block_intel:
+   case nir_intrinsic_load_global_block_intel:
+   case nir_intrinsic_load_shared_uniform_block_intel:
+   case nir_intrinsic_load_global_constant_uniform_block_intel:
       return 0;
    case nir_intrinsic_load_ubo:
    case nir_intrinsic_load_ssbo:
@@ -2864,12 +2868,18 @@ nir_get_io_offset_src_number(const nir_intrinsic_instr *instr)
    case nir_intrinsic_ssbo_atomic_swap:
    case nir_intrinsic_ldc_nv:
    case nir_intrinsic_ldcx_nv:
+   case nir_intrinsic_load_ssbo_block_intel:
+   case nir_intrinsic_store_global_block_intel:
+   case nir_intrinsic_store_shared_block_intel:
+   case nir_intrinsic_load_ubo_uniform_block_intel:
+   case nir_intrinsic_load_ssbo_uniform_block_intel:
       return 1;
    case nir_intrinsic_store_ssbo:
    case nir_intrinsic_store_per_vertex_output:
    case nir_intrinsic_store_per_view_output:
    case nir_intrinsic_store_per_primitive_output:
    case nir_intrinsic_load_attribute_pan:
+   case nir_intrinsic_store_ssbo_block_intel:
       return 2;
    default:
       return -1;

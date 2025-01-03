@@ -7,6 +7,7 @@ use nvk_video_bindings::nvk_video_session;
 use std::sync::Mutex;
 
 mod h264;
+mod h265;
 
 struct SessionData {
     decoder: Box<dyn VideoDecoder>,
@@ -29,10 +30,18 @@ pub(crate) trait VideoDecoder {
 
 #[no_mangle]
 pub extern "C" fn nvk_video_create_video_session(vid: &mut nvk_video_session) {
-    vid.rust = Box::into_raw(Box::new(Mutex::new(SessionData {
-        decoder: Box::new(h264::Decoder::default()),
-    })))
-    .cast();
+    let decoder: Box<dyn VideoDecoder> = match vid.vk.op {
+        nvk_video_bindings::VK_VIDEO_CODEC_OPERATION_DECODE_H264_BIT_KHR => {
+            Box::new(h264::Decoder::default())
+        }
+        nvk_video_bindings::VK_VIDEO_CODEC_OPERATION_DECODE_H265_BIT_KHR => {
+            Box::new(h265::Decoder::default())
+        }
+        _ => panic!("Unsupported codec operation {}", vid.vk.op),
+    };
+
+    vid.rust =
+        Box::into_raw(Box::new(Mutex::new(SessionData { decoder }))).cast();
 }
 #[no_mangle]
 pub extern "C" fn nvk_video_destroy_video_session(vid: &mut nvk_video_session) {

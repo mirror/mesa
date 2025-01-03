@@ -9,8 +9,6 @@ license-file = "LICENSE"
 [dependencies]
 mesa3d_util = {path = "../mesa3d_util", version = "0.1.3"}
 zerocopy = { version = "0.8.13", features = ["derive"] }
-libc = "0.2.93"
-log = "0.4"
 
 [profile.dev]
 lto = true

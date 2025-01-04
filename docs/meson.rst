@@ -48,7 +48,7 @@ Dependencies
 Following are the dependencies you would need to install on linux to build and install mesa main. You can install these packages using your linux distibutions' package manager.
 
 .. note::
-   All these dependencies are for latest linux distros and is tested on ubuntu-24 only for now.
+   All these dependencies are for latest Linux distributions and is tested on Ubuntu 24.xx only for now.
 
    Also note, some packages below might not be available in your OS with the exact name, in such case you can search for it and install the distribution specific one.
 

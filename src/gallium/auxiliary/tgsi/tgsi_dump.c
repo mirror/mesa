@@ -27,6 +27,7 @@
 
 #include <inttypes.h>
 
+#include "util/half_float.h"
 #include "util/u_debug.h"
 #include "util/u_string.h"
 #include "util/u_math.h"
@@ -284,6 +285,12 @@ dump_imm_data(struct tgsi_iterate_context *iter,
       case TGSI_IMM_INT32:
          SID(data[i].Int);
          break;
+      case TGSI_IMM_FLOAT16:
+         if (ctx->dump_float_as_hex)
+            UID(data[i].Uint);
+         else
+            FLT(_mesa_half_to_float(data[i].Uint));
+         break;
       default:
          assert( 0 );
       }
@@ -440,6 +447,10 @@ iter_declaration(
 
    if (decl->Declaration.Invariant) {
       TXT( ", INVARIANT" );
+   }
+
+   if (decl->Declaration.FP16) {
+      TXT( ", FP16" );
    }
 
    EOL();

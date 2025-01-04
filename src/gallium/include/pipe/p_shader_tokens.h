@@ -76,6 +76,7 @@ enum tgsi_file_type {
    TGSI_FILE_MEMORY,
    TGSI_FILE_CONSTBUF,
    TGSI_FILE_HW_ATOMIC,
+   TGSI_FILE_TEMPORARY16,
    TGSI_FILE_COUNT,      /**< how many TGSI_FILE_ types */
 };
 
@@ -134,7 +135,8 @@ struct tgsi_declaration
    unsigned Array       : 1;  /**< extra array info? */
    unsigned Atomic      : 1;  /**< atomic only? for TGSI_FILE_BUFFER */
    unsigned MemType     : 2;  /**< TGSI_MEMORY_TYPE_x for TGSI_FILE_MEMORY */
-   unsigned Padding     : 3;
+   unsigned FP16        : 1;  /**< Medium precision values? */
+   unsigned Padding     : 2;
 };
 
 struct tgsi_declaration_range
@@ -257,6 +259,7 @@ enum tgsi_imm_type {
    TGSI_IMM_FLOAT64,
    TGSI_IMM_UINT64,
    TGSI_IMM_INT64,
+   TGSI_IMM_FLOAT16,
 };
 
 struct tgsi_immediate
@@ -410,7 +413,7 @@ enum tgsi_opcode {
    TGSI_OPCODE_RET                = 64,
    TGSI_OPCODE_SSG                = 65 /* SGN */,
    TGSI_OPCODE_CMP                = 66,
-   /* gap */
+                                  /* gap */
    TGSI_OPCODE_TXB                = 68,
    TGSI_OPCODE_FBFETCH            = 69,
    TGSI_OPCODE_DIV                = 70,
@@ -424,7 +427,8 @@ enum tgsi_opcode {
    TGSI_OPCODE_ENDIF              = 78,
    TGSI_OPCODE_DDX_FINE           = 79,
    TGSI_OPCODE_DDY_FINE           = 80,
-   /* gap */
+   TGSI_OPCODE_F16TOF32           = 81,
+   TGSI_OPCODE_F32TOF16           = 82,
    TGSI_OPCODE_CEIL               = 83,
    TGSI_OPCODE_I2F                = 84,
    TGSI_OPCODE_NOT                = 85,

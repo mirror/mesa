@@ -79,8 +79,8 @@ OPCODE(0, 0, NONE, ELSE, .is_branch = 1, .pre_dedent = 1, .post_indent = 1)
 OPCODE(0, 0, NONE, ENDIF, .pre_dedent = 1)
 OPCODE(1, 1, COMP, DDX_FINE)
 OPCODE(1, 1, COMP, DDY_FINE)
-OPCODE_GAP(81) /* removed */
-OPCODE_GAP(82) /* removed */
+OPCODE(1, 1, NONE, F16TOF32)
+OPCODE(1, 1, NONE, F32TOF16)
 OPCODE(1, 1, COMP, CEIL)
 OPCODE(1, 1, COMP, I2F)
 OPCODE(1, 1, COMP, NOT)

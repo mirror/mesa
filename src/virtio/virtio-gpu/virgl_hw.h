@@ -587,6 +587,7 @@ enum virgl_formats {
 #define VIRGL_CAP_V2_GROUP_VOTE           (1 << 15)
 #define VIRGL_CAP_V2_MIRROR_CLAMP_TO_EDGE (1 << 16)
 #define VIRGL_CAP_V2_MIRROR_CLAMP         (1 << 17)
+#define VIRGL_CAP_V2_SUPPORTS_FP16        (1 << 18)
 
 /* virgl bind flags - these are compatible with mesa 10.5 gallium.
  * but are fixed, no other should be passed to virgl either.

@@ -112,6 +112,7 @@ tgsi_default_declaration( void )
    declaration.Array = 0;
    declaration.Atomic = 0;
    declaration.MemType = TGSI_MEMORY_TYPE_GLOBAL;
+   declaration.FP16 = 0;
    declaration.Padding = 0;
 
    return declaration;
@@ -129,6 +130,7 @@ tgsi_build_declaration(
    unsigned array,
    unsigned atomic,
    unsigned mem_type,
+   unsigned fp16,
    struct tgsi_header *header )
 {
    struct tgsi_declaration declaration;
@@ -147,6 +149,7 @@ tgsi_build_declaration(
    declaration.Array = array;
    declaration.Atomic = atomic;
    declaration.MemType = mem_type;
+   declaration.FP16 = fp16;
    header_bodysize_grow( header );
 
    return declaration;
@@ -426,6 +429,7 @@ tgsi_build_full_declaration(
       full_decl->Declaration.Array,
       full_decl->Declaration.Atomic,
       full_decl->Declaration.MemType,
+      full_decl->Declaration.FP16,
       header );
 
    if (maxsize <= size)

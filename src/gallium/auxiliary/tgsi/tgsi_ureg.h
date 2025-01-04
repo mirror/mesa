@@ -181,7 +181,8 @@ ureg_DECL_fs_input_centroid_layout(struct ureg_program *,
                        unsigned index,
                        unsigned usage_mask,
                        unsigned array_id,
-                       unsigned array_size);
+                       unsigned array_size,
+                       bool medium_precision);
 
 struct ureg_src
 ureg_DECL_fs_input_centroid(struct ureg_program *,
@@ -216,7 +217,8 @@ ureg_DECL_input_layout(struct ureg_program *,
                 unsigned index,
                 unsigned usage_mask,
                 unsigned array_id,
-                unsigned array_size);
+                unsigned array_siz,
+                bool medium_precision);
 
 struct ureg_src
 ureg_DECL_input(struct ureg_program *,
@@ -239,7 +241,8 @@ ureg_DECL_output_layout(struct ureg_program *,
                         unsigned usage_mask,
                         unsigned array_id,
                         unsigned array_size,
-                        bool invariant);
+                        bool invariant,
+                        bool medium_precision);
 
 struct ureg_dst
 ureg_DECL_output_masked(struct ureg_program *,
@@ -265,6 +268,11 @@ struct ureg_src
 ureg_DECL_immediate( struct ureg_program *,
                      const float *v,
                      unsigned nr );
+
+struct ureg_src
+ureg_DECL_immediate_f16( struct ureg_program *ureg,
+                         const unsigned *v,
+                         unsigned nr );
 
 struct ureg_src
 ureg_DECL_immediate_f64( struct ureg_program *,
@@ -331,6 +339,27 @@ struct ureg_dst
 ureg_DECL_array_temporary( struct ureg_program *,
                            unsigned size,
                            bool local );
+
+struct ureg_dst
+ureg_DECL_temporary16( struct ureg_program * );
+
+/**
+ * Emit a temporary with the LOCAL declaration flag set.  For use when
+ * the register value is not required to be preserved across
+ * subroutine boundaries.
+ */
+struct ureg_dst
+ureg_DECL_local_temporary16( struct ureg_program * );
+
+/**
+ * Declare "size" continuous temporary registers.
+ */
+struct ureg_dst
+ureg_DECL_array_temporary16(struct ureg_program *,
+                              unsigned size,
+                              bool local );
+
+
 
 void 
 ureg_release_temporary( struct ureg_program *ureg,

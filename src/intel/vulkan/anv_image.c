@@ -1264,6 +1264,7 @@ add_all_surfaces_implicit_layout(
    struct anv_device *device,
    struct anv_image *image,
    const VkImageFormatListCreateInfo *format_list_info,
+   const VkImageAlignmentControlCreateInfoMESA *alignment,
    uint32_t stride,
    isl_tiling_flags_t isl_tiling_flags,
    isl_surf_usage_flags_t isl_extra_usage_flags)
@@ -1329,6 +1330,38 @@ add_all_surfaces_implicit_layout(
                                             ANV_OFFSET_IMPLICIT);
       if (result != VK_SUCCESS)
          return result;
+
+      /* If compression metadata is added, bump the alignment to prevent
+       * allocators from assigning a suboptimal alignment to this plane.
+       * Dmabufs are expected to have the same alignment for import and
+       * export, so don't bump images with the modifier tiling. Only check the
+       * first plane to avoid bumping multiplane images. Compression metadata
+       * is currently only added for the first plane anyway.
+       */
+      struct anv_image_memory_range *main_range =
+         &image->bindings[ANV_IMAGE_MEMORY_BINDING_MAIN].memory_range;
+      uint64_t primary_surf_size =
+         image->planes[plane].primary_surface.isl.size_B;
+      if (plane == 0 && primary_surf_size < main_range->size &&
+          image->vk.tiling == VK_IMAGE_TILING_OPTIMAL) {
+         uint64_t size_alignment = 1UL << (ffsl(primary_surf_size) - 1);
+         uint32_t max_alignment_request =
+            alignment ? alignment->maximumRequestedAlignment : 1 << 31;
+         uint32_t fast_alignment = MIN3(size_alignment,
+                                        device->info->mem_alignment,
+                                        max_alignment_request);
+#if 1
+      fprintf(stderr, "IMG-fmt %s, IMG-sz %ldKB, MEM-sz %ldKB and %ldB, "
+                      "ALIGN %dKB -> %dKB\n",
+              isl_format_get_short_name(plane_format.isl_format),
+              image->planes[plane].primary_surface.isl.size_B / 1024,
+              main_range->size / 1024,
+              main_range->size % 1024,
+              main_range->alignment / 1024,
+              fast_alignment / 1024);
+#endif
+         main_range->alignment = MAX2(main_range->alignment, fast_alignment);
+      }
    }
 
    return VK_SUCCESS;
@@ -1900,7 +1933,11 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
                                            mod_explicit_info, isl_tiling_flags,
                                            isl_extra_usage_flags);
    } else {
-      r = add_all_surfaces_implicit_layout(device, image, fmt_list, create_info->stride,
+      const VkImageAlignmentControlCreateInfoMESA *alignment =
+         vk_find_struct_const(pCreateInfo->pNext,
+                              IMAGE_ALIGNMENT_CONTROL_CREATE_INFO_MESA);
+      r = add_all_surfaces_implicit_layout(device, image, fmt_list, alignment,
+                                           create_info->stride,
                                            isl_tiling_flags,
                                            isl_extra_usage_flags);
    }
@@ -2170,8 +2207,8 @@ resolve_ahw_image(struct anv_device *device,
    vk_image_set_format(&image->vk, vk_format);
    image->n_planes = anv_get_format_planes(image->vk.format);
 
-   result = add_all_surfaces_implicit_layout(device, image, NULL, desc.stride,
-                                             isl_tiling_flags,
+   result = add_all_surfaces_implicit_layout(device, image, NULL, NULL,
+                                             desc.stride, isl_tiling_flags,
                                              ISL_SURF_USAGE_DISABLE_AUX_BIT);
    assert(result == VK_SUCCESS);
 #endif
@@ -2200,7 +2237,8 @@ resolve_anb_image(struct anv_device *device,
    /* Now we are able to fill anv_image fields properly and create
     * isl_surface for it.
     */
-   result = add_all_surfaces_implicit_layout(device, image, NULL, gralloc_info->stride,
+   result = add_all_surfaces_implicit_layout(device, image, NULL, NULL,
+                                             gralloc_info->stride,
                                              isl_tiling_flags,
                                              ISL_SURF_USAGE_DISABLE_AUX_BIT);
    assert(result == VK_SUCCESS);

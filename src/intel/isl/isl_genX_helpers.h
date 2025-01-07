@@ -211,6 +211,11 @@ isl_get_render_compression_format(enum isl_format format,
     *
     * These ISL formats have explicitly defined CMF values in the spec.
     */
+
+   if (!isl_aux_usage_has_ccs(aux_usage)) {
+      return CMF_DISABLE_WRITE_COMPRESSION;
+   }
+
    switch(format) {
    case ISL_FORMAT_R8_UNORM:
    case ISL_FORMAT_R8_UINT:

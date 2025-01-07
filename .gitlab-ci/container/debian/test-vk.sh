@@ -56,6 +56,7 @@ EPHEMERAL=(
 
 DEPS=(
     curl
+    git
     libepoxy0
     libxcb-shm0
     pciutils

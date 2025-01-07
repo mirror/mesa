@@ -30,6 +30,7 @@ extern const struct vk_device_shader_ops panvk_per_arch(device_shader_ops);
 struct nir_shader;
 struct pan_blend_state;
 struct panvk_device;
+struct vk_input_attachment_location_state;
 
 enum panvk_varying_buf_id {
    PANVK_VARY_BUF_GENERAL,
@@ -51,9 +52,23 @@ enum panvk_desc_table_id {
 };
 #endif
 
+#define PANVK_COLOR_ATTACHMENT(x) (x)
+#define PANVK_Z_ATTACHMENT        255
+#define PANVK_S_ATTACHMENT        254
+
+struct panvk_input_attachment_info {
+   uint32_t target;
+   uint32_t conversion;
+};
+
+/* One attachment per color, one for depth, one for stencil, and the last one
+ * for the attachment without an InputAttachmentIndex attribute. */
+#define INPUT_ATTACHMENT_MAP_SIZE 11
+
 struct panvk_graphics_sysvals {
    struct {
       float constants[4];
+      uint64_t descs[8];
    } blend;
 
    struct {
@@ -72,6 +87,8 @@ struct panvk_graphics_sysvals {
    } vs;
 
    uint64_t push_consts;
+
+   struct panvk_input_attachment_info iam[INPUT_ATTACHMENT_MAP_SIZE];
 
 #if PAN_ARCH <= 7
    /* gl_Layer on Bifrost is a bit of hack. We have to issue one draw per
@@ -262,6 +279,10 @@ struct panvk_shader {
 
    struct panvk_shader_fau_info fau;
 
+   struct {
+      uint32_t color_attachment_read;
+   } fs;
+
    const void *bin_ptr;
    uint32_t bin_size;
 
@@ -313,7 +334,9 @@ panvk_shader_link_cleanup(struct panvk_shader_link *link)
 
 void panvk_per_arch(nir_lower_descriptors)(
    nir_shader *nir, struct panvk_device *dev,
-   const struct vk_pipeline_robustness_state *rs, uint32_t set_layout_count,
+   const struct vk_pipeline_robustness_state *rs,
+   const struct vk_input_attachment_location_state *ial,
+   uint32_t set_layout_count,
    struct vk_descriptor_set_layout *const *set_layouts,
    struct panvk_shader *shader);
 

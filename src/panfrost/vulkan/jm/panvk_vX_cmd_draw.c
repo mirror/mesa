@@ -233,7 +233,7 @@ panvk_draw_prepare_fs_rsd(struct panvk_cmd_buffer *cmdbuf,
       return VK_ERROR_OUT_OF_DEVICE_MEMORY;
 
    struct mali_renderer_state_packed *rsd = ptr.cpu;
-   struct mali_blend_packed *bds = ptr.cpu + pan_size(RENDERER_STATE);
+   struct mali_blend_packed bds[MAX_RTS];
    struct panvk_blend_info *binfo = &cmdbuf->state.gfx.cb.info;
 
    uint64_t fs_code = panvk_shader_get_dev_addr(fs);
@@ -247,6 +247,14 @@ panvk_draw_prepare_fs_rsd(struct panvk_cmd_buffer *cmdbuf,
             cfg.internal.mode = MALI_BLEND_MODE_OFF;
          }
       }
+   }
+
+   memcpy(ptr.cpu + pan_size(RENDERER_STATE), bds, bd_count * sizeof(bds[0]));
+
+   for (unsigned i = 0; i < bd_count; i++) {
+      memcpy(&cmdbuf->state.gfx.render.color_attachments.ibds[i],
+             &bds[i].opaque[2],
+             sizeof(cmdbuf->state.gfx.render.color_attachments.ibds[0]));
    }
 
    pan_pack(rsd, RENDERER_STATE, cfg) {
@@ -264,12 +272,16 @@ panvk_draw_prepare_fs_rsd(struct panvk_cmd_buffer *cmdbuf,
                                  8));
          }
 
-         uint8_t rt_written = fs_info->outputs_written >> FRAG_RESULT_DATA0;
+         uint8_t rt_written = color_attachment_written_mask(
+            fs, &cmdbuf->vk.dynamic_graphics_state.cal);
+         uint8_t rt_read =
+            color_attachment_read_mask(fs, &cmdbuf->state.gfx.sysvals);
          uint8_t rt_mask = cmdbuf->state.gfx.render.bound_attachments &
                            MESA_VK_RP_ATTACHMENT_ANY_COLOR_BITS;
          cfg.properties.allow_forward_pixel_to_kill =
             fs_info->fs.can_fpk && !(rt_mask & ~rt_written) &&
-            !alpha_to_coverage && !binfo->any_dest_read;
+            !(rt_read & rt_written) && !alpha_to_coverage &&
+            !binfo->any_dest_read;
 
          bool writes_zs = writes_z || writes_s;
          bool zs_always_passes = ds_test_always_passes(cmdbuf);
@@ -1100,6 +1112,31 @@ panvk_cmd_prepare_draw_link_shaders(struct panvk_cmd_buffer *cmd)
 }
 
 static void
+update_cam_sysvals(struct panvk_cmd_buffer *cmdbuf)
+{
+   const struct vk_color_attachment_location_state *cal =
+      &cmdbuf->vk.dynamic_graphics_state.cal;
+   const struct panvk_shader *fs = get_fs(cmdbuf);
+
+   if (!dyn_gfx_state_dirty(cmdbuf, COLOR_ATTACHMENT_MAP) || !fs)
+      return;
+
+   for (uint32_t i = 0; i < MAX_RTS; i++) {
+      if (cal->color_map[i] == MESA_VK_ATTACHMENT_UNUSED)
+         continue;
+
+      if (!shader_uses_sysval_entry(fs, graphics, blend.descs, i))
+         continue;
+
+      uint32_t rt_idx = cal->color_map[i];
+
+      memcpy(&cmdbuf->state.gfx.sysvals.blend.descs[i],
+             &cmdbuf->state.gfx.render.color_attachments.ibds[rt_idx],
+             sizeof(cmdbuf->state.gfx.sysvals.blend.descs[0]));
+   }
+}
+
+static void
 panvk_cmd_draw(struct panvk_cmd_buffer *cmdbuf, struct panvk_draw_data *draw)
 {
    struct panvk_batch *batch = cmdbuf->cur_batch;
@@ -1258,6 +1295,13 @@ panvk_cmd_draw(struct panvk_cmd_buffer *cmdbuf, struct panvk_draw_data *draw)
    result = panvk_draw_prepare_viewport(cmdbuf, draw);
    if (result != VK_SUCCESS)
       return;
+
+   /* FIXME: Right now things work because we don't really support
+    * render pass suspend/resume or native secondary command buffers.
+    * Once we fix that, we'll also need to do the push_constants
+    * update in a compute shader and copy the internal blend descriptors
+    * from the blend descriptor itself, like we do on CSF. */
+   update_cam_sysvals(cmdbuf);
 
    for (uint32_t i = 0; i < layer_count; i++) {
       draw->info.layer_id = i;

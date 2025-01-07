@@ -16,6 +16,7 @@
 #include "panvk_image.h"
 #include "panvk_image_view.h"
 #include "panvk_physical_device.h"
+#include "panvk_shader.h"
 
 #include "vk_command_buffer.h"
 #include "vk_format.h"
@@ -48,6 +49,9 @@ struct panvk_rendering_state {
       VkFormat fmts[MAX_RTS];
       uint8_t samples[MAX_RTS];
       struct panvk_resolve_attachment resolve[MAX_RTS];
+#if PAN_ARCH <= 7
+      uint64_t ibds[MAX_RTS];
+#endif
    } color_attachments;
 
    struct pan_image_view zs_pview;
@@ -349,5 +353,52 @@ struct panvk_draw_info {
 void
 panvk_per_arch(cmd_prepare_draw_sysvals)(struct panvk_cmd_buffer *cmdbuf,
                                          const struct panvk_draw_info *info);
+
+static inline uint32_t
+color_attachment_written_mask(
+   const struct panvk_shader *fs,
+   const struct vk_color_attachment_location_state *cal)
+{
+   uint32_t written_by_shader =
+      (fs->info.outputs_written >> FRAG_RESULT_DATA0) & BITFIELD_MASK(8);
+
+   /* If the shader was passed the attachment locations, the outputs_written
+    * bitmap contains the remapped locations. */
+   if (!shader_uses_sysval(fs, graphics, blend.descs))
+      return written_by_shader;
+
+   uint32_t catt_written_mask = 0;
+
+   for (uint32_t i = 0; i < MAX_RTS; i++) {
+      if (cal->color_map[i] == MESA_VK_ATTACHMENT_UNUSED)
+         continue;
+
+      uint32_t shader_rt = cal->color_map[i];
+
+      if (written_by_shader & BITFIELD_BIT(shader_rt))
+         catt_written_mask |= BITFIELD_BIT(i);
+   }
+
+   return catt_written_mask;
+}
+
+static inline uint32_t
+color_attachment_read_mask(const struct panvk_shader *fs,
+                           const struct panvk_graphics_sysvals *sysvals)
+{
+   /* If the shader was passed the attachment locations, the outputs_written
+    * bitmap contains the remapped locations. */
+   if (!shader_uses_sysval(fs, graphics, iam))
+      return fs->fs.color_attachment_read;
+
+   uint32_t catt_read_mask = 0;
+   for (uint32_t i = 0; i < ARRAY_SIZE(sysvals->iam); i++) {
+      if (shader_uses_sysval_entry(fs, graphics, iam, i) &&
+          sysvals->iam[i].target < MAX_RTS)
+         catt_read_mask |= BITFIELD_BIT(sysvals->iam[i].target);
+   }
+
+   return catt_read_mask;
+}
 
 #endif

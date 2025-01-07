@@ -30,6 +30,7 @@
 #include "panvk_device.h"
 #include "panvk_shader.h"
 
+#include "vk_graphics_state.h"
 #include "vk_pipeline.h"
 #include "vk_pipeline_layout.h"
 
@@ -66,11 +67,13 @@ struct panvk_shader_desc_info {
 
 struct lower_desc_ctx {
    const struct panvk_descriptor_set_layout *set_layouts[MAX_SETS];
+   const struct vk_input_attachment_location_state *ial;
    struct panvk_shader_desc_info desc_info;
    struct hash_table *ht;
    bool add_bounds_checks;
    nir_address_format ubo_addr_format;
    nir_address_format ssbo_addr_format;
+   struct panvk_shader *shader;
 };
 
 static nir_address_format
@@ -828,6 +831,188 @@ get_img_index(nir_builder *b, nir_deref_instr *deref,
    }
 }
 
+static struct panvk_input_attachment_info
+get_input_attachment_info(const struct lower_desc_ctx *ctx, unsigned index,
+                          nir_alu_type dst_type)
+{
+   const struct vk_input_attachment_location_state *ial = ctx->ial;
+
+   assert(index == MESA_VK_ATTACHMENT_NO_INDEX || index < 10);
+
+   if (ial->depth_att == index && dst_type == nir_type_float32) {
+      return (struct panvk_input_attachment_info){
+         .target = PANVK_Z_ATTACHMENT,
+      };
+   }
+
+   if (ial->stencil_att == index && dst_type == nir_type_uint32) {
+      return (struct panvk_input_attachment_info){
+         .target = PANVK_S_ATTACHMENT,
+      };
+   }
+
+   for (unsigned i = 0; i < ial->color_attachment_count; i++) {
+      if (ial->color_map[i] == index) {
+         return (struct panvk_input_attachment_info){
+            .target = PANVK_COLOR_ATTACHMENT(i),
+         };
+      }
+   }
+
+   return (struct panvk_input_attachment_info){
+      .target = ~0,
+   };
+}
+
+static bool
+lower_input_attachment_load(nir_builder *b, nir_intrinsic_instr *intr,
+                            void *data)
+{
+   if (intr->intrinsic != nir_intrinsic_image_deref_load &&
+       intr->intrinsic != nir_intrinsic_image_deref_sparse_load)
+      return false;
+
+   nir_deref_instr *deref = nir_src_as_deref(intr->src[0]);
+   enum glsl_sampler_dim image_dim = glsl_get_sampler_dim(deref->type);
+   if (image_dim != GLSL_SAMPLER_DIM_SUBPASS &&
+       image_dim != GLSL_SAMPLER_DIM_SUBPASS_MS)
+      return false;
+
+   struct lower_desc_ctx *ctx = data;
+   nir_variable *var = deref->var;
+   const unsigned iam_idx =
+      var->data.index != NIR_VARIABLE_NO_INDEX ? var->data.index + 1 : 0;
+   nir_alu_type dest_type = nir_intrinsic_dest_type(intr);
+
+#if PAN_ARCH <= 7
+   /* On v7, we need to pass the depth format around. If we use a conversion
+    * of zero, like we do on v9+, the GPU reports an INVALID_INSTR_ENC. */
+   uint32_t stencil_conv;
+   pan_pack(&stencil_conv, INTERNAL_CONVERSION, cfg) {
+      cfg.register_format = MALI_REGISTER_FILE_FORMAT_U32;
+      cfg.memory_format = GENX(panfrost_dithered_format_from_pipe_format)(
+         PIPE_FORMAT_S8_UINT, false);
+   }
+#endif
+
+   b->cursor = nir_before_instr(&intr->instr);
+
+   if (ctx->ial) {
+      struct panvk_input_attachment_info ia_info = get_input_attachment_info(
+         ctx,
+         var->data.index == NIR_VARIABLE_NO_INDEX ? MESA_VK_ATTACHMENT_NO_INDEX
+                                                  : var->data.index,
+         dest_type);
+
+      /* If the target wasn't found, we keep the image load. */
+      if (ia_info.target == ~0)
+         return false;
+
+      nir_def *target = nir_imm_int(b, ia_info.target);
+      nir_def *conversion;
+      nir_io_semantics iosem = {0};
+
+      if (ia_info.target == PANVK_Z_ATTACHMENT) {
+         iosem.location = FRAG_RESULT_DEPTH;
+      } else if (ia_info.target == PANVK_S_ATTACHMENT) {
+         iosem.location = FRAG_RESULT_STENCIL;
+      } else {
+         iosem.location = FRAG_RESULT_DATA0;
+         ctx->shader->fs.color_attachment_read |= BITFIELD_BIT(ia_info.target);
+      }
+
+      /* No conversion needed for depth/stencil attachments on v9+.
+       * For color attachments and depth/stencil on v7-, we load the
+       * conversion descriptor from the iam array. */
+      if (PAN_ARCH >= 9 && (ia_info.target == PANVK_Z_ATTACHMENT ||
+                            ia_info.target == PANVK_S_ATTACHMENT)) {
+         conversion = nir_imm_int(b, 0);
+#if PAN_ARCH <= 7
+      } else if (ia_info.target == PANVK_S_ATTACHMENT) {
+         conversion = nir_imm_int(b, stencil_conv);
+#endif
+      } else {
+         nir_def *dyn_ia_info =
+            load_sysval_entry(b, graphics, 32, iam, nir_imm_int(b, iam_idx));
+
+         conversion = nir_channel(b, dyn_ia_info, 1);
+      }
+
+      nir_def *load_output = nir_load_converted_output_pan(
+         b, intr->def.num_components, intr->def.bit_size, target, conversion,
+         .dest_type = dest_type, .io_semantics = iosem);
+      if (ia_info.target == PANVK_S_ATTACHMENT)
+         load_output = nir_iand_imm(b, load_output, BITFIELD_MASK(8));
+
+      nir_def_replace(&intr->def, load_output);
+      return true;
+   }
+
+   nir_def *ia_info =
+      load_sysval_entry(b, graphics, 32, iam, nir_imm_int(b, iam_idx));
+   nir_def *target = nir_channel(b, ia_info, 0);
+
+   nir_push_if(b, nir_ine_imm(b, target, ~0));
+   nir_def *conversion = nir_channel(b, ia_info, 1);
+   nir_def *is_color_att = nir_ilt_imm(b, target, 8);
+#if PAN_ARCH <= 7
+   conversion =
+      dest_type == nir_type_uint32
+         ? nir_bcsel(b, is_color_att, conversion, nir_imm_int(b, stencil_conv))
+         : conversion;
+#else
+   conversion = nir_bcsel(b, is_color_att, conversion, nir_imm_int(b, 0));
+#endif
+
+   target = nir_bcsel(
+      b, nir_ilt_imm(b, target, 8), target,
+      nir_imm_int(b, dest_type == nir_type_uint32 ? PANVK_S_ATTACHMENT
+                                                  : PANVK_Z_ATTACHMENT));
+   nir_def *load_output = nir_load_converted_output_pan(
+      b, intr->def.num_components, intr->def.bit_size, target, conversion,
+      .dest_type = nir_intrinsic_dest_type(intr));
+
+   nir_push_else(b, NULL);
+   nir_intrinsic_instr *load_img =
+      nir_intrinsic_instr_create(b->shader, intr->intrinsic);
+   nir_intrinsic_set_dest_type(load_img, nir_intrinsic_dest_type(intr));
+   nir_intrinsic_set_image_dim(load_img, nir_intrinsic_image_dim(intr));
+   nir_intrinsic_set_image_array(load_img, nir_intrinsic_image_array(intr));
+   nir_intrinsic_set_format(load_img, nir_intrinsic_format(intr));
+   nir_intrinsic_set_access(load_img, nir_intrinsic_access(intr));
+   load_img->num_components = intr->num_components;
+   nir_def_init(&load_img->instr, &load_img->def, intr->num_components,
+                intr->def.bit_size);
+   load_img->src[0] = intr->src[0];
+   load_img->src[1] = intr->src[1];
+   load_img->src[2] = intr->src[2];
+   nir_pop_if(b, NULL);
+
+   nir_def_replace(&intr->def, nir_if_phi(b, &load_img->def, load_output));
+
+   return true;
+}
+
+static bool
+lower_input_attachment_loads(nir_shader *nir,
+                             struct lower_desc_ctx *ctx)
+{
+   bool progress = false;
+
+   NIR_PASS(progress, nir, nir_shader_intrinsics_pass,
+            lower_input_attachment_load, nir_metadata_control_flow, ctx);
+
+   /* Lower the remaining input attachment loads. */
+   struct nir_input_attachment_options lower_input_attach_opts = {
+      .use_fragcoord_sysval = true,
+      .use_layer_id_sysval = true,
+   };
+   NIR_PASS(progress, nir, nir_lower_input_attachments,
+            &lower_input_attach_opts);
+
+   return progress;
+}
+
 static bool
 lower_img_intrinsic(nir_builder *b, nir_intrinsic_instr *intr,
                     struct lower_desc_ctx *ctx)
@@ -1204,11 +1389,15 @@ upload_shader_desc_info(struct panvk_device *dev, struct panvk_shader *shader,
 void
 panvk_per_arch(nir_lower_descriptors)(
    nir_shader *nir, struct panvk_device *dev,
-   const struct vk_pipeline_robustness_state *rs, uint32_t set_layout_count,
+   const struct vk_pipeline_robustness_state *rs,
+   const struct vk_input_attachment_location_state *ial,
+   uint32_t set_layout_count,
    struct vk_descriptor_set_layout *const *set_layouts,
    struct panvk_shader *shader)
 {
    struct lower_desc_ctx ctx = {
+      .shader = shader,
+      .ial = ial,
       .add_bounds_checks =
          rs->storage_buffers !=
             VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT ||
@@ -1244,6 +1433,9 @@ panvk_per_arch(nir_lower_descriptors)(
 
    create_copy_table(nir, &ctx);
    upload_shader_desc_info(dev, shader, &ctx.desc_info);
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT)
+      NIR_PASS(progress, nir, lower_input_attachment_loads, &ctx);
 
    NIR_PASS(progress, nir, nir_shader_instructions_pass,
             lower_descriptors_instr, nir_metadata_control_flow, &ctx);

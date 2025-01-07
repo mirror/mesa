@@ -49,6 +49,21 @@ render_state_set_color_attachment(struct panvk_cmd_buffer *cmdbuf,
                      fbinfo->rts[index].clear_value, col, fmt, false);
    } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
       fbinfo->rts[index].preload = true;
+   } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_NONE) {
+      fbinfo->rts[index].preload = false;
+   } else if (att->storeOp == VK_ATTACHMENT_STORE_OP_NONE) {
+      /* This is a very frustrating corner case. From the spec:
+       *
+       *     VK_ATTACHMENT_STORE_OP_NONE specifies the contents within the
+       *     render area are not accessed by the store operation as long as
+       *     no values are written to the attachment during the render pass.
+       *
+       * With VK_ATTACHMENT_LOAD_OP_DONT_CARE + VK_ATTACHMENT_STORE_OP_NONE,
+       * we need to preserve the contents throughout partial renders. The
+       * easiest way to do that is forcing a preload, so that partial stores
+       * for unused attachments will be no-op'd by writing existing contents.
+       */
+      fbinfo->rts[index].preload = true;
    }
 
    if (att->resolveMode != VK_RESOLVE_MODE_NONE) {
@@ -110,6 +125,21 @@ render_state_set_z_attachment(struct panvk_cmd_buffer *cmdbuf,
       fbinfo->zs.clear.z = true;
       fbinfo->zs.clear_value.depth = att->clearValue.depthStencil.depth;
    } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
+      fbinfo->zs.preload.z = true;
+   } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_NONE) {
+      fbinfo->zs.preload.z = false;
+   } else if (att->storeOp == VK_ATTACHMENT_STORE_OP_NONE) {
+      /* This is a very frustrating corner case. From the spec:
+       *
+       *     VK_ATTACHMENT_STORE_OP_NONE specifies the contents within the
+       *     render area are not accessed by the store operation as long as
+       *     no values are written to the attachment during the render pass.
+       *
+       * With VK_ATTACHMENT_LOAD_OP_DONT_CARE + VK_ATTACHMENT_STORE_OP_NONE,
+       * we need to preserve the contents throughout partial renders. The
+       * easiest way to do that is forcing a preload, so that partial stores
+       * for unused attachments will be no-op'd by writing existing contents.
+       */
       fbinfo->zs.preload.z = true;
    }
 
@@ -188,6 +218,21 @@ render_state_set_s_attachment(struct panvk_cmd_buffer *cmdbuf,
       fbinfo->zs.clear.s = true;
       fbinfo->zs.clear_value.stencil = att->clearValue.depthStencil.stencil;
    } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_LOAD) {
+      fbinfo->zs.preload.s = true;
+   } else if (att->loadOp == VK_ATTACHMENT_LOAD_OP_NONE) {
+      fbinfo->zs.preload.s = false;
+   } else if (att->storeOp == VK_ATTACHMENT_STORE_OP_NONE) {
+      /* This is a very frustrating corner case. From the spec:
+       *
+       *     VK_ATTACHMENT_STORE_OP_NONE specifies the contents within the
+       *     render area are not accessed by the store operation as long as
+       *     no values are written to the attachment during the render pass.
+       *
+       * With VK_ATTACHMENT_LOAD_OP_DONT_CARE + VK_ATTACHMENT_STORE_OP_NONE,
+       * we need to preserve the contents throughout partial renders. The
+       * easiest way to do that is forcing a preload, so that partial stores
+       * for unused attachments will be no-op'd by writing existing contents.
+       */
       fbinfo->zs.preload.s = true;
    }
 

@@ -744,9 +744,31 @@ lvp_get_rendering_state_size(void);
 struct lvp_image *lvp_swapchain_get_image(VkSwapchainKHR swapchain,
                                           uint32_t index);
 
+static inline bool
+lvp_vk_format_is_emulated(VkFormat format)
+{
+   /* Always emulate block compressed images. llvmpipe technically supports them
+    * but sampling performance is really bad.
+    */
+   const struct util_format_description *desc = vk_format_description(format);
+   switch (desc->layout) {
+   case UTIL_FORMAT_LAYOUT_S3TC:
+   case UTIL_FORMAT_LAYOUT_RGTC:
+   case UTIL_FORMAT_LAYOUT_BPTC:
+      return true;
+   default:
+      return false;
+   }
+}
+
 static inline enum pipe_format
 lvp_vk_format_to_pipe_format(VkFormat format)
 {
+   if (lvp_vk_format_is_emulated(format)) {
+      const struct util_format_description *desc = vk_format_description(format);
+      return desc->is_snorm ? PIPE_FORMAT_R8G8B8A8_SNORM : PIPE_FORMAT_R8G8B8A8_UNORM;
+   }
+
    /* Some formats cause problems with CTS right now.*/
    switch (format) {
    case VK_FORMAT_R4G4B4A4_UNORM_PACK16:

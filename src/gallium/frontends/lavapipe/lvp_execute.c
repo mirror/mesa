@@ -2332,7 +2332,13 @@ static void handle_copy_image_to_buffer2(struct vk_cmd_queue_entry *cmd,
 
       const struct vk_image_buffer_layout buffer_layout =
          vk_image_buffer_copy_layout(&src_image->vk, &copycmd->pRegions[i]);
-      if (src_format != dst_format) {
+      if (lvp_vk_format_is_emulated(src_image->vk.format)) {
+         util_format_translate_3d(
+            vk_format_to_pipe_format(src_image->vk.format), dst_data,
+            buffer_layout.row_stride_B, buffer_layout.image_stride_B, 0, 0, 0,
+            src_format, src_data, src_t->stride, src_t->layer_stride,
+            box.x, box.y, box.z, box.width, box.height, box.depth);
+      } else if (src_format != dst_format) {
          copy_depth_box(dst_data, dst_format,
                         buffer_layout.row_stride_B,
                         buffer_layout.image_stride_B,
@@ -2410,7 +2416,12 @@ static void handle_copy_buffer_to_image(struct vk_cmd_queue_entry *cmd,
 
       const struct vk_image_buffer_layout buffer_layout =
          vk_image_buffer_copy_layout(&dst_image->vk, &copycmd->pRegions[i]);
-      if (src_format != dst_format) {
+      if (lvp_vk_format_is_emulated(dst_image->vk.format)) {
+         util_format_translate_3d(
+            dst_format, dst_data, dst_t->stride, dst_t->layer_stride, box.x, box.y, box.z,
+            vk_format_to_pipe_format(dst_image->vk.format), src_data, buffer_layout.row_stride_B,
+            buffer_layout.image_stride_B, 0, 0, 0, box.width, box.height, box.depth);
+      } else if (src_format != dst_format) {
          copy_depth_box(dst_data, dst_format,
                         dst_t->stride, dst_t->layer_stride,
                         0, 0, 0,

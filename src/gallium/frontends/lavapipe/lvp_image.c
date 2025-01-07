@@ -159,6 +159,11 @@ lvp_image_create(VkDevice _device,
       template.nr_samples = pCreateInfo->samples;
       template.nr_storage_samples = pCreateInfo->samples;
 
+      if (lvp_vk_format_is_emulated(format)) {
+         template.width0 *= vk_format_get_blockwidth(format);
+         template.height0 *= vk_format_get_blockheight(format);
+      }
+
 #ifdef HAVE_LIBDRM
       if (android_surface || (modinfo && pCreateInfo->tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)) {
          struct winsys_handle whandle;
@@ -307,8 +312,12 @@ lvp_create_samplerview(struct pipe_context *pctx, struct lvp_image_view *iv, VkF
    u_sampler_view_default_template(&templ,
                                    iv->image->planes[image_plane].bo,
                                    pformat);
-   if (iv->vk.view_type == VK_IMAGE_VIEW_TYPE_1D)
-      templ.target = PIPE_TEXTURE_1D;
+   if (iv->vk.view_type == VK_IMAGE_VIEW_TYPE_1D) {
+      if (lvp_vk_format_is_emulated(plane_format) && vk_format_get_blockheight(plane_format) > 1)
+         templ.target = PIPE_TEXTURE_2D;
+      else
+         templ.target = PIPE_TEXTURE_1D;
+   }
    if (iv->vk.view_type == VK_IMAGE_VIEW_TYPE_2D)
       templ.target = PIPE_TEXTURE_2D;
    if (iv->vk.view_type == VK_IMAGE_VIEW_TYPE_CUBE)
@@ -784,10 +793,28 @@ lvp_CopyMemoryToImageEXT(VkDevice _device, const VkCopyMemoryToImageInfoEXT *pCo
          break;
       }
 
-      unsigned stride = util_format_get_stride(image->planes[plane].bo->format, copy->memoryRowLength ? copy->memoryRowLength : box.width);
-      unsigned layer_stride = util_format_get_2d_size(image->planes[plane].bo->format, stride, copy->memoryImageHeight ? copy->memoryImageHeight : box.height);
-      device->queue.ctx->texture_subdata(device->queue.ctx, image->planes[plane].bo, copy->imageSubresource.mipLevel, 0,
-                                         &box, copy->pHostPointer, stride, layer_stride);
+      struct pipe_transfer *xfer;
+      uint8_t *data = device->queue.ctx->texture_map(device->queue.ctx, image->planes[plane].bo, copy->imageSubresource.mipLevel,
+                                                     PIPE_MAP_WRITE | PIPE_MAP_UNSYNCHRONIZED | PIPE_MAP_THREAD_SAFE, &box, &xfer);
+      if (!data)
+         return VK_ERROR_MEMORY_MAP_FAILED;
+
+      enum pipe_format image_format = image->planes[plane].bo->format;
+      unsigned stride = util_format_get_stride(image_format, copy->memoryRowLength ? copy->memoryRowLength : box.width);
+      unsigned layer_stride = util_format_get_2d_size(image_format, stride, copy->memoryImageHeight ? copy->memoryImageHeight : box.height);
+      
+      if (lvp_vk_format_is_emulated(image->vk.format)) {
+         util_format_translate_3d(
+            image_format, data, xfer->stride, xfer->layer_stride, 0, 0, 0,
+            vk_format_to_pipe_format(image->vk.format), copy->pHostPointer, stride, layer_stride,
+            0, 0, 0, box.width, box.height, box.depth);
+      } else {
+         util_copy_box(data, image_format, xfer->stride, xfer->layer_stride,
+                       /* offsets are all zero because texture_map handles the offset */
+                       0, 0, 0, box.width, box.height, box.depth, copy->pHostPointer, stride, layer_stride, 0, 0, 0);
+      }
+
+      pipe_texture_unmap(device->queue.ctx, xfer);
    }
    return VK_SUCCESS;
 }
@@ -834,11 +861,20 @@ lvp_CopyImageToMemoryEXT(VkDevice _device, const VkCopyImageToMemoryInfoEXT *pCo
       if (!data)
          return VK_ERROR_MEMORY_MAP_FAILED;
 
-      unsigned stride = util_format_get_stride(image->planes[plane].bo->format, copy->memoryRowLength ? copy->memoryRowLength : box.width);
-      unsigned layer_stride = util_format_get_2d_size(image->planes[plane].bo->format, stride, copy->memoryImageHeight ? copy->memoryImageHeight : box.height);
-      util_copy_box(copy->pHostPointer, image->planes[plane].bo->format, stride, layer_stride,
-                    /* offsets are all zero because texture_map handles the offset */
-                    0, 0, 0, box.width, box.height, box.depth, data, xfer->stride, xfer->layer_stride, 0, 0, 0);
+      enum pipe_format image_format = image->planes[plane].bo->format;
+      unsigned stride = util_format_get_stride(image_format, copy->memoryRowLength ? copy->memoryRowLength : box.width);
+      unsigned layer_stride = util_format_get_2d_size(image_format, stride, copy->memoryImageHeight ? copy->memoryImageHeight : box.height);
+      
+      if (lvp_vk_format_is_emulated(image->vk.format)) {
+         util_format_translate_3d(
+            vk_format_to_pipe_format(image->vk.format), copy->pHostPointer, stride, layer_stride, 0, 0, 0,
+            image_format, data, xfer->stride, xfer->layer_stride, box.x, box.y, box.z, box.width, box.height, box.depth);
+      } else {
+         util_copy_box(copy->pHostPointer, image_format, stride, layer_stride,
+                       /* offsets are all zero because texture_map handles the offset */
+                       0, 0, 0, box.width, box.height, box.depth, data, xfer->stride, xfer->layer_stride, 0, 0, 0);
+      }
+
       pipe_texture_unmap(device->queue.ctx, xfer);
    }
    return VK_SUCCESS;

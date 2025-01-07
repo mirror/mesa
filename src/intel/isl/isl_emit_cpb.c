@@ -112,7 +112,8 @@ isl_genX(emit_cpb_control_s)(const struct isl_device *dev, void *batch,
        */
 #if GFX_VER >= 20
       cpb.CompressionFormat  =
-         isl_get_render_compression_format(info->surf->format);
+         isl_get_render_compression_format(info->surf->format,
+                                           ISL_AUX_USAGE_NONE);
 #endif
    } else {
       cpb.SurfaceType  = SURFTYPE_NULL;

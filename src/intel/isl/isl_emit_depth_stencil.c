@@ -178,7 +178,8 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
       db.CompressionMode = isl_aux_usage_has_ccs(info->hiz_usage);
 #endif
       db.RenderCompressionFormat =
-         isl_get_render_compression_format(info->depth_surf->format);
+         isl_get_render_compression_format(info->depth_surf->format,
+                                           info->hiz_usage);
 #elif GFX_VER >= 9
       /* Gen9+ depth is always Y-tiled but it may be Y0, Yf, or Ys. */
       assert(isl_tiling_is_any_y(info->depth_surf->tiling));
@@ -245,10 +246,12 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
 #if GFX_VER < 20
       sb.CompressionMode = isl_aux_usage_has_ccs(info->stencil_aux_usage);
       sb.RenderCompressionFormat =
-         isl_get_render_compression_format(info->stencil_surf->format);
+         isl_get_render_compression_format(info->stencil_surf->format,
+                                           info->stencil_aux_usage);
 #else
       sb.CompressionFormat =
-         isl_get_render_compression_format(info->stencil_surf->format);
+         isl_get_render_compression_format(info->stencil_surf->format,
+                                           info->stencil_aux_usage);
 #endif
 #endif
 #if GFX_VER >= 12

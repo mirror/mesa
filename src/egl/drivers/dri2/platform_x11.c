@@ -1788,6 +1788,11 @@ dri2_x11_check_multibuffers(_EGLDisplay *disp)
 {
    struct dri2_egl_display *dri2_dpy = dri2_egl_display(disp);
 
+   if (dri2_dpy->virgl) {
+      dri2_dpy->multibuffers_available = false;
+      return EGL_TRUE;
+   }
+
 #ifdef HAVE_X11_DRM
    bool err;
    dri2_dpy->multibuffers_available = x11_dri3_check_multibuffer(dri2_dpy->conn, &err, &dri2_dpy->explicit_modifiers);
@@ -1813,7 +1818,7 @@ dri2_initialize_x11_swrast(_EGLDisplay *disp)
 
    /*
     * Every hardware driver_name is set using strdup. Doing the same in
-    * here will allow is to simply free the memory at dri2_terminate().
+    * here will allow us to simply free the memory at dri2_terminate().
     */
    dri2_dpy->driver_name = strdup(disp->Options.Zink ? "zink" : "swrast");
 

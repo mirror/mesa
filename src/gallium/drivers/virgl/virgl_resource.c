@@ -823,10 +823,17 @@ virgl_resource_get_param(struct pipe_screen *screen,
                          unsigned handle_usage,
                          uint64_t *value)
 {
+   struct virgl_screen *vs = virgl_screen(screen);
    struct virgl_resource *res = virgl_resource(resource);
+   unsigned bind;
+
+   bind = pipe_to_virgl_bind(vs, resource->bind);
 
    switch(param) {
    case PIPE_RESOURCE_PARAM_MODIFIER:
+      if ((bind & VIRGL_BIND_SCANOUT) &&
+          (vs->caps.caps.v2.capability_bits_v2 & VIRGL_CAP_V2_EXPORTABLE_RESOURCE))
+         return false;
       *value = res->metadata.modifier;
       return true;
    default:

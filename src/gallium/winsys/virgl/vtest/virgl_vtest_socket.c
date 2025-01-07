@@ -595,3 +595,35 @@ virgl_vtest_send_create_blob(struct virgl_vtest_winsys *vws,
    return res_id;
 }
 
+int virgl_vtest_export_resource(struct virgl_vtest_winsys *vws, uint32_t handle,
+                               int *fd, uint32_t *stride, uint32_t *offset,
+                               uint64_t *modifier)
+{
+   uint32_t vtest_hdr[VTEST_HDR_SIZE];
+   uint32_t cmd[VCMD_RES_EXPORT_SIZE];
+   uint32_t resp[4];
+   vtest_hdr[VTEST_CMD_LEN] = VCMD_RES_EXPORT_SIZE;
+   vtest_hdr[VTEST_CMD_ID] = VCMD_RESOURCE_EXPORT;
+
+   cmd[VCMD_RES_EXPORT_RES_HANDLE] = handle;
+
+   virgl_block_write(vws->sock_fd, &vtest_hdr, sizeof(vtest_hdr));
+   virgl_block_write(vws->sock_fd, &cmd, sizeof(cmd));
+
+   virgl_block_read(vws->sock_fd, vtest_hdr, sizeof(vtest_hdr));
+   assert(vtest_hdr[VTEST_CMD_LEN] == 4);
+   assert(vtest_hdr[VTEST_CMD_ID] == VCMD_RESOURCE_EXPORT);
+   virgl_block_read(vws->sock_fd, resp, sizeof(resp));
+
+   *fd = virgl_vtest_receive_fd(vws->sock_fd);
+   if (*fd < 0) {
+      fprintf(stderr, "Failed to export resource\n");
+      return -1;
+   }
+   *stride = resp[0];
+   *offset = resp[1];
+   *modifier = resp[2];
+   *modifier |= (uint64_t) resp[3] << 32;
+
+   return 0;
+}

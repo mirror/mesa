@@ -245,6 +245,14 @@ bool
 pipe_loader_drm_probe_fd(struct pipe_loader_device **dev, int fd, bool zink);
 
 /**
+ * Initialize a virgl vtest device.
+ *
+ * \sa pipe_loader_probe
+ */
+bool
+pipe_loader_virgl_probe(struct pipe_loader_device **dev);
+
+/**
  * Get the dri options used for the DRM driver of the given name, if any.
  *
  * The returned array is heap-allocated.

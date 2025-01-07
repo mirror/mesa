@@ -1953,6 +1953,24 @@ dri_swrast_kms_init_screen(struct dri_screen *screen, bool driver_name_is_inferr
    return pscreen;
 }
 
+/**
+ * This is the driver specific part of the createNewScreen entry point.
+ *
+ * Returns the struct gl_config supported by this driver.
+ */
+struct pipe_screen *
+virgl_init_screen(struct dri_screen *screen, bool driver_name_is_inferred)
+{
+   struct pipe_screen *pscreen = NULL;
+   screen->can_share_buffer = false;
+   screen->auto_fake_front = dri_with_format(screen);
+
+   if (pipe_loader_virgl_probe(&screen->dev))
+      pscreen = pipe_loader_create_screen(screen->dev, driver_name_is_inferred);
+
+   return pscreen;
+}
+
 int
 dri_query_compatible_render_only_device_fd(int kms_only_fd)
 {

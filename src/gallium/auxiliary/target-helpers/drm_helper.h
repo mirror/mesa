@@ -273,6 +273,7 @@ DRM_DRIVER_DESCRIPTOR_STUB(kgsl)
 #if defined(GALLIUM_VIRGL)
 #include "virgl/drm/virgl_drm_public.h"
 #include "virgl/virgl_public.h"
+#include "virgl/vtest/virgl_vtest_public.h"
 
 static struct pipe_screen *
 pipe_virtio_gpu_create_screen(int fd, const struct pipe_screen_config *config)
@@ -285,13 +286,27 @@ pipe_virtio_gpu_create_screen(int fd, const struct pipe_screen_config *config)
    return screen ? debug_screen_wrap(screen) : NULL;
 }
 
+static struct pipe_screen *
+pipe_vtest_create_screen(int fd, const struct pipe_screen_config *config)
+{
+   struct pipe_screen *screen = NULL;
+   struct virgl_winsys *winsys;
+
+   winsys = virgl_vtest_winsys_wrap(NULL);
+   if (winsys)
+      screen = virgl_create_screen(winsys, config);
+   return screen ? debug_screen_wrap(screen) : NULL;
+}
+
 const driOptionDescription virgl_driconf[] = {
       #include "virgl/virgl_driinfo.h.in"
 };
 DRM_DRIVER_DESCRIPTOR(virtio_gpu, virgl_driconf, ARRAY_SIZE(virgl_driconf))
+DRM_DRIVER_DESCRIPTOR(vtest, virgl_driconf, ARRAY_SIZE(virgl_driconf))
 
 #else
 DRM_DRIVER_DESCRIPTOR_STUB(virtio_gpu)
+DRM_DRIVER_DESCRIPTOR_STUB(vtest)
 #endif
 
 #ifdef GALLIUM_VC4

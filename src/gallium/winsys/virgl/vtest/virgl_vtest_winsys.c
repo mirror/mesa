@@ -295,7 +295,7 @@ virgl_vtest_winsys_resource_create(struct virgl_winsys *vws,
    if (!res)
       return NULL;
 
-   if (bind & (VIRGL_BIND_DISPLAY_TARGET | VIRGL_BIND_SCANOUT)) {
+   if (vtws->sws && (bind & (VIRGL_BIND_DISPLAY_TARGET | VIRGL_BIND_SCANOUT))) {
       res->dt = vtws->sws->displaytarget_create(vtws->sws, bind, format,
                                                 width, height, 64, map_front_private,
                                                 &res->stride);
@@ -378,6 +378,36 @@ out:
    pipe_reference_init(&res->reference, 1);
    p_atomic_set(&res->num_cs_references, 0);
    return res;
+}
+
+static bool virgl_vtest_resource_get_handle(struct virgl_winsys *vws,
+                                            struct virgl_hw_res *res,
+                                            uint32_t stride,
+                                            struct winsys_handle *whandle)
+{
+   struct virgl_vtest_winsys *vvws = virgl_vtest_winsys(vws);
+
+   if (!res)
+       return false;
+
+   if (whandle->type == WINSYS_HANDLE_TYPE_KMS) {
+      /* FIXME keep track of fd? */
+      int fd = -1;
+      virgl_vtest_export_resource(vvws, res->res_handle, &fd,
+                                 &whandle->stride, &whandle->offset,
+                                 &whandle->modifier);
+      whandle->handle = fd;
+      return true;
+   } else if (whandle->type == WINSYS_HANDLE_TYPE_FD) {
+      int fd = -1;
+      virgl_vtest_export_resource(vvws, res->res_handle, &fd,
+                                 &whandle->stride, &whandle->offset,
+                                 &whandle->modifier);
+      whandle->handle = fd;
+      return true;
+   }
+
+   return false;
 }
 
 static void *virgl_vtest_resource_map(struct virgl_winsys *vws,
@@ -631,6 +661,11 @@ static int virgl_vtest_get_caps(struct virgl_winsys *vws,
    // vtest doesn't support that
    if (caps->caps.v2.capability_bits_v2 & VIRGL_CAP_V2_COPY_TRANSFER_BOTH_DIRECTIONS)
       caps->caps.v2.capability_bits_v2 &= ~VIRGL_CAP_V2_COPY_TRANSFER_BOTH_DIRECTIONS;
+
+   /* If resource are not exportable, only swrast if supported */
+   if (!vtws->sws && !(caps->caps.v2.capability_bits_v2 & VIRGL_CAP_V2_EXPORTABLE_RESOURCE))
+      return -EINVAL;
+
    return ret;
 }
 
@@ -766,6 +801,7 @@ virgl_vtest_winsys_wrap(struct sw_winsys *sws)
    vtws->base.resource_map = virgl_vtest_resource_map;
    vtws->base.resource_wait = virgl_vtest_resource_wait;
    vtws->base.resource_is_busy = virgl_vtest_resource_is_busy;
+   vtws->base.resource_get_handle = virgl_vtest_resource_get_handle;
    vtws->base.cmd_buf_create = virgl_vtest_cmd_buf_create;
    vtws->base.cmd_buf_destroy = virgl_vtest_cmd_buf_destroy;
    vtws->base.submit_cmd = virgl_vtest_winsys_submit_cmd;

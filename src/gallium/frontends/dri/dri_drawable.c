@@ -182,6 +182,7 @@ dri_create_drawable(struct dri_screen *screen, const struct dri_config *config,
    switch (screen->type) {
    case DRI_SCREEN_DRI3:
    case DRI_SCREEN_KMS_SWRAST:
+   case DRI_SCREEN_VIRGL:
       dri2_init_drawable(drawable, isPixmap, visual->alphaBits);
       break;
    case DRI_SCREEN_SWRAST:

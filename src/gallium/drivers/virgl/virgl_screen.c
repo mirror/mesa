@@ -1202,7 +1202,12 @@ virgl_create_screen(struct virgl_winsys *vws, const struct pipe_screen_config *c
 
    virgl_init_screen_resource_functions(&screen->base);
 
-   vws->get_caps(vws, &screen->caps);
+   if (vws->get_caps(vws, &screen->caps)) {
+      vws->destroy(vws);
+      FREE(screen);
+      return NULL;
+   }
+
    fixup_formats(&screen->caps.caps,
                  &screen->caps.caps.v2.supported_readback_formats);
    fixup_formats(&screen->caps.caps, &screen->caps.caps.v2.scanout);

@@ -84,6 +84,7 @@ static const struct drm_driver_descriptor *driver_descriptors[] = {
    &kgsl_driver_descriptor,
    &msm_driver_descriptor,
    &virtio_gpu_driver_descriptor,
+   &vtest_driver_descriptor,
    &v3d_driver_descriptor,
    &vc4_driver_descriptor,
    &panfrost_driver_descriptor,
@@ -224,6 +225,20 @@ pipe_loader_drm_probe_fd_nodup(struct pipe_loader_device **dev, int fd, bool zin
 }
 
 bool
+pipe_loader_virgl_probe(struct pipe_loader_device **dev)
+{
+   struct pipe_loader_drm_device *ddev = CALLOC_STRUCT(pipe_loader_drm_device);
+
+   ddev->base.driver_name = strdup("vtest");
+   ddev->base.ops = &pipe_loader_drm_ops;
+   ddev->dd = &vtest_driver_descriptor;
+   ddev->fd = -1; // don't need it
+
+   *dev = &ddev->base;
+   return true;
+}
+
+bool
 pipe_loader_drm_probe_fd(struct pipe_loader_device **dev, int fd, bool zink)
 {
    bool ret;
@@ -302,7 +317,8 @@ pipe_loader_drm_release(struct pipe_loader_device **dev)
       util_dl_close(ddev->lib);
 #endif
 
-   close(ddev->fd);
+   if (ddev->fd > 0)
+      close(ddev->fd);
    FREE(ddev->base.driver_name);
    pipe_loader_base_release(dev);
 }

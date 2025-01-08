@@ -1350,16 +1350,6 @@ add_all_surfaces_implicit_layout(
          uint32_t fast_alignment = MIN3(size_alignment,
                                         device->info->mem_alignment,
                                         max_alignment_request);
-#if 1
-      fprintf(stderr, "IMG-fmt %s, IMG-sz %ldKB, MEM-sz %ldKB and %ldB, "
-                      "ALIGN %dKB -> %dKB\n",
-              isl_format_get_short_name(plane_format.isl_format),
-              image->planes[plane].primary_surface.isl.size_B / 1024,
-              main_range->size / 1024,
-              main_range->size % 1024,
-              main_range->alignment / 1024,
-              fast_alignment / 1024);
-#endif
          main_range->alignment = MAX2(main_range->alignment, fast_alignment);
       }
    }

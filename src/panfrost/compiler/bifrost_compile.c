@@ -1643,7 +1643,8 @@ bi_emit_lea_image_to(bi_builder *b, bi_index dest, nir_intrinsic_instr *instr)
 
    enum bi_register_format type =
       (instr->intrinsic == nir_intrinsic_image_store)
-         ? bi_reg_fmt_for_nir(nir_intrinsic_src_type(instr))
+         ? bi_reg_fmt_for_nir(nir_intrinsic_src_type(instr) |
+                              nir_src_bit_size(instr->src[0]))
          : BI_REGISTER_FORMAT_AUTO;
 
    bi_index coords = bi_src_index(&instr->src[1]);
@@ -1706,7 +1707,8 @@ bi_emit_image_store(bi_builder *b, nir_intrinsic_instr *instr)
     * instead, which will match per the OpenCL spec. Of course this does
     * not work for 16-bit stores, but those are not available in OpenCL.
     */
-   nir_alu_type T = nir_intrinsic_src_type(instr);
+   nir_alu_type T =
+      nir_intrinsic_src_type(instr) | nir_src_bit_size(instr->src[0]);
    assert(nir_alu_type_get_type_size(T) == 32);
 
    bi_st_cvt(b, bi_src_index(&instr->src[3]), a[0], a[1], a[2],

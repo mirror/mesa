@@ -964,10 +964,10 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
       bi_index z = bi_dontcare(b), s = bi_dontcare(b);
 
       if (writeout & PAN_WRITEOUT_Z)
-         z = bi_src_index(&instr->src[2]);
+         z = bi_src_index(&instr->src[1]);
 
       if (writeout & PAN_WRITEOUT_S)
-         s = bi_src_index(&instr->src[3]);
+         s = bi_src_index(&instr->src[2]);
 
       b->shader->coverage =
          bi_zs_emit(b, z, s, bi_coverage(b), writeout & PAN_WRITEOUT_S,
@@ -981,7 +981,7 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
       nir_alu_type T2 = dual ? nir_intrinsic_dest_type(instr) : 0;
       bi_index color = bi_src_color_vec4(b, &instr->src[0], T);
       bi_index color2 =
-         dual ? bi_src_color_vec4(b, &instr->src[4], T2) : bi_null();
+         dual ? bi_src_color_vec4(b, &instr->src[3], T2) : bi_null();
 
       if (instr->intrinsic == nir_intrinsic_store_output &&
           loc >= FRAG_RESULT_DATA0 && loc <= FRAG_RESULT_DATA7) {

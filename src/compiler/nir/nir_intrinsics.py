@@ -1510,7 +1510,8 @@ system_value("raw_vertex_offset_pan", 1)
 
 # src[] = { value }
 store("raw_output_pan", [], [IO_SEMANTICS, BASE])
-store("combined_output_pan", [1, 1, 1, 4], [IO_SEMANTICS, COMPONENT, SRC_TYPE, DEST_TYPE])
+# src[] = { color_value, z_value, stencil_value, second_color_value }
+store("combined_output_pan", [1, 1, 4], [IO_SEMANTICS, COMPONENT, SRC_TYPE, DEST_TYPE])
 load("raw_output_pan", [1], [IO_SEMANTICS], [CAN_ELIMINATE, CAN_REORDER])
 
 # Like the frag_coord_zw intrinsic, but takes a barycentric. This is needed for

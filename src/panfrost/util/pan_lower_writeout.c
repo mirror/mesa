@@ -54,9 +54,18 @@ pan_nir_emit_combined_store(nir_builder *b, nir_intrinsic_instr *rt0_store,
 
    intr->num_components = rt0_store ? rt0_store->src[0].ssa->num_components : 4;
 
-   if (rt0_store)
-      nir_intrinsic_set_io_semantics(intr,
-                                     nir_intrinsic_io_semantics(rt0_store));
+   if (rt0_store) {
+      assert(nir_src_is_const(rt0_store->src[1]) &&
+             "RT store offset must be constant");
+      nir_io_semantics io_sem = nir_intrinsic_io_semantics(rt0_store);
+      unsigned rt_offs = nir_src_as_uint(rt0_store->src[1]);
+
+      io_sem.location += rt_offs;
+      assert(io_sem.location >= FRAG_RESULT_DATA0 &&
+             io_sem.location <= FRAG_RESULT_DATA7);
+      nir_intrinsic_set_io_semantics(intr, io_sem);
+   }
+
    nir_intrinsic_set_src_type(intr, pan_nir_rt_store_type(rt0_store));
    nir_intrinsic_set_dest_type(intr, pan_nir_rt_store_type(stores[2]));
    nir_intrinsic_set_component(intr, writeout);
@@ -66,7 +75,6 @@ pan_nir_emit_combined_store(nir_builder *b, nir_intrinsic_instr *rt0_store,
 
    nir_def *src[] = {
       rt0_store ? rt0_store->src[0].ssa : zero4,
-      rt0_store ? rt0_store->src[1].ssa : zero,
       stores[0] ? stores[0]->src[0].ssa : zero,
       stores[1] ? stores[1]->src[0].ssa : zero,
       stores[2] ? stores[2]->src[0].ssa : zero4,

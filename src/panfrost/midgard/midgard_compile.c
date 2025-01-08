@@ -1833,6 +1833,10 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
             nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
 
             rt = MIDGARD_COLOR_RT0 + (sem.location - FRAG_RESULT_DATA0);
+            if (!combined)
+               rt += nir_src_as_uint(instr->src[1]);
+
+            assert(rt <= MIDGARD_COLOR_RT7);
          } else {
             rt = MIDGARD_ZS_RT;
          }

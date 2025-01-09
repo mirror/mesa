@@ -122,7 +122,13 @@ create_engine(struct anv_device *device,
          .width = 1,
          .num_placements = count,
          .extensions = (uintptr_t)&ext,
+         .flags = 0,
    };
+
+   if (device->physical->instance->force_guc_low_latency &&
+       physical->info.supports_low_latency_hint)
+      create.flags |= DRM_XE_EXEC_QUEUE_LOW_LATENCY_HINT;
+
    int ret = intel_ioctl(device->fd, DRM_IOCTL_XE_EXEC_QUEUE_CREATE, &create);
    vk_free(&device->vk.alloc, instances);
    if (ret)

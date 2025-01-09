@@ -448,6 +448,7 @@ struct pipe_h264_picture_desc
    bool     is_long_term[16];
    bool     top_is_reference[16];
    bool     bottom_is_reference[16];
+   bool     is_non_existing[16];
    uint32_t field_order_cnt_list[16][2];
    uint32_t frame_num_list[16];
 

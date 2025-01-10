@@ -820,7 +820,7 @@ bi_emit_load_blend_input(bi_builder *b, nir_intrinsic_instr *instr)
 
 static void
 bi_emit_blend_op(bi_builder *b, bi_index rgba, nir_alu_type T, bi_index rgba2,
-                 nir_alu_type T2, unsigned rt)
+                 nir_alu_type T2, unsigned rt, bi_index bd)
 {
    /* Reads 2 or 4 staging registers to cover the input */
    unsigned size = nir_alu_type_get_type_size(T);
@@ -849,6 +849,10 @@ bi_emit_blend_op(bi_builder *b, bi_index rgba, nir_alu_type T, bi_index rgba2,
       bi_blend_to(b, bi_temp(b->shader), rgba, bi_coverage(b),
                   bi_imm_u32(blend_desc), bi_imm_u32(blend_desc >> 32),
                   bi_null(), regfmt, sr_count, 0);
+   } else if (!bi_is_null(bd)) {
+      bi_blend_to(b, bi_temp(b->shader), rgba, bi_coverage(b),
+                  bi_extract(b, bd, 0), bi_extract(b, bd, 1), rgba2, regfmt,
+                  sr_count, sr_count_2);
    } else {
       /* Blend descriptor comes from the FAU RAM. By convention, the
        * return address on Bifrost is stored in r48 and will be used
@@ -964,10 +968,10 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
       bi_index z = bi_dontcare(b), s = bi_dontcare(b);
 
       if (writeout & PAN_WRITEOUT_Z)
-         z = bi_src_index(&instr->src[2]);
+         z = bi_src_index(&instr->src[1]);
 
       if (writeout & PAN_WRITEOUT_S)
-         s = bi_src_index(&instr->src[3]);
+         s = bi_src_index(&instr->src[2]);
 
       b->shader->coverage =
          bi_zs_emit(b, z, s, bi_coverage(b), writeout & PAN_WRITEOUT_S,
@@ -981,7 +985,7 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
       nir_alu_type T2 = dual ? nir_intrinsic_dest_type(instr) : 0;
       bi_index color = bi_src_color_vec4(b, &instr->src[0], T);
       bi_index color2 =
-         dual ? bi_src_color_vec4(b, &instr->src[4], T2) : bi_null();
+         dual ? bi_src_color_vec4(b, &instr->src[3], T2) : bi_null();
 
       if (instr->intrinsic == nir_intrinsic_store_output &&
           loc >= FRAG_RESULT_DATA0 && loc <= FRAG_RESULT_DATA7) {
@@ -1008,7 +1012,15 @@ bi_emit_fragment_out(bi_builder *b, nir_intrinsic_instr *instr)
             nir_alu_type_get_type_size(nir_intrinsic_src_type(instr)));
       }
 
-      bi_emit_blend_op(b, color, nir_intrinsic_src_type(instr), color2, T2, rt);
+      bi_index explicit_bd = bi_null();
+      if (instr->intrinsic == nir_intrinsic_store_remapped_output_pan)
+         explicit_bd = bi_src_index(&instr->src[1]);
+      else if (instr->intrinsic ==
+               nir_intrinsic_store_combined_remapped_output_pan)
+         explicit_bd = bi_src_index(&instr->src[4]);
+
+      bi_emit_blend_op(b, color, nir_intrinsic_src_type(instr), color2, T2, rt,
+                       explicit_bd);
    }
 
    if (b->shader->inputs->is_blend) {
@@ -1680,18 +1692,31 @@ bi_emit_ld_tile(bi_builder *b, nir_intrinsic_instr *instr)
 {
    bi_index dest = bi_def_index(&instr->def);
    nir_alu_type T = nir_intrinsic_dest_type(instr);
+   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
+   bool is_zs =
+      sem.location == FRAG_RESULT_DEPTH || sem.location == FRAG_RESULT_STENCIL;
    enum bi_register_format regfmt = bi_reg_fmt_for_nir(T);
    unsigned size = instr->def.bit_size;
    unsigned nr = instr->num_components;
+   bi_index pi;
 
-   /* Get the render target */
-   nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
-   unsigned loc = sem.location;
-   assert(loc >= FRAG_RESULT_DATA0);
-   unsigned rt = (loc - FRAG_RESULT_DATA0);
+   if (nir_src_is_const(instr->src[0])) {
+      /* Get the render target */
+      unsigned target = nir_src_as_uint(instr->src[0]);
 
-   bi_ld_tile_to(b, dest, bi_pixel_indices(b, rt), bi_coverage(b),
-                 bi_src_index(&instr->src[0]), regfmt, nr - 1);
+      assert(target < 8 || target == 255 || target == 254);
+      assert(target < 8 || is_zs);
+      pi = bi_pixel_indices(b, target);
+   } else {
+      pi = bi_lshift_or(b, 32, bi_src_index(&instr->src[0]),
+                        bi_pixel_indices(b, 0), bi_imm_u8(8));
+   }
+
+   bi_instr *I = bi_ld_tile_to(b, dest, pi, bi_coverage(b),
+                               bi_src_index(&instr->src[1]), regfmt, nr - 1);
+   if (is_zs)
+      I->z_stencil = true;
+
    bi_emit_cached_split(b, dest, size * nr);
 }
 
@@ -1791,6 +1816,11 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
          bi_emit_store_vary(b, instr);
       else
          unreachable("Unsupported shader stage");
+      break;
+
+   case nir_intrinsic_store_remapped_output_pan:
+      assert(stage == MESA_SHADER_FRAGMENT || !"Unsupported shader stage");
+      bi_emit_fragment_out(b, instr);
       break;
 
    case nir_intrinsic_store_combined_output_pan:
@@ -5147,8 +5177,8 @@ bi_lower_load_output(nir_builder *b, nir_intrinsic_instr *intr,
       b, .base = rt, .src_type = nir_intrinsic_dest_type(intr));
 
    nir_def *lowered = nir_load_converted_output_pan(
-      b, intr->def.num_components, intr->def.bit_size, conversion,
-      .dest_type = nir_intrinsic_dest_type(intr),
+      b, intr->def.num_components, intr->def.bit_size, nir_imm_int(b, rt),
+      conversion, .dest_type = nir_intrinsic_dest_type(intr),
       .io_semantics = nir_intrinsic_io_semantics(intr));
 
    nir_def_rewrite_uses(&intr->def, lowered);

@@ -538,6 +538,11 @@ va_pack_alu(const bi_instr *I)
          hex |= (1 << 25);
       break;
 
+   case BI_OPCODE_LD_TILE:
+      if (I->z_stencil)
+         hex |= (1ull << 36);
+      break;
+
    default:
       break;
    }

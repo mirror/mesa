@@ -193,6 +193,48 @@ prepare_fs_driver_set(struct panvk_cmd_buffer *cmdbuf)
    return VK_SUCCESS;
 }
 
+static void
+push_cam_sysvals(struct panvk_cmd_buffer *cmdbuf)
+{
+   const struct panvk_shader *fs = get_fs(cmdbuf);
+
+   if (!gfx_state_set_dirty(cmdbuf, FS_PUSH_UNIFORMS) || !fs)
+      return;
+
+   struct cs_builder *b =
+      panvk_get_cs_builder(cmdbuf, PANVK_SUBQUEUE_VERTEX_TILER);
+   const struct vk_color_attachment_location_state *cal =
+      &cmdbuf->vk.dynamic_graphics_state.cal;
+   const struct vk_color_blend_state *cb =
+      &cmdbuf->vk.dynamic_graphics_state.cb;
+   unsigned bd_count = MAX2(cb->attachment_count, 1);
+   struct cs_index src = cs_scratch_reg64(b, 0);
+   struct cs_index dst = cs_scratch_reg64(b, 2);
+   struct cs_index blend_desc = cs_scratch_reg64(b, 4);
+   bool addr_loaded = false;
+
+   for (uint32_t i = 0; i < MAX_RTS; i++) {
+      if (cal->color_map[i] == MESA_VK_ATTACHMENT_UNUSED)
+         continue;
+
+      if (!shader_uses_sysval_entry(fs, graphics, blend.descs, i))
+         continue;
+
+      if (!addr_loaded) {
+         cs_add64(b, src, cs_sr_reg64(b, 50), -bd_count);
+         cs_move64_to(b, dst, cmdbuf->state.gfx.fs.push_uniforms);
+         addr_loaded = true;
+      }
+
+      uint32_t bd_offs = shader_remapped_sysval_offset(
+         fs, sysval_entry_offset(graphics, blend.descs, i));
+      cs_load64_to(b, blend_desc, src, (pan_size(BLEND) * i) + 8);
+      cs_wait_slot(b, SB_ID(LS), false);
+      cs_store64(b, blend_desc, dst, bd_offs);
+      cs_wait_slot(b, SB_ID(LS), false);
+   }
+}
+
 static bool
 has_depth_att(struct panvk_cmd_buffer *cmdbuf)
 {
@@ -1228,6 +1270,8 @@ prepare_push_uniforms(struct panvk_cmd_buffer *cmdbuf)
 
          fau_ptr = cmdbuf->state.gfx.fs.push_uniforms |
                    ((uint64_t)fs->fau.total_count << 56);
+
+         push_cam_sysvals(cmdbuf);
       }
 
       cs_update_vt_ctx(b)
@@ -1359,13 +1403,17 @@ prepare_dcd(struct panvk_cmd_buffer *cmdbuf)
       struct mali_dcd_flags_0_packed dcd0;
       pan_pack(&dcd0, DCD_FLAGS_0, cfg) {
          if (fs) {
-            uint8_t rt_written = fs->info.outputs_written >> FRAG_RESULT_DATA0;
+            uint8_t rt_written = color_attachment_written_mask(
+               fs, &cmdbuf->vk.dynamic_graphics_state.cal);
+            uint8_t rt_read =
+               color_attachment_read_mask(fs, &cmdbuf->state.gfx.sysvals);
             uint8_t rt_mask = cmdbuf->state.gfx.render.bound_attachments &
                               MESA_VK_RP_ATTACHMENT_ANY_COLOR_BITS;
 
             cfg.allow_forward_pixel_to_kill =
                fs->info.fs.can_fpk && !(rt_mask & ~rt_written) &&
-               !alpha_to_coverage && !cmdbuf->state.gfx.cb.info.any_dest_read;
+               !(rt_read & rt_written) && !alpha_to_coverage &&
+               !cmdbuf->state.gfx.cb.info.any_dest_read;
 
             bool writes_zs = writes_z || writes_s;
             bool zs_always_passes = ds_test_always_passes(cmdbuf);

@@ -1805,7 +1805,9 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
 
    case nir_intrinsic_store_output:
    case nir_intrinsic_store_combined_output_pan:
-      assert(nir_src_is_const(instr->src[1]) && "no indirect outputs");
+      assert((instr->intrinsic != nir_intrinsic_store_combined_output_pan ||
+              nir_src_is_const(instr->src[1])) &&
+             "no indirect outputs");
 
       reg = nir_src_index(ctx, &instr->src[0]);
 
@@ -1820,17 +1822,21 @@ emit_intrinsic(compiler_context *ctx, nir_intrinsic_instr *instr)
          if (combined) {
             writeout = nir_intrinsic_component(instr);
             if (writeout & PAN_WRITEOUT_Z)
-               reg_z = nir_src_index(ctx, &instr->src[2]);
+               reg_z = nir_src_index(ctx, &instr->src[1]);
             if (writeout & PAN_WRITEOUT_S)
-               reg_s = nir_src_index(ctx, &instr->src[3]);
+               reg_s = nir_src_index(ctx, &instr->src[2]);
             if (writeout & PAN_WRITEOUT_2)
-               reg_2 = nir_src_index(ctx, &instr->src[4]);
+               reg_2 = nir_src_index(ctx, &instr->src[3]);
          }
 
          if (writeout & PAN_WRITEOUT_C) {
             nir_io_semantics sem = nir_intrinsic_io_semantics(instr);
 
             rt = MIDGARD_COLOR_RT0 + (sem.location - FRAG_RESULT_DATA0);
+            if (!combined)
+               rt += nir_src_as_uint(instr->src[1]);
+
+            assert(rt <= MIDGARD_COLOR_RT7);
          } else {
             rt = MIDGARD_ZS_RT;
          }

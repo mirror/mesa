@@ -498,9 +498,17 @@ get_color_aux_op(const struct blorp_params *params)
     * could hit the destination address at an unknown time. Go back to the
     * regular drawing mode to avoid this case.
     */
-   case BLORP_OP_HIZ_AMBIGUATE:
    case BLORP_OP_HIZ_CLEAR:
+      assert(params->fast_clear_op == ISL_AUX_OP_NONE);
+      return (params->depth.aux_usage == ISL_AUX_USAGE_HIZ_CCS ||
+              params->depth.aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT) ?
+         ISL_AUX_OP_FAST_CLEAR : ISL_AUX_OP_NONE;
    case BLORP_OP_HIZ_RESOLVE:
+      assert(params->fast_clear_op == ISL_AUX_OP_NONE);
+      return (params->depth.aux_usage == ISL_AUX_USAGE_HIZ_CCS ||
+              params->depth.aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT) ?
+         ISL_AUX_OP_FULL_RESOLVE : ISL_AUX_OP_NONE;
+   case BLORP_OP_HIZ_AMBIGUATE:
    case BLORP_OP_SLOW_DEPTH_CLEAR:
       assert(params->fast_clear_op == ISL_AUX_OP_NONE);
       return ISL_AUX_OP_NONE;

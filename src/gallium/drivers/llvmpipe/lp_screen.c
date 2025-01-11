@@ -343,6 +343,7 @@ llvmpipe_get_param(struct pipe_screen *screen, enum pipe_cap param)
    case PIPE_CAP_MAX_SHADER_PATCH_VARYINGS:
       return 32;
    case PIPE_CAP_RASTERIZER_SUBPIXEL_BITS:
+   case PIPE_CAP_VIEWPORT_SUBPIXEL_BITS:
       return 8;
    case PIPE_CAP_PCI_GROUP:
    case PIPE_CAP_PCI_BUS:

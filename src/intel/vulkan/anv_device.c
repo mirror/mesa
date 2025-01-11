@@ -2119,6 +2119,13 @@ VkResult anv_GetCalibratedTimestampsKHR(
    return VK_SUCCESS;
 }
 
+VkResult anv_GetDeviceFaultInfoEXT(VkDevice device,
+                                   VkDeviceFaultCountsEXT* pFaultCounts,
+                                   VkDeviceFaultInfoEXT* pFaultInfo)
+{
+   return VK_SUCCESS;
+}
+
 const struct intel_device_info_pat_entry *
 anv_device_get_pat_entry(struct anv_device *device,
                          enum anv_bo_alloc_flags alloc_flags)

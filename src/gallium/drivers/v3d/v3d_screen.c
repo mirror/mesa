@@ -261,6 +261,7 @@ v3d_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
                 return (int)(system_memory >> 20);
         }
         case PIPE_CAP_UMA:
+        case PIPE_CAP_CLIP_HALFZ:
                 return 1;
 
         case PIPE_CAP_ALPHA_TEST:

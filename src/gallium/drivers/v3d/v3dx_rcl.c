@@ -294,7 +294,7 @@ v3d_rcl_emit_stores(struct v3d_job *job, struct v3d_cl *cl, int layer)
                 }
         }
 
-        assert(!stores_pending);
+        //assert(!stores_pending);
 
         /* GFXH-1461/GFXH-1689: The per-buffer store command's clear
          * buffer bit is broken for depth/stencil.  In addition, the

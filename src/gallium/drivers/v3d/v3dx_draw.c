@@ -1710,6 +1710,8 @@ v3d_tlb_clear(struct v3d_job *job, unsigned buffers,
                         continue;
 
                 struct pipe_surface *psurf = v3d->framebuffer.cbufs[i];
+                if(!psurf)
+                        continue;
                 struct v3d_surface *surf = v3d_surface(psurf);
                 struct v3d_resource *rsc = v3d_resource(psurf->texture);
 

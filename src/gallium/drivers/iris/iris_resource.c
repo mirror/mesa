@@ -615,12 +615,17 @@ iris_get_aux_clear_color_state_size(struct iris_screen *screen,
 
    assert(!isl_surf_usage_is_stencil(res->surf.usage));
 
-   /* Depth packets can't specify indirect clear values. The only time depth
-    * buffers can use indirect clear values is when they're accessed by the
-    * sampler via render surface state objects.
+   /* Depth packets can't specify indirect clear values. The only time
+    * depth buffers can use indirect clear values is when they're
+    * accessed by the sampler, either because HiZ can remain enabled
+    * during sampling or because we have a HIZ_CCS_* usage that allows
+    * us to keep the surface CCS-compressed during sampling with a
+    * Gfx12.5 partial resolve.
     */
    if (isl_surf_usage_is_depth(res->surf.usage) &&
-       !iris_sample_with_depth_aux(screen->devinfo, res))
+       !(iris_sample_with_depth_aux(screen->devinfo, res) ||
+         (screen->devinfo->verx10 == 125 &&
+          isl_aux_usage_has_ccs(res->aux.usage))))
       return 0;
 
    return screen->isl_dev.ss.clear_color_state_size;

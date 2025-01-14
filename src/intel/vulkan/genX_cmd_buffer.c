@@ -517,10 +517,16 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
 
    const bool initial_depth_valid =
       isl_aux_state_has_valid_primary(initial_state);
+   const bool initial_ccs_valid =
+      initial_state != ISL_AUX_STATE_AUX_INVALID &&
+      initial_state != ISL_AUX_STATE_COMPRESSED_HIER_DEPTH;
    const bool initial_hiz_valid =
       isl_aux_state_has_valid_aux(initial_state);
    const bool final_needs_depth =
       isl_aux_state_has_valid_primary(final_state);
+   const bool final_needs_ccs =
+      final_state != ISL_AUX_STATE_AUX_INVALID &&
+      final_state != ISL_AUX_STATE_COMPRESSED_HIER_DEPTH;
    const bool final_needs_hiz =
       isl_aux_state_has_valid_aux(final_state);
 
@@ -537,6 +543,10 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
    } else if (final_needs_hiz && !initial_hiz_valid) {
       assert(initial_depth_valid);
       hiz_op = ISL_AUX_OP_AMBIGUATE;
+   } else if (cmd_buffer->device->info->verx10 >= 125 &&
+              final_needs_ccs && !initial_ccs_valid) {
+      assert(initial_hiz_valid);
+      hiz_op = ISL_AUX_OP_PARTIAL_RESOLVE;
    }
 
    if (hiz_op != ISL_AUX_OP_NONE) {
@@ -553,19 +563,6 @@ transition_depth_buffer(struct anv_cmd_buffer *cmd_buffer,
          anv_image_hiz_op(cmd_buffer, image, VK_IMAGE_ASPECT_DEPTH_BIT,
                           level, base_layer, level_layer_count, hiz_op);
       }
-   }
-
-   /* Additional tile cache flush for MTL:
-    *
-    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
-    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
-    */
-   if (intel_device_info_is_mtl(cmd_buffer->device->info) &&
-       image->planes[depth_plane].aux_usage == ISL_AUX_USAGE_HIZ_CCS &&
-       final_needs_depth && !initial_depth_valid) {
-      anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_TILE_CACHE_FLUSH_BIT,
-                                "HIZ-CCS flush");
    }
 }
 
@@ -623,6 +620,7 @@ transition_stencil_buffer(struct anv_cmd_buffer *cmd_buffer,
           */
          const VkClearDepthStencilValue clear_value = {};
          anv_image_hiz_clear(cmd_buffer, image, VK_IMAGE_ASPECT_STENCIL_BIT,
+                             final_layout, final_layout,
                              level, base_layer, level_layer_count,
                              clear_rect, &clear_value);
       }
@@ -5577,9 +5575,9 @@ void genX(CmdBeginRendering)(
 
       if (clear_aspects != 0) {
          const bool hiz_clear =
-            anv_can_hiz_clear_ds_view(cmd_buffer->device, d_iview,
-                                      depth_layout, clear_aspects,
-                                      clear_value.depth,
+            anv_can_hiz_clear_ds_view(cmd_buffer->device, ds_iview,
+                                      d_iview ? depth_layout : stencil_layout,
+                                      clear_aspects, clear_value.depth,
                                       render_area,
                                       cmd_buffer->queue_family->queueFlags);
 
@@ -5640,7 +5638,7 @@ void genX(CmdBeginRendering)(
 
                if (hiz_clear) {
                   anv_image_hiz_clear(cmd_buffer, ds_iview->image,
-                                      clear_aspects,
+                                      clear_aspects, depth_layout, stencil_layout,
                                       level, layer, 1,
                                       render_area, &clear_value);
                } else {
@@ -5658,7 +5656,7 @@ void genX(CmdBeginRendering)(
 
             if (hiz_clear) {
                anv_image_hiz_clear(cmd_buffer, ds_iview->image,
-                                   clear_aspects,
+                                   clear_aspects, depth_layout, stencil_layout,
                                    level, base_layer, layer_count,
                                    render_area, &clear_value);
             } else {

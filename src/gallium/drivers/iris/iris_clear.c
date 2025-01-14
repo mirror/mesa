@@ -500,7 +500,8 @@ fast_clear_depth(struct iris_context *ice,
                iris_resource_get_aux_state(res, res_level, layer);
 
             if (aux_state != ISL_AUX_STATE_CLEAR &&
-                aux_state != ISL_AUX_STATE_COMPRESSED_CLEAR) {
+                aux_state != ISL_AUX_STATE_COMPRESSED_CLEAR &&
+                aux_state != ISL_AUX_STATE_COMPRESSED_HIER_DEPTH) {
                /* This slice doesn't have any fast-cleared bits. */
                continue;
             }
@@ -560,8 +561,9 @@ fast_clear_depth(struct iris_context *ice,
    }
 
    iris_resource_set_aux_state(ice, res, level, box->z, box->depth,
-                               devinfo->ver < 20 ? ISL_AUX_STATE_CLEAR :
-                               ISL_AUX_STATE_COMPRESSED_NO_CLEAR);
+                               (res->aux.usage == ISL_AUX_USAGE_HIZ_CCS_WT ?
+                                ISL_AUX_STATE_COMPRESSED_CLEAR :
+                                ISL_AUX_STATE_COMPRESSED_HIER_DEPTH));
    ice->state.dirty |= IRIS_DIRTY_DEPTH_BUFFER;
    ice->state.stage_dirty |= IRIS_ALL_STAGE_DIRTY_BINDINGS;
 }

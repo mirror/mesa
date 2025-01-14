@@ -834,8 +834,8 @@ enum isl_aux_usage {
     * CCS-compressed surface contains valid data at all times.
     *
     * :invariant: The surface is a color surface
-    * :invariant: :c:member:`isl_surf.samples` == 1 for GFX 12, GFX 20 can
-    *             be multisampled
+    * :invariant: :c:member:`isl_surf.samples` == 1 for GFX 12, GFX 12.5 and
+    *             newer can be multisampled
     */
    ISL_AUX_USAGE_HIZ_CCS_WT,
 
@@ -1012,6 +1012,10 @@ enum isl_aux_state {
     * primary surface may contain all, some, or none of the data required to
     * reconstruct the actual sample values.  Blocks may also be in the clear
     * state (see Clear) and have their value taken from outside the surface.
+    *
+    * In this state, all of the data required to reconstruct the final sample
+    * values is contained in the auxiliary and primary surface and clear value,
+    * the hierarchical depth surface doesn't have to be considered if present.
     */
    ISL_AUX_STATE_COMPRESSED_CLEAR,
 
@@ -1019,10 +1023,23 @@ enum isl_aux_state {
     *
     * This state is identical to the state above except that no blocks are in
     * the clear state.  In this state, all of the data required to reconstruct
-    * the final sample values is contained in the auxiliary and primary
-    * surface and the clear value is not considered.
+    * the final sample values is contained in the auxiliary and primary surface,
+    * the clear value and hierarchical depth surface don't have to be considered.
     */
    ISL_AUX_STATE_COMPRESSED_NO_CLEAR,
+
+   /** Compressed with hierarchical depth information
+    *
+    * In this state, neither the auxiliary surface nor the primary surface have
+    * a complete representation of the data.  Instead, both surfaces must be
+    * used together in combination with the hierarchical depth surface or else
+    * corruption may occur.  Depending on the auxiliary compression format and
+    * the auxiliary and hierarchical depth data, any given block in the primary
+    * surface may contain all, some, or none of the data required to reconstruct
+    * the actual sample values.  Blocks may also be in the clear state (see
+    * Clear) and have their value taken from outside the surface.
+    */
+   ISL_AUX_STATE_COMPRESSED_HIER_DEPTH,
 
    /** Resolved
     *

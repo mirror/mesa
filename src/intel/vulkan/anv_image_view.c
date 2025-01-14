@@ -180,6 +180,22 @@ anv_can_hiz_clear_ds_view(struct anv_device *device,
    if (INTEL_DEBUG(DEBUG_NO_FAST_CLEAR))
       return false;
 
+   const enum isl_aux_usage clear_aux_usage =
+      anv_layout_to_aux_usage(device->info, iview->image,
+                              ((iview->image->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT) ?
+                               VK_IMAGE_ASPECT_DEPTH_BIT : VK_IMAGE_ASPECT_STENCIL_BIT),
+                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
+                              layout, queue_flags);
+
+   /* Fast clears don't appear to work correctly for multisampled
+    * depth surfaces with HiZ CCS WT aux mode.
+    *
+    * XXX - Add spec quote.
+    */
+   if (clear_aux_usage == ISL_AUX_USAGE_HIZ_CCS_WT &&
+       iview->image->vk.samples > 1 && device->info->ver < 20)
+      return false;
+
    /* If we're just clearing stencil, we can always HiZ clear */
    if (!(clear_aspects & VK_IMAGE_ASPECT_DEPTH_BIT))
       return true;
@@ -187,12 +203,6 @@ anv_can_hiz_clear_ds_view(struct anv_device *device,
    /* We must have depth in order to have HiZ */
    if (!(iview->image->vk.aspects & VK_IMAGE_ASPECT_DEPTH_BIT))
       return false;
-
-   const enum isl_aux_usage clear_aux_usage =
-      anv_layout_to_aux_usage(device->info, iview->image,
-                              VK_IMAGE_ASPECT_DEPTH_BIT,
-                              VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT,
-                              layout, queue_flags);
 
    if (!isl_aux_usage_has_fast_clears(clear_aux_usage))
       return false;

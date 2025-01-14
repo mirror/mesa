@@ -243,6 +243,7 @@ intel_measure_snapshot_string(enum intel_measure_snapshot_type type)
       [INTEL_SNAPSHOT_HIZ_AMBIGUATE]       = "hiz ambiguate",
       [INTEL_SNAPSHOT_HIZ_CLEAR]           = "hiz clear",
       [INTEL_SNAPSHOT_HIZ_RESOLVE]         = "hiz resolve",
+      [INTEL_SNAPSHOT_HIZ_PARTIAL_RESOLVE] = "hiz partial resolve",
       [INTEL_SNAPSHOT_MCS_AMBIGUATE]       = "mcs ambiguate",
       [INTEL_SNAPSHOT_MCS_COLOR_CLEAR]     = "mcs color clear",
       [INTEL_SNAPSHOT_MCS_PARTIAL_RESOLVE] = "mcs partial resolve",

@@ -418,6 +418,9 @@ clone_jump(clone_state *state, const nir_jump_instr *jmp)
 
    nir_jump_instr *njmp = nir_jump_instr_create(state->ns, jmp->type);
 
+   if (njmp->type == nir_jump_continue_if)
+      __clone_src(state, njmp, &njmp->condition, &jmp->condition);
+
    return njmp;
 }
 

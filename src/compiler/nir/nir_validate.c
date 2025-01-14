@@ -1083,6 +1083,25 @@ validate_jump_instr(nir_jump_instr *instr, validate_state *state)
       validate_assert(state, !state->in_loop_continue_construct);
       break;
 
+   case nir_jump_continue_if:
+      validate_assert(state, state->impl->structured);
+      validate_assert(state, state->loop != NULL);
+      if (state->loop) {
+         nir_block *cont_block = nir_loop_first_block(state->loop);
+         validate_assert(state, block->successors[0] == cont_block);
+         nir_block *after =
+            nir_cf_node_as_block(nir_cf_node_next(&state->loop->cf_node));
+         validate_assert(state, block->successors[1] == after);
+         if (nir_loop_has_continue_construct(state->loop))
+            validate_assert(state, block == nir_loop_last_continue_block(state->loop));
+         else
+            validate_assert(state, block == nir_loop_last_block(state->loop));;
+      }
+      validate_sized_src(&instr->condition, state, 0, 1);
+      validate_assert(state, instr->target == NULL);
+      validate_assert(state, instr->else_target == NULL);
+      break;
+
    case nir_jump_goto:
       validate_assert(state, !state->impl->structured);
       validate_assert(state, instr->target == block->successors[0]);

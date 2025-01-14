@@ -1934,6 +1934,11 @@ print_jump_instr(nir_jump_instr *instr, print_state *state)
       fprintf(fp, "continue");
       break;
 
+   case nir_jump_continue_if:
+      fprintf(fp, "continue if ");
+      print_src(&instr->condition, state, nir_type_invalid);
+      break;
+
    case nir_jump_return:
       fprintf(fp, "return");
       break;

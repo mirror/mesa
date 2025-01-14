@@ -2635,6 +2635,13 @@ typedef enum {
     */
    nir_jump_continue,
 
+   /** Conditionally jump back to the top of the inner-most loop
+    *
+    * The semantics are equivalent to "if (cond) { continue; } else { break; }".
+    * This jump type is only allowed in the last continue block of a loop.
+    */
+   nir_jump_continue_if,
+
    /** Jumps for unstructured CFG.
     *
     * As within an unstructured CFG we can't rely on block ordering we need to

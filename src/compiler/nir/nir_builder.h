@@ -2193,7 +2193,8 @@ nir_load_barycentric(nir_builder *build, nir_intrinsic_op op,
 static inline void
 nir_jump(nir_builder *build, nir_jump_type jump_type)
 {
-   assert(jump_type != nir_jump_goto && jump_type != nir_jump_goto_if);
+   assert(jump_type != nir_jump_goto && jump_type != nir_jump_goto_if &&
+          jump_type != nir_jump_continue_if);
    nir_jump_instr *jump = nir_jump_instr_create(build->shader, jump_type);
    nir_builder_instr_insert(build, &jump->instr);
 }

@@ -134,7 +134,8 @@ nir_foreach_src(nir_instr *instr, nir_foreach_src_cb cb, void *state)
    case nir_instr_type_jump: {
       nir_jump_instr *jump = nir_instr_as_jump(instr);
 
-      if (jump->type == nir_jump_goto_if && !_nir_visit_src(&jump->condition, cb, state))
+      if ((jump->type == nir_jump_goto_if || jump->type == nir_jump_continue_if) &&
+          !_nir_visit_src(&jump->condition, cb, state))
          return false;
       return true;
    }

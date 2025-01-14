@@ -232,6 +232,7 @@ struct radeon_info {
    bool has_gpuvm_fault_query;
    bool has_pcie_bandwidth_info;
    bool has_stable_pstate;
+   bool has_explicit_sync_vm_ops;
    /* Whether SR-IOV is enabled or amdgpu.mcbp=1 was set on the kernel command line. */
    bool register_shadowing_required;
    bool has_tmz_support;

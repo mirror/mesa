@@ -1443,6 +1443,7 @@ bool ac_query_gpu_info(int fd, void *dev_p, struct radeon_info *info,
    }
 
    info->has_stable_pstate = info->drm_minor >= 45;
+   info->has_explicit_sync_vm_ops = info->drm_minor >= 58;
 
    if (info->gfx_level >= GFX12) {
       /* Gfx12 doesn't use pc_lines and pbb_max_alloc_count. */
@@ -1977,6 +1978,7 @@ void ac_print_gpu_info(const struct radeon_info *info, FILE *f)
    fprintf(f, "    has_eqaa_surface_allocator = %u\n", info->has_eqaa_surface_allocator);
    fprintf(f, "    has_sparse_vm_mappings = %u\n", info->has_sparse_vm_mappings);
    fprintf(f, "    has_stable_pstate = %u\n", info->has_stable_pstate);
+   fprintf(f, "    has_explicit_sync_vm_ops = %u\n", info->has_explicit_sync_vm_ops);
    fprintf(f, "    has_scheduled_fence_dependency = %u\n", info->has_scheduled_fence_dependency);
    fprintf(f, "    has_gang_submit = %u\n", info->has_gang_submit);
    fprintf(f, "    has_gpuvm_fault_query = %u\n", info->has_gpuvm_fault_query);

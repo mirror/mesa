@@ -242,6 +242,7 @@ impl ShaderBin {
             num_static_cycles: info.num_static_cycles,
             num_spills_to_mem: info.num_spills_to_mem,
             num_spills_to_reg: info.num_spills_to_reg,
+            occupancy_in_warps_per_sm: info.occupancy_in_warps_per_sm,
             slm_size: info.slm_size,
             crs_size: sm.crs_size(info.max_crs_depth),
             __bindgen_anon_1: match &info.stage {
@@ -319,6 +320,7 @@ impl ShaderBin {
             eprintln!("Static cycle count: {}", c_info.num_static_cycles);
             eprintln!("Spills to mem: {}", c_info.num_spills_to_mem);
             eprintln!("Spills to reg: {}", c_info.num_spills_to_reg);
+            eprintln!("Occupancy (warps/SM): {}", c_info.occupancy_in_warps_per_sm);
             eprintln!("Num GPRs: {}", c_info.num_gprs);
             eprintln!("SLM size: {}", c_info.slm_size);
 

@@ -149,6 +149,9 @@ struct nak_shader_info {
    /** Number of spills between register files */
    uint32_t num_spills_to_reg;
 
+   /** Maximum number of warps per SM */
+   uint32_t occupancy_in_warps_per_sm;
+
    /** Size of shader local (scratch) memory */
    uint32_t slm_size;
 

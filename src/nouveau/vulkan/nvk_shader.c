@@ -1271,6 +1271,13 @@ nvk_shader_get_executable_statistics(
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
+      WRITE_STR(stat->name, "Occupancy (warps/SM)");
+      WRITE_STR(stat->description, "Maximum number of warps per SM");
+      stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
+      stat->value.u64 = shader->info.occupancy_in_warps_per_sm;
+   }
+
+   vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
       WRITE_STR(stat->name, "Code Size");
       WRITE_STR(stat->description,
                 "Size of the compiled shader binary, in bytes");

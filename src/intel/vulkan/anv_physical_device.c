@@ -538,7 +538,7 @@ get_features(const struct anv_physical_device *pdevice,
 
       /* VK_KHR_acceleration_structure */
       .accelerationStructure = rt_enabled,
-      .accelerationStructureCaptureReplay = false, /* TODO */
+      .accelerationStructureCaptureReplay = true,
       .accelerationStructureIndirectBuild = false, /* TODO */
       .accelerationStructureHostCommands = false,
       .descriptorBindingAccelerationStructureUpdateAfterBind = rt_enabled,
@@ -663,7 +663,7 @@ get_features(const struct anv_physical_device *pdevice,
 
       /* VK_KHR_ray_tracing_pipeline */
       .rayTracingPipeline = rt_enabled,
-      .rayTracingPipelineShaderGroupHandleCaptureReplay = false,
+      .rayTracingPipelineShaderGroupHandleCaptureReplay = true,
       .rayTracingPipelineShaderGroupHandleCaptureReplayMixed = false,
       .rayTracingPipelineTraceRaysIndirect = rt_enabled,
       .rayTraversalPrimitiveCulling = rt_enabled,
@@ -1550,7 +1550,7 @@ get_properties(const struct anv_physical_device *pdevice,
        * buffer, so as long as that buffer is captured/replayed correctly we
        * should always get the same address.
        */
-      props->accelerationStructureCaptureReplayDescriptorDataSize = 0;
+      props->accelerationStructureCaptureReplayDescriptorDataSize = 16;
 
       props->samplerDescriptorSize = ANV_SAMPLER_STATE_SIZE;
       props->combinedImageSamplerDescriptorSize = align(ANV_SURFACE_STATE_SIZE + ANV_SAMPLER_STATE_SIZE,

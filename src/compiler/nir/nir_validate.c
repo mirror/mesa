@@ -1068,6 +1068,8 @@ validate_jump_instr(nir_jump_instr *instr, validate_state *state)
       validate_assert(state, block->successors[1] == NULL);
       validate_assert(state, instr->target == NULL);
       validate_assert(state, instr->else_target == NULL);
+      validate_assert(state, !state->in_loop_continue_construct ||
+                                block == nir_loop_last_continue_block(state->loop));
       break;
 
    case nir_jump_continue:

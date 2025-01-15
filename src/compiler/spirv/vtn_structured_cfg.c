@@ -1174,6 +1174,23 @@ vtn_emit_continue_for_construct(struct vtn_builder *b,
 }
 
 static void
+vtn_emit_loop_back_edge(struct vtn_builder *b, const struct vtn_block *block)
+{
+      if (block->successors_count == 1) {
+         /* Trivial back-edge */
+         vtn_assert(block->successors[0].branch_type == vtn_branch_type_loop_back_edge);
+      } else {
+         nir_def *cond = vtn_get_nir_ssa(b, block->branch[1]);
+         if (block->successors[1].branch_type == vtn_branch_type_loop_back_edge)
+            cond = nir_inot(&b->nb, cond);
+
+         nir_jump_instr *jump = nir_jump_instr_create(b->nb.shader, nir_jump_continue_if);
+         jump->condition = nir_src_for_ssa(cond);
+         nir_builder_instr_insert(&b->nb, &jump->instr);
+      }
+}
+
+static void
 vtn_emit_branch(struct vtn_builder *b, const struct vtn_block *block,
                 const struct vtn_successor *succ)
 {
@@ -1247,10 +1264,6 @@ vtn_emit_branch(struct vtn_builder *b, const struct vtn_block *block,
       vtn_emit_continue_for_construct(b, block, loop);
       break;
    }
-
-   case vtn_branch_type_loop_back_edge:
-      /* Nothing to do: naturally handled by NIR loop node. */
-      break;
 
    case vtn_branch_type_return:
       vtn_assert(block);
@@ -1356,6 +1369,9 @@ vtn_emit_block(struct vtn_builder *b, struct vtn_block *block,
    if (block->parent->type == vtn_construct_type_switch) {
       /* Switch is handled as a sequence of NIR if for each of the cases. */
 
+   } else if (block->parent->type == vtn_construct_type_continue ||
+              vtn_is_single_block_loop(block->parent)) {
+      vtn_emit_loop_back_edge(b, block);
    } else if (block->successors_count == 1) {
       vtn_assert(block->successors[0].branch_type != vtn_branch_type_none);
       vtn_emit_branch(b, block, &block->successors[0]);

@@ -62,7 +62,7 @@ struct nir_to_brw_state {
    bool annotate;
 };
 
-static brw_reg get_nir_src(nir_to_brw_state &ntb, const nir_src &src, int channel = 0);
+static brw_reg get_nir_src(nir_to_brw_state &ntb, const nir_src &src, int channel);
 static brw_reg get_nir_def(nir_to_brw_state &ntb, const nir_def &def, bool all_sources_uniform = false);
 static nir_component_mask_t get_nir_write_mask(const nir_def &def);
 
@@ -431,7 +431,7 @@ fs_nir_emit_if(nir_to_brw_state &ntb, nir_if *if_stmt)
       cond_reg = get_nir_src(ntb, cond->src[0].src, cond->src[0].swizzle[0]);
    } else {
       invert = false;
-      cond_reg = get_nir_src(ntb, if_stmt->condition);
+      cond_reg = get_nir_src(ntb, if_stmt->condition, 0);
    }
 
    /* first, put the condition into f0 */
@@ -1975,7 +1975,7 @@ static brw_reg
 get_nir_src_imm(nir_to_brw_state &ntb, const nir_src &src)
 {
    return nir_src_is_const(src) && nir_src_bit_size(src) == 32 ?
-          brw_reg(brw_imm_d(nir_src_as_int(src))) : get_nir_src(ntb, src);
+          brw_reg(brw_imm_d(nir_src_as_int(src))) : get_nir_src(ntb, src, 0);
 }
 
 static brw_reg
@@ -2003,11 +2003,11 @@ get_nir_def(nir_to_brw_state &ntb, const nir_def &def, bool all_sources_uniform)
          break;
 
       case nir_intrinsic_load_ubo:
-         is_scalar = get_nir_src(ntb, instr->src[1]).is_scalar;
+         is_scalar = get_nir_src(ntb, instr->src[1], 0).is_scalar;
          break;
 
       case nir_intrinsic_load_uniform:
-         is_scalar = get_nir_src(ntb, instr->src[0]).is_scalar;
+         is_scalar = get_nir_src(ntb, instr->src[0], 0).is_scalar;
          break;
 
       case nir_intrinsic_ballot:
@@ -2369,7 +2369,7 @@ emit_gs_end_primitive(nir_to_brw_state &ntb, const nir_src &vertex_count_nir_src
    /* Cut bits use one bit per vertex. */
    assert(s.gs_compile->control_data_bits_per_vertex == 1);
 
-   brw_reg vertex_count = get_nir_src(ntb, vertex_count_nir_src);
+   brw_reg vertex_count = get_nir_src(ntb, vertex_count_nir_src, 0);
    vertex_count.type = BRW_TYPE_UD;
 
    /* Cut bit n should be set to 1 if EndPrimitive() was called after emitting
@@ -2602,7 +2602,7 @@ emit_gs_vertex(nir_to_brw_state &ntb, const nir_src &vertex_count_nir_src,
 
    struct brw_gs_prog_data *gs_prog_data = brw_gs_prog_data(s.prog_data);
 
-   brw_reg vertex_count = get_nir_src(ntb, vertex_count_nir_src);
+   brw_reg vertex_count = get_nir_src(ntb, vertex_count_nir_src, 0);
    vertex_count.type = BRW_TYPE_UD;
 
    /* Haswell and later hardware ignores the "Render Stream Select" bits
@@ -2761,7 +2761,7 @@ emit_gs_input_load(nir_to_brw_state &ntb, const brw_reg &dst,
          /* Convert vertex_index to bytes (multiply by 32/64) */
          assert(util_is_power_of_two_nonzero(grf_size_bytes)); /* for ffs() */
          brw_reg vertex_offset_bytes =
-            bld.SHL(retype(get_nir_src(ntb, vertex_src), BRW_TYPE_UD),
+            bld.SHL(retype(get_nir_src(ntb, vertex_src, 0), BRW_TYPE_UD),
                     brw_imm_ud(ffs(grf_size_bytes) - 1));
          brw_reg icp_offset_bytes =
             bld.ADD(vertex_offset_bytes, channel_offsets);
@@ -2787,7 +2787,7 @@ emit_gs_input_load(nir_to_brw_state &ntb, const brw_reg &dst,
           * Convert vertex_index to bytes (multiply by 4)
           */
          brw_reg icp_offset_bytes =
-            bld.SHL(retype(get_nir_src(ntb, vertex_src), BRW_TYPE_UD),
+            bld.SHL(retype(get_nir_src(ntb, vertex_src, 0), BRW_TYPE_UD),
                     brw_imm_ud(2u));
 
          /* Use first_icp_handle as the base offset.  There is one DWord
@@ -2802,7 +2802,7 @@ emit_gs_input_load(nir_to_brw_state &ntb, const brw_reg &dst,
    }
 
    fs_inst *inst;
-   brw_reg indirect_offset = get_nir_src(ntb, offset_src);
+   brw_reg indirect_offset = get_nir_src(ntb, offset_src, 0);
 
    if (nir_src_is_const(offset_src)) {
       brw_reg srcs[URB_LOGICAL_NUM_SRCS];
@@ -2870,7 +2870,7 @@ get_indirect_offset(nir_to_brw_state &ntb, nir_intrinsic_instr *instr)
       return brw_reg();
    }
 
-   brw_reg offset = get_nir_src(ntb, *offset_src);
+   brw_reg offset = get_nir_src(ntb, *offset_src, 0);
 
    if (devinfo->ver < 20)
       return offset;
@@ -2953,7 +2953,7 @@ get_tcs_single_patch_icp_handle(nir_to_brw_state &ntb, const brw_builder &bld,
 
       /* Each ICP handle is a single DWord (4 bytes) */
       brw_reg vertex_offset_bytes =
-         bld.SHL(retype(get_nir_src(ntb, vertex_src), BRW_TYPE_UD),
+         bld.SHL(retype(get_nir_src(ntb, vertex_src, 0), BRW_TYPE_UD),
                  brw_imm_ud(2u));
 
       /* We might read up to 4 registers. */
@@ -2999,7 +2999,7 @@ get_tcs_multi_patch_icp_handle(nir_to_brw_state &ntb, const brw_builder &bld,
    /* Convert vertex_index to bytes (multiply by 32) */
    assert(util_is_power_of_two_nonzero(grf_size_bytes)); /* for ffs() */
    brw_reg vertex_offset_bytes =
-      bld.SHL(retype(get_nir_src(ntb, vertex_src), BRW_TYPE_UD),
+      bld.SHL(retype(get_nir_src(ntb, vertex_src, 0), BRW_TYPE_UD),
               brw_imm_ud(ffs(grf_size_bytes) - 1));
    brw_reg icp_offset_bytes =
       bld.ADD(vertex_offset_bytes, channel_offsets);
@@ -3492,7 +3492,7 @@ fs_nir_emit_gs_intrinsic(nir_to_brw_state &ntb,
       break;
 
    case nir_intrinsic_set_vertex_and_primitive_count:
-      bld.MOV(s.final_gs_vertex_count, get_nir_src(ntb, instr->src[0]));
+      bld.MOV(s.final_gs_vertex_count, get_nir_src(ntb, instr->src[0], 0));
       break;
 
    case nir_intrinsic_load_invocation_id: {
@@ -4362,7 +4362,7 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
          }
 
          if (cmp == NULL) {
-            cmp = bld.CMP(bld.null_reg_f(), get_nir_src(ntb, instr->src[0]),
+            cmp = bld.CMP(bld.null_reg_f(), get_nir_src(ntb, instr->src[0], 0),
                           brw_imm_d(0), BRW_CONDITIONAL_Z);
          }
       } else {
@@ -4474,12 +4474,12 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
 
       if (devinfo->ver >= 20) {
          emit_pixel_interpolater_alu_at_sample(
-            bld, dest, retype(get_nir_src(ntb, instr->src[0]),
+            bld, dest, retype(get_nir_src(ntb, instr->src[0], 0),
                               BRW_TYPE_UD),
             interpolation);
 
       } else {
-         const brw_reg sample_src = retype(get_nir_src(ntb, instr->src[0]),
+         const brw_reg sample_src = retype(get_nir_src(ntb, instr->src[0], 0),
                                            BRW_TYPE_UD);
          const brw_reg sample_id = bld.emit_uniformize(sample_src);
          const brw_reg msg_data = component(bld.group(8, 0).vgrf(BRW_TYPE_UD), 0);
@@ -4716,15 +4716,15 @@ fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
          brw_type_for_nir_type(devinfo, nir_intrinsic_src_type(instr));
 
       dest = retype(dest, dest_type);
-      brw_reg src0 = retype(get_nir_src(ntb, instr->src[0]), dest_type);
+      brw_reg src0 = retype(get_nir_src(ntb, instr->src[0], 0), dest_type);
 
       brw_builder bld16 = bld.exec_all().group(16, 0);
       brw_builder bldn = devinfo->ver >= 20 ? bld16 : bld.exec_all().group(8, 0);
 
       bldn.DPAS(dest,
                 src0,
-                retype(get_nir_src(ntb, instr->src[2]), src_type),
-                retype(get_nir_src(ntb, instr->src[1]), src_type),
+                retype(get_nir_src(ntb, instr->src[2], 0), src_type),
+                retype(get_nir_src(ntb, instr->src[1], 0), src_type),
                 sdepth,
                 rcount)
          ->saturate = nir_intrinsic_saturate(instr);
@@ -4908,7 +4908,7 @@ swizzle_nir_scratch_addr(nir_to_brw_state &ntb,
    }
 
    const brw_reg nir_addr =
-      retype(get_nir_src(ntb, nir_addr_src), BRW_TYPE_UD);
+      retype(get_nir_src(ntb, nir_addr_src, 0), BRW_TYPE_UD);
 
    if (in_dwords) {
       /* In this case, we know the address is aligned to a DWORD and we want
@@ -5562,7 +5562,9 @@ emit_task_mesh_store(nir_to_brw_state &ntb,
          emit_urb_direct_writes(bld, instr, src, urb_handle);
    } else {
       if (bld.shader->devinfo->ver >= 20) {
-         emit_urb_indirect_writes_xe2(bld, instr, src, get_nir_src(ntb, *offset_nir_src), urb_handle);
+         emit_urb_indirect_writes_xe2(bld, instr, src,
+                                      get_nir_src(ntb, *offset_nir_src, 0),
+                                      urb_handle);
          return;
       }
       bool use_mod = false;
@@ -5578,9 +5580,13 @@ emit_task_mesh_store(nir_to_brw_state &ntb,
       }
 
       if (use_mod) {
-         emit_urb_indirect_writes_mod(bld, instr, src, get_nir_src(ntb, *offset_nir_src), urb_handle, mod);
+         emit_urb_indirect_writes_mod(bld, instr, src,
+                                      get_nir_src(ntb, *offset_nir_src, 0),
+                                      urb_handle, mod);
       } else {
-         emit_urb_indirect_writes(bld, instr, src, get_nir_src(ntb, *offset_nir_src), urb_handle);
+         emit_urb_indirect_writes(bld, instr, src,
+                                  get_nir_src(ntb, *offset_nir_src, 0),
+                                  urb_handle);
       }
    }
 }
@@ -5605,9 +5611,13 @@ emit_task_mesh_load(nir_to_brw_state &ntb,
          emit_urb_direct_reads(bld, instr, dest, urb_handle);
    } else {
       if (bld.shader->devinfo->ver >= 20)
-         emit_urb_indirect_reads_xe2(bld, instr, dest, get_nir_src(ntb, *offset_nir_src), urb_handle);
+         emit_urb_indirect_reads_xe2(bld, instr, dest,
+                                     get_nir_src(ntb, *offset_nir_src, 0),
+                                     urb_handle);
       else
-         emit_urb_indirect_reads(bld, instr, dest, get_nir_src(ntb, *offset_nir_src), urb_handle);
+         emit_urb_indirect_reads(bld, instr, dest,
+                                 get_nir_src(ntb, *offset_nir_src, 0),
+                                 urb_handle);
    }
 }
 
@@ -5762,7 +5772,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
       ntb.ssa_values[instr->def.index] = dest;
 
       xbld.MOV(dest,
-               bld.emit_uniformize(get_nir_src(ntb, instr->src[1])));
+               bld.emit_uniformize(get_nir_src(ntb, instr->src[1], 0)));
       break;
    }
 
@@ -6134,7 +6144,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
             xbld.MOV(offset(dest, xbld, j), offset(src, xbld, j));
          }
       } else {
-         brw_reg indirect = retype(get_nir_src(ntb, instr->src[0]),
+         brw_reg indirect = retype(get_nir_src(ntb, instr->src[0], 0),
                                   BRW_TYPE_UD);
 
          /* We need to pass a size to the MOV_INDIRECT but we don't want it to
@@ -6200,7 +6210,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
              * uniform on non-LSC platforms when loading fewer than 4
              * components.
              */
-            brw_reg base_offset = retype(get_nir_src(ntb, instr->src[1]),
+            brw_reg base_offset = retype(get_nir_src(ntb, instr->src[1], 0),
                                         BRW_TYPE_UD);
 
             const unsigned comps_per_load = brw_type_size_bytes(dest.type) == 8 ? 2 : 4;
@@ -6395,21 +6405,21 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
    case nir_intrinsic_ddx_fine:
       bld.emit(FS_OPCODE_DDX_FINE, retype(dest, BRW_TYPE_F),
-               retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_F));
+               retype(get_nir_src(ntb, instr->src[0], 0), BRW_TYPE_F));
       break;
    case nir_intrinsic_ddx:
    case nir_intrinsic_ddx_coarse:
       bld.emit(FS_OPCODE_DDX_COARSE, retype(dest, BRW_TYPE_F),
-               retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_F));
+               retype(get_nir_src(ntb, instr->src[0], 0), BRW_TYPE_F));
       break;
    case nir_intrinsic_ddy_fine:
       bld.emit(FS_OPCODE_DDY_FINE, retype(dest, BRW_TYPE_F),
-               retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_F));
+               retype(get_nir_src(ntb, instr->src[0], 0), BRW_TYPE_F));
       break;
    case nir_intrinsic_ddy:
    case nir_intrinsic_ddy_coarse:
       bld.emit(FS_OPCODE_DDY_COARSE, retype(dest, BRW_TYPE_F),
-               retype(get_nir_src(ntb, instr->src[0]), BRW_TYPE_F));
+               retype(get_nir_src(ntb, instr->src[0], 0), BRW_TYPE_F));
       break;
 
    case nir_intrinsic_vote_any:
@@ -6421,7 +6431,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
       const bool quad = instr->intrinsic == nir_intrinsic_quad_vote_any ||
                         instr->intrinsic == nir_intrinsic_quad_vote_all;
 
-      brw_reg cond = get_nir_src(ntb, instr->src[0]);
+      brw_reg cond = get_nir_src(ntb, instr->src[0], 0);
       const unsigned cluster_size = quad ? 4 : s.dispatch_width;
 
       bld.emit(any ? SHADER_OPCODE_VOTE_ANY : SHADER_OPCODE_VOTE_ALL,
@@ -6432,7 +6442,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
    case nir_intrinsic_vote_feq:
    case nir_intrinsic_vote_ieq: {
-      brw_reg value = get_nir_src(ntb, instr->src[0]);
+      brw_reg value = get_nir_src(ntb, instr->src[0], 0);
       if (instr->intrinsic == nir_intrinsic_vote_feq) {
          const unsigned bit_size = nir_src_bit_size(instr->src[0]);
          value.type = bit_size == 8 ? BRW_TYPE_B :
@@ -6449,7 +6459,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
          dest.type = BRW_TYPE_UD;
       }
 
-      brw_reg value = get_nir_src(ntb, instr->src[0]);
+      brw_reg value = get_nir_src(ntb, instr->src[0], 0);
 
       /* A ballot will always be at the full dispatch width even if the
        * use of the ballot result is smaller. If the source is_scalar,
@@ -6480,7 +6490,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
    }
 
    case nir_intrinsic_read_invocation: {
-      const brw_reg value = get_nir_src(ntb, instr->src[0]);
+      const brw_reg value = get_nir_src(ntb, instr->src[0], 0);
       const brw_reg invocation = get_nir_src_imm(ntb, instr->src[1]);
 
       bld.emit(SHADER_OPCODE_READ_FROM_CHANNEL, retype(dest, value.type),
@@ -6489,15 +6499,15 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
    }
 
    case nir_intrinsic_read_first_invocation: {
-      const brw_reg value = get_nir_src(ntb, instr->src[0]);
+      const brw_reg value = get_nir_src(ntb, instr->src[0], 0);
 
       bld.emit(SHADER_OPCODE_READ_FROM_LIVE_CHANNEL, retype(dest, value.type), value);
       break;
    }
 
    case nir_intrinsic_shuffle: {
-      const brw_reg value = get_nir_src(ntb, instr->src[0]);
-      const brw_reg index = get_nir_src(ntb, instr->src[1]);
+      const brw_reg value = get_nir_src(ntb, instr->src[0], 0);
+      const brw_reg index = get_nir_src(ntb, instr->src[1], 0);
 
       bld.emit(SHADER_OPCODE_SHUFFLE, retype(dest, value.type), value, index);
       break;
@@ -6520,7 +6530,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
    }
 
    case nir_intrinsic_quad_broadcast: {
-      const brw_reg value = get_nir_src(ntb, instr->src[0]);
+      const brw_reg value = get_nir_src(ntb, instr->src[0], 0);
       const unsigned index = nir_src_as_uint(instr->src[1]);
 
       bld.emit(SHADER_OPCODE_CLUSTER_BROADCAST, retype(dest, value.type),
@@ -6531,7 +6541,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
    case nir_intrinsic_quad_swap_horizontal:
    case nir_intrinsic_quad_swap_vertical:
    case nir_intrinsic_quad_swap_diagonal: {
-      const brw_reg value = get_nir_src(ntb, instr->src[0]);
+      const brw_reg value = get_nir_src(ntb, instr->src[0], 0);
 
       enum brw_swap_direction dir;
       switch (instr->intrinsic) {
@@ -6547,7 +6557,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
    }
 
    case nir_intrinsic_reduce: {
-      brw_reg src = get_nir_src(ntb, instr->src[0]);
+      brw_reg src = get_nir_src(ntb, instr->src[0], 0);
       nir_op op = (nir_op)nir_intrinsic_reduction_op(instr);
       enum brw_reduce_op brw_op = brw_reduce_op_for_nir_reduction_op(op);
       unsigned cluster_size = nir_intrinsic_cluster_size(instr);
@@ -6566,7 +6576,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
    case nir_intrinsic_inclusive_scan:
    case nir_intrinsic_exclusive_scan: {
-      brw_reg src = get_nir_src(ntb, instr->src[0]);
+      brw_reg src = get_nir_src(ntb, instr->src[0], 0);
       nir_op op = (nir_op)nir_intrinsic_reduction_op(instr);
       enum brw_reduce_op brw_op = brw_reduce_op_for_nir_reduction_op(op);
 
@@ -6764,7 +6774,7 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
       bld.emit(SHADER_OPCODE_BTD_SPAWN_LOGICAL, bld.null_reg_ud(),
                bld.emit_uniformize(get_nir_src(ntb, instr->src[0], -1)),
-               get_nir_src(ntb, instr->src[1]));
+               get_nir_src(ntb, instr->src[1], 0));
       break;
 
    case nir_intrinsic_btd_retire_intel:
@@ -6794,8 +6804,8 @@ fs_nir_emit_intrinsic(nir_to_brw_state &ntb,
 
       brw_reg globals = get_nir_src(ntb, instr->src[0], -1);
       srcs[RT_LOGICAL_SRC_GLOBALS] = bld.emit_uniformize(globals);
-      srcs[RT_LOGICAL_SRC_BVH_LEVEL] = get_nir_src(ntb, instr->src[1]);
-      srcs[RT_LOGICAL_SRC_TRACE_RAY_CONTROL] = get_nir_src(ntb, instr->src[2]);
+      srcs[RT_LOGICAL_SRC_BVH_LEVEL] = get_nir_src(ntb, instr->src[1], 0);
+      srcs[RT_LOGICAL_SRC_TRACE_RAY_CONTROL] = get_nir_src(ntb, instr->src[2], 0);
       srcs[RT_LOGICAL_SRC_SYNCHRONOUS] = brw_imm_ud(synchronous);
 
       /* Bspec 57508: Structure_SIMD16TraceRayMessage:: RayQuery Enable
@@ -6909,7 +6919,7 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
       if (srcs[MEMORY_LOGICAL_BINDING_TYPE].file == BAD_FILE)
          srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_BTI);
 
-      srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[1]);
+      srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[1], 0);
       srcs[MEMORY_LOGICAL_COORD_COMPONENTS] =
          brw_imm_ud(nir_image_intrinsic_coord_components(instr));
 
@@ -6948,7 +6958,7 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_SHARED_LOCAL);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
 
-      const brw_reg nir_src = get_nir_src(ntb, instr->src[is_store ? 1 : 0]);
+      const brw_reg nir_src = get_nir_src(ntb, instr->src[is_store ? 1 : 0], 0);
       const brw_builder ubld = nir_src.is_scalar ? bld.scalar_group() : bld;
 
       /* If the logical address is not uniform, a call to emit_uniformize
@@ -7025,7 +7035,8 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
    case nir_intrinsic_store_global_block_intel:
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_UNTYPED);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
-      srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[is_store ? 1 : 0]);
+      srcs[MEMORY_LOGICAL_ADDRESS] =
+         get_nir_src(ntb, instr->src[is_store ? 1 : 0], 0);
       no_mask_handle = srcs[MEMORY_LOGICAL_ADDRESS].is_scalar;
 
       data_src = is_atomic ? 1 : 0;

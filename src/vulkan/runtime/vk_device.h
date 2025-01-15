@@ -238,6 +238,9 @@ struct vk_device {
    /* Set by vk_device_set_drm_fd() */
    int drm_fd;
 
+   /* Set by vk_device_set_wddm2_handle() */
+   uint32_t wddm2_handle;
+
    /** Implicit pipeline cache, or NULL */
    struct vk_pipeline_cache *mem_cache;
 
@@ -348,6 +351,12 @@ static inline void
 vk_device_set_drm_fd(struct vk_device *device, int drm_fd)
 {
    device->drm_fd = drm_fd;
+}
+
+static inline void
+vk_device_set_wddm2_handle(struct vk_device *device, uint32_t handle)
+{
+   device->wddm2_handle = handle;
 }
 
 /** Tears down a vk_device

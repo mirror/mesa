@@ -38,6 +38,14 @@
 #include "compiler/glsl_types.h"
 #endif
 
+#ifdef HAVE_LIBDXG
+/* Windows headers need to be included dead last because they have lots of
+ * #defines which may mess with other included headers.
+ */
+#include "wsl/winadapter.h"
+#include "d3dkmthk.h"
+#endif
+
 #define VERSION_IS_1_0(version) \
    (VK_API_VERSION_MAJOR(version) == 1 && VK_API_VERSION_MINOR(version) == 0)
 
@@ -430,6 +438,139 @@ enumerate_drm_physical_devices_locked(struct vk_instance *instance)
    return result;
 }
 
+#ifdef HAVE_LIBDXG
+static_assert(sizeof(struct vk_wddm2_adapter_luid) == sizeof(LUID),
+              "This is a LUID and they need to match");
+
+static NTSTATUS
+query_adapter_info(D3DKMT_HANDLE adapter_h,
+                   KMTQUERYADAPTERINFOTYPE info_type,
+                   void *info, size_t info_size)
+{
+   D3DKMT_QUERYADAPTERINFO adapter_info = {
+      .hAdapter = adapter_h,
+      .Type = info_type,
+      .pPrivateDriverData = info,
+      .PrivateDriverDataSize = info_size,
+   };
+   return D3DKMTQueryAdapterInfo(&adapter_info);
+}
+
+static VkResult
+enumerate_wddm2_physical_devices_locked(struct vk_instance *instance)
+{
+   D3DKMT_ADAPTERINFO adapter_infos[MAX_ENUM_ADAPTERS];
+   NTSTATUS status;
+
+   D3DKMT_ENUMADAPTERS2 enum_adapters = {
+      .NumAdapters = ARRAY_SIZE(adapter_infos),
+      .pAdapters = adapter_infos,
+   };
+   status = D3DKMTEnumAdapters2(&enum_adapters);
+   if (!NT_SUCCESS(status)) {
+      return vk_errorf(instance, VK_ERROR_UNKNOWN,
+                       "D3DKMTEnumAdapters2 failed");
+   }
+
+   if (enum_adapters.NumAdapters == 0)
+      return VK_SUCCESS;
+
+   VkResult result;
+   for (uint32_t i = 0; i < enum_adapters.NumAdapters; i++) {
+      D3DKMT_PHYSICAL_ADAPTER_COUNT adapter_count = {};
+      status = query_adapter_info(adapter_infos[i].hAdapter,
+                                  KMTQAITYPE_PHYSICALADAPTERCOUNT,
+                                  &adapter_count, sizeof(adapter_count));
+      if (!NT_SUCCESS(status)) {
+         result = vk_errorf(instance, VK_ERROR_UNKNOWN,
+                            "Querying D3DKMT_PHYSICAL_ADAPTER_COUNT failed");
+         goto fail;
+      }
+
+      for (uint32_t j = 0; j < adapter_count.Count; j++) {
+         D3DKMT_QUERY_DEVICE_IDS query_ids = {
+            .PhysicalAdapterIndex = j,
+         };
+         status = query_adapter_info(adapter_infos[i].hAdapter,
+                                     KMTQAITYPE_PHYSICALADAPTERDEVICEIDS,
+                                     &query_ids, sizeof(query_ids));
+         if (!NT_SUCCESS(status)) {
+            result = vk_errorf(instance, VK_ERROR_UNKNOWN,
+                               "Querying D3DKMT_DEVICE_IDS failed");
+            goto fail;
+         }
+
+         assert(query_ids.DeviceIds.DeviceID <= UINT16_MAX);
+         assert(query_ids.DeviceIds.VendorID <= UINT16_MAX);
+         assert(query_ids.DeviceIds.SubVendorID <= UINT16_MAX);
+         assert(query_ids.DeviceIds.SubSystemID <= UINT16_MAX);
+         assert(query_ids.DeviceIds.RevisionID <= UINT8_MAX);
+
+         D3DKMT_ADAPTERADDRESS address = {};
+         status = query_adapter_info(adapter_infos[i].hAdapter,
+                                     KMTQAITYPE_ADAPTERADDRESS,
+                                     &address, sizeof(address));
+         if (!NT_SUCCESS(status)) {
+            result = vk_errorf(instance, VK_ERROR_UNKNOWN,
+                               "Querying D3DKMT_ADAPTERADDRESS failed");
+            goto fail;
+         }
+
+         assert(address.BusNumber <= UINT8_MAX);
+         assert(address.DeviceNumber <= UINT8_MAX);
+         assert(address.FunctionNumber <= UINT8_MAX);
+
+         struct vk_wddm2_adapter_info info = {
+            .luid = {
+               .low = adapter_infos[i].AdapterLuid.LowPart,
+               .high = adapter_infos[i].AdapterLuid.HighPart,
+            },
+            .physical_adapter_index = j,
+            .device = {
+               .device_id = query_ids.DeviceIds.DeviceID,
+               .vendor_id = query_ids.DeviceIds.VendorID,
+               .subvendor_id = query_ids.DeviceIds.SubVendorID,
+               .subdevice_id = query_ids.DeviceIds.SubSystemID,
+               .revision_id = query_ids.DeviceIds.RevisionID,
+            },
+            .bus = {
+               .bus = address.BusNumber,
+               .dev = address.DeviceNumber,
+               .func = address.FunctionNumber,
+            },
+         };
+
+         struct vk_physical_device *pdevice;
+         result = instance->physical_devices.try_create_for_wddm2(instance,
+                                                                  &info,
+                                                                  &pdevice);
+         /* Incompatible DRM device, skip. */
+         if (result == VK_ERROR_INCOMPATIBLE_DRIVER) {
+            result = VK_SUCCESS;
+            continue;
+         }
+
+         /* Error creating the physical device, report the error. */
+         if (result != VK_SUCCESS)
+            goto fail;
+
+         list_addtail(&pdevice->link, &instance->physical_devices.list);
+      }
+   }
+
+fail:
+   for (uint32_t i = 0; i < enum_adapters.NumAdapters; i++) {
+      D3DKMT_CLOSEADAPTER close_adapter = {
+         .hAdapter = adapter_infos[i].hAdapter,
+      };
+      status = D3DKMTCloseAdapter(&close_adapter);
+      assert(NT_SUCCESS(status));
+   }
+
+   return result;
+}
+#endif
+
 static VkResult
 enumerate_physical_devices_locked(struct vk_instance *instance)
 {
@@ -448,6 +589,16 @@ enumerate_physical_devices_locked(struct vk_instance *instance)
          return result;
       }
    }
+
+#ifdef HAVE_LIBDXG
+   if (instance->physical_devices.try_create_for_wddm2) {
+      result = enumerate_wddm2_physical_devices_locked(instance);
+      if (result != VK_SUCCESS) {
+         destroy_physical_devices(instance);
+         return result;
+      }
+   }
+#endif
 
    return result;
 }

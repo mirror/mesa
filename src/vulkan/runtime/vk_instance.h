@@ -56,6 +56,32 @@ struct vk_app_info {
    uint32_t           api_version;
 };
 
+struct vk_wddm2_adapter_luid {
+   uint32_t low;
+   uint32_t high;
+};
+static_assert(sizeof(struct vk_wddm2_adapter_luid) == VK_LUID_SIZE,
+              "This is a LUID and they need to match");
+
+struct vk_wddm2_adapter_info {
+   struct vk_wddm2_adapter_luid luid;
+   uint32_t physical_adapter_index;
+
+   struct {
+      uint16_t vendor_id;
+      uint16_t device_id;
+      uint16_t subvendor_id;
+      uint16_t subdevice_id;
+      uint8_t revision_id;
+   } device;
+
+   struct {
+      uint8_t bus;
+      uint8_t dev;
+      uint8_t func;
+   } bus;
+};
+
 struct _drmDevice;
 struct vk_physical_device;
 
@@ -156,6 +182,17 @@ struct vk_instance {
       VkResult (*try_create_for_drm)(struct vk_instance *instance,
                                      struct _drmDevice *device,
                                      struct vk_physical_device **out);
+
+      /** Try to create a physical device for a WDDM2 adapter
+       *
+       * The returned value must be a valid return code of
+       * vkEnumeratePhysicalDevices, or VK_ERROR_INCOMPATIBLE_DRIVER. When
+       * VK_ERROR_INCOMPATIBLE_DRIVER is returned, the error and the WDDM
+       * adapter are silently ignored.
+       */
+      VkResult (*try_create_for_wddm2)(struct vk_instance *instance,
+                                       const struct vk_wddm2_adapter_info *adapter,
+                                       struct vk_physical_device **out);
 
       /** Handle the destruction of a physical device
        *

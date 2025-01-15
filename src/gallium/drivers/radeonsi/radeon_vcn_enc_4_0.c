@@ -16,13 +16,6 @@
 #define RENCODE_FW_INTERFACE_MAJOR_VERSION   1
 #define RENCODE_FW_INTERFACE_MINOR_VERSION   15
 
-static void radeon_enc_sq_begin(struct radeon_encoder *enc)
-{
-   rvcn_sq_header(&enc->cs, &enc->sq, true);
-   enc->mq_begin(enc);
-   rvcn_sq_tail(&enc->cs, &enc->sq);
-}
-
 static void radeon_enc_sq_encode(struct radeon_encoder *enc)
 {
    rvcn_sq_header(&enc->cs, &enc->sq, true);
@@ -739,7 +732,6 @@ void radeon_enc_4_0_init(struct radeon_encoder *enc)
    enc->mq_begin = enc->begin;
    enc->mq_encode = enc->encode;
    enc->mq_destroy = enc->destroy;
-   enc->begin = radeon_enc_sq_begin;
    enc->encode = radeon_enc_sq_encode;
    enc->destroy = radeon_enc_sq_destroy;
    enc->op_preset = radeon_enc_op_preset;

@@ -1348,9 +1348,6 @@ static void begin(struct radeon_encoder *enc)
 {
    unsigned i;
 
-   enc->session_info(enc);
-   enc->total_task_size = 0;
-   enc->task_info(enc, enc->need_feedback);
    enc->op_init(enc);
 
    enc->session_init(enc);
@@ -1374,7 +1371,6 @@ static void begin(struct radeon_encoder *enc)
 
    enc->op_init_rc(enc);
    enc->op_init_rc_vbv(enc);
-   *enc->p_task_size = (enc->total_task_size);
 }
 
 static void radeon_enc_headers_h264(struct radeon_encoder *enc)
@@ -1399,6 +1395,9 @@ static void encode(struct radeon_encoder *enc)
    enc->session_info(enc);
    enc->total_task_size = 0;
    enc->task_info(enc, enc->need_feedback);
+
+   if (enc->need_begin)
+      enc->begin(enc);
 
    if (enc->need_rate_control || enc->need_rc_per_pic) {
       i = 0;

@@ -261,6 +261,7 @@ struct radeon_encoder {
    struct rvcn_sq_var sq;
 
    bool emulation_prevention;
+   bool need_begin;
    bool need_feedback;
    bool need_rate_control;
    bool need_rc_per_pic;

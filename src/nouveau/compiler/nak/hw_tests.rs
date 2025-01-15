@@ -202,6 +202,8 @@ impl<'a> TestShaderBuilder<'a> {
             num_control_barriers: 0,
             num_instrs: 0,
             num_static_cycles: 0,
+            num_spills_to_mem: 0,
+            num_spills_to_reg: 0,
             slm_size: 0,
             max_crs_depth: 0,
             uses_global_mem: true,

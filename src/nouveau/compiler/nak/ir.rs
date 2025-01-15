@@ -7453,6 +7453,8 @@ pub struct ShaderInfo {
     pub num_control_barriers: u8,
     pub num_instrs: u32,
     pub num_static_cycles: u32,
+    pub num_spills_to_mem: u32,
+    pub num_spills_to_reg: u32,
     pub slm_size: u32,
     pub max_crs_depth: u32,
     pub uses_global_mem: bool,

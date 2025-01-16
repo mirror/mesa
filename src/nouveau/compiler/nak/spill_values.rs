@@ -239,6 +239,7 @@ where
     info: &'a mut ShaderInfo,
     dst_is_mem: bool,
     spill_count: Cell<u32>,
+    fill_count: Cell<u32>,
 }
 
 impl<'a, S> SpillStatistics<'a, S>
@@ -252,6 +253,7 @@ where
             info,
             dst_is_mem,
             spill_count: Cell::new(0),
+            fill_count: Cell::new(0),
         }
     }
 }
@@ -270,6 +272,7 @@ where
     }
 
     fn fill(&self, dst: Dst, src: SSAValue) -> Box<Instr> {
+        self.fill_count.set(self.fill_count.get() + 1);
         self.inner.fill(dst, src)
     }
 }
@@ -281,8 +284,10 @@ where
     fn drop(&mut self) {
         if self.dst_is_mem {
             self.info.num_spills_to_mem += self.spill_count.get();
+            self.info.num_fills_from_mem += self.fill_count.get();
         } else {
             self.info.num_spills_to_reg += self.spill_count.get();
+            self.info.num_fills_from_reg += self.fill_count.get();
         }
     }
 }

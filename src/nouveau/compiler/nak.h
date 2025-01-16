@@ -146,8 +146,14 @@ struct nak_shader_info {
    /** Number of spills from GPRs to Memory */
    uint32_t num_spills_to_mem;
 
+   /** Number of fills from Memory to GPRs */
+   uint32_t num_fills_from_mem;
+
    /** Number of spills between register files */
    uint32_t num_spills_to_reg;
+
+   /** Number of fills between register files */
+   uint32_t num_fills_from_reg;
 
    /** Maximum number of warps per SM */
    uint32_t occupancy_in_warps_per_sm;

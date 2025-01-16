@@ -9,6 +9,7 @@
 
 #include "nir/nir.h"
 #include "nir/nir_builder.h"
+#include "liblvpcl.h"
 
 nir_def *lvp_mul_vec3_mat(nir_builder *b, nir_def *vec, nir_def *matrix[], bool translation);
 

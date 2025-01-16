@@ -1,3 +1,27 @@
+liblvpcl_shader_files = files(
+  'cl/lvp_ray_tracing.cl',
+)
+
+relative_dir = fs.relative_to(meson.global_source_root(), meson.global_build_root())
+
+liblvpcl_spv = custom_target(
+  input : liblvpcl_shader_files,
+  output : 'liblvpcl.spv',
+  command : [
+    prog_mesa_clc, '-o', '@OUTPUT@', '--depfile', '@DEPFILE@',
+    liblvpcl_shader_files, '--',
+    '-I' + join_paths(meson.current_source_dir(), '.'),
+    '-I' + join_paths(meson.project_source_root(), 'src'),
+    '-fmacro-prefix-map=@0@/='.format(relative_dir),
+    ],
+  depfile : '@PLAINNAME@.d',
+)
+
+liblvpcl = custom_target(
+  input : liblvpcl_spv,
+  output : ['liblvpcl.cpp', 'liblvpcl.h'],
+  command : [prog_vtn_bindgen2, '@INPUT@', '@OUTPUT@'],
+)
 
 lvp_entrypoints = custom_target(
   'lvp_entrypoints',
@@ -54,7 +78,7 @@ endif
 
 liblavapipe_st = static_library(
   'lavapipe_st',
-  [liblvp_files, lvp_entrypoints, sha1_h],
+  [liblvp_files, liblvpcl, lvp_entrypoints, sha1_h],
   c_args : [ c_msvc_compat_args, lvp_flags],
   gnu_symbol_visibility : 'hidden',
   include_directories : [ inc_include, inc_src, inc_util, inc_gallium, inc_gallium_aux, inc_llvmpipe ],

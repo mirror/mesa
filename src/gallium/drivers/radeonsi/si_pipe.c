@@ -194,6 +194,9 @@ static void si_destroy_context(struct pipe_context *context)
 {
    struct si_context *sctx = (struct si_context *)context;
 
+   util_queue_finish(&sctx->screen->shader_compiler_queue);
+   util_queue_finish(&sctx->screen->shader_compiler_queue_opt_variants);
+
    util_unreference_framebuffer_state(&sctx->framebuffer.state);
    si_release_all_descriptors(sctx);
 

@@ -87,6 +87,28 @@ collect_enabled_features(struct vk_device *device,
    vk_set_physical_device_features(&device->enabled_features, pCreateInfo->pNext);
 }
 
+void
+vk_device_emit_device_memory_report(struct vk_device* device,
+                                    VkDeviceMemoryReportEventTypeEXT type,
+                                    uint64_t mem_obj_id,
+                                    VkDeviceSize size,
+                                    uint64_t obj_handle,
+                                    uint32_t heap_index)
+{
+   assert(device->memory_reports);
+   const VkDeviceMemoryReportCallbackDataEXT report = {
+      .sType = VK_STRUCTURE_TYPE_DEVICE_MEMORY_REPORT_CALLBACK_DATA_EXT,
+      .type = type,
+      .memoryObjectId = mem_obj_id,
+      .size = size,
+      .objectType = VK_OBJECT_TYPE_DEVICE_MEMORY,
+      .objectHandle = obj_handle,
+      .heapIndex = heap_index,
+   };
+   for (uint32_t i = 0; i < device->memory_report_count; i++)
+      device->memory_reports[i].callback(&report, device->memory_reports[i].data);
+}
+
 static VkResult
 vk_device_memory_report_init(struct vk_device *device,
                              const VkDeviceCreateInfo *pCreateInfo)

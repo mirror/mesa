@@ -242,16 +242,16 @@ lookup_object(struct gl_context *ctx,
             return MESA_GLINTEROP_INVALID_OBJECT;
 
          if (out) {
+            const GLuint face = _mesa_tex_target_to_face(in->target);;
+            struct gl_texture_image *image = obj->Image[face][in->miplevel];
+
             out->internal_format = obj->Image[0][0]->InternalFormat;
-            out->view_minlevel = obj->Attrib.MinLevel;
-            out->view_numlevels = obj->Attrib.NumLevels;
+            out->view_minlevel = image->Level;
+            out->view_numlevels = image->MaxNumLevels;
             out->view_minlayer = obj->Attrib.MinLayer;
             out->view_numlayers = obj->Attrib.NumLayers;
 
             if (out->version >= 2) {
-               const GLuint face = _mesa_tex_target_to_face(in->target);;
-               struct gl_texture_image *image = obj->Image[face][in->miplevel];
-
                out->width = image->Width;
                out->height = image->Height;
                out->depth = image->Depth;

@@ -253,6 +253,7 @@ impl PipeScreen {
         height: u16,
         depth: u16,
         array_size: u16,
+        mipmap_levels: u8,
         support_image: bool,
     ) -> Option<PipeResource> {
         let mut tmpl = pipe_resource::default();
@@ -271,6 +272,7 @@ impl PipeScreen {
         tmpl.height0 = height;
         tmpl.depth0 = depth;
         tmpl.array_size = array_size;
+        tmpl.last_level = mipmap_levels - 1;
 
         if target == pipe_texture_target::PIPE_BUFFER {
             tmpl.bind = PIPE_BIND_GLOBAL

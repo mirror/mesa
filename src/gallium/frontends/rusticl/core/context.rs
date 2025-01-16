@@ -242,6 +242,7 @@ impl Context {
                     gl_props.height,
                     gl_props.depth,
                     gl_props.array_size,
+                    gl_props.mipmap_levels,
                     enable_bind_as_image,
                 )
                 .ok_or(CL_OUT_OF_RESOURCES)?;

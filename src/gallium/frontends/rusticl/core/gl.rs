@@ -336,7 +336,7 @@ pub struct GLMemProps {
     pub array_size: u16,
     pub pixel_size: u8,
     pub stride: u32,
-    pub mipmap_levels: u32,
+    pub mipmap_levels: u8,
 }
 
 impl GLMemProps {
@@ -403,7 +403,7 @@ impl GLExportManager {
             array_size: array_size,
             pixel_size: pixel_size,
             stride: self.export_out.stride,
-            mipmap_levels: self.export_out.view_numlevels,
+            mipmap_levels: self.export_out.view_numlevels as u8,
         })
     }
 

@@ -133,12 +133,12 @@ the sRGB colorspace.
 When sampling from a texture, the value returned to the shader is in the linear
 colorspace.  The conversion from sRGB happens as part of sampling. In OpenGL,
 thanks mostly to history, there are various knobs for determining when you
-should or should not encode or decode sRGB.  In 2007, :ext:`GL_EXT_texture_sRGB`
+should or should not encode or decode sRGB.  In 2007, :gl-ext:`EXT_texture_sRGB`
 added support for sRGB texture formats and was included in OpenGL 2.1.  In
-2010, :ext:`GL_EXT_texture_sRGB_decode` added a flag to allow you to disable
+2010, :gl-ext:`EXT_texture_sRGB_decode` added a flag to allow you to disable
 texture decoding so that the shader received the data still in the sRGB
-colorspace. Then, in 2012, :ext:`GL_ARB_texture_view` came along and made
-:ext:`GL_EXT_texture_sRGB_decode` simultaneously obsolete and very confusing.
+colorspace. Then, in 2012, :gl-ext:`ARB_texture_view` came along and made
+:gl-ext:`EXT_texture_sRGB_decode` simultaneously obsolete and very confusing.
 Now, thanks to the combination of extensions, you can upload a texture as
 linear, create an sRGB view of it and ask that sRGB not be decoded.  What
 format is it in again?
@@ -148,10 +148,10 @@ your render target from the window system (which is always sRGB) and the spec
 said nothing whatsoever about encoding.  All render targets were sRGB because
 that's how monitors worked and application writers were expected to understand
 that their final rendering needed to be in sRGB.  However, with the advent of
-:ext:`GL_EXT_framebuffer_object` this was no longer true.  Also, sRGB was causing
+:gl-ext:`EXT_framebuffer_object` this was no longer true.  Also, sRGB was causing
 problems with blending because GL was blind to the fact that the output was
 sRGB and blending was occurring in the wrong colorspace. In 2006, a set of
-:ext:`GL_EXT_framebuffer_sRGB` extensions added support (on both the GL and
+:gl-ext:`EXT_framebuffer_sRGB` extensions added support (on both the GL and
 window-system sides) for detecting whether a particular framebuffer was in sRGB
 and instructing GL to do the conversion into the sRGB colorspace as the final
 step prior to writing out to the render target.  Enabling sRGB also implied

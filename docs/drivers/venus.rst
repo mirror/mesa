@@ -13,9 +13,9 @@ Requirements
 The Venus renderer requires
 
 - Vulkan 1.1
-- :ext:`VK_EXT_external_memory_dma_buf`
-- :ext:`VK_EXT_image_drm_format_modifier`
-- :ext:`VK_EXT_queue_family_foreign`
+- :vk-ext:`EXT_external_memory_dma_buf`
+- :vk-ext:`EXT_image_drm_format_modifier`
+- :vk-ext:`EXT_queue_family_foreign`
 
 from the host driver.  However, it violates the spec in some places currently
 and also relies on implementation-defined behaviors in others.  It is not
@@ -161,7 +161,7 @@ driver supports the formats, especially multi-planar ones, and the DRM format
 modifiers of the GBM BOs.
 
 In the future, if virglrenderer's ``virgl_renderer_export_fence`` is
-supported, the Venus renderer will require :ext:`VK_KHR_external_fence_fd`
+supported, the Venus renderer will require :vk-ext:`KHR_external_fence_fd`
 with ``VK_EXTERNAL_FENCE_HANDLE_TYPE_SYNC_FD_BIT`` from the host driver.
 
 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT

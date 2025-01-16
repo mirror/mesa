@@ -45,6 +45,7 @@ extensions = [
     'hawkmoth',
     'nir',
     'redirects',
+    'sphinx.ext.extlinks',
     'sphinx.ext.graphviz',
 ]
 
@@ -241,3 +242,18 @@ rst_prolog = '''
 .. |out| replace:: **[out]**
 .. |inout| replace:: **[inout]**
 '''
+
+# -- Options for ExtLinks -------------------------------------------------
+
+extlinks = {
+    'repo-file': ('https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/%s',
+                  '%s'),
+    'commit': ('https://gitlab.freedesktop.org/mesa/mesa/-/commit/%s',
+                      'commit %s'),
+    'merge-request': ('https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/%s',
+                      'merge request !%s'),
+    'vk-feat': ('https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#features-%s',
+                '%s'),
+    'vk-ext': ('https://registry.khronos.org/vulkan/specs/1.3-extensions/man/html/VK_%s.html',
+               'VK_%s'),
+}

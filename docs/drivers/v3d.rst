@@ -19,8 +19,7 @@ Initial development work was done on the Broadcom 7268 (V3D 3.3) and
 7278 (V3D 4.1). Development since then has been on V3D 4.2 (Raspberry
 Pi 4), and V3D 7.1 (Raspberry Pi 5). When the support for V3D 7.1
 landed, the support for 3.3 and 4.1 was dropped as it was not tested
-anymore (see `MR#25851
-<https://gitlab.freedesktop.org/mesa/mesa/-/merge_requests/25851>`__)
+anymore (see :merge-request:`25851`)
 Broadcom's reference software platforms do not make use of the open
 source V3D stack, but porting a particular hardware implementation to
 use it would still be possible.

@@ -54,8 +54,8 @@ Hardware acronyms
   SQE
     a6xx+ replacement for PFP/ME.  This is the microcontroller that runs the
     microcode (loaded from Linux) which actually processes the command stream
-    and writes to the hardware registers.  See `afuc
-    <https://gitlab.freedesktop.org/mesa/mesa/-/blob/main/src/freedreno/afuc/README.rst>`__.
+    and writes to the hardware registers.  See :repo-file:`afuc
+    <src/freedreno/afuc/README.rst>`.
 
   ROQ
     DMA engine used by the SQE for reading memory, with some prefetch buffering.

@@ -5,14 +5,14 @@ The Vulkan runtime code in Mesa provides several helpful utilities to make
 managing render passes easier.
 
 
-:ext:`VK_KHR_create_renderpass2`
+:vk-ext:`KHR_create_renderpass2`
 --------------------------------
 
 It is strongly recommended that drivers implement
-:ext:`VK_KHR_create_renderpass2` directly and not bother implementing the
+:vk-ext:`KHR_create_renderpass2` directly and not bother implementing the
 old Vulkan 1.0 entrypoints.  If a driver does not implement them, the
 following will be implemented in common code in terms of their
-:ext:`VK_KHR_create_renderpass2` counterparts:
+:vk-ext:`KHR_create_renderpass2` counterparts:
 
  - :c:func:`vkCreateRenderPass`
  - :c:func:`vkCmdBeginRenderPass`
@@ -35,12 +35,12 @@ that driver doesn't need to do any additional compilation at
 of :c:func:`vkCreateRenderPass2` and :c:func:`vkDestroyRenderPass`.
 
 
-:ext:`VK_KHR_dynamic_rendering`
+:vk-ext:`KHR_dynamic_rendering`
 -------------------------------
 
 For drivers which don't need to do subpass combining, it is recommended
 that they skip implementing render passes entirely and implement
-:ext:`VK_KHR_dynamic_rendering` instead.  If they choose to do so, the runtime
+:vk-ext:`KHR_dynamic_rendering` instead.  If they choose to do so, the runtime
 will provide the following, implemented in terms of
 :c:func:`vkCmdBeginRendering` and :c:func:`vkCmdEndRendering`:
 
@@ -68,7 +68,7 @@ Because render passes and subpass indices are also passed into
 :c:func:`vkCmdCreateGraphicsPipelines` and
 :c:func:`vkCmdExecuteCommands` which we can't implement on the driver's
 behalf, we provide a couple of helpers for getting the render pass
-information in terms of the relevant :ext:`VK_KHR_dynamic_rendering`:
+information in terms of the relevant :vk-ext:`KHR_dynamic_rendering`:
 
 .. c:autofunction:: vk_get_pipeline_rendering_create_info
    :file: src/vulkan/runtime/vk_render_pass.h

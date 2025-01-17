@@ -841,6 +841,10 @@ dri2_setup_device(_EGLDisplay *disp, EGLBoolean software)
    _EGLDevice *dev;
    int render_fd;
 
+   if (getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE")){
+      return EGL_TRUE;
+   }
+
    /* If we're not software, we need a DRM node FD */
    assert(software || dri2_dpy->fd_render_gpu >= 0);
 

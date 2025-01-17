@@ -1703,9 +1703,11 @@ choose_pdev(struct zink_screen *screen, int64_t dev_major, int64_t dev_minor, ui
          idx = zink_match_adapter_luid(screen, pdev_count, pdevs, adapter_luid);
       else if (cpu)
          idx = zink_get_cpu_device_type(screen, pdev_count, pdevs);
-      else
+      else if (!getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE"))
          idx = zink_get_display_device(screen, pdev_count, pdevs, dev_major,
                                        dev_minor);
+      else
+         idx = 0;
 
       if (idx != -1)
          /* valid cpu device */
@@ -3784,7 +3786,8 @@ zink_drm_create_screen(int fd, const struct pipe_screen_config *config)
    int64_t dev_major, dev_minor;
    struct zink_screen *ret;
 
-   if (zink_render_rdev(fd, &dev_major, &dev_minor))
+   if (!getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE") &&
+       zink_render_rdev(fd, &dev_major, &dev_minor))
       return NULL;
 
    ret = zink_internal_create_screen(config, dev_major, dev_minor, 0);

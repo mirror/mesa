@@ -71,6 +71,7 @@ tu_device_get_cache_uuid(struct tu_physical_device *device, void *uuid)
 
    _mesa_sha1_update(&ctx, &family, sizeof(family));
    _mesa_sha1_update(&ctx, &driver_flags, sizeof(driver_flags));
+   _mesa_sha1_update(&ctx, &device->uche_trap_base, sizeof(device->uche_trap_base));
    _mesa_sha1_final(&ctx, sha1);
 
    memcpy(uuid, sha1, VK_UUID_SIZE);
@@ -206,6 +207,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .KHR_sampler_ycbcr_conversion = true,
       .KHR_separate_depth_stencil_layouts = true,
       .KHR_shader_atomic_int64 = device->info->a7xx.has_64b_ssbo_atomics,
+      .KHR_shader_clock = true,
       .KHR_shader_draw_parameters = true,
       .KHR_shader_expect_assume = true,
       .KHR_shader_float16_int8 = true,
@@ -507,6 +509,10 @@ tu_get_features(struct tu_physical_device *pdevice,
 
    /* VK_KHR_present_wait */
    features->presentWait = pdevice->vk.supported_extensions.KHR_present_wait;
+
+   /* VK_KHR_shader_clock */
+   features->shaderSubgroupClock = true;
+   features->shaderDeviceClock = true;
 
    /* VK_KHR_shader_expect_assume */
    features->shaderExpectAssume = true;
@@ -2478,6 +2484,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
          .storage_16bit = physical_device->info->a6xx.storage_16bit,
          .storage_8bit = physical_device->info->a7xx.storage_8bit,
          .shared_push_consts = !TU_DEBUG(PUSH_CONSTS_PER_STAGE),
+         .uche_trap_base = physical_device->uche_trap_base,
       };
       device->compiler = ir3_compiler_create(
          NULL, &physical_device->dev_id, physical_device->info, &ir3_options);

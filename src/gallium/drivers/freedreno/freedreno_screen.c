@@ -609,6 +609,8 @@ fd_screen_get_param(struct pipe_screen *pscreen, enum pipe_cap param)
       return 0;
    case PIPE_CAP_THROTTLE:
       return screen->driconf.enable_throttling;
+   case PIPE_CAP_SHADER_CLOCK:
+      return is_a6xx(screen);
    default:
       return u_pipe_screen_get_param_defaults(pscreen, param);
    }
@@ -1136,6 +1138,9 @@ fd_screen_create(int fd,
 
    if (fd_device_version(dev) >= FD_VERSION_ROBUSTNESS)
       screen->has_robustness = true;
+
+   if (fd_pipe_get_param(screen->pipe, FD_UCHE_TRAP_BASE, &val))
+      screen->uche_trap_base = screen->gen >= 6 ? 0x1fffffffff000ull : 0ull;
 
    screen->has_syncobj = fd_has_syncobj(screen->dev);
 

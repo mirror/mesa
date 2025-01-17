@@ -1,0 +1,7 @@
+# ERROR - Test dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.programs.link.7: Crash: See "/data/deqp/results/c3.r1.log"
+#
+#command: cd "/data/deqp" && DEQP_RUNNER_THREAD="3" MESA_DEBUG="silent" "/data/deqp/deqp-egl-android" "--deqp-surface-width=256" "--deqp-surface-height=256" "--deqp-surface-type=pbuffer" "--deqp-gl-config-name=rgba8888d24s8ms0" "--deqp-visibility=hidden" "--deqp-caselist-file=/data/deqp/results/c3.r1.caselist.txt" "--deqp-log-filename=/data/deqp/results/c3.r1.qpa" "--deqp-log-flush=disable" "--deqp-shadercache-filename=/data/local/tmp/t3.shader_cache" "--deqp-shadercache-truncate=disable"
+#pid: 4185
+#exit status: signal: 11 (SIGSEGV)
+
+dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.programs.link.7

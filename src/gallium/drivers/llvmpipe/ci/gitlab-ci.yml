@@ -68,6 +68,6 @@ llvmpipe-deqp-asan:
     - .llvmpipe-rules
   variables:
     ANDROID_GPU_MODE: mesa_swrast
-    GPU_VERSION: llvmpipe
+    GPU_VERSION: llvmpipe-android
     DEQP_SUITE: android-llvmpipe
     # TODO: define DEQP_FRACTION?

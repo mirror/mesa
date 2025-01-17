@@ -33,7 +33,7 @@ venus-lavapipe-full:
     - .venus-manual-rules
   variables:
     ANDROID_GPU_MODE: venus
-    GPU_VERSION: venus
+    GPU_VERSION: venus-android
     DEQP_SUITE: android-venus
     # TODO: define DEQP_FRACTION?
 
@@ -44,6 +44,6 @@ venus-lavapipe-full:
   variables:
     USE_ANGLE: 1
     ANDROID_GPU_MODE: venus_guest_angle
-    GPU_VERSION: venus
+    GPU_VERSION: venus-android-angle
     DEQP_SUITE: android-venus-angle
     # TODO: define DEQP_FRACTION?

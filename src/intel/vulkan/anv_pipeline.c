@@ -37,6 +37,7 @@
 #include "compiler/brw_nir.h"
 #include "compiler/brw_nir_rt.h"
 #include "compiler/intel_nir.h"
+#include "compiler/brw_eu.h"
 #include "anv_nir.h"
 #include "nir/nir_xfb_info.h"
 #include "spirv/nir_spirv.h"
@@ -988,6 +989,53 @@ print_ubo_load(nir_builder *b,
 }
 #endif
 
+static uint32_t
+brw_nir_max_imm_offset(nir_intrinsic_instr *instr, const void *data)
+{
+   uint32_t bits = 0;
+
+   switch (instr->intrinsic) {
+   /* FLAT offsets are limited to 19 bits */
+   case nir_intrinsic_load_shared:
+   case nir_intrinsic_store_shared:
+   case nir_intrinsic_shared_atomic:
+   case nir_intrinsic_shared_atomic_swap:
+   case nir_intrinsic_load_shared_block_intel:
+   case nir_intrinsic_store_shared_block_intel:
+   case nir_intrinsic_load_shared_uniform_block_intel:
+   case nir_intrinsic_load_global_constant_uniform_block_intel:
+   case nir_intrinsic_load_global:
+   case nir_intrinsic_load_global_constant:
+   case nir_intrinsic_store_global:
+   case nir_intrinsic_global_atomic:
+   case nir_intrinsic_global_atomic_swap:
+   case nir_intrinsic_load_global_block_intel:
+   case nir_intrinsic_store_global_block_intel:
+      bits = LSC_ADDRESS_OFFSET_FLAT_BITS;
+      break;
+   /* SS offsets are limited to 16 bits */
+   case nir_intrinsic_load_scratch:
+   case nir_intrinsic_store_scratch:
+      bits = LSC_ADDRESS_OFFSET_SS_BITS;
+      break;
+   /* BTI offsets are limited to 11 bits */
+   default:
+      const bool is_store = !nir_intrinsic_infos[instr->intrinsic].has_dest;
+      const nir_def *surf_index = instr->src[is_store ? 1 : 0].ssa;
+      nir_intrinsic_instr *res =
+         nir_instr_as_intrinsic(surf_index->parent_instr);
+      const bool bindless =
+         res && res->intrinsic == nir_intrinsic_resource_intel &&
+         (nir_intrinsic_resource_access_intel(res) &
+          nir_resource_intel_bindless);
+
+      bits = bindless ? LSC_ADDRESS_OFFSET_SS_BITS : LSC_ADDRESS_OFFSET_BTI_BITS;
+      break;
+   }
+
+   return (1 << bits) - 1;
+}
+
 static bool
 print_tex_handle(nir_builder *b,
                  nir_instr *instr,
@@ -1155,6 +1203,14 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    }
 
    NIR_PASS_V(nir, anv_nir_update_resource_intel_block);
+
+   if (compiler->devinfo->ver >= 20) {
+      const nir_opt_offsets_options offset_options = {
+         .max_offset_cb = brw_nir_max_imm_offset,
+      };
+
+      NIR_PASS_V(nir, nir_opt_offsets, &offset_options);
+   }
 
    stage->dynamic_push_values = anv_nir_compute_dynamic_push_bits(nir);
 

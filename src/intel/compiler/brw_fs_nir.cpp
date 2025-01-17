@@ -4587,6 +4587,71 @@ fs_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
    }
 }
 
+static void
+set_memory_address(nir_to_brw_state &ntb,
+                   const fs_builder &bld,
+                   nir_intrinsic_instr *instr,
+                   brw_reg *srcs)
+{
+   fs_visitor *s = (fs_visitor *)bld.shader;
+   const intel_device_info *devinfo = s->devinfo;
+   nir_src *src = nir_get_io_offset_src(instr);
+   const brw_reg addr = get_nir_src(ntb, *src);
+   const unsigned base = nir_intrinsic_has_base(instr) ?
+      nir_intrinsic_base(instr) :
+      0;
+   const unsigned binding_type = srcs[MEMORY_LOGICAL_BINDING_TYPE].ud;
+   const bool offset_supported = devinfo->ver >= 20;
+
+   if (nir_src_is_const(*src)) {
+      const unsigned offset = base + nir_src_as_uint(*src);
+
+      static const unsigned max_offsets[] = {
+         [LSC_ADDR_SURFTYPE_FLAT] = 1u << LSC_ADDRESS_OFFSET_FLAT_BITS,
+         [LSC_ADDR_SURFTYPE_BSS]  = 1u << LSC_ADDRESS_OFFSET_SS_BITS,
+         [LSC_ADDR_SURFTYPE_SS]   = 1u << LSC_ADDRESS_OFFSET_SS_BITS,
+         [LSC_ADDR_SURFTYPE_BTI]  = 1u << LSC_ADDRESS_OFFSET_BTI_BITS,
+      };
+      assert(binding_type <= LSC_ADDR_SURFTYPE_BTI);
+      /* Pack everything into the base offset if possible so the address
+       * becomes zero, which is often already in a register.
+       *
+       * Xe2+: offsets must be DWord aligned
+       */
+      if (offset_supported && offset < max_offsets[binding_type] &&
+          (offset % 4) == 0) {
+         srcs[MEMORY_LOGICAL_ADDRESS] = brw_imm_ud(0);
+         srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(offset);
+      } else {
+         srcs[MEMORY_LOGICAL_ADDRESS] = brw_imm_ud(offset);
+         srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(0);
+      }
+   } else {
+      /* Xe2+: offsets must be DWord aligned */
+      if (offset_supported && base && (base % 4) == 0) {
+         srcs[MEMORY_LOGICAL_ADDRESS] = addr;
+         srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(base);
+      } else {
+         const fs_builder ubld = addr.is_scalar ? bld.scalar_group() : bld;
+         /* If the logical address is not uniform, a call to emit_uniformize
+          * below will fix it up.
+          */
+         srcs[MEMORY_LOGICAL_ADDRESS] =
+            ubld.ADD(retype(addr, BRW_TYPE_UD), brw_imm_ud(base));
+         /* If addr is_scalar, the MEMORY_LOGICAL_ADDRESS will be allocated at
+          * scalar_group() size and will have every component the same
+          * value. This is the definition of is_scalar. Much more importantly,
+          * setting is_scalar properly also ensures that emit_uniformize (below)
+          * will handle the value as scalar_group() size instead of full dispatch
+          * width.
+          */
+         srcs[MEMORY_LOGICAL_ADDRESS].is_scalar = addr.is_scalar;
+
+         srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(0);
+      }
+   }
+}
+
 static unsigned
 brw_workgroup_size(fs_visitor &s)
 {
@@ -4690,6 +4755,7 @@ fs_nir_emit_cs_intrinsic(nir_to_brw_state &ntb,
       srcs[MEMORY_LOGICAL_DATA_SIZE] = brw_imm_ud(LSC_DATA_SIZE_D32);
       srcs[MEMORY_LOGICAL_COMPONENTS] = brw_imm_ud(3);
       srcs[MEMORY_LOGICAL_FLAGS] = brw_imm_ud(0);
+      srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(0);
 
       fs_inst *inst =
          bld.emit(SHADER_OPCODE_MEMORY_LOAD_LOGICAL,
@@ -6891,6 +6957,9 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
       brw_imm_ud(include_helpers ? MEMORY_FLAG_INCLUDE_HELPERS : 0);
    /* DATA0 and DATA1 are handled below */
 
+   /* Set the default address offset to 0 */
+   srcs[MEMORY_LOGICAL_ADDRESS_OFFSET] = brw_imm_ud(0);
+
    switch (instr->intrinsic) {
    case nir_intrinsic_bindless_image_load:
    case nir_intrinsic_bindless_image_store:
@@ -6933,9 +7002,7 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
                     LSC_ADDR_SURFTYPE_BSS : LSC_ADDR_SURFTYPE_BTI);
       srcs[MEMORY_LOGICAL_BINDING] =
          get_nir_buffer_intrinsic_index(ntb, bld, instr, &no_mask_handle);
-      srcs[MEMORY_LOGICAL_ADDRESS] =
-         get_nir_src_imm(ntb, instr->src[is_store ? 2 : 1]);
-
+      set_memory_address(ntb, bld, instr, srcs);
       data_src = is_atomic ? 2 : 0;
       break;
    case nir_intrinsic_load_shared:
@@ -6947,26 +7014,7 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
    case nir_intrinsic_load_shared_uniform_block_intel: {
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_SHARED_LOCAL);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
-
-      const brw_reg nir_src = get_nir_src(ntb, instr->src[is_store ? 1 : 0]);
-      const fs_builder ubld = nir_src.is_scalar ? bld.scalar_group() : bld;
-
-      /* If the logical address is not uniform, a call to emit_uniformize
-       * below will fix it up.
-       */
-      srcs[MEMORY_LOGICAL_ADDRESS] =
-         ubld.ADD(retype(nir_src, BRW_TYPE_UD),
-                  brw_imm_ud(nir_intrinsic_base(instr)));
-
-      /* If nir_src is_scalar, the MEMORY_LOGICAL_ADDRESS will be allocated at
-       * scalar_group() size and will have every component the same
-       * value. This is the definition of is_scalar. Much more importantly,
-       * setting is_scalar properly also ensures that emit_uniformize (below)
-       * will handle the value as scalar_group() size instead of full dispatch
-       * width.
-       */
-      srcs[MEMORY_LOGICAL_ADDRESS].is_scalar = nir_src.is_scalar;
-
+      set_memory_address(ntb, bld, instr, srcs);
       data_src = is_atomic ? 1 : 0;
       no_mask_handle = true;
       break;
@@ -7025,10 +7073,9 @@ fs_nir_emit_memory_access(nir_to_brw_state &ntb,
    case nir_intrinsic_store_global_block_intel:
       srcs[MEMORY_LOGICAL_MODE] = brw_imm_ud(MEMORY_MODE_UNTYPED);
       srcs[MEMORY_LOGICAL_BINDING_TYPE] = brw_imm_ud(LSC_ADDR_SURFTYPE_FLAT);
-      srcs[MEMORY_LOGICAL_ADDRESS] = get_nir_src(ntb, instr->src[is_store ? 1 : 0]);
-      no_mask_handle = srcs[MEMORY_LOGICAL_ADDRESS].is_scalar;
-
+      set_memory_address(ntb, bld, instr, srcs);
       data_src = is_atomic ? 1 : 0;
+      no_mask_handle = srcs[MEMORY_LOGICAL_ADDRESS].is_scalar;
       break;
 
    default:

@@ -771,6 +771,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
    bool is_accum_used = false;
 
    struct disasm_info *disasm_info = disasm_initialize(p->isa, cfg);
+   const bool annotate = debug_flag || params->archiver;
 
    enum opcode prev_opcode = BRW_OPCODE_ILLEGAL;
    foreach_block_and_inst (block, brw_inst, inst, cfg) {
@@ -846,7 +847,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
          swsb = tgl_swsb_dst_dep(swsb, 1);
       }
 
-      if (unlikely(debug_flag))
+      if (unlikely(annotate))
          disasm_annotate(disasm_info, inst, p->next_insn_offset);
 
       if (devinfo->ver >= 20 && inst->group % 8 != 0) {
@@ -1196,7 +1197,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       case FS_OPCODE_SCHEDULING_FENCE:
          if (inst->sources == 0 && swsb.regdist == 0 &&
                                    swsb.mode == TGL_SBID_NULL) {
-            if (unlikely(debug_flag))
+            if (unlikely(annotate))
                disasm_info->use_tail = true;
             break;
          }
@@ -1307,7 +1308,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
           * we've emitted any discards.  If not, this will emit no code.
           */
          if (!patch_halt_jumps()) {
-            if (unlikely(debug_flag)) {
+            if (unlikely(annotate)) {
                disasm_info->use_tail = true;
             }
          }
@@ -1420,7 +1421,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
    unsigned char sha1[21];
    char sha1buf[41];
 
-   if (unlikely(debug_flag || dump_shader_bin)) {
+   if (unlikely(debug_flag || dump_shader_bin || params->archiver)) {
       _mesa_sha1_compute(p->store + start_offset / sizeof(brw_eu_inst),
                          after_size, sha1);
       _mesa_sha1_format(sha1buf, sha1);
@@ -1430,36 +1431,58 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
       brw_dump_shader_bin(p->store, start_offset, p->next_insn_offset,
                           sha1buf);
 
-   if (unlikely(debug_flag)) {
-      fprintf(stderr, "Native code for %s (src_hash 0x%08x) (sha1 %s)\n"
-              "SIMD%d shader: %d instructions. %d loops. %u cycles. "
-              "%d:%d spills:fills, %u sends, "
-              "scheduled with mode %s. "
-              "Promoted %u constants. "
-              "Non-SSA regs (after NIR): %u. "
-              "Compacted %d to %d bytes (%.0f%%)\n",
-              shader_name, params->source_hash, sha1buf,
-              dispatch_width,
-              before_size / 16 - nop_count - sync_nop_count,
-              loop_count, perf.latency,
-              shader_stats.spill_count,
-              shader_stats.fill_count,
-              send_count,
-              shader_stats.scheduler_mode,
-              shader_stats.promoted_constants,
-              shader_stats.non_ssa_registers_after_nir,
-              before_size, after_size,
-              100.0f * (before_size - after_size) / before_size);
-
+   if (unlikely(debug_flag && brw_try_override_assembly(p, start_offset, sha1buf))) {
       /* overriding the shader makes disasm_info invalid */
-      if (!brw_try_override_assembly(p, start_offset, sha1buf)) {
+      fprintf(stderr, "Successfully overrode shader with sha1 %s\n\n", sha1buf);
+
+   } else if (unlikely(debug_flag || params->archiver)) {
+      FILE *files[2] = { NULL, NULL };
+
+      if (debug_flag)
+         files[0] = stderr;
+
+      if (params->archiver) {
+         const char *filename =
+            ralloc_asprintf(mem_ctx, "ASM-%s%d-%s/0",
+                            _mesa_shader_stage_to_abbrev(params->nir->info.stage),
+                            dispatch_width, params->nir->info.name);
+         files[1] = debug_archiver_start_file(params->archiver, filename);
+      }
+
+      for (unsigned i = 0; i < ARRAY_SIZE(files); i++) {
+         if (!files[i]) continue;
+
+         fprintf(files[i], "Native code for %s (src_hash 0x%08x) (sha1 %s)\n"
+               "SIMD%d shader: %d instructions. %d loops. %u cycles. "
+               "%d:%d spills:fills, %u sends, "
+               "scheduled with mode %s. "
+               "Promoted %u constants. "
+               "Non-SSA regs (after NIR): %u. "
+               "Compacted %d to %d bytes (%.0f%%)\n",
+               shader_name, params->source_hash, sha1buf,
+               dispatch_width,
+               before_size / 16 - nop_count - sync_nop_count,
+               loop_count, perf.latency,
+               shader_stats.spill_count,
+               shader_stats.fill_count,
+               send_count,
+               shader_stats.scheduler_mode,
+               shader_stats.promoted_constants,
+               shader_stats.non_ssa_registers_after_nir,
+               before_size, after_size,
+               100.0f * (before_size - after_size) / before_size);
+
          dump_assembly(p->store, start_offset, p->next_insn_offset,
-                       disasm_info, perf.block_latency, stderr);
-      } else {
-         fprintf(stderr, "Successfully overrode shader with sha1 %s\n\n", sha1buf);
+                       disasm_info, perf.block_latency, files[i]);
+      }
+
+      if (params->archiver) {
+         debug_archiver_finish_file(params->archiver);
       }
    }
+
    ralloc_free(disasm_info);
+
 #ifndef NDEBUG
    if (!validated && !debug_flag) {
       fprintf(stderr,

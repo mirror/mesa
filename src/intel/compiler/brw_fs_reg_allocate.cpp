@@ -31,6 +31,7 @@
 #include "brw_cfg.h"
 #include "util/set.h"
 #include "util/register_allocate.h"
+#include "util/rb_tree.h"
 
 using namespace brw;
 
@@ -234,6 +235,11 @@ void fs_visitor::calculate_payload_ranges(bool allow_spilling,
       payload_last_use_ip[0] = ip - 1;
 }
 
+struct fs_reg_alloc_interval {
+   struct uinterval_node node;
+   int ra_node;
+};
+
 class fs_reg_alloc {
 public:
    fs_reg_alloc(fs_visitor *fs):
@@ -282,8 +288,8 @@ public:
    bool assign_regs(bool allow_spilling, bool spill_all);
 
 private:
-   void setup_live_interference(unsigned node,
-                                int node_start_ip, int node_end_ip);
+   void setup_live_interference(struct fs_reg_alloc_interval *interval,
+                                unsigned node, int node_start_ip, int node_end_ip);
    void setup_inst_interference(const fs_inst *inst);
 
    void build_interference_graph(bool allow_spilling);
@@ -313,6 +319,8 @@ private:
    const brw_compiler *compiler;
    const fs_live_variables &live;
    int live_instr_count;
+
+   struct rb_tree intervals;
 
    set *spill_insts;
 
@@ -370,9 +378,19 @@ namespace {
    }
 }
 
+/* The uinterval tree uses closed intervals, while our live ranges are
+ * half-open.  Shorten by one to match, but for dead writes or undef reads make
+ * sure we don't create an interval with end < start.
+ */
+static struct uinterval
+uinterval_for_vgrf_range(int node_start_ip, int node_end_ip)
+{
+   return {(unsigned)node_start_ip, (unsigned)MAX2(node_start_ip, node_end_ip - 1)};
+}
+
 void
-fs_reg_alloc::setup_live_interference(unsigned node,
-                                      int node_start_ip, int node_end_ip)
+fs_reg_alloc::setup_live_interference(struct fs_reg_alloc_interval *interval,
+                                      unsigned node, int node_start_ip, int node_end_ip)
 {
    /* Mark any virtual grf that is live between the start of the program and
     * the last use of a payload node interfering with that payload node.
@@ -389,16 +407,20 @@ fs_reg_alloc::setup_live_interference(unsigned node,
          ra_add_node_interference(g, node, first_payload_node + i);
    }
 
-   /* Add interference with every vgrf whose live range intersects this
-    * node's.  We only need to look at nodes below this one as the reflexivity
-    * of interference will take care of the rest.
+   /* Add interference with every vgrf whose live range intersects this node's.
+    * We only need to look at nodes we've already seen, as the reflexivity of
+    * interference will take care of the rest.
     */
-   for (unsigned n2 = first_vgrf_node;
-        n2 <= (unsigned)last_vgrf_node && n2 < node; n2++) {
-      unsigned vgrf = n2 - first_vgrf_node;
-      if (!(node_end_ip <= live.vgrf_start[vgrf] ||
-            live.vgrf_end[vgrf] <= node_start_ip))
-         ra_add_node_interference(g, node, n2);
+   struct uinterval vgrf_interval = uinterval_for_vgrf_range(node_start_ip, node_end_ip);
+   uinterval_tree_foreach (struct fs_reg_alloc_interval, n2_interval, vgrf_interval, &intervals,
+                           node) {
+      ra_add_node_interference(g, node, n2_interval->ra_node);
+   }
+
+   if (interval) {
+      interval->ra_node = node;
+      interval->node.interval = vgrf_interval;
+      uinterval_tree_insert(&intervals, &interval->node);
    }
 }
 
@@ -663,10 +685,14 @@ fs_reg_alloc::build_interference_graph(bool allow_spilling)
                         compiler->fs_reg_set.classes[size - 1]);
    }
 
+   rb_tree_init(&intervals);
+
+   struct fs_reg_alloc_interval *intervals =
+      rzalloc_array(g, struct fs_reg_alloc_interval, fs->alloc.count);
+
    /* Add interference based on the live range of the register */
    for (unsigned i = 0; i < fs->alloc.count; i++) {
-      setup_live_interference(first_vgrf_node + i,
-                              live.vgrf_start[i],
+      setup_live_interference(&intervals[i], first_vgrf_node + i, live.vgrf_start[i],
                               live.vgrf_end[i]);
    }
 
@@ -1088,7 +1114,7 @@ fs_reg_alloc::alloc_spill_reg(unsigned size, int ip)
    assert(n == first_vgrf_node + vgrf);
    assert(n == first_spill_node + spill_node_count);
 
-   setup_live_interference(n, ip - 1, ip + 1);
+   setup_live_interference(NULL, n, ip - 1, ip + 1);
 
    /* Add interference between this spill node and any other spill nodes for
     * the same instruction.

@@ -460,9 +460,13 @@ impl CopyPropPass {
                 let dst = dst[0];
 
                 if !add.saturate {
-                    if add.srcs[0].is_fneg_zero(SrcType::F16v2) {
+                    if add.srcs[0].is_fneg_zero(SrcType::F16v2)
+                        && add.srcs[0].src_mod.is_none()
+                    {
                         self.add_copy(bi, dst, SrcType::F16v2, add.srcs[1]);
-                    } else if add.srcs[1].is_fneg_zero(SrcType::F16v2) {
+                    } else if add.srcs[1].is_fneg_zero(SrcType::F16v2)
+                        && add.srcs[1].src_mod.is_none()
+                    {
                         self.add_copy(bi, dst, SrcType::F16v2, add.srcs[0]);
                     }
                 }

@@ -396,6 +396,30 @@ load_vertices(VOID_REF vertices, triangle_indices indices, uint32_t vertex_forma
    return result;
 }
 
+/* Fetch the flags of child nodes used to determine whether all/no children are opaque.
+ *
+ * Interpretation of flags depends on the node type: For triangle/aabb nodes, the packed
+ * geometry_id_and_flags value is returned, for internal/instance nodes, a raw box flags
+ * value is returned. Interpretation is split from loading so compilers can schedule the
+ * loads for better latency hiding.
+ */
+uint32_t fetch_child_flags(VOID_REF bvh, uint32_t node_ptr)
+{
+   VOID_REF node = OFFSET(bvh, ir_id_to_offset(node_ptr));
+   switch (ir_id_to_type(node_ptr)) {
+   case vk_ir_node_triangle:
+      return DEREF(REF(vk_ir_triangle_node)(node)).geometry_id_and_flags;
+   case vk_ir_node_internal:
+      return DEREF(REF(vk_ir_box_node)(node)).flags;
+   case vk_ir_node_instance:
+      return DEREF(REF(vk_ir_instance_node)(node)).root_flags;
+   case vk_ir_node_aabb:
+      return DEREF(REF(vk_ir_aabb_node)(node)).geometry_id_and_flags;
+   default:
+      return 0;
+   }
+}
+
 /** Compute ceiling of integer quotient of A divided by B.
     From macros.h */
 #define DIV_ROUND_UP(A, B) (((A) + (B)-1) / (B))

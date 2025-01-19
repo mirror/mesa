@@ -334,7 +334,7 @@ get_pipeline_spv(struct vk_device *device, struct vk_meta_device *meta,
       .pCode = spv,
    };
 
-   VkSpecializationMapEntry spec_map[2] = {
+   VkSpecializationMapEntry spec_map[3] = {
       {
          .constantID = SUBGROUP_SIZE_ID,
          .offset = 0,
@@ -345,11 +345,18 @@ get_pipeline_spv(struct vk_device *device, struct vk_meta_device *meta,
          .offset = sizeof(args->subgroup_size),
          .size = sizeof(args->bvh_bounds_offset),
       },
+      {
+         .constantID = ROOT_FLAGS_OFFSET_ID,
+         .offset = sizeof(args->subgroup_size) +
+                   sizeof(args->bvh_bounds_offset),
+         .size = sizeof(args->root_flags_offset),
+      }
    };
 
-   uint32_t spec_constants[2] = {
+   uint32_t spec_constants[3] = {
       args->subgroup_size,
-      args->bvh_bounds_offset
+      args->bvh_bounds_offset,
+      args->has_root_flags ? args->root_flags_offset : -1u,
    };
 
    VkSpecializationInfo spec_info = {

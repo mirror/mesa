@@ -349,8 +349,11 @@ create_bvh_descriptor(nir_builder *b, const struct radv_physical_device *pdev, s
     * use the same descriptor, which avoids divergence when different rays hit different
     * instances at the cost of having to use 64-bit node ids. */
    const uint64_t bvh_size = 1ull << 42;
-   nir_def *desc = nir_imm_ivec4(b, 0, 1u << 31 /* Enable box sorting */, (bvh_size - 1) & 0xFFFFFFFFu,
-                                 ((bvh_size - 1) >> 32) | (1u << 24 /* Return IJ for triangles */) | (1u << 31));
+   uint32_t desc_hi96 = ((bvh_size - 1) >> 32) | (1u << 24 /* Return IJ for triangles */) | (1u << 31);
+   /* Enable pointer flags on GFX11 */
+   if (pdev->info.gfx_level >= GFX11)
+      desc_hi96 |= (1u << 23);
+   nir_def *desc = nir_imm_ivec4(b, 0, 1u << 31 /* Enable box sorting */, (bvh_size - 1) & 0xFFFFFFFFu, desc_hi96);
 
    if (pdev->info.gfx_level >= GFX11) {
       /* Instead of the default box sorting (closest point), use largest for terminate_on_first_hit rays and midpoint
@@ -498,6 +501,9 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
       .no_skip_aabbs = radv_test_flag(b, args, SpvRayFlagsSkipAABBsKHRMask, false),
    };
 
+   /* Ray flags, pre-shifted to fit into the top 10 bits of the node pointer address. */
+   nir_def *ptr_flags = nir_iand_imm(b, args->flags, ~(SpvRayFlagsTerminateOnFirstHitKHRMask | SpvRayFlagsSkipClosestHitShaderKHRMask));
+
    nir_def *desc = create_bvh_descriptor(b, pdev, &ray_flags);
    nir_def *vec3ones = nir_imm_vec3(b, 1.0, 1.0, 1.0);
 
@@ -576,9 +582,14 @@ radv_build_ray_traversal(struct radv_device *device, nir_builder *b, const struc
 
       nir_def *intrinsic_result = NULL;
       if (pdev->info.gfx_level >= GFX10_3 && !radv_emulate_rt(pdev)) {
-         intrinsic_result =
-            nir_bvh64_intersect_ray_amd(b, 32, desc, nir_unpack_64_2x32(b, global_bvh_node),
-                                        nir_load_deref(b, args->vars.tmax), nir_load_deref(b, args->vars.origin),
+         nir_def *global_node_vec = nir_unpack_64_2x32(b, global_bvh_node);
+         if (pdev->info.gfx_level >= GFX11) {
+            nir_def *hi_bvh_node = nir_channel(b, global_node_vec, 1);
+            hi_bvh_node = nir_bitfield_insert(b, hi_bvh_node, ptr_flags, nir_imm_int(b, 22), nir_imm_int(b, 10));
+            global_node_vec = nir_vector_insert_imm(b, global_node_vec, hi_bvh_node, 1);
+         }
+         intrinsic_result = nir_bvh64_intersect_ray_amd(
+            b, 32, desc, global_node_vec, nir_load_deref(b, args->vars.tmax), nir_load_deref(b, args->vars.origin),
                                         nir_load_deref(b, args->vars.dir), nir_load_deref(b, args->vars.inv_dir));
       }
 

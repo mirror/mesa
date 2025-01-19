@@ -48,6 +48,7 @@ struct acceleration_structure_layout {
 struct scratch_layout {
    uint32_t update_size;
    uint32_t header_offset;
+   uint32_t leaf_flags_offset;
    uint32_t internal_ready_count_offset;
 };
 
@@ -121,6 +122,8 @@ radv_get_scratch_layout(struct radv_device *device, uint32_t leaf_count, struct 
    uint32_t update_offset = 0;
 
    update_offset += sizeof(vk_aabb) * leaf_count;
+   scratch->leaf_flags_offset = update_offset;
+   update_offset += sizeof(uint32_t) * leaf_count;
    scratch->internal_ready_count_offset = update_offset;
 
    update_offset += sizeof(uint32_t) * internal_count;
@@ -566,9 +569,12 @@ radv_init_update_scratch(VkCommandBuffer commandBuffer, VkDeviceAddress scratch,
    struct scratch_layout layout;
    radv_get_scratch_layout(device, leaf_count, &layout);
 
-   /* Prepare ready counts for internal nodes */
-   radv_fill_buffer(cmd_buffer, NULL, NULL, scratch + layout.internal_ready_count_offset,
-                    layout.update_size - layout.internal_ready_count_offset, 0x0);
+   /* Prepare leaf flags and ready counts for internal nodes.
+    * Since internal nodes' ready counts are located after leaf flags up to layout.update_size, this clears
+    * both leaf flags and ready counts.
+    */
+   radv_fill_buffer(cmd_buffer, NULL, NULL, scratch + layout.leaf_flags_offset,
+                    layout.update_size - layout.leaf_flags_offset, 0x0);
 }
 
 static void
@@ -626,6 +632,7 @@ radv_update_as(VkCommandBuffer commandBuffer, const VkAccelerationStructureBuild
       .dst = vk_acceleration_structure_get_va(dst),
       .leaf_bounds = build_info->scratchData.deviceAddress,
       .internal_ready_count = build_info->scratchData.deviceAddress + layout.internal_ready_count_offset,
+      .leaf_flags = build_info->scratchData.deviceAddress + layout.leaf_flags_offset,
       .leaf_node_count = leaf_count,
    };
 
@@ -748,6 +755,8 @@ radv_device_init_accel_struct_build_state(struct radv_device *device)
    struct vk_acceleration_structure_build_args *build_args = &device->meta_state.accel_struct_build.build_args;
    build_args->subgroup_size = 64;
    build_args->bvh_bounds_offset = offsetof(struct radv_accel_struct_header, aabb);
+   build_args->root_flags_offset = offsetof(struct radv_accel_struct_header, root_flags);
+   build_args->has_root_flags = true;
    build_args->emit_markers = device->sqtt.bo;
    build_args->radix_sort = device->meta_state.accel_struct_build.radix_sort;
 

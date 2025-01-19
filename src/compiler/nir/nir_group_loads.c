@@ -126,25 +126,16 @@ is_grouped_load(nir_instr *instr)
 }
 
 static bool
-can_move(nir_instr *instr, uint8_t current_indirection_level)
+is_part_of_group(nir_instr *instr, uint8_t current_indirection_level)
 {
-   /* Grouping is done by moving everything else out of the first/last
-    * instruction range of the indirection level.
+   /* Grouping is done by moving everything else out of the first..last
+    * instruction range of the load group corresponding to the given
+    * indirection level.
     */
-   if (is_grouped_load(instr) && instr->pass_flags == current_indirection_level)
-      return false;
-
-   if (instr->type == nir_instr_type_alu ||
-       instr->type == nir_instr_type_deref ||
-       instr->type == nir_instr_type_tex ||
-       instr->type == nir_instr_type_load_const ||
-       instr->type == nir_instr_type_undef)
-      return true;
-
    assert(instr->type != nir_instr_type_intrinsic ||
           nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)));
 
-   return false;
+   return is_grouped_load(instr) && instr->pass_flags == current_indirection_level;
 }
 
 static nir_instr *
@@ -199,8 +190,7 @@ group_loads(nir_instr *first, nir_instr *last)
                                                    last->node.prev, node);
         instr != first;
         instr = exec_node_data_backward(nir_instr, instr->node.prev, node)) {
-      /* Only move instructions without side effects. */
-      if (!can_move(instr, first->pass_flags))
+      if (is_part_of_group(instr, first->pass_flags))
          continue;
 
       nir_def *def = nir_instr_def(instr);
@@ -241,7 +231,7 @@ group_loads(nir_instr *first, nir_instr *last)
         instr != last;
         instr = exec_node_data_forward(nir_instr, instr->node.next, node)) {
       /* Only move instructions without side effects. */
-      if (!can_move(instr, first->pass_flags))
+      if (is_part_of_group(instr, first->pass_flags))
          continue;
 
       if (nir_foreach_src(instr, has_only_sources_less_than, &state)) {

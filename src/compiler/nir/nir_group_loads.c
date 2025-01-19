@@ -141,9 +141,8 @@ can_move(nir_instr *instr, uint8_t current_indirection_level)
        instr->type == nir_instr_type_undef)
       return true;
 
-   if (instr->type == nir_instr_type_intrinsic &&
-       nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)))
-      return true;
+   assert(instr->type != nir_instr_type_intrinsic ||
+          nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)));
 
    return false;
 }
@@ -311,23 +310,6 @@ handle_load_range(nir_instr **first, nir_instr **last,
    }
 }
 
-static bool
-is_barrier(nir_instr *instr)
-{
-   if (instr->type == nir_instr_type_intrinsic) {
-      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-      const char *name = nir_intrinsic_infos[intr->intrinsic].name;
-
-      if (intr->intrinsic == nir_intrinsic_terminate ||
-          intr->intrinsic == nir_intrinsic_terminate_if ||
-          /* TODO: nir_intrinsics.py could do this */
-          strstr(name, "barrier"))
-         return true;
-   }
-
-   return false;
-}
-
 struct indirection_state {
    nir_block *block;
    unsigned indirections;
@@ -431,8 +413,29 @@ process_block(nir_block *block, nir_load_grouping grouping,
        * between them out.
        */
       nir_foreach_instr(current, block) {
-         /* Don't group across barriers. */
-         if (is_barrier(current)) {
+         /* Don't group across non-reorderable instructions.
+          *
+          * TODO: This is overly conservative. There is a better way to do it
+          * because what we really do here is grouping reorderable instructions
+          * that can be around non-reorderable instructions, and doing that is
+          * perfectly legal.
+          *
+          * If you think about it, non-reorderable memory intrinsics have
+          * a hidden "use" on the previous non-reorderable memory intrinsic,
+          * and all non-reorderable memory intrinsics are chained that way.
+          * If we just added a chain src and a chain def to non-reorderable
+          * memory intrinsics and chained all such intrinsics that way,
+          * accidental reordering would be impossible because it would be
+          * def-after-use for the chain. Having just that would be enough
+          * to skip checking can_reorder because this algorithm would
+          * automatically do the correct thing if foreach_src and foreach_use
+          * included chain defs and srcs.
+          *
+          * Non-reorderable non-memory intrinsics that affect or are affected
+          * by e.g. load_helper_invocation could be another chain.
+          */
+         if (current->type == nir_instr_type_intrinsic &&
+             !nir_intrinsic_can_reorder(nir_instr_as_intrinsic(current))) {
             /* Group unconditionally.  */
             handle_load_range(&first_load, &last_load, NULL, 0);
             first_load = NULL;

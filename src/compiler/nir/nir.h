@@ -4771,6 +4771,8 @@ typedef enum {
    nir_group_same_resource_only,
 } nir_load_grouping;
 
+bool nir_is_grouped_load(nir_instr *instr);
+nir_instr *nir_get_grouped_load_binding(nir_instr *instr);
 void nir_group_loads(nir_shader *shader, nir_load_grouping grouping,
                      unsigned max_distance);
 

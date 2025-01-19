@@ -90,8 +90,8 @@ get_intrinsic_resource(nir_intrinsic_instr *intr)
 }
 
 /* Track only those that we want to group. */
-static bool
-is_grouped_load(nir_instr *instr)
+bool
+nir_is_grouped_load(nir_instr *instr)
 {
    /* Count texture_size too because it has the same latency as cache hits. */
    if (instr->type == nir_instr_type_tex)
@@ -114,11 +114,11 @@ is_part_of_group(nir_instr *instr, uint8_t current_indirection_level)
    assert(instr->type != nir_instr_type_intrinsic ||
           nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)));
 
-   return is_grouped_load(instr) && instr->pass_flags == current_indirection_level;
+   return nir_is_grouped_load(instr) && instr->pass_flags == current_indirection_level;
 }
 
-static nir_instr *
-get_uniform_inst_resource(nir_instr *instr)
+nir_instr *
+nir_get_grouped_load_binding(nir_instr *instr)
 {
    if (instr->type == nir_instr_type_tex) {
       nir_tex_instr *tex = nir_instr_as_tex(instr);
@@ -250,7 +250,7 @@ set_instr_indices(nir_block *block)
       /* Make sure grouped instructions don't have the same index as pseudo
        * instructions.
        */
-      if (last && is_pseudo_inst(last) && is_grouped_load(instr))
+      if (last && is_pseudo_inst(last) && nir_is_grouped_load(instr))
          counter++;
 
       /* Set each instruction's index within the block. */
@@ -297,7 +297,7 @@ gather_indirections(nir_src *src, void *data)
    if (instr->block == state->block) {
       unsigned indirections = get_num_indirections(src->ssa->parent_instr);
 
-      if (instr->type == nir_instr_type_tex || is_grouped_load(instr))
+      if (instr->type == nir_instr_type_tex || nir_is_grouped_load(instr))
          indirections++;
 
       state->indirections = MAX2(state->indirections, indirections);
@@ -351,7 +351,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
     * within this block. Store it in pass_flags.
     */
    nir_foreach_instr(instr, block) {
-      if (is_grouped_load(instr)) {
+      if (nir_is_grouped_load(instr)) {
          unsigned indirections = get_num_indirections(instr);
 
          /* pass_flags has only 8 bits */
@@ -413,7 +413,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
          }
 
          /* Only group load instructions with the same indirection level. */
-         if (is_grouped_load(current) && current->pass_flags == level) {
+         if (nir_is_grouped_load(current) && current->pass_flags == level) {
             nir_instr *current_resource;
 
             switch (grouping) {
@@ -425,7 +425,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
                break;
 
             case nir_group_same_resource_only:
-               current_resource = get_uniform_inst_resource(current);
+               current_resource = nir_get_grouped_load_binding(current);
 
                if (current_resource) {
                   if (!first_load) {

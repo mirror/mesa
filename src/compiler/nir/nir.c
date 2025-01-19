@@ -31,6 +31,7 @@
 #include <math.h>
 #include "util/half_float.h"
 #include "util/macros.h"
+#include "util/u_dynarray.h"
 #include "util/u_math.h"
 #include "util/u_qsort.h"
 #include "nir_builder.h"
@@ -3650,3 +3651,65 @@ nir_atomic_op_to_alu(nir_atomic_op op)
    unreachable("Invalid nir_atomic_op");
 }
 
+/* Sort a range of instructions starting with *first_instr and ending with
+ * *last_instr (inclusive) within a shader. After it's done, *first_instr
+ * and *last_instr will be set to the first and last instructions of the sorted
+ * range, respectively.
+ *
+ * "scratch" is temporary storage for the sort that the caller can reuse for
+ * multiple invocations of this function, so that it doesn't have to allocate
+ * the scratch every time.
+ *
+ * Return the number of instructions in the range (for convenience if needed).
+ */
+unsigned
+nir_sort_instr(nir_instr **first_instr, nir_instr **last_instr,
+               int (*compare)(nir_instr **, nir_instr **),
+               struct util_dynarray *scratch)
+{
+   nir_instr *first = *first_instr;
+   nir_instr *last = *last_instr;
+   assert(first->block == last->block);
+   assert(first != last);
+
+   /* Verify that first is before last. */
+   ASSERTED nir_instr *instr = nir_instr_next(first);
+   while (instr && instr != last)
+      instr = nir_instr_next(instr);
+   assert(instr == last);
+
+   /* Determine where we will re-insert sorted instructions. */
+   nir_instr *after_last = nir_instr_next(last);
+   nir_cursor cursor;
+   if (after_last)
+      cursor = nir_before_instr(after_last);
+   else
+      cursor = nir_after_block(last->block);
+
+   /* Move the instructions into a temporary array. */
+   util_dynarray_clear(scratch);
+   for (nir_instr *instr = first;; instr = nir_instr_next(instr)) {
+      util_dynarray_append(scratch, nir_instr *, instr);
+
+      if (instr == last)
+         break;
+   }
+
+   util_dynarray_foreach(scratch, nir_instr *, instr) {
+      nir_instr_remove(*instr);
+   }
+
+   unsigned num_elements = util_dynarray_num_elements(scratch, nir_instr *);
+   qsort(scratch->data, num_elements, sizeof(nir_instr *),
+         (int (*)(const void *, const void *))compare);
+
+   /* Move the sorted instructions back into the shader. */
+   util_dynarray_foreach(scratch, nir_instr *, instr) {
+      nir_instr_insert(cursor, *instr);
+   }
+
+   *first_instr = *util_dynarray_element(scratch, nir_instr *, 0);
+   *last_instr = *util_dynarray_element(scratch, nir_instr *, num_elements - 1);
+   util_dynarray_clear(scratch);
+   return num_elements;
+}

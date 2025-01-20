@@ -32,8 +32,6 @@ from functools import reduce
 global_prefix = "mali"
 
 v6_format_printer = """
-
-#ifndef __OPENCL_VERSION__
 #define mali_pixel_format_print(fp, format) \\
     fprintf(fp, "%*sFormat (v6): %s%s%s %s%s%s%s\\n", indent, "", \\
         mali_format_as_str((enum mali_format)((format >> 12) & 0xFF)), \\
@@ -43,21 +41,15 @@ v6_format_printer = """
         mali_channel_as_str((enum mali_channel)((format >> 3) & 0x7)), \\
         mali_channel_as_str((enum mali_channel)((format >> 6) & 0x7)), \\
         mali_channel_as_str((enum mali_channel)((format >> 9) & 0x7)));
-
-#endif
 """
 
 v7_format_printer = """
-
-#ifndef __OPENCL_VERSION__
 #define mali_pixel_format_print(fp, format) \\
     fprintf(fp, "%*sFormat (v7): %s%s %s%s\\n", indent, "", \\
         mali_format_as_str((enum mali_format)((format >> 12) & 0xFF)), \\
         (format & (1 << 20)) ? " sRGB" : "", \\
         mali_rgb_component_order_as_str((enum mali_rgb_component_order)(format & ((1 << 12) - 1))), \\
         (format & (1 << 21)) ? " XXX BAD BIT" : "");
-
-#endif
 """
 
 def to_alphanum(name):

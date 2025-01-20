@@ -33,7 +33,7 @@ struct bifrost_precompiled_kernel_sysvals {
    struct {
       unsigned x, y, z;
    } num_workgroups;
-} __attribute__((aligned(4)));
+} __attribute__((aligned(8)));
 ;
 
 #define BIFROST_PRECOMPILED_KERNEL_SYSVALS_SIZE                                \

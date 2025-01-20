@@ -117,7 +117,7 @@ __gen_padded(uint32_t v, uint32_t start, uint32_t end)
 
 #define pan_section_offset(A, S) PREFIX4(A, SECTION, S, OFFSET)
 
-/* Those APIs aren't safe in OpenCL C because we loose information on the
+/* Those APIs aren't safe in OpenCL C because we lose information on the
  * pointer address space */
 #ifndef __OPENCL_VERSION__
 #define pan_cast_and_pack(dst, T, name)                                        \

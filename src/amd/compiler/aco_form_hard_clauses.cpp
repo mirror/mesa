@@ -34,10 +34,18 @@ enum clause_type {
 };
 
 void
-emit_clause(Builder& bld, unsigned num_instrs, aco_ptr<Instruction>* instrs)
+emit_clause(Builder& bld, unsigned num_instrs, unsigned per_break, aco_ptr<Instruction>* instrs)
 {
-   if (num_instrs > 1)
-      bld.sopp(aco_opcode::s_clause, num_instrs - 1);
+   unsigned clause_instr = num_instrs;
+   if (per_break && (num_instrs % per_break == 1)) {
+      /* If there's only one instruction after the last break, it's not part of the clause. */
+      clause_instr -= 1;
+   }
+   if (clause_instr == per_break)
+      per_break = 0;
+
+   if (clause_instr > 1)
+      bld.sopp(aco_opcode::s_clause, (clause_instr - 1) | (per_break << 8));
 
    for (unsigned i = 0; i < num_instrs; i++)
       bld.insert(std::move(instrs[i]));
@@ -226,7 +234,9 @@ form_hard_clauses(Program* program)
     */
    const unsigned max_clause_length = program->gfx_level >= GFX11 ? 32 : 63;
    for (Block& block : program->blocks) {
-      unsigned num_instrs = 0;
+      unsigned num_instrs = 0; /* Number of instructions in the clause. */
+      unsigned per_break = 0;  /* Number instructions before a break in the clause. */
+
       aco_ptr<Instruction> current_instrs[63];
       clause_type current_type = clause_other;
 
@@ -238,11 +248,26 @@ form_hard_clauses(Program* program)
          aco_ptr<Instruction>& instr = block.instructions[i];
 
          clause_type type = get_type(program, instr);
-         if (type != current_type || num_instrs == max_clause_length ||
-             (num_instrs && !should_form_clause(current_instrs[0].get(), instr.get()))) {
-            emit_clause(bld, num_instrs, current_instrs);
+         unsigned after_break = per_break ? ((num_instrs - 1) / per_break) * per_break : 0;
+         bool should_break = num_instrs && type == current_type && type != clause_other &&
+                             !should_form_clause(current_instrs[after_break].get(), instr.get());
+         bool must_end = num_instrs == max_clause_length;
+         bool full_break = per_break && num_instrs % per_break == 0;
+         if (type != current_type || (must_end && (!per_break || should_break)) ||
+             (should_break &&
+              (num_instrs == 1 || (per_break && !full_break) || (!per_break && num_instrs > 15)))) {
+            emit_clause(bld, num_instrs, per_break, current_instrs);
             num_instrs = 0;
+            per_break = 0;
             current_type = type;
+         } else if (must_end || (!should_break && full_break)) {
+            emit_clause(bld, after_break, per_break, current_instrs);
+            std::move(current_instrs + after_break, current_instrs + num_instrs, current_instrs);
+            num_instrs -= after_break;
+            per_break = 0;
+         } else if (should_break && !per_break) {
+            assert(per_break == 0 && num_instrs > 1 && num_instrs < 16);
+            per_break = num_instrs;
          }
 
          if (type == clause_other) {
@@ -253,7 +278,7 @@ form_hard_clauses(Program* program)
          current_instrs[num_instrs++] = std::move(instr);
       }
 
-      emit_clause(bld, num_instrs, current_instrs);
+      emit_clause(bld, num_instrs, per_break, current_instrs);
 
       block.instructions = std::move(new_instructions);
    }

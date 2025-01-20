@@ -30,4 +30,4 @@
 
 #endif /* __OPENCL_VERSION__ */
 
-#endif
+#endif /* LIBPAN_H */

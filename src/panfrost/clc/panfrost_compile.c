@@ -388,7 +388,7 @@ main(int argc, const char **argv)
             load_kernel_input);
 
          /* Because we do nir_lower_explicit_io on temp variable early on, we
-          * loose the scratch_size when we build the shader variant so we need
+          * lose the scratch_size when we build the shader variant so we need
           * to readjust it here. */
          s->scratch_size = MAX2(s->scratch_size, nir->scratch_size);
 

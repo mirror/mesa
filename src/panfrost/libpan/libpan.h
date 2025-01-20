@@ -28,6 +28,6 @@
 #error "Unsupported architecture for libpan"
 #endif
 
-#endif
+#endif /* __OPENCL_VERSION__ */
 
 #endif

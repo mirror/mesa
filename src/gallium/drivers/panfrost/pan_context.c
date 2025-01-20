@@ -48,6 +48,7 @@
 #include "util/u_upload_mgr.h"
 #include "util/u_vbuf.h"
 
+#include "clc/panfrost_compile.h"
 #include "compiler/nir/nir_serialize.h"
 #include "util/pan_lower_framebuffer.h"
 #include "decode.h"
@@ -1122,7 +1123,8 @@ panfrost_create_context(struct pipe_screen *screen, void *priv, unsigned flags)
    ret = drmSyncobjCreate(panfrost_device_fd(dev), 0, &ctx->in_sync_obj);
    assert(!ret);
 
-   ctx->printf.bo = panfrost_bo_create(dev, 16384, 0, "Printf Buffer");
+   ctx->printf.bo =
+      panfrost_bo_create(dev, LIBPAN_PRINTF_BUFFER_SIZE, 0, "Printf Buffer");
 
    if (ctx->printf.bo == NULL)
       goto failed;

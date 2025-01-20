@@ -15,6 +15,7 @@
 #include "nir_precompiled.h"
 #include "pan_shader.h"
 #include "shader_enums.h"
+#include "panfrost_compile.h"
 
 #include <fcntl.h>
 #include <inttypes.h>
@@ -103,7 +104,7 @@ compile(void *memctx, const uint32_t *spirv, size_t spirv_size, unsigned arch)
 
    NIR_PASS(_, nir, nir_lower_printf,
             &(const struct nir_lower_printf_options){
-               .max_buffer_size = 16384 - 8,
+               .max_buffer_size = LIBPAN_PRINTF_BUFFER_SIZE - 8,
                .ptr_bit_size = 64,
             });
 

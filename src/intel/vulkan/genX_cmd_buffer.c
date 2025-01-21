@@ -3702,7 +3702,8 @@ genX(CmdExecuteCommands)(
 
 static inline enum anv_pipe_bits
 anv_pipe_flush_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
-                                     VkAccessFlags2 flags)
+                                     VkAccessFlags2 flags,
+                                     VkAccessFlagBits3KHR flags3)
 {
    enum anv_pipe_bits pipe_bits = 0;
 
@@ -3796,7 +3797,8 @@ anv_pipe_flush_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
 
 static inline enum anv_pipe_bits
 anv_pipe_invalidate_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
-                                          VkAccessFlags2 flags)
+                                          VkAccessFlags2 flags,
+                                          VkAccessFlagBits3KHR flags3)
 {
    struct anv_device *device = cmd_buffer->device;
    enum anv_pipe_bits pipe_bits = 0;
@@ -3972,7 +3974,8 @@ stage_is_video(const VkPipelineStageFlags2 stage)
 }
 
 static inline bool
-mask_is_shader_write(const VkAccessFlags2 access)
+mask_is_shader_write(const VkAccessFlags2 access,
+                     const VkAccessFlagBits3KHR access3)
 {
    return (access & (VK_ACCESS_2_SHADER_WRITE_BIT |
                      VK_ACCESS_2_MEMORY_WRITE_BIT |
@@ -3980,7 +3983,8 @@ mask_is_shader_write(const VkAccessFlags2 access)
 }
 
 static inline bool
-mask_is_write(const VkAccessFlags2 access)
+mask_is_write(const VkAccessFlags2 access,
+              const VkAccessFlagBits3KHR access3)
 {
    return access & (VK_ACCESS_2_SHADER_WRITE_BIT |
                     VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT |
@@ -4021,7 +4025,6 @@ cmd_buffer_barrier_video(struct anv_cmd_buffer *cmd_buffer,
    for (uint32_t d = 0; d < n_dep_infos; d++) {
       const VkDependencyInfo *dep_info = &dep_infos[d];
 
-
       for (uint32_t i = 0; i < dep_info->imageMemoryBarrierCount; i++) {
          const VkImageMemoryBarrier2 *img_barrier =
             &dep_info->pImageMemoryBarriers[i];
@@ -4047,28 +4050,41 @@ cmd_buffer_barrier_video(struct anv_cmd_buffer *cmd_buffer,
       }
 
       for (uint32_t i = 0; i < dep_info->bufferMemoryBarrierCount; i++) {
+         const VkBufferMemoryBarrier2 *buf_barrier =
+            &dep_info->pBufferMemoryBarriers[i];
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(buf_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+
          /* Flush the cache if something is written by the video operations and
           * used by any other stages except video encode/decode stages or if
           * srcQueueFamilyIndex is not equal to dstQueueFamilyIndex, this memory
           * barrier defines a queue family ownership transfer.
           */
-         if ((stage_is_video(dep_info->pBufferMemoryBarriers[i].srcStageMask) &&
-              mask_is_write(dep_info->pBufferMemoryBarriers[i].srcAccessMask) &&
-              !stage_is_video(dep_info->pBufferMemoryBarriers[i].dstStageMask)) ||
-             (dep_info->pBufferMemoryBarriers[i].srcQueueFamilyIndex !=
-              dep_info->pBufferMemoryBarriers[i].dstQueueFamilyIndex)) {
+         if ((stage_is_video(buf_barrier->srcStageMask) &&
+              mask_is_write(buf_barrier->srcAccessMask,
+                            barrier3 ? barrier3->srcAccessMask3 : 0) &&
+              !stage_is_video(buf_barrier->dstStageMask)) ||
+             (buf_barrier->srcQueueFamilyIndex !=
+              buf_barrier->dstQueueFamilyIndex)) {
             flush_llc = true;
             break;
          }
       }
 
       for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
+         const VkMemoryBarrier2 *mem_barrier = &dep_info->pMemoryBarriers[i];
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(mem_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+
          /* Flush the cache if something is written by the video operations and
           * used by any other stages except video encode/decode stage.
           */
-         if (stage_is_video(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
-             !stage_is_video(dep_info->pMemoryBarriers[i].dstStageMask)) {
+         if (stage_is_video(mem_barrier->srcStageMask) &&
+             mask_is_write(mem_barrier->srcAccessMask,
+                           barrier3 ? barrier3->srcAccessMask3 : 0) &&
+             !stage_is_video(mem_barrier->dstStageMask)) {
             flush_llc = true;
             break;
          }
@@ -4148,26 +4164,39 @@ cmd_buffer_barrier_blitter(struct anv_cmd_buffer *cmd_buffer,
       }
 
       for (uint32_t i = 0; i < dep_info->bufferMemoryBarrierCount; i++) {
+         const VkBufferMemoryBarrier2 *buf_barrier =
+            &dep_info->pBufferMemoryBarriers[i];
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(buf_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+
          /* Flush the cache if something is written by the transfer command
           * and used by any other stages except transfer stage or if
           * srcQueueFamilyIndex is not equal to dstQueueFamilyIndex, this
           * memory barrier defines a queue family transfer operation.
           */
-         if ((stage_is_transfer(dep_info->pBufferMemoryBarriers[i].srcStageMask) &&
-              mask_is_write(dep_info->pBufferMemoryBarriers[i].srcAccessMask)) ||
-             (dep_info->pBufferMemoryBarriers[i].srcQueueFamilyIndex !=
-              dep_info->pBufferMemoryBarriers[i].dstQueueFamilyIndex)) {
+         if ((stage_is_transfer(buf_barrier->srcStageMask) &&
+              mask_is_write(buf_barrier->srcAccessMask,
+                            barrier3 ? barrier3->srcAccessMask3 : 0)) ||
+             (buf_barrier->srcQueueFamilyIndex !=
+              buf_barrier->dstQueueFamilyIndex)) {
             flush_llc = true;
             break;
          }
       }
 
       for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
+         const VkMemoryBarrier2 *mem_barrier = &dep_info->pMemoryBarriers[i];
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(mem_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+
          /* Flush the cache if something is written by the transfer command
           * and used by any other stages except transfer stage.
           */
-         if (stage_is_transfer(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_write(dep_info->pMemoryBarriers[i].srcAccessMask)) {
+         if (stage_is_transfer(mem_barrier->srcStageMask) &&
+             mask_is_write(mem_barrier->srcAccessMask,
+                barrier3 ? barrier3->srcAccessMask3 : 0)) {
             flush_llc = true;
             break;
          }
@@ -4217,6 +4246,9 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
    VkAccessFlags2 src_flags = 0;
    VkAccessFlags2 dst_flags = 0;
 
+   VkAccessFlags3KHR src_flags3 = 0;
+   VkAccessFlags3KHR dst_flags3 = 0;
+
    VkPipelineStageFlags2 src_stages = 0;
    VkPipelineStageFlags2 dst_stages = 0;
 
@@ -4230,24 +4262,35 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
       const VkDependencyInfo *dep_info = &dep_infos[d];
 
       for (uint32_t i = 0; i < dep_info->memoryBarrierCount; i++) {
-         src_flags |= dep_info->pMemoryBarriers[i].srcAccessMask;
-         dst_flags |= dep_info->pMemoryBarriers[i].dstAccessMask;
+         const VkMemoryBarrier2 *mem_barrier = &dep_info->pMemoryBarriers[i];
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(mem_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
 
-         src_stages |= dep_info->pMemoryBarriers[i].srcStageMask;
-         dst_stages |= dep_info->pMemoryBarriers[i].dstStageMask;
+         if (barrier3) {
+            src_flags3 |= barrier3->srcAccessMask3;
+            dst_flags3 |= barrier3->dstAccessMask3;
+         }
+
+         src_flags |= mem_barrier->srcAccessMask;
+         dst_flags |= mem_barrier->dstAccessMask;
+
+         src_stages |= mem_barrier->srcStageMask;
+         dst_stages |= mem_barrier->dstStageMask;
 
          /* Shader writes to buffers that could then be written by a transfer
           * command (including queries).
           */
-         if (stage_is_shader(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_shader_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
-             stage_is_transfer(dep_info->pMemoryBarriers[i].dstStageMask)) {
+         if (stage_is_shader(mem_barrier->srcStageMask) &&
+             mask_is_shader_write(mem_barrier->srcAccessMask,
+                                  barrier3 ? barrier3->srcAccessMask3 : 0) &&
+             stage_is_transfer(mem_barrier->dstStageMask)) {
             cmd_buffer->state.queries.buffer_write_bits |=
                ANV_QUERY_COMPUTE_WRITES_PENDING_BITS;
          }
 
-         if (stage_is_transfer(dep_info->pMemoryBarriers[i].srcStageMask) &&
-             mask_is_transfer_write(dep_info->pMemoryBarriers[i].srcAccessMask) &&
+         if (stage_is_transfer(mem_barrier->srcStageMask) &&
+             mask_is_transfer_write(mem_barrier->srcAccessMask) &&
              cmd_buffer_has_pending_copy_query(cmd_buffer))
             flush_query_copies = true;
 
@@ -4255,7 +4298,8 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
          /* There's no way of knowing if this memory barrier is related to
           * sparse buffers! This is pretty horrible.
           */
-         if (mask_is_write(src_flags) &&
+         if (mask_is_write(src_flags,
+                           barrier3 ? barrier3->srcAccessMask3 : 0) &&
              p_atomic_read(&device->num_sparse_resources) > 0)
             apply_sparse_flushes = true;
 #endif
@@ -4264,6 +4308,14 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
       for (uint32_t i = 0; i < dep_info->bufferMemoryBarrierCount; i++) {
          const VkBufferMemoryBarrier2 *buf_barrier =
             &dep_info->pBufferMemoryBarriers[i];
+
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(buf_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+         if (barrier3) {
+            src_flags3 |= barrier3->srcAccessMask3;
+            dst_flags3 |= barrier3->dstAccessMask3;
+         }
 
          src_flags |= buf_barrier->srcAccessMask;
          dst_flags |= buf_barrier->dstAccessMask;
@@ -4275,7 +4327,8 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
           * command (including queries).
           */
          if (stage_is_shader(buf_barrier->srcStageMask) &&
-             mask_is_shader_write(buf_barrier->srcAccessMask) &&
+             mask_is_shader_write(buf_barrier->srcAccessMask,
+                                  barrier3 ? barrier3->srcAccessMask3 : 0) &&
              stage_is_transfer(buf_barrier->dstStageMask)) {
             cmd_buffer->state.queries.buffer_write_bits |=
                ANV_QUERY_COMPUTE_WRITES_PENDING_BITS;
@@ -4289,7 +4342,8 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
 #if GFX_VER < 20
          ANV_FROM_HANDLE(anv_buffer, buffer, buf_barrier->buffer);
 
-         if (anv_buffer_is_sparse(buffer) && mask_is_write(src_flags))
+         if (anv_buffer_is_sparse(buffer) &&
+             mask_is_write(src_flags, barrier3 ? barrier3->srcAccessMask3 : 0))
             apply_sparse_flushes = true;
 #endif
       }
@@ -4297,6 +4351,14 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
       for (uint32_t i = 0; i < dep_info->imageMemoryBarrierCount; i++) {
          const VkImageMemoryBarrier2 *img_barrier =
             &dep_info->pImageMemoryBarriers[i];
+
+         const VkMemoryBarrierAccessFlags3KHR *barrier3 =
+            vk_find_struct_const(img_barrier->pNext,
+                                 MEMORY_BARRIER_ACCESS_FLAGS_3_KHR);
+         if (barrier3) {
+            src_flags3 |= barrier3->srcAccessMask3;
+            dst_flags3 |= barrier3->dstAccessMask3;
+         }
 
          src_flags |= img_barrier->srcAccessMask;
          dst_flags |= img_barrier->dstAccessMask;
@@ -4401,15 +4463,16 @@ cmd_buffer_accumulate_barrier_bits(struct anv_cmd_buffer *cmd_buffer,
             }
          }
 
-         if (anv_image_is_sparse(image) && mask_is_write(src_flags))
+         if (anv_image_is_sparse(image) &&
+             mask_is_write(src_flags, barrier3 ? barrier3->srcAccessMask3 : 0))
             apply_sparse_flushes = true;
 #endif
       }
    }
 
    enum anv_pipe_bits bits =
-      anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags) |
-      anv_pipe_invalidate_bits_for_access_flags(cmd_buffer, dst_flags);
+      anv_pipe_flush_bits_for_access_flags(cmd_buffer, src_flags, src_flags3) |
+      anv_pipe_invalidate_bits_for_access_flags(cmd_buffer, dst_flags, dst_flags3);
 
    /* What stage require a stall at pixel scoreboard */
    VkPipelineStageFlags2 pb_stall_stages =

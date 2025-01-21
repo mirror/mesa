@@ -53,9 +53,6 @@ struct brw_nir_compiler_opts {
    /* Soft floating point implementation shader */
    const nir_shader *softfp64;
 
-   /* Whether robust image access is enabled */
-   bool robust_image_access;
-
    /* Input vertices for TCS stage (0 means dynamic) */
    unsigned input_vertices;
 };

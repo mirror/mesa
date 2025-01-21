@@ -342,6 +342,7 @@ enum ir3_shader_debug {
    /* MESA_DEBUG-only options: */
    IR3_DBG_SCHEDMSGS = BITFIELD_BIT(20),
    IR3_DBG_RAMSGS = BITFIELD_BIT(21),
+   IR3_DBG_PREAMBLESTATS = BITFIELD_BIT(22),
 };
 
 extern enum ir3_shader_debug ir3_shader_debug;

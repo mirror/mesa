@@ -273,6 +273,7 @@ ir3_collect_info(struct ir3_shader_variant *v)
    info->early_preamble = v->early_preamble;
 
    bool in_preamble = false;
+   bool collect_in_preamble = !!(ir3_shader_debug & IR3_DBG_PREAMBLESTATS);
    bool has_eq = false;
 
    foreach_block (block, &shader->block_list) {
@@ -326,7 +327,7 @@ ir3_collect_info(struct ir3_shader_variant *v)
           * TODO: we should probably have separate stats for preamble
           * instructions, but that would blow up the amount of stats...
           */
-         if (!in_preamble) {
+         if (in_preamble == collect_in_preamble) {
             unsigned instrs_count = 1 + instr->repeat + instr->nop;
             unsigned nops_count = instr->nop;
 

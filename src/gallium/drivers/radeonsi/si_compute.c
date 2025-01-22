@@ -214,9 +214,16 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
 {
    struct si_context *sctx = (struct si_context *)ctx;
    struct si_screen *sscreen = (struct si_screen *)ctx->screen;
-   struct si_compute *program = CALLOC_STRUCT(si_compute);
-   struct si_shader_selector *sel = &program->sel;
+   struct si_compute *program;
+   struct si_shader_selector;
 
+   program = CALLOC_STRUCT(si_compute);
+   if (!program) {
+      fprintf(stderr, "Failed to alloc struct si_compute\n");
+      goto error_out;
+   }
+
+   si_shader_selector *sel = &program->sel;
    pipe_reference_init(&sel->base.reference, 1);
    sel->stage = MESA_SHADER_COMPUTE;
    sel->screen = sscreen;
@@ -258,12 +265,16 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
       program->shader.binary.code_size = header->num_bytes;
       program->shader.binary.code_buffer = malloc(header->num_bytes);
       if (!program->shader.binary.code_buffer) {
-         FREE(program);
-         return NULL;
+         fprintf(stderr, "Failed to alloc shader.binary.code_buffer\n");
+         goto free_program;
       }
       memcpy((void *)program->shader.binary.code_buffer, header->blob, header->num_bytes);
 
       const amd_kernel_code_t *code_object = si_compute_get_code_object(program, 0);
+      if (!code_object) {
+         fprintf(stderr, "si_compute_get_code_object failed\n");
+         goto free_code_buffer;
+      }
       code_object_to_config(code_object, &program->shader.config);
 
       if (AMD_HSA_BITS_GET(code_object->code_properties, AMD_CODE_PROPERTY_ENABLE_WAVEFRONT_SIZE32))
@@ -276,13 +287,18 @@ static void *si_create_compute_state(struct pipe_context *ctx, const struct pipe
 
       if (!ok) {
          fprintf(stderr, "LLVM failed to upload shader\n");
-         free((void *)program->shader.binary.code_buffer);
-         FREE(program);
-         return NULL;
+         goto free_code_buffer;
       }
    }
 
    return program;
+
+free_code_buffer:
+   free((void *)program->shader.binary.code_buffer);
+free_program:
+   FREE(program);
+error_out:
+   return NULL;
 }
 
 static void si_get_compute_state_info(struct pipe_context *ctx, void *state,

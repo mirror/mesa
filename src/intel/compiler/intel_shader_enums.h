@@ -341,6 +341,42 @@ intel_fs_is_coarse(enum intel_sometimes shader_coarse_pixel_dispatch,
    return (pushed_msaa_flags & INTEL_MSAA_FLAG_COARSE_RT_WRITES) != 0;
 }
 
+static inline enum intel_msaa_flags
+intel_fs_msaa_flags(bool shader_sample_shading,
+                    float shader_min_sample_shading,
+                    bool sample_shading_enable,
+                    uint32_t rasterization_samples,
+                    bool coarse_pixel_enable,
+                    bool alpha_to_coverage_enable)
+{
+   enum intel_msaa_flags fs_msaa_flags = INTEL_MSAA_FLAG_ENABLE_DYNAMIC;
+
+   if (rasterization_samples > 1) {
+      fs_msaa_flags |= INTEL_MSAA_FLAG_MULTISAMPLE_FBO;
+
+      if (shader_sample_shading)
+         fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH;
+
+      if (shader_sample_shading ||
+          (sample_shading_enable &&
+           (shader_min_sample_shading * rasterization_samples) > 1)) {
+         fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH |
+                          INTEL_MSAA_FLAG_PERSAMPLE_INTERP;
+      }
+   }
+
+   if (!(fs_msaa_flags & INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH) &&
+       coarse_pixel_enable) {
+      fs_msaa_flags |= INTEL_MSAA_FLAG_COARSE_PI_MSG |
+                       INTEL_MSAA_FLAG_COARSE_RT_WRITES;
+   }
+
+   if (alpha_to_coverage_enable)
+      fs_msaa_flags |= INTEL_MSAA_FLAG_ALPHA_TO_COVERAGE;
+
+   return fs_msaa_flags;
+}
+
 #ifdef __cplusplus
 } /* extern "C" */
 #endif

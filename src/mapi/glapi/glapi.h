@@ -87,29 +87,11 @@ _GLAPI_EXPORT extern __THREAD_INITIAL_EXEC void * _mesa_glapi_tls_Context;
 
 _GLAPI_EXPORT extern const struct _glapi_table *_mesa_glapi_Dispatch;
 
-#if DETECT_OS_WINDOWS && !defined(MAPI_MODE_UTIL) && !defined(MAPI_MODE_GLAPI)
-# define GET_DISPATCH() _mesa_glapi_get_dispatch()
-# define GET_CURRENT_CONTEXT(C)  struct gl_context *C = (struct gl_context *) _mesa_glapi_get_context()
-#else
 # define GET_DISPATCH() _mesa_glapi_tls_Dispatch
 # define GET_CURRENT_CONTEXT(C)  struct gl_context *C = (struct gl_context *) _mesa_glapi_tls_Context
-#endif
-
-
-_GLAPI_EXPORT void
-_mesa_glapi_set_context(void *context);
-
-
-_GLAPI_EXPORT void *
-_mesa_glapi_get_context(void);
-
 
 _GLAPI_EXPORT void
 _mesa_glapi_set_dispatch(struct _glapi_table *dispatch);
-
-
-_GLAPI_EXPORT struct _glapi_table *
-_mesa_glapi_get_dispatch(void);
 
 
 _GLAPI_EXPORT unsigned int
@@ -144,6 +126,26 @@ _glapi_set_nop_handler(_glapi_nop_handler_proc func);
 _GLAPI_EXPORT struct _glapi_table *
 _glapi_new_nop_table(unsigned num_entries);
 
+
+/**
+ * Set the current context pointer for this thread.
+ * The context pointer is an opaque type which should be cast to
+ * void from the real context pointer type.
+ */
+static inline void
+_mesa_glapi_set_context(void *ptr)
+{
+   _mesa_glapi_tls_Context = ptr;
+}
+
+/**
+ * Return pointer to current dispatch table for calling thread.
+ */
+static inline struct _glapi_table *
+_mesa_glapi_get_dispatch(void)
+{
+   return _mesa_glapi_tls_Dispatch;
+}
 
 #ifdef __cplusplus
 }

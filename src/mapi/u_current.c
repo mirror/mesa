@@ -63,9 +63,7 @@ extern void (*__glapi_noop_table[])(void);
  * \c _mesa_glapi_tls_Context are used. Having \c _mesa_glapi_Dispatch
  * be hardcoded to \c NULL maintains binary compatability between TLS enabled
  * loaders and non-TLS DRI drivers. When \c _mesa_glapi_Dispatch
- * are \c NULL, the thread state data \c ContextTSD are used. Drivers and the
- * static dispatch functions access these variables via \c _mesa_glapi_get_dispatch
- * and \c _mesa_glapi_get_context.
+ * are \c NULL, the thread state data \c ContextTSD are used.
  */
 /*@{*/
 
@@ -77,28 +75,6 @@ __THREAD_INITIAL_EXEC void *_mesa_glapi_tls_Context;
 const struct _glapi_table *_mesa_glapi_Dispatch;
 
 /*@}*/
-
-/**
- * Set the current context pointer for this thread.
- * The context pointer is an opaque type which should be cast to
- * void from the real context pointer type.
- */
-void
-_mesa_glapi_set_context(void *ptr)
-{
-   _mesa_glapi_tls_Context = ptr;
-}
-
-/**
- * Get the current context pointer for this thread.
- * The context pointer is an opaque type which should be cast from
- * void to the real context pointer type.
- */
-void *
-_mesa_glapi_get_context(void)
-{
-   return _mesa_glapi_tls_Context;
-}
 
 /**
  * Set the global or per-thread dispatch table pointer.
@@ -114,13 +90,4 @@ _mesa_glapi_set_dispatch(struct _glapi_table *tbl)
       tbl = (struct _glapi_table *) table_noop_array;
 
    _mesa_glapi_tls_Dispatch = tbl;
-}
-
-/**
- * Return pointer to current dispatch table for calling thread.
- */
-struct _glapi_table *
-_mesa_glapi_get_dispatch(void)
-{
-   return _mesa_glapi_tls_Dispatch;
 }

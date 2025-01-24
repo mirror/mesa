@@ -915,9 +915,56 @@ etna_resource_needs_flush(struct etna_resource *rsc)
    return false;
 }
 
+static void
+etna_resource_set_damage_region(struct pipe_screen *pscreen,
+                                struct pipe_resource *prsc,
+                                unsigned int nrects,
+                                const struct pipe_box *rects)
+{
+   struct etna_resource *rsc = etna_resource(prsc);
+   unsigned int i;
+
+   if (rsc->damage) {
+      FREE(rsc->damage);
+      rsc->damage = NULL;
+   }
+
+   if (!nrects)
+      return;
+
+   // check for full damage
+   for (i = 0; i < nrects; i++) {
+      if (rects[i].x <= 0 && rects[i].y <= 0 &&
+          rects[i].x + rects[i].width >= prsc->width0 &&
+          rects[i].y + rects[i].height >= prsc->height0)
+         return;
+   }
+
+   rsc->damage = CALLOC(nrects, sizeof(*rsc->damage));
+   if (!rsc->damage)
+      return;
+
+   for (i = 0; i < nrects; i++) {
+      const int w = rects[i].width;
+      const int h = rects[i].height;
+      const int x = rects[i].x;
+      const int y = prsc->height0 - (rects[i].y + h);
+      struct pipe_scissor_state *damage = &rsc->damage[i];
+
+      damage->minx = x;
+      damage->miny = y;
+      damage->maxx = MIN2(x + w, prsc->width0);
+      damage->maxy = MIN2(y + h, prsc->height0);
+   }
+
+   rsc->num_damage = nrects;
+}
+
 void
 etna_resource_screen_init(struct pipe_screen *pscreen)
 {
+   struct etna_screen *screen = etna_screen(pscreen);
+
    pscreen->can_create_resource = etna_screen_can_create_resource;
    pscreen->resource_create = etna_resource_create;
    pscreen->resource_create_with_modifiers = etna_resource_create_modifiers;
@@ -926,4 +973,7 @@ etna_resource_screen_init(struct pipe_screen *pscreen)
    pscreen->resource_get_param = etna_resource_get_param;
    pscreen->resource_changed = etna_resource_changed;
    pscreen->resource_destroy = etna_resource_destroy;
+
+   if (!(VIV_FEATURE(screen, ETNA_FEATURE_LINEAR_PE)))
+      pscreen->set_damage_region = etna_resource_set_damage_region;
 }

@@ -102,13 +102,44 @@ etna_clear_blit_pack_rgba(enum pipe_format format, const union pipe_color_union 
 static void
 etna_blit(struct pipe_context *pctx, const struct pipe_blit_info *blit_info)
 {
+   struct etna_resource *src = etna_resource(blit_info->src.resource);
+   struct etna_resource *dst = etna_resource(blit_info->dst.resource);
    struct etna_context *ctx = etna_context(pctx);
+   struct etna_screen *screen = ctx->screen;
    struct pipe_blit_info info = *blit_info;
+   bool success = false;
 
    if (info.render_condition_enable && !etna_render_condition_check(pctx))
       return;
 
-   if (ctx->blit(pctx, &info))
+   if (!(VIV_FEATURE(screen, ETNA_FEATURE_LINEAR_PE)) &&
+       dst->layout == ETNA_LAYOUT_LINEAR &&
+       dst->num_damage) {
+
+      for (unsigned i = 0; i < dst->num_damage; i++) {
+         const struct pipe_scissor_state *damage = &dst->damage[i];
+
+         info.src.box.x = info.dst.box.x = damage->minx;
+         info.src.box.y = info.dst.box.y = damage->miny;
+         info.src.box.width = info.dst.box.width = damage->maxx - damage->minx;
+         info.src.box.height = info.dst.box.height = damage->maxy - damage->miny;
+
+         /* Need to align the blit boxes to satisfy RS restrictions, as we
+          * really want to hit the RS blit path here.
+          */
+         etna_align_box_for_rs(ctx, src, &info.src.box);
+         etna_align_box_for_rs(ctx, src, &info.dst.box);
+
+         success = ctx->blit(pctx, &info);
+
+         if (!success)
+            break;
+      }
+   } else {
+      success = ctx->blit(pctx, &info);
+   }
+
+   if (success)
       goto success;
 
    if (util_try_blit_via_copy_region(pctx, &info, false))

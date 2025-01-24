@@ -706,13 +706,6 @@ iris_hiz_exec(struct iris_context *ice,
    //DBG("%s %s to mt %p level %d layers %d-%d\n",
        //__func__, name, mt, level, start_layer, start_layer + num_layers - 1);
 
-   /* A data cache flush is not suggested by HW docs, but we found it to fix
-    * a number of failures.
-    */
-   unsigned wa_flush = devinfo->verx10 >= 125 &&
-                       res->aux.usage == ISL_AUX_USAGE_HIZ_CCS ?
-                       PIPE_CONTROL_DATA_CACHE_FLUSH : 0;
-
    /* The following stalls and flushes are only documented to be required
     * for HiZ clear operations.  However, they also seem to be required for
     * resolve operations.
@@ -729,7 +722,6 @@ iris_hiz_exec(struct iris_context *ice,
    iris_emit_pipe_control_flush(batch,
                                 "hiz op: pre-flush",
                                 PIPE_CONTROL_DEPTH_CACHE_FLUSH |
-                                wa_flush |
                                 PIPE_CONTROL_DEPTH_STALL |
                                 PIPE_CONTROL_CS_STALL);
 
@@ -772,6 +764,23 @@ iris_hiz_exec(struct iris_context *ice,
                                    "hiz op: post flush",
                                    PIPE_CONTROL_DEPTH_CACHE_FLUSH |
                                    PIPE_CONTROL_DEPTH_STALL);
+   }
+
+   /* Additional tile cache flush which appears to be needed to
+    * guarantee that a resolved depth surface has no remaining
+    * fast-cleared blocks on DG2 as well as MTL:
+    *
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10420
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/10530
+    * https://gitlab.freedesktop.org/mesa/mesa/-/issues/11315
+    */
+   if (devinfo->verx10 == 125 &&
+       res->aux.usage == ISL_AUX_USAGE_HIZ_CCS &&
+       op == ISL_AUX_OP_FULL_RESOLVE) {
+      iris_emit_pipe_control_flush(batch,
+                                   "hiz op: post-flush",
+                                   PIPE_CONTROL_DATA_CACHE_FLUSH |
+                                   PIPE_CONTROL_CS_STALL);
    }
 
    iris_batch_sync_region_end(batch);

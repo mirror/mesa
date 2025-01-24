@@ -987,6 +987,7 @@ fn compile_nir_variant(
         nir.print();
     }
 
+    #[allow(clippy::collapsible_if)]
     if dev.screen.finalize_nir(nir) {
         if Platform::dbg().nir {
             eprintln!(

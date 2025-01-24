@@ -192,7 +192,13 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
       flags |= RADEON_FLUSH_NOOP;
 
    uint64_t start_ts = 0, submission_id = 0;
-   if (u_trace_perfetto_active(&ctx->ds.trace_context)) {
+   bool perfetto = false;
+
+#ifdef HAVE_PERFETTO
+   perfetto = ctx->perfetto_enabled;
+#endif
+
+   if (perfetto) {
       start_ts = si_ds_begin_submit(&ctx->ds_queue);
       submission_id = ctx->ds_queue.submission_id;
    }
@@ -200,7 +206,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    /* Flush the CS. */
    ws->cs_flush(cs, flags, &ctx->last_gfx_fence);
 
-   if (u_trace_perfetto_active(&ctx->ds.trace_context) && start_ts > 0) {
+   if (perfetto) {
       si_ds_end_submit(&ctx->ds_queue, start_ts);
    }
 
@@ -227,7 +233,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    if (ctx->current_saved_cs)
       si_saved_cs_reference(&ctx->current_saved_cs, NULL);
 
-   if (u_trace_perfetto_active(&ctx->ds.trace_context))
+   if (perfetto)
       si_utrace_flush(ctx, submission_id);
 
    si_begin_new_gfx_cs(ctx, false);
@@ -433,6 +439,10 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
 
    if (!first_cs)
       u_trace_fini(&ctx->trace);
+
+   #if HAVE_PERFETTO
+   ctx->perfetto_enabled = u_trace_perfetto_active(&ctx->ds.trace_context);
+   #endif
 
    u_trace_init(&ctx->trace, &ctx->ds.trace_context);
 

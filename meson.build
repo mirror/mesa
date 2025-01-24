@@ -317,7 +317,7 @@ endif
 
 with_intel_vk_rt = get_option('intel-rt') \
   .disable_auto_if(not with_intel_vk) \
-  .disable_if(host_machine.cpu_family() != 'x86_64', error_message : 'Intel Ray Tracing is only supported on x86_64') \
+  .require(['aarch64', 'x86_64'].contains(host_machine.cpu_family()), error_message : 'Intel Ray Tracing is only supported on x86_64 and experimental on aarch64') \
   .allowed()
 
 if with_intel_vk_rt

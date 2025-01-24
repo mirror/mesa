@@ -436,3 +436,26 @@ librusticl = static_library(
   ],
 )
 
+if with_tests
+  # librusticl_test = static_library(
+  #   'rusticl_test',
+  #   'test/lib.rs',
+  #   rust_abi : 'c',
+  # )
+
+  rust.test('rusticl_opencl_gen_test', rusticl_opencl_gen)
+  rust.test('rusticl_llvm_gen_test', rusticl_llvm_gen)
+  rust.test('rusticl_proc_macros_test', rusticl_proc_macros)
+  rust.test('libc_rust_gen_test', libc_rust_gen)
+  rust.test('libmesa_rust_gen_test', libmesa_rust_gen)
+  rust.test('libmesa_rust_util_test', libmesa_rust_util)
+  rust.test('libmesa_rust_test', libmesa_rust)
+
+  # Due to a meson bug with the sanitizers, we can't enable tests on the librusticl crate yet
+  # rust.test('rusticl_test', librusticl,
+  #   link_with : [
+  #     librusticl_test,
+  #   ],
+  # )
+endif
+

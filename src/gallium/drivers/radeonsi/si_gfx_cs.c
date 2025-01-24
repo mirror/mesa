@@ -198,7 +198,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    perfetto = ctx->perfetto_enabled;
 #endif
 
-   if (perfetto) {
+   if (unlikely(perfetto)) {
       start_ts = si_ds_begin_submit(&ctx->ds_queue);
       submission_id = ctx->ds_queue.submission_id;
    }
@@ -206,9 +206,8 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    /* Flush the CS. */
    ws->cs_flush(cs, flags, &ctx->last_gfx_fence);
 
-   if (perfetto) {
+   if (unlikely(perfetto))
       si_ds_end_submit(&ctx->ds_queue, start_ts);
-   }
 
    tc_driver_internal_flush_notify(ctx->tc);
    if (fence)
@@ -233,7 +232,7 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    if (ctx->current_saved_cs)
       si_saved_cs_reference(&ctx->current_saved_cs, NULL);
 
-   if (perfetto)
+   if (unlikely(perfetto))
       si_utrace_flush(ctx, submission_id);
 
    si_begin_new_gfx_cs(ctx, false);

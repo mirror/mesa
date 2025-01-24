@@ -216,6 +216,7 @@ iris_destroy_context(struct pipe_context *ctx)
 {
    struct iris_context *ice = (struct iris_context *)ctx;
    struct iris_screen *screen = (struct iris_screen *)ctx->screen;
+   simple_mtx_t *context_list_lock;
 
    blorp_finish(&ice->blorp);
 
@@ -245,6 +246,11 @@ iris_destroy_context(struct pipe_context *ctx)
    u_upload_destroy(ice->state.scratch_surface_uploader);
    u_upload_destroy(ice->state.dynamic_uploader);
    u_upload_destroy(ice->query_buffer_uploader);
+
+   context_list_lock = iris_bufmgr_get_context_list_lock(screen->bufmgr);
+   simple_mtx_lock(context_list_lock);
+   list_del(&ice->list_node);
+   simple_mtx_unlock(context_list_lock);
 
    iris_destroy_batches(ice);
    iris_destroy_binder(&ice->state.binder);
@@ -296,6 +302,7 @@ iris_create_context(struct pipe_screen *pscreen, void *priv, unsigned flags)
    struct iris_screen *screen = (struct iris_screen*)pscreen;
    const struct intel_device_info *devinfo = screen->devinfo;
    struct iris_context *ice = rzalloc(NULL, struct iris_context);
+   simple_mtx_t *context_list_lock;
 
    if (!ice)
       return NULL;
@@ -328,6 +335,11 @@ iris_create_context(struct pipe_screen *pscreen, void *priv, unsigned flags)
       ralloc_free(ice);
       return NULL;
    }
+
+   context_list_lock = iris_bufmgr_get_context_list_lock(screen->bufmgr);
+   simple_mtx_lock(context_list_lock);
+   list_addtail(&ice->list_node, iris_bufmgr_get_context_list(screen->bufmgr));
+   simple_mtx_unlock(context_list_lock);
 
    ctx->destroy = iris_destroy_context;
    ctx->set_debug_callback = iris_set_debug_callback;

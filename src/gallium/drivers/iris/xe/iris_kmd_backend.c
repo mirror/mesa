@@ -103,23 +103,14 @@ xe_gem_mmap(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
    return map != MAP_FAILED ? map : NULL;
 }
 
-static inline int
-xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
+static inline void
+bind_op_set(struct iris_bo *bo, uint32_t op, struct drm_xe_vm_bind_op *bind_op)
 {
    struct iris_bufmgr *bufmgr = bo->bufmgr;
-   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
    const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
    uint32_t handle = op == DRM_XE_VM_BIND_OP_UNMAP ? 0 : bo->gem_handle;
-   struct drm_xe_sync xe_sync = {
-      .handle = intel_bind_timeline_get_syncobj(bind_timeline),
-      .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
-      .flags = DRM_XE_SYNC_FLAG_SIGNAL,
-   };
    uint64_t range, obj_offset = 0;
    uint32_t flags = 0;
-   int ret, fd;
-
-   fd = iris_bufmgr_get_fd(bufmgr);
 
    if (iris_bo_is_imported(bo))
       range = bo->size;
@@ -136,20 +127,34 @@ xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
    if (bo->real.capture)
       flags |= DRM_XE_VM_BIND_FLAG_DUMPABLE;
 
+   bind_op->obj = handle;
+   bind_op->obj_offset = obj_offset;
+   bind_op->range = range;
+   bind_op->addr = intel_48b_address(bo->address);
+   bind_op->op = op;
+   bind_op->pat_index = iris_heap_to_pat_entry(devinfo, bo->real.heap)->index;
+   bind_op->flags = flags;
+}
+
+static inline int
+xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
+{
+   struct iris_bufmgr *bufmgr = bo->bufmgr;
+   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
+   struct drm_xe_sync xe_sync = {
+      .handle = intel_bind_timeline_get_syncobj(bind_timeline),
+      .type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ,
+      .flags = DRM_XE_SYNC_FLAG_SIGNAL,
+   };
+   int ret, fd = iris_bufmgr_get_fd(bufmgr);
    struct drm_xe_vm_bind args = {
       .vm_id = iris_bufmgr_get_global_vm_id(bufmgr),
       .num_syncs = 1,
       .syncs = (uintptr_t)&xe_sync,
       .num_binds = 1,
-      .bind.obj = handle,
-      .bind.obj_offset = obj_offset,
-      .bind.range = range,
-      .bind.addr = intel_48b_address(bo->address),
-      .bind.op = op,
-      .bind.pat_index = iris_heap_to_pat_entry(devinfo, bo->real.heap)->index,
-      .bind.flags = flags,
    };
 
+   bind_op_set(bo, op, &args.bind);
    xe_sync.timeline_value = intel_bind_timeline_bind_begin(bind_timeline);
    ret = intel_ioctl(fd, DRM_IOCTL_XE_VM_BIND, &args);
    intel_bind_timeline_bind_end(bind_timeline);
@@ -163,12 +168,18 @@ xe_gem_vm_bind_op(struct iris_bo *bo, uint32_t op)
 static bool
 xe_gem_vm_bind(struct iris_bo *bo)
 {
+   if (iris_bufmgr_get_low_memory_mode(bo->bufmgr))
+      return true;
+
    return xe_gem_vm_bind_op(bo, DRM_XE_VM_BIND_OP_MAP) == 0;
 }
 
 static bool
 xe_gem_vm_unbind(struct iris_bo *bo)
 {
+   if (iris_bufmgr_get_low_memory_mode(bo->bufmgr))
+      return true;
+
    return xe_gem_vm_bind_op(bo, DRM_XE_VM_BIND_OP_UNMAP) == 0;
 }
 
@@ -328,6 +339,214 @@ iris_implicit_sync_export(struct iris_batch *batch,
 }
 
 static int
+low_memory_mode_bind_ops(struct iris_batch *batch, struct drm_xe_vm_bind *bind_args)
+{
+   struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
+   const struct intel_device_info *devinfo = iris_bufmgr_get_device_info(bufmgr);
+   struct drm_xe_vm_bind_op *bind_ops;
+   uint8_t *array_gem_handle_done;
+   int ret = 0;
+
+   bind_ops = calloc(batch->exec_count + 1, sizeof(*bind_ops));
+   if (!bind_ops) {
+      ret = -ENOMEM;
+      goto error_out_of_mem_bind_ops;
+   }
+
+   /* more or less copied from i915 but why not use a hashmap? */
+   array_gem_handle_done = calloc(batch->max_gem_handle + 1, sizeof(uint8_t));
+   if (!array_gem_handle_done) {
+      ret = -ENOMEM;
+      goto error_out_of_mem_array_gem_handle_done;
+   }
+
+   /* Unbind the whole VM */
+   bind_ops[bind_args->num_binds].addr = 0x0;
+   bind_ops[bind_args->num_binds].range = devinfo->gtt_size;
+   bind_ops[bind_args->num_binds].op = DRM_XE_VM_BIND_OP_UNMAP;
+   bind_args->num_binds++;
+
+   /* Bind VMAs referenced by iris_batch */
+   for (uint32_t i = 0; i < batch->exec_count; i++) {
+      struct iris_bo *bo = iris_get_backing_bo(batch->exec_bos[i]);
+      assert(bo->gem_handle != 0);
+
+      if (array_gem_handle_done[bo->gem_handle])
+         continue;
+
+      bind_op_set(bo, DRM_XE_VM_BIND_OP_MAP, &bind_ops[bind_args->num_binds]);
+      bind_args->num_binds++;
+      array_gem_handle_done[bo->gem_handle] = 1;
+   }
+
+   free(array_gem_handle_done);
+   bind_args->vector_of_binds = (uintptr_t)bind_ops;
+
+   return ret;
+
+error_out_of_mem_array_gem_handle_done:
+   free(bind_ops);
+error_out_of_mem_bind_ops:
+   return ret;
+}
+
+static int
+low_memory_mode_bind_syncs(struct iris_batch *batch, struct drm_xe_vm_bind *bind_args, struct iris_syncobj ***ret_exec_syncobjs)
+{
+   struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
+   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
+   struct iris_syncobj **exec_syncobjs;
+   struct drm_xe_sync *bind_syncs;
+   uint32_t batches_count = 0;
+   int ret = 0;
+
+   list_for_each_entry_safe(struct iris_context, ice, iris_bufmgr_get_context_list(bufmgr), list_node) {
+      batches_count += IRIS_BATCH_COUNT;
+   }
+
+   exec_syncobjs = malloc(sizeof(struct iris_syncobj *) * batches_count);
+   if (!exec_syncobjs) {
+      ret = -ENOMEM;
+      goto error_out_of_mem_array_exec_syncobjs;
+   }
+
+   for (uint32_t i = 0; i < batches_count; i++) {
+      exec_syncobjs[i] = iris_create_syncobj(bufmgr);
+      if (!exec_syncobjs[i]) {
+         ret = -ENOMEM;
+         goto error_out_of_mem_syncobj;
+      }
+   }
+
+   bind_syncs = calloc(batches_count + 1, sizeof(*bind_syncs));
+   if (!bind_syncs) {
+      ret = -ENOMEM;
+      goto error_out_of_mem_bind_syncs;
+   }
+
+   /* get a signal of the completion of the last XE_EXEC of every EXEC_QUEUE
+    * in this bufmgr
+    */
+   list_for_each_entry_safe(struct iris_context, ice, iris_bufmgr_get_context_list(bufmgr), list_node) {
+      for (uint32_t i = 0; i < IRIS_BATCH_COUNT; i++) {
+         struct drm_xe_sync exec_sync = {
+            .type = DRM_XE_SYNC_TYPE_SYNCOBJ,
+            .flags = DRM_XE_SYNC_FLAG_SIGNAL,
+            .handle = exec_syncobjs[bind_args->num_syncs]->handle,
+         };
+         struct drm_xe_exec exec = {
+            .exec_queue_id = ice->batches[i].xe.exec_queue_id,
+            .num_syncs = 1,
+            .syncs = (uintptr_t)&exec_sync,
+         };
+
+         /* Using the special exec.num_batch_buffer == 0 handling to get a syncobj
+          * signaled when the last DRM_IOCTL_XE_EXEC is completed.
+          *
+          * Synchronized by xe_batch_submit()->simple_mtx_lock(bo_deps_lock)
+          */
+         ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
+         if (ret) {
+            /* if batch was banned just skip it */
+            if (errno == ECANCELED) {
+               ret = 0;
+               continue;
+            }
+
+            ret = -errno;
+            goto error_xe_exec;
+         }
+
+         /* makes binds wait for last queued DRM_IOCTL_XE_EXEC */
+         bind_syncs[bind_args->num_syncs].handle = exec_syncobjs[i]->handle;
+         bind_syncs[bind_args->num_syncs].type = DRM_XE_SYNC_TYPE_SYNCOBJ;
+         bind_args->num_syncs++;
+      }
+   }
+
+   /* Regular bind_timeline signal, so real DRM_IOCTL_XE_EXEC waits for this
+    * bind.
+    * It is important that is the last one so the timeline value is set in the
+    * right bind_syncs by the caller.
+    */
+   bind_syncs[bind_args->num_syncs].handle = intel_bind_timeline_get_syncobj(bind_timeline);
+   bind_syncs[bind_args->num_syncs].type = DRM_XE_SYNC_TYPE_TIMELINE_SYNCOBJ;
+   bind_syncs[bind_args->num_syncs].flags = DRM_XE_SYNC_FLAG_SIGNAL;
+   bind_args->num_syncs++;
+
+   bind_args->syncs = (uintptr_t)bind_syncs;
+   *ret_exec_syncobjs = exec_syncobjs;
+
+   return ret;
+
+error_xe_exec:
+   free(bind_syncs);
+error_out_of_mem_bind_syncs:
+   for (uint32_t i = 0; i < batches_count; i++) {
+      if (exec_syncobjs[i])
+         iris_syncobj_destroy(bufmgr, exec_syncobjs[i]);
+   }
+error_out_of_mem_syncobj:
+   free(exec_syncobjs);
+error_out_of_mem_array_exec_syncobjs:
+   return ret;
+}
+
+/*
+ * In low memory mode before doing a real DRM_IOCTL_XE_EXEC it first unbind
+ * all VMAs and then bind only the VMAs needed by iris_batch.
+ * This allow us to execute a iris_batch even if it was allocated in current
+ * VM more memory than GPU can store.
+ */
+static int
+xe_batch_submit_prepare_low_memory_mode(struct iris_batch *batch)
+{
+   struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
+   struct intel_bind_timeline *bind_timeline = iris_bufmgr_get_bind_timeline(bufmgr);
+   simple_mtx_t *context_list_lock = iris_bufmgr_get_context_list_lock(bufmgr);
+   struct drm_xe_vm_bind bind_args = {
+      .vm_id = iris_bufmgr_get_global_vm_id(bufmgr),
+   };
+   struct drm_xe_sync *bind_syncs;
+   struct drm_xe_vm_bind_op *bind_ops;
+   struct iris_syncobj **exec_syncobjs;
+   int ret = 0;
+
+   simple_mtx_lock(context_list_lock);
+
+   /* unbind the whole VM and bind bos referenced by batch */
+   ret = low_memory_mode_bind_ops(batch, &bind_args);
+   if (ret)
+      goto error_bind_ops;
+
+   bind_ops = (struct drm_xe_vm_bind_op *)bind_args.vector_of_binds;
+   /* get a signal of the completion of the last XE_EXEC of every EXEC_QUEUE
+    * in this bufmgr + regular bind_timeline signal, so real DRM_IOCTL_XE_EXEC
+    * waits for this bind. */
+   ret = low_memory_mode_bind_syncs(batch, &bind_args, &exec_syncobjs);
+   if (ret)
+      goto error_bind_syncs;
+
+   bind_syncs = (struct drm_xe_sync *)bind_args.syncs;
+   bind_syncs[bind_args.num_syncs - 1].timeline_value = intel_bind_timeline_bind_begin(bind_timeline);
+   ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_VM_BIND, &bind_args);
+   intel_bind_timeline_bind_end(bind_timeline);
+
+   if (ret)
+      ret = -errno;
+
+   for (uint32_t i = 0; i < (bind_args.num_syncs - 1); i++) {
+      iris_syncobj_destroy(bufmgr, exec_syncobjs[i]);
+   }
+   free(exec_syncobjs);
+error_bind_syncs:
+   free(bind_ops);
+error_bind_ops:
+   simple_mtx_unlock(context_list_lock);
+   return ret;
+}
+
+static int
 xe_batch_submit(struct iris_batch *batch)
 {
    struct iris_bufmgr *bufmgr = batch->screen->bufmgr;
@@ -349,6 +568,13 @@ xe_batch_submit(struct iris_batch *batch)
       iris_batch_decode_batch(batch);
 
    simple_mtx_lock(bo_deps_lock);
+
+   if (iris_bufmgr_get_low_memory_mode(bufmgr) &&
+       !batch->screen->devinfo->no_hw) {
+      ret = xe_batch_submit_prepare_low_memory_mode(batch);
+      if (ret)
+         goto error_prepare;
+   }
 
    iris_batch_update_syncobjs(batch);
 
@@ -391,8 +617,17 @@ xe_batch_submit(struct iris_batch *batch)
       .syncs = (uintptr_t)syncs,
       .num_syncs = sync_len,
    };
-   if (!batch->screen->devinfo->no_hw)
+   if (!batch->screen->devinfo->no_hw) {
        ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
+       if (ret && (errno == ENOMEM || errno == ENOSPC)) {
+          /* if not in low memory mode, activate it and try to submit again */
+          if (iris_bufmgr_get_low_memory_mode(bufmgr) == false) {
+             iris_bufmgr_enable_low_memory_mode(bufmgr);
+             if (xe_batch_submit_prepare_low_memory_mode(batch) == 0)
+                ret = intel_ioctl(iris_bufmgr_get_fd(bufmgr), DRM_IOCTL_XE_EXEC, &exec);
+          }
+       }
+   }
 
    if (ret) {
       ret = -errno;
@@ -425,6 +660,7 @@ error_exec:
 error_no_sync_mem:
    iris_implicit_sync_finish(batch, &implicit_sync);
 error_implicit_sync_import:
+error_prepare:
    simple_mtx_unlock(bo_deps_lock);
    return ret;
 }

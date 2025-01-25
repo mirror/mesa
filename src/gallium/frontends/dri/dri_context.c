@@ -209,6 +209,7 @@ dri_create_context(struct dri_screen *screen,
     * - app setting
     * - user setting
     */
+#if 0
    bool enable_glthread = driQueryOptionb(&screen->dev->option_cache, "mesa_glthread_driver");
 
    /* always disable glthread by default if fewer than 5 "big" CPUs are active */
@@ -231,7 +232,8 @@ dri_create_context(struct dri_screen *screen,
       enable_glthread = user_enable_glthread;
    }
    /* Do this last. */
-   if (enable_glthread) {
+#endif
+   if (1) {
       bool safe = true;
 
       /* This is only needed by X11/DRI2, which can be unsafe. */

@@ -124,8 +124,11 @@ panfrost_shader_compile(struct panfrost_screen *screen, const nir_shader *ir,
     * Compute CSOs call this function during create time, so preprocessing
     * happens at CSO create time regardless.
     */
-   if (gl_shader_stage_is_compute(s->info.stage))
+   if (gl_shader_stage_is_compute(s->info.stage)) {
+      /* Link against libpan */
+      pan_link_cl_library(s, dev->libpan, panfrost_device_gpu_id(dev));
       pan_shader_preprocess(s, panfrost_device_gpu_id(dev));
+   }
 
    struct panfrost_compile_inputs inputs = {
       .debug = dbg,
@@ -456,6 +459,11 @@ panfrost_create_shader_state(struct pipe_context *pctx,
    so->stream_output = cso->stream_output;
    so->nir = nir;
 
+   struct panfrost_device *dev = pan_device(pctx->screen);
+
+   /* First link against libpan */
+   pan_link_cl_library(nir, dev->libpan, panfrost_device_gpu_id(dev));
+
    /* Fix linkage early */
    if (so->nir->info.stage == MESA_SHADER_VERTEX) {
       so->fixed_varying_mask =
@@ -473,7 +481,6 @@ panfrost_create_shader_state(struct pipe_context *pctx,
    }
 
    /* Then run the suite of lowering and optimization, including I/O lowering */
-   struct panfrost_device *dev = pan_device(pctx->screen);
    pan_shader_preprocess(nir, panfrost_device_gpu_id(dev));
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)

@@ -30,9 +30,9 @@
 #include "pan_cmdstream.h"
 #include "pan_context.h"
 #include "pan_fb_preload.h"
-#include "pan_indirect_dispatch.h"
 #include "pan_jm.h"
 #include "pan_job.h"
+#include "pan_precomp.h"
 
 #if PAN_ARCH >= 10
 #error "JM helpers are only used for gen < 10"
@@ -376,22 +376,15 @@ GENX(jm_launch_grid)(struct panfrost_batch *batch,
    unsigned indirect_dep = 0;
 #if PAN_GPU_SUPPORTS_DISPATCH_INDIRECT
    if (info->indirect) {
-      struct panfrost_device *dev = pan_device(batch->ctx->base.screen);
-      struct pan_indirect_dispatch_info indirect = {
-         .job = t.gpu,
-         .indirect_dim = pan_resource(info->indirect)->image.data.base +
-                         info->indirect_offset,
-         .num_wg_sysval =
-            {
-               batch->num_wg_sysval[0],
-               batch->num_wg_sysval[1],
-               batch->num_wg_sysval[2],
-            },
-      };
+      uint64_t indirect_buffer_addr =
+         pan_resource(info->indirect)->image.data.base + info->indirect_offset;
 
-      indirect_dep = GENX(pan_indirect_dispatch_emit)(
-         &dev->indirect_dispatch, &batch->pool.base, &batch->jm.jobs.vtc_jc,
-         &indirect);
+      panlib_indirect_dispatch(
+         batch, panlib_1d(1), PANLIB_BARRIER_JM_SUPPRESS_PREFETCH,
+         indirect_buffer_addr, info->block[0], info->block[1], info->block[2],
+         t.gpu, batch->num_wg_sysval[0], batch->num_wg_sysval[1],
+         batch->num_wg_sysval[2]);
+      indirect_dep = batch->jm.jobs.vtc_jc.job_index;
    }
 #endif
 

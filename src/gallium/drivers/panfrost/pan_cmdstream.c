@@ -40,6 +40,11 @@
 
 #include "genxml/gen_macros.h"
 
+#include "util/blob.h"
+#include "util/ralloc.h"
+#include "glsl_types.h"
+#include "libpan_shaders.h"
+#include "nir_serialize.h"
 #include "pan_afbc_cso.h"
 #include "pan_blend.h"
 #include "pan_bo.h"
@@ -48,10 +53,10 @@
 #include "pan_csf.h"
 #include "pan_fb_preload.h"
 #include "pan_format.h"
-#include "pan_indirect_dispatch.h"
 #include "pan_jm.h"
 #include "pan_job.h"
 #include "pan_pool.h"
+#include "pan_precomp.h"
 #include "pan_resource.h"
 #include "pan_samples.h"
 #include "pan_shader.h"
@@ -339,14 +344,14 @@ panfrost_emit_blend(struct panfrost_batch *batch, void *rts,
          cfg.alpha_to_one = ctx->blend->base.alpha_to_one;
 #if PAN_ARCH >= 6
          if (!blend_shaders[i])
-            cfg.constant = pack_blend_constant(format, cons);
+            cfg.blend_constant = pack_blend_constant(format, cons);
 #else
          cfg.blend_shader = (blend_shaders[i] != 0);
 
          if (blend_shaders[i])
             cfg.shader_pc = blend_shaders[i];
          else
-            cfg.constant = cons;
+            cfg.blend_constant = cons;
 #endif
       }
 
@@ -1311,6 +1316,9 @@ panfrost_upload_sysvals(struct panfrost_batch *batch, void *ptr_cpu,
          break;
       case PAN_SYSVAL_DRAWID:
          uniforms[i].u[0] = batch->ctx->drawid;
+         break;
+      case PAN_SYSVAL_PRINTF_BUFFER:
+         uniforms[i].du[0] = batch->ctx->printf.bo->ptr.gpu;
          break;
       default:
          assert(0);
@@ -3930,6 +3938,10 @@ static void
 screen_destroy(struct pipe_screen *pscreen)
 {
    struct panfrost_device *dev = pan_device(pscreen);
+
+   ralloc_free((void *)dev->libpan);
+   glsl_type_singleton_decref();
+
    GENX(pan_fb_preload_cache_cleanup)(&dev->fb_preload_cache);
 }
 
@@ -4090,9 +4102,13 @@ GENX(panfrost_cmdstream_screen_init)(struct panfrost_screen *screen)
    (&dev->fb_preload_cache, panfrost_device_gpu_id(dev), &dev->blend_shaders,
     &screen->mempools.bin.base, &screen->mempools.desc.base);
 
-#if PAN_GPU_SUPPORTS_DISPATCH_INDIRECT
-   pan_indirect_dispatch_meta_init(
-      &dev->indirect_dispatch, panfrost_device_gpu_id(dev),
-      &screen->mempools.bin.base, &screen->mempools.desc.base);
-#endif
+   glsl_type_singleton_init_or_ref();
+
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)GENX(libpan_shaders_0_nir),
+                    sizeof(GENX(libpan_shaders_0_nir)));
+   dev->libpan =
+      nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
+
+   dev->precomp_cache = GENX(panfrost_precomp_cache_init)(screen);
 }

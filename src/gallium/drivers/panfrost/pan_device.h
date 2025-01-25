@@ -41,7 +41,6 @@
 #include "panfrost/util/pan_ir.h"
 #include "pan_blend.h"
 #include "pan_fb_preload.h"
-#include "pan_indirect_dispatch.h"
 #include "pan_pool.h"
 #include "pan_props.h"
 #include "pan_util.h"
@@ -49,6 +48,8 @@
 #include "kmod/pan_kmod.h"
 
 #include <genxml/gen_macros.h>
+
+#include "nir.h"
 
 #if defined(__cplusplus)
 extern "C" {
@@ -78,6 +79,8 @@ extern "C" {
 
 /* Fencepost problem, hence the off-by-one */
 #define NR_BO_CACHE_BUCKETS (MAX_BO_CACHE_BUCKET - MIN_BO_CACHE_BUCKET + 1)
+
+struct panfrost_precomp_cache;
 
 struct panfrost_device {
    /* For ralloc */
@@ -152,7 +155,6 @@ struct panfrost_device {
 
    struct pan_fb_preload_cache fb_preload_cache;
    struct pan_blend_shader_cache blend_shaders;
-   struct pan_indirect_dispatch_meta indirect_dispatch;
 
    /* Tiler heap shared across all tiler jobs, allocated against the
     * device since there's only a single tiler. Since this is invisible to
@@ -175,6 +177,9 @@ struct panfrost_device {
     * unconditionally on Bifrost, and useful for sharing with Midgard */
 
    struct panfrost_bo *sample_positions;
+
+   const struct nir_shader *libpan;
+   struct panfrost_precomp_cache *precomp_cache;
 };
 
 static inline int

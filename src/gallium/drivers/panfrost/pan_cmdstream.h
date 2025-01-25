@@ -40,7 +40,7 @@
 
 #include "util/u_prim.h"
 
-#define PAN_GPU_SUPPORTS_DISPATCH_INDIRECT (PAN_ARCH == 7 || PAN_ARCH >= 10)
+#define PAN_GPU_SUPPORTS_DISPATCH_INDIRECT (PAN_ARCH >= 7)
 #define PAN_GPU_SUPPORTS_DRAW_INDIRECT     (PAN_ARCH >= 10)
 
 struct panfrost_rasterizer {
@@ -168,7 +168,7 @@ panfrost_emit_primitive_size(struct panfrost_context *ctx, bool points,
       if (panfrost_writes_point_size(ctx)) {
          cfg.size_array = size_array;
       } else {
-         cfg.constant = points ? rast->base.point_size : rast->base.line_width;
+         cfg.fixed_sized = points ? rast->base.point_size : rast->base.line_width;
       }
    }
 }

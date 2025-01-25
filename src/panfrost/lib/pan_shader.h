@@ -35,7 +35,9 @@
 #include "genxml/gen_macros.h"
 
 void bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id);
+void bifrost_link_cl_library(nir_shader *nir, const nir_shader *library);
 void midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id);
+void midgard_link_cl_library(nir_shader *nir, const nir_shader *library);
 
 static inline void
 pan_shader_preprocess(nir_shader *nir, unsigned gpu_id)
@@ -44,6 +46,14 @@ pan_shader_preprocess(nir_shader *nir, unsigned gpu_id)
       bifrost_preprocess_nir(nir, gpu_id);
    else
       midgard_preprocess_nir(nir, gpu_id);
+}
+
+static inline void pan_link_cl_library(nir_shader *nir, const nir_shader *library, unsigned gpu_id)
+{
+   if (pan_arch(gpu_id) >= 6)
+      bifrost_link_cl_library(nir, library);
+   else
+      midgard_link_cl_library(nir, library);
 }
 
 static inline void

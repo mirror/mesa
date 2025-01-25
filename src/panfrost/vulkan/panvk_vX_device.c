@@ -21,6 +21,7 @@
 #include "panvk_instance.h"
 #include "panvk_macros.h"
 #include "panvk_physical_device.h"
+#include "panvk_precomp_cache.h"
 #include "panvk_priv_bo.h"
 #include "panvk_queue.h"
 #include "panvk_utrace.h"
@@ -29,9 +30,17 @@
 #include "genxml/decode.h"
 #include "genxml/gen_macros.h"
 
+#include "clc/panfrost_compile.h"
 #include "kmod/pan_kmod.h"
+#include "util/blob.h"
+#include "util/ralloc.h"
+#include "util/u_printf.h"
+#include "glsl_types.h"
+#include "libpan_shaders.h"
+#include "nir_serialize.h"
 #include "pan_props.h"
 #include "pan_samples.h"
+#include "pan_shader.h"
 
 static void *
 panvk_kmod_zalloc(const struct pan_kmod_allocator *allocator, size_t size,
@@ -154,6 +163,36 @@ panvk_meta_cleanup(struct panvk_device *device)
    vk_meta_device_finish(&device->vk, &device->meta);
 }
 
+static VkResult
+panvk_libpan_init(struct panvk_device *device)
+{
+   glsl_type_singleton_init_or_ref();
+
+   struct blob_reader blob;
+   blob_reader_init(&blob, (void *)GENX(libpan_shaders_0_nir),
+                    sizeof(GENX(libpan_shaders_0_nir)));
+   device->libpan =
+      nir_deserialize(NULL, GENX(pan_shader_get_compiler_options)(), &blob);
+
+   device->precomp_cache = panvk_per_arch(precomp_cache_init)(device);
+
+   if (device->precomp_cache == NULL) {
+      ralloc_free((void *)device->libpan);
+      glsl_type_singleton_decref();
+      return VK_ERROR_OUT_OF_HOST_MEMORY;
+   }
+
+   return VK_SUCCESS;
+}
+
+static void
+panvk_libpan_cleanup(struct panvk_device *device)
+{
+   panvk_per_arch(precomp_cache_cleanup)(device->precomp_cache);
+   ralloc_free((void *)device->libpan);
+   glsl_type_singleton_decref();
+}
+
 /* Always reserve the lower 32MB. */
 #define PANVK_VA_RESERVE_BOTTOM 0x2000000ull
 
@@ -254,9 +293,7 @@ panvk_per_arch(create_device)(struct panvk_physical_device *physical_device,
    device->vk.command_dispatch_table = &device->cmd_dispatch;
    device->vk.command_buffer_ops = &panvk_per_arch(cmd_buffer_ops);
    device->vk.shader_ops = &panvk_per_arch(device_shader_ops);
-#if PAN_ARCH >= 10
    device->vk.check_status = panvk_per_arch(device_check_status);
-#endif
 
    device->kmod.allocator = (struct pan_kmod_allocator){
       .zalloc = panvk_kmod_zalloc,
@@ -324,11 +361,24 @@ panvk_per_arch(create_device)(struct panvk_physical_device *physical_device,
       goto err_free_priv_bos;
 #endif
 
+   result = panvk_priv_bo_create(device, LIBPAN_PRINTF_BUFFER_SIZE, 0,
+                                 VK_SYSTEM_ALLOCATION_SCOPE_DEVICE,
+                                 &device->printf.bo);
+   if (result != VK_SUCCESS)
+      goto err_free_priv_bos;
+
+   u_printf_init(&device->printf.ctx, device->printf.bo,
+                 device->printf.bo->addr.host);
+
    vk_device_set_drm_fd(&device->vk, device->kmod.dev->fd);
+
+   result = panvk_libpan_init(device);
+   if (result != VK_SUCCESS)
+      goto err_free_priv_bos;
 
    result = panvk_meta_init(device);
    if (result != VK_SUCCESS)
-      goto err_free_priv_bos;
+      goto err_free_libpan;
 
    for (unsigned i = 0; i < pCreateInfo->queueCreateInfoCount; i++) {
       const VkDeviceQueueCreateInfo *queue_create =
@@ -378,7 +428,12 @@ err_finish_queues:
 
    panvk_meta_cleanup(device);
 
+err_free_libpan:
+   panvk_libpan_cleanup(device);
 err_free_priv_bos:
+   if (device->printf.bo)
+      u_printf_destroy(&device->printf.ctx);
+   panvk_priv_bo_unref(device->printf.bo);
    panvk_priv_bo_unref(device->tiler_oom.handlers_bo);
    panvk_priv_bo_unref(device->sample_positions);
    panvk_priv_bo_unref(device->tiler_heap);
@@ -414,7 +469,10 @@ panvk_per_arch(destroy_device)(struct panvk_device *device,
          vk_free(&device->vk.alloc, device->queues[i]);
    }
 
+   panvk_libpan_cleanup(device);
    panvk_meta_cleanup(device);
+   u_printf_destroy(&device->printf.ctx);
+   panvk_priv_bo_unref(device->printf.bo);
    panvk_priv_bo_unref(device->tiler_oom.handlers_bo);
    panvk_priv_bo_unref(device->tiler_heap);
    panvk_priv_bo_unref(device->sample_positions);

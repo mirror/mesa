@@ -210,7 +210,9 @@ static void si_destroy_context(struct pipe_context *context)
       si_destroy_sqtt(sctx);
    }
 
+#ifdef HAVE_PERFETTO
    si_utrace_fini(sctx);
+#endif
 
    pipe_resource_reference(&sctx->esgs_ring, NULL);
    pipe_resource_reference(&sctx->gsvs_ring, NULL);
@@ -809,7 +811,9 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
       sctx->shader.gs.key.ge.opt.prefer_mono = 1;
    }
 
+#ifdef HAVE_PERFETTO
    si_utrace_init(sctx);
+#endif
 
    si_begin_new_gfx_cs(sctx, true);
    assert(sctx->gfx_cs.current.cdw == sctx->initial_gfx_cs_size);
@@ -1588,7 +1592,9 @@ struct pipe_screen *radeonsi_screen_create(int fd, const struct pipe_screen_conf
       }
    }
 
+#ifdef HAVE_PERFETTO
    si_driver_ds_init();
+#endif
 
    drmFreeVersion(version);
    return rw ? rw->screen : NULL;

@@ -673,11 +673,12 @@ _va_drivers = [
   with_gallium_r600,
   with_gallium_radeonsi,
   with_gallium_virgl,
+  with_gallium_zink,
 ]
 
 _va = get_option('gallium-va') \
   .require(_va_drivers.contains(true),
-           error_message : 'VA state tracker requires at least one of the following gallium drivers: r600, radeonsi, nouveau, d3d12 (with option gallium-d3d12-video), virgl.')
+           error_message : 'VA state tracker requires at least one of the following gallium drivers: r600, radeonsi, nouveau, zink, d3d12 (with option gallium-d3d12-video), virgl.')
 _dep_va_name = host_machine.system() == 'windows' ? 'libva-win32' : 'libva'
 dep_va = dependency(_dep_va_name, version : '>= 1.8.0', required : _va)
 if dep_va.found()

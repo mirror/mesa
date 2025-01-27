@@ -37,6 +37,7 @@
 #include "util/u_rect.h"
 #include "util/u_surface.h"
 #include "util/u_helpers.h"
+#include "tgsi/tgsi_text.h"
 
 static inline bool
 scissor_states_equal(const struct pipe_scissor_state *a, const struct pipe_scissor_state *b)
@@ -609,6 +610,159 @@ zink_clear_buffer(struct pipe_context *pctx,
    pipe_buffer_unmap(pctx, xfer);
 }
 
+static void *si_clear_render_target_shader(struct pipe_context *ctx)
+{
+   static const char text[] =
+      "COMP\n"
+      "PROPERTY CS_FIXED_BLOCK_WIDTH 8\n"
+      "PROPERTY CS_FIXED_BLOCK_HEIGHT 8\n"
+      "PROPERTY CS_FIXED_BLOCK_DEPTH 1\n"
+      "DCL SV[0], THREAD_ID\n"
+      "DCL SV[1], BLOCK_ID\n"
+      "DCL IMAGE[0], 2D, PIPE_FORMAT_R32G32B32A32_FLOAT, WR\n"
+      "DCL IMAGE[1], 2D, PIPE_FORMAT_R32G32B32A32_FLOAT, WR\n"
+      "DCL CONST[0][0..1]\n" // 0:xyzw 1:xyzw
+      "DCL TEMP[0..3], LOCAL\n"
+      "IMM[0] UINT32 {8, 1, 0, 0}\n"
+      "MOV TEMP[0].xyz, CONST[0][0].xyzw\n"
+      "UMAD TEMP[1].xyz, SV[1].xyzz, IMM[0].xxyy, SV[0].xyzz\n"
+      "UADD TEMP[2].xyz, TEMP[1].xyzx, TEMP[0].xyzx\n"
+      "MOV TEMP[3].xyzw, CONST[0][1].xyzw\n"
+      "STORE IMAGE[0], TEMP[2].xyzz, TEMP[3], 2D, PIPE_FORMAT_R32G32B32A32_FLOAT\n"
+      "STORE IMAGE[1], TEMP[2].xyzz, TEMP[3], 2D, PIPE_FORMAT_R32G32B32A32_FLOAT\n"
+      "END\n";
+
+   struct tgsi_token tokens[1024];
+   struct pipe_compute_state state = {0};
+
+   if (!tgsi_text_translate(text, tokens, ARRAY_SIZE(tokens))) {
+      assert(false);
+      return NULL;
+   }
+
+   state.ir_type = PIPE_SHADER_IR_TGSI;
+   state.prog = tokens;
+
+   return ctx->create_compute_state(ctx, &state);
+}
+/* TODO: Didn't really test 1D_ARRAY */
+static void *si_clear_render_target_shader_1d_array(struct pipe_context *ctx)
+{
+   static const char text[] =
+      "COMP\n"
+      "PROPERTY CS_FIXED_BLOCK_WIDTH 64\n"
+      "PROPERTY CS_FIXED_BLOCK_HEIGHT 1\n"
+      "PROPERTY CS_FIXED_BLOCK_DEPTH 1\n"
+      "DCL SV[0], THREAD_ID\n"
+      "DCL SV[1], BLOCK_ID\n"
+      "DCL IMAGE[0], 1D_ARRAY, PIPE_FORMAT_R32G32B32A32_FLOAT, WR\n"
+      "DCL CONST[0][0..1]\n" // 0:xyzw 1:xyzw
+      "DCL TEMP[0..3], LOCAL\n"
+      "IMM[0] UINT32 {64, 1, 0, 0}\n"
+      "MOV TEMP[0].xy, CONST[0][0].xzzw\n"
+      "UMAD TEMP[1].xy, SV[1].xyzz, IMM[0].xyyy, SV[0].xyzz\n"
+      "UADD TEMP[2].xy, TEMP[1].xyzx, TEMP[0].xyzx\n"
+      "MOV TEMP[3].xyzw, CONST[0][1].xyzw\n"
+      "STORE IMAGE[0], TEMP[2].xyzz, TEMP[3], 1D_ARRAY, PIPE_FORMAT_R32G32B32A32_FLOAT\n"
+      "END\n";
+
+   struct tgsi_token tokens[1024];
+   struct pipe_compute_state state = {0};
+
+   if (!tgsi_text_translate(text, tokens, ARRAY_SIZE(tokens))) {
+      assert(false);
+      return NULL;
+   }
+
+   state.ir_type = PIPE_SHADER_IR_TGSI;
+   state.prog = tokens;
+
+   return ctx->create_compute_state(ctx, &state);
+}
+static void
+clear_compute(struct pipe_context *pctx, struct pipe_surface *dst,
+              const union pipe_color_union *color, unsigned dstx,
+              unsigned dsty, unsigned width, unsigned height,
+              bool render_condition_enabled)
+{
+   struct zink_context *ctx = zink_context(pctx);
+   unsigned num_layers = dst->u.tex.last_layer - dst->u.tex.first_layer + 1;
+   unsigned data[4 + sizeof(color->ui)] = {dstx, dsty, dst->u.tex.first_layer, 0};
+   if (util_format_is_srgb(dst->format)) {
+      union pipe_color_union color_srgb;
+      for (int i = 0; i < 3; i++)
+         color_srgb.f[i] = util_format_linear_to_srgb_float(color->f[i]);
+      color_srgb.f[3] = color->f[3];
+      memcpy(data + 4, color_srgb.ui, sizeof(color->ui));
+   } else {
+      memcpy(data + 4, color->ui, sizeof(color->ui));
+   }
+
+   struct pipe_constant_buffer saved_cb = {0};
+   memcpy(&saved_cb, &ctx->ubos[PIPE_SHADER_COMPUTE][0], sizeof(struct pipe_constant_buffer));
+   pipe_reference(NULL, &saved_cb.buffer->reference);
+
+   struct pipe_image_view saved_images[3] = {0};
+   unsigned num_planes = util_format_get_num_planes(dst->texture->format);
+   for (unsigned i = 0; i < num_planes; i++)
+      util_copy_image_view(&saved_images[i], &ctx->image_views[PIPE_SHADER_COMPUTE][i].base);
+
+   struct pipe_constant_buffer cb = {0};
+   cb.buffer_size = sizeof(data);
+   cb.user_buffer = data;
+   pctx->set_constant_buffer(pctx, PIPE_SHADER_COMPUTE, 0, false, &cb);
+
+   struct pipe_image_view image[3] = {0};
+   assert(num_planes == 1 || dst->u.tex.level == 0);
+   for (unsigned i = 0; i < num_planes; i++) {
+      image[i].resource = dst->texture;
+      image[i].shader_access = image[i].access = PIPE_IMAGE_ACCESS_WRITE;
+      image[i].format = util_format_linear(dst->format);
+      image[i].u.tex.level = num_planes == 1 ? dst->u.tex.level : i;
+      image[i].u.tex.first_layer = 0; /* 3D images ignore first_layer (BASE_ARRAY) */
+      image[i].u.tex.last_layer = dst->u.tex.last_layer;
+   }
+
+   pctx->set_shader_images(pctx, PIPE_SHADER_COMPUTE, 0, num_planes, 0, image);
+
+   struct pipe_grid_info info = {0};
+   void *shader;
+
+   if (dst->texture->target != PIPE_TEXTURE_1D_ARRAY) {
+      if (!ctx->cs_clear_render_target)
+         ctx->cs_clear_render_target = si_clear_render_target_shader(pctx);
+      shader = ctx->cs_clear_render_target;
+
+      info.block[0] = 8;
+      info.last_block[0] = width % 8;
+      info.block[1] = 8;
+      info.last_block[1] = height % 8;
+      info.block[2] = 1;
+      info.grid[0] = DIV_ROUND_UP(width, 8);
+      info.grid[1] = DIV_ROUND_UP(height, 8);
+      info.grid[2] = num_layers;
+   } else {
+      if (!ctx->cs_clear_render_target_1d_array)
+         ctx->cs_clear_render_target_1d_array = si_clear_render_target_shader_1d_array(pctx);
+      shader = ctx->cs_clear_render_target_1d_array;
+
+      info.block[0] = 64;
+      info.last_block[0] = width % 64;
+      info.block[1] = 1;
+      info.block[2] = 1;
+      info.grid[0] = DIV_ROUND_UP(width, 64);
+      info.grid[1] = num_layers;
+      info.grid[2] = 1;
+   }
+
+   zink_compute_internal(ctx, &info, shader, render_condition_enabled);
+
+   pctx->set_shader_images(pctx, PIPE_SHADER_COMPUTE, 0, num_planes, 0, saved_images);
+   pctx->set_constant_buffer(pctx, PIPE_SHADER_COMPUTE, 0, true, &saved_cb);
+   for (unsigned i = 0; i < num_planes; i++)
+      pipe_resource_reference(&saved_images[i].resource, NULL);
+}
+
 void
 zink_clear_render_target(struct pipe_context *pctx, struct pipe_surface *dst,
                          const union pipe_color_union *color, unsigned dstx,
@@ -616,6 +770,16 @@ zink_clear_render_target(struct pipe_context *pctx, struct pipe_surface *dst,
                          bool render_condition_enabled)
 {
    struct zink_context *ctx = zink_context(pctx);
+   if (width == 0 || height == 0)
+      return;
+   if (zink_resource(dst->texture)->plane > 0)
+      return;
+   if (!zink_resource(dst->texture)->obj->render_target) {
+      /* should only be hit by video */
+      if (dst->texture->bind & PIPE_BIND_SHADER_IMAGE)
+         clear_compute(pctx, dst, color, dstx, dsty, width, height, render_condition_enabled);
+      return;
+   }
    bool render_condition_active = ctx->render_condition_active;
    if (!render_condition_enabled && render_condition_active) {
       zink_stop_conditional_render(ctx);

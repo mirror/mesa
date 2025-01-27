@@ -143,12 +143,17 @@ zink_reset_batch_state(struct zink_context *ctx, struct zink_batch_state *bs)
       zink_program_reference(screen, &pg, NULL);
    }
 
+   if (bs->video_params)
+      VKSCR(DestroyVideoSessionParametersKHR)(screen->dev, bs->video_params, NULL);
+   bs->video_params = VK_NULL_HANDLE;
+
    bs->resource_size = 0;
    bs->signal_semaphore = VK_NULL_HANDLE;
    bs->sparse_semaphore = VK_NULL_HANDLE;
    util_dynarray_clear(&bs->wait_semaphore_stages);
 
    bs->present = VK_NULL_HANDLE;
+   bs->copy_context_semaphore = VK_NULL_HANDLE;
    /* check the arrays first to avoid locking unnecessarily */
    if (util_dynarray_contains(&bs->acquires, VkSemaphore) || util_dynarray_contains(&bs->wait_semaphores, VkSemaphore) || util_dynarray_contains(&bs->tracked_semaphores, VkSemaphore)) {
       simple_mtx_lock(&screen->semaphores_lock);
@@ -331,9 +336,10 @@ create_batch_state(struct zink_context *ctx)
 {
    struct zink_screen *screen = zink_screen(ctx->base.screen);
    struct zink_batch_state *bs = rzalloc(NULL, struct zink_batch_state);
+   bs->ctx = ctx;
    VkCommandPoolCreateInfo cpci = {0};
    cpci.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-   cpci.queueFamilyIndex = screen->gfx_queue;
+   cpci.queueFamilyIndex = bs->ctx->flags & PIPE_CONTEXT_VIDEO ? screen->video_decode_queue : screen->gfx_queue;
    VkResult result;
 
    VRAM_ALLOC_LOOP(result,
@@ -382,8 +388,6 @@ create_batch_state(struct zink_context *ctx)
 #define SET_CREATE_OR_FAIL(ptr) \
    if (!_mesa_set_init(ptr, bs, _mesa_hash_pointer, _mesa_key_pointer_equal)) \
       goto fail
-
-   bs->ctx = ctx;
 
    SET_CREATE_OR_FAIL(&bs->programs);
    SET_CREATE_OR_FAIL(&bs->active_queries);
@@ -579,7 +583,7 @@ zink_start_batch(struct zink_context *ctx)
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(ctx->flags & ZINK_CONTEXT_COPY_ONLY))
       zink_batch_bind_db(ctx);
    /* zero init for unordered blits */
-   if (screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
+   if (!(ctx->flags & PIPE_CONTEXT_VIDEO) && screen->info.have_EXT_attachment_feedback_loop_dynamic_state) {
       VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->bs->cmdbuf, 0);
       VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->bs->reordered_cmdbuf, 0);
       VKCTX(CmdSetAttachmentFeedbackLoopEnableEXT)(ctx->bs->unsynchronized_cmdbuf, 0);
@@ -680,6 +684,11 @@ submit_queue(void *data, void *gdata, int thread_index)
       cmdbufs[c++] = bs->cmdbuf;
    si[ZINK_SUBMIT_CMDBUF].pCommandBuffers = cmdbufs;
    si[ZINK_SUBMIT_CMDBUF].commandBufferCount = c;
+
+   /* this only needs to be added for the submit call */
+   if (bs->copy_context_semaphore)
+      util_dynarray_append(&bs->signal_semaphores, VkSemaphore, bs->copy_context_semaphore);
+
    /* assorted signal submit from wsi/externals */
    si[ZINK_SUBMIT_CMDBUF].signalSemaphoreCount = util_dynarray_num_elements(&bs->signal_semaphores, VkSemaphore);
    si[ZINK_SUBMIT_CMDBUF].pSignalSemaphores = bs->signal_semaphores.data;
@@ -751,20 +760,27 @@ submit_queue(void *data, void *gdata, int thread_index)
 
    simple_mtx_lock(&screen->queue_lock);
    VRAM_ALLOC_LOOP(result,
-      VKSCR(QueueSubmit)(screen->queue, num_si, submit, VK_NULL_HANDLE),
+      VKSCR(QueueSubmit)(bs->ctx->flags & PIPE_CONTEXT_VIDEO ? screen->queue_video_decode : screen->queue, num_si, submit, VK_NULL_HANDLE),
       if (result != VK_SUCCESS) {
          mesa_loge("ZINK: vkQueueSubmit failed (%s)", vk_Result_to_str(result));
          bs->is_device_lost = true;
       }
    );
+   /* FIXME: delet this */
+   if (bs->ctx->flags & PIPE_CONTEXT_VIDEO)
+      screen->VIDEO_PRESENT_HACK = true;
    simple_mtx_unlock(&screen->queue_lock);
+
+   if (bs->copy_context_semaphore)
+      util_dynarray_pop(&bs->signal_semaphores, VkSemaphore);
 
    unsigned i = 0;
    VkSemaphore *sem = bs->signal_semaphores.data;
    set_foreach(&bs->dmabuf_exports, entry) {
       struct zink_resource *res = (void*)entry->key;
-      for (; res; res = zink_resource(res->base.b.next))
+      for (; res; res = zink_resource(res->base.b.next)) {
          zink_screen_import_dmabuf_semaphore(screen, res, sem[i++]);
+      }
 
       struct pipe_resource *pres = (void*)entry->key;
       pipe_resource_reference(&pres, NULL);
@@ -1140,4 +1156,15 @@ void
 zink_batch_usage_try_wait(struct zink_context *ctx, struct zink_batch_usage *u)
 {
    batch_usage_wait(ctx, u, true);
+}
+
+void
+zink_batch_sync_with_copy_context(struct zink_context *ctx)
+{
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
+   /* this gets temporarily appended to signal_semaphores during submit */
+   screen->copy_context->bs->copy_context_semaphore = zink_create_semaphore(screen);
+   VkPipelineStageFlags flag = VK_PIPELINE_STAGE_ALL_COMMANDS_BIT;
+   util_dynarray_append(&ctx->bs->wait_semaphores, VkSemaphore, screen->copy_context->bs->copy_context_semaphore);
+   util_dynarray_append(&ctx->bs->wait_semaphore_stages, VkPipelineStageFlags, flag);
 }

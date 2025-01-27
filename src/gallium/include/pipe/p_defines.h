@@ -394,6 +394,11 @@ enum pipe_flush_flags
  */
 #define PIPE_CONTEXT_PROTECTED         (1 << 7)
 
+/** 
+ * create a context to be used by video frontends
+ */
+#define PIPE_CONTEXT_VIDEO         (1 << 8)
+
 /**
  * Create a context that does not use sampler LOD bias. If this is set, the
  * frontend MUST set pipe_sampler_state::lod_bias to 0.0f for all samplers used

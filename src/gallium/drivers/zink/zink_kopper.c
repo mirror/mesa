@@ -743,6 +743,9 @@ kopper_present(void *data, void *gdata, int thread_idx)
       cpi->info.pWaitSemaphores = NULL;
       cpi->info.waitSemaphoreCount = 0;
    }
+   /* FIXME: delet this */
+   if (screen->VIDEO_PRESENT_HACK)
+      VKSCR(QueueWaitIdle)(screen->queue);
    VkResult error2 = VKSCR(QueuePresentKHR)(screen->queue, &cpi->info);
    zink_screen_debug_marker_end(screen, screen->frame_marker_emitted);
    zink_screen_debug_marker_begin(screen, "frame");

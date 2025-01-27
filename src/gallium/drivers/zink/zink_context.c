@@ -37,6 +37,7 @@
 #include "zink_screen.h"
 #include "zink_state.h"
 #include "zink_surface.h"
+#include "zink_video.h"
 
 
 #include "nir/pipe_nir.h"
@@ -230,6 +231,11 @@ zink_context_destroy(struct pipe_context *pctx)
 
    hash_table_foreach(&ctx->framebuffer_cache, he)
       zink_destroy_framebuffer(screen, he->data);
+
+   if (ctx->cs_clear_render_target)
+      pctx->delete_compute_state(pctx, ctx->cs_clear_render_target);
+   if (ctx->cs_clear_render_target_1d_array)
+      pctx->delete_compute_state(pctx, ctx->cs_clear_render_target_1d_array);
 
    hash_table_foreach(ctx->render_pass_cache, he)
       zink_destroy_render_pass(screen, he->data);
@@ -3528,6 +3534,37 @@ zink_reset_ds3_states(struct zink_context *ctx)
 }
 
 static void
+reset_graphics_states(struct zink_context *ctx)
+{
+   struct zink_screen *screen = zink_screen(ctx->base.screen);
+   if (screen->info.have_EXT_transform_feedback && ctx->num_so_targets)
+      ctx->dirty_so_targets = true;
+   ctx->pipeline_changed[0] = ctx->pipeline_changed[1] = true;
+   zink_select_draw_vbo(ctx);
+   zink_select_launch_grid(ctx);
+
+   if (ctx->oom_stall)
+      stall(ctx);
+   zink_reset_ds3_states(ctx);
+
+   ctx->oom_flush = false;
+   ctx->oom_stall = false;
+   ctx->dd.bindless_bound = false;
+   ctx->di.bindless_refs_dirty = true;
+   ctx->sample_locations_changed = ctx->gfx_pipeline_state.sample_locations_enabled;
+   if (screen->info.dynamic_state2_feats.extendedDynamicState2PatchControlPoints) {
+      VKCTX(CmdSetPatchControlPointsEXT)(ctx->bs->cmdbuf, ctx->gfx_pipeline_state.dyn_state2.vertices_per_patch);
+      VKCTX(CmdSetPatchControlPointsEXT)(ctx->bs->reordered_cmdbuf, 1);
+   }
+   update_feedback_loop_dynamic_state(ctx);
+   if (screen->info.have_EXT_color_write_enable)
+      reapply_color_write(ctx);
+   update_layered_rendering_state(ctx);
+   tc_renderpass_info_reset(&ctx->dynamic_fb.tc_info);
+   ctx->rp_tc_info_updated = true;
+}
+
+static void
 flush_batch(struct zink_context *ctx, bool sync)
 {
    assert(!ctx->unordered_blitting);
@@ -3547,33 +3584,9 @@ flush_batch(struct zink_context *ctx, bool sync)
    if (ctx->bs->is_device_lost) {
       check_device_lost(ctx);
    } else {
-      struct zink_screen *screen = zink_screen(ctx->base.screen);
       zink_start_batch(ctx);
-      if (screen->info.have_EXT_transform_feedback && ctx->num_so_targets)
-         ctx->dirty_so_targets = true;
-      ctx->pipeline_changed[0] = ctx->pipeline_changed[1] = true;
-      zink_select_draw_vbo(ctx);
-      zink_select_launch_grid(ctx);
-
-      if (ctx->oom_stall)
-         stall(ctx);
-      zink_reset_ds3_states(ctx);
-
-      ctx->oom_flush = false;
-      ctx->oom_stall = false;
-      ctx->dd.bindless_bound = false;
-      ctx->di.bindless_refs_dirty = true;
-      ctx->sample_locations_changed = ctx->gfx_pipeline_state.sample_locations_enabled;
-      if (zink_screen(ctx->base.screen)->info.dynamic_state2_feats.extendedDynamicState2PatchControlPoints) {
-         VKCTX(CmdSetPatchControlPointsEXT)(ctx->bs->cmdbuf, ctx->gfx_pipeline_state.dyn_state2.vertices_per_patch);
-         VKCTX(CmdSetPatchControlPointsEXT)(ctx->bs->reordered_cmdbuf, 1);
-      }
-      update_feedback_loop_dynamic_state(ctx);
-      if (screen->info.have_EXT_color_write_enable)
-         reapply_color_write(ctx);
-      update_layered_rendering_state(ctx);
-      tc_renderpass_info_reset(&ctx->dynamic_fb.tc_info);
-      ctx->rp_tc_info_updated = true;
+      if (!(ctx->flags & PIPE_CONTEXT_VIDEO))
+         reset_graphics_states(ctx);
    }
    util_queue_fence_signal(&ctx->flush_fence);
 }
@@ -5261,7 +5274,7 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
    struct zink_screen *screen = zink_screen(pscreen);
    struct zink_context *ctx = rzalloc(NULL, struct zink_context);
    bool is_copy_only = (flags & ZINK_CONTEXT_COPY_ONLY) > 0;
-   bool is_compute_only = (flags & PIPE_CONTEXT_COMPUTE_ONLY) > 0;
+   bool is_compute_only = (flags & (PIPE_CONTEXT_COMPUTE_ONLY | PIPE_CONTEXT_VIDEO)) > 0;
    bool is_robust = (flags & PIPE_CONTEXT_ROBUST_BUFFER_ACCESS) > 0;
    if (!ctx)
       goto fail;
@@ -5450,6 +5463,8 @@ zink_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
       if (!zink_descriptors_init(ctx))
          goto fail;
    }
+
+   zink_video_init(ctx);
 
    if (!is_copy_only && !is_compute_only) {
       ctx->base.create_texture_handle = zink_create_texture_handle;
@@ -5786,4 +5801,19 @@ zink_cmd_debug_marker_end(struct zink_context *ctx, VkCommandBuffer cmdbuf, bool
 {
    if (emitted)
       VKCTX(CmdEndDebugUtilsLabelEXT)(cmdbuf);
+}
+
+void
+zink_compute_internal(struct zink_context *ctx, struct pipe_grid_info *info, void *shader, bool render_condition)
+{
+   /* Dispatch compute. */
+   void *saved_cs = ctx->curr_compute;
+   if (!render_condition && ctx->render_condition_active)
+      zink_stop_conditional_render(ctx);
+   ctx->base.bind_compute_state(&ctx->base, shader);
+   ctx->base.launch_grid(&ctx->base, info);
+   ctx->base.bind_compute_state(&ctx->base, saved_cs);
+
+   if (!render_condition && ctx->render_condition_active)
+      zink_start_conditional_render(ctx);
 }

@@ -905,7 +905,7 @@ util_writes_depth_stencil(const struct pipe_depth_stencil_alpha_state *zsa)
 static inline struct pipe_context *
 pipe_create_multimedia_context(struct pipe_screen *screen, bool compute_only)
 {
-   unsigned flags = 0;
+   unsigned flags = PIPE_CONTEXT_VIDEO;
 
    if (!screen->caps.graphics && !screen->caps.compute)
       flags |= PIPE_CONTEXT_MEDIA_ONLY;

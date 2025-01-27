@@ -593,6 +593,7 @@ struct zink_batch_state {
    VkCommandBuffer reordered_cmdbuf;
    VkCommandPool unsynchronized_cmdpool;
    VkCommandBuffer unsynchronized_cmdbuf;
+   VkSemaphore copy_context_semaphore; //reusable signal semaphore for copy context sync
    VkSemaphore signal_semaphore; //external signal semaphore
    struct util_dynarray signal_semaphores; //external signal semaphores
    struct util_dynarray wait_semaphores; //external wait semaphores
@@ -603,6 +604,8 @@ struct zink_batch_state {
    VkSemaphore sparse_semaphore; //current sparse wait semaphore
    struct util_dynarray fences; //zink_tc_fence refs
    simple_mtx_t ref_lock;
+
+   VkVideoSessionParametersKHR video_params;
 
    VkSemaphore present;
    struct zink_resource *swapchain;
@@ -1351,6 +1354,7 @@ struct zink_resource {
    bool dmabuf;
    unsigned dt_stride;
 
+   uint8_t plane;
    uint8_t modifiers_count;
    uint64_t *modifiers;
 };
@@ -1382,6 +1386,11 @@ struct zink_format_props {
    VkFormatFeatureFlags2 bufferFeatures;
 };
 
+struct zink_video_format_prop {
+   uint32_t videoFormatPropertyCount;
+   VkVideoFormatPropertiesKHR *pVideoFormatProperties;
+};
+
 struct zink_screen {
    struct pipe_screen base;
 
@@ -1392,6 +1401,8 @@ struct zink_screen {
    PFN_vkGetInstanceProcAddr vk_GetInstanceProcAddr;
    PFN_vkGetDeviceProcAddr vk_GetDeviceProcAddr;
 
+   /* FIXME: delet this */
+   bool VIDEO_PRESENT_HACK; //somehow implicit sync is broken with video decode on anv?
    bool threaded;
    bool threaded_submit;
    bool is_cpu;
@@ -1487,12 +1498,14 @@ struct zink_screen {
    bool can_hic_shader_read;
 
    uint32_t gfx_queue;
+   uint32_t video_decode_queue;
    uint32_t sparse_queue;
    uint32_t max_queues;
    uint32_t timestamp_valid_bits;
    VkDevice dev;
    VkQueue queue; //gfx+compute
    VkQueue queue_sparse;
+   VkQueue queue_video_decode; //video decode
    simple_mtx_t queue_lock;
    VkDebugUtilsMessengerEXT debugUtilsCallbackHandle;
 
@@ -1560,6 +1573,10 @@ struct zink_screen {
       unsigned z16_unscaled_bias;
       unsigned z24_unscaled_bias;
    } driver_workarounds;
+
+   VkImageUsageFlags video_output_usage;
+   struct zink_video_format_prop video_format_prop_dpb;
+   struct zink_video_format_prop video_format_prop_output;
 };
 
 static inline struct zink_screen *
@@ -1844,6 +1861,8 @@ struct zink_context {
 
    struct zink_descriptor_data dd;
 
+   struct zink_shader *cs_clear_render_target;
+   struct zink_shader *cs_clear_render_target_1d_array;
    struct zink_compute_pipeline_state compute_pipeline_state;
    struct zink_compute_program *curr_compute;
 

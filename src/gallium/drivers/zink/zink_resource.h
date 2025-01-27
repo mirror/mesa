@@ -32,7 +32,10 @@
 #define ZINK_BIND_MUTABLE (1u << 28)
 #define ZINK_BIND_DMABUF (1u << 29)
 #define ZINK_BIND_TRANSIENT (1u << 30) //transient fb attachment
-#define ZINK_BIND_VIDEO (1u << 31)
+#define ZINK_BIND_VIDEO (1u << 31) //from video frontend
+#define ZINK_RESOURCE_FLAG_VIDEO_DPB (PIPE_RESOURCE_FLAG_DRV_PRIV << 0) //separate video buffer
+#define ZINK_RESOURCE_FLAG_VIDEO_OUTPUT (PIPE_RESOURCE_FLAG_DRV_PRIV << 1) //separate video buffer
+#define ZINK_RESOURCE_FLAG_INTERNAL_ONLY (PIPE_RESOURCE_FLAG_DRV_PRIV << 2)
 
 #ifdef __cplusplus
 extern "C" {

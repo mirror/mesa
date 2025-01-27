@@ -301,6 +301,9 @@ zink_buffer_view_reference(struct zink_screen *screen,
       zink_destroy_buffer_view(screen, old_dst);
    if (dst) *dst = src;
 }
+
+void
+zink_compute_internal(struct zink_context *ctx, struct pipe_grid_info *info, void *shader, bool render_condition);
 #endif
 
 #endif

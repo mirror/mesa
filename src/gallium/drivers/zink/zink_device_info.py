@@ -330,6 +330,9 @@ EXTENSIONS = [
     Extension("VK_KHR_shader_float_controls",
               alias="float_controls"),
     Extension("VK_KHR_format_feature_flags2"),
+    Extension("VK_KHR_video_queue"),
+    Extension("VK_KHR_video_decode_queue"),
+    Extension("VK_KHR_video_decode_h264"),
 ]
 
 # constructor: Versions(device_version(major, minor, patch), struct_version(major, minor))

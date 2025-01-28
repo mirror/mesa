@@ -127,6 +127,8 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "api_save.h"
 #include <stdbool.h>
 
+#define VBO_SAVE_SHARED_BUFFER_SIZE (VBO_SAVE_BUFFER_SIZE * 0.25)
+
 /* An interesting VBO number/name to help with debugging */
 #define VBO_BUF_ID  12345
 
@@ -878,7 +880,7 @@ compile_vertex_list(struct gl_context *ctx)
    uint32_t upload_offset = 0, reuse_range_start = 0;
    ASSERTED bool shared_buffer;
 
-   if (save->free_bo_pool && total_bytes_needed < VBO_SAVE_BUFFER_SIZE) {
+   if (save->free_bo_pool && total_bytes_needed < VBO_SAVE_SHARED_BUFFER_SIZE) {
       uint32_t hole_bit_count = 0;
       uint32_t start_in_bo;
 
@@ -919,8 +921,13 @@ compile_vertex_list(struct gl_context *ctx)
    }
 
    if (bo == NULL) {
+      /* Suballocating only small enough buffers from a larger buffer wastes
+       * less memory than rounding up all buffers smaller than
+       * VBO_SAVE_BUFFER_SIZE to VBO_SAVE_BUFFER_SIZE.
+       * "small enough" has been determined empirically.
+       */
       int size;
-      if (total_bytes_needed < VBO_SAVE_BUFFER_SIZE) {
+      if (total_bytes_needed < VBO_SAVE_SHARED_BUFFER_SIZE) {
          size = VBO_SAVE_BUFFER_SIZE;
          shared_buffer = true;
       } else {

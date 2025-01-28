@@ -560,12 +560,11 @@ populate_wm_prog_key(struct anv_pipeline_stage *stage,
   key->null_push_constant_tbimr_workaround =
      device->info->needs_null_push_constant_tbimr_workaround;
 
-   /* Key values were carefully chose to match Vulkan */
    key->vk_conservative =
       BITSET_TEST(dynamic, MESA_VK_DYNAMIC_RS_CONSERVATIVE_MODE) ?
-         VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT :
-         rs ? rs->conservative_mode :
-            VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT;
+         INTEL_SOMETIMES :
+         rs && rs->conservative_mode != VK_CONSERVATIVE_RASTERIZATION_MODE_DISABLED_EXT ?
+            INTEL_ALWAYS : INTEL_NEVER;
    const unsigned samples = ms ? ms->rasterization_samples : 1;
    key->conservative_sample_mask = BITFIELD_MASK(samples);
    if (ms && ms->sample_mask)
@@ -624,6 +623,16 @@ anv_graphics_pipeline_stage_fragment_dynamic(const struct anv_pipeline_stage *st
           stage->key.wm.multisample_fbo == INTEL_SOMETIMES ||
           stage->key.wm.alpha_to_coverage == INTEL_SOMETIMES;
 }
+
+static bool
+anv_graphics_pipeline_stage_conservative_dynamic(const struct anv_pipeline_stage *stage)
+{
+   if (stage->stage != MESA_SHADER_FRAGMENT)
+      return false;
+
+   return stage->key.wm.vk_conservative == INTEL_SOMETIMES;
+}
+
 
 static void
 anv_pipeline_hash_common(struct mesa_sha1 *ctx,
@@ -1061,6 +1070,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    NIR_PASS_V(nir, anv_nir_compute_push_layout,
               pdevice, stage->key.base.robust_flags,
               anv_graphics_pipeline_stage_fragment_dynamic(stage),
+              anv_graphics_pipeline_stage_conservative_dynamic(stage),
               prog_data, &stage->bind_map, &push_map,
               pipeline->layout.type, mem_ctx);
 

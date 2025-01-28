@@ -380,8 +380,8 @@ struct brw_wm_prog_key {
    bool coarse_pixel:1;
    bool null_push_constant_tbimr_workaround:1;
 
-   /* 0: None, 1: over-estimate, 2: under-estimate */
-   unsigned vk_conservative:2;
+   /* Whether or not we are rasterizing conservatively */
+   enum intel_sometimes vk_conservative:2;
    /* Used to implement Wa_220856683 */
    unsigned conservative_sample_mask:16;
 
@@ -743,6 +743,7 @@ struct brw_wm_prog_data {
    enum intel_sometimes alpha_to_coverage;
 
    unsigned msaa_flags_param;
+   unsigned conservative_param;
 
    /**
     * Mask of which interpolation modes are required by the fragment shader.

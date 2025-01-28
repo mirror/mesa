@@ -2153,6 +2153,12 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       gfx->base.push_constants_data_dirty = true;
    }
 
+   if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_FS_CONSERVATIVE)) {
+      push_consts->gfx.vk_conservative = dyn->rs.conservative_mode;
+      cmd_buffer->state.push_constants_dirty |= VK_SHADER_STAGE_FRAGMENT_BIT;
+      gfx->base.push_constants_data_dirty = true;
+   }
+
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_URB)) {
       genX(urb_workaround)(cmd_buffer, &pipeline->urb_cfg);
 

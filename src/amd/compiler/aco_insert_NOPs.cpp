@@ -257,7 +257,7 @@ struct NOP_ctx_gfx11 {
 
    /* VALUMaskWriteHazard */
    std::bitset<128> sgpr_read_by_valu_as_lanemask;
-   std::bitset<128> sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
+   RegCounterMap<6> sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
 
    /* WMMAHazards */
    std::bitset<256> vgpr_written_by_wmma;
@@ -277,8 +277,8 @@ struct NOP_ctx_gfx11 {
       valu_since_wr_by_trans.join_min(other.valu_since_wr_by_trans);
       trans_since_wr_by_trans.join_min(other.trans_since_wr_by_trans);
       sgpr_read_by_valu_as_lanemask |= other.sgpr_read_by_valu_as_lanemask;
-      sgpr_read_by_valu_as_lanemask_then_wr_by_salu |=
-         other.sgpr_read_by_valu_as_lanemask_then_wr_by_salu;
+      sgpr_read_by_valu_as_lanemask_then_wr_by_salu.join_min(
+         other.sgpr_read_by_valu_as_lanemask_then_wr_by_salu);
       vgpr_written_by_wmma |= other.vgpr_written_by_wmma;
       sgpr_read_by_valu |= other.sgpr_read_by_valu;
       sgpr_read_by_valu_then_wr_by_salu.join_min(other.sgpr_read_by_valu_then_wr_by_salu);
@@ -1405,29 +1405,21 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       ctx.has_Vcmpx = false;
    }
 
-   unsigned va_vdst = parse_depctr_wait(instr.get()).va_vdst;
-   unsigned vm_vsrc = 7;
-   unsigned sa_sdst = 1;
+   depctr_wait wait = parse_depctr_wait(instr.get());
+   uint16_t depctr_imm = 0xFFFF;
 
    if (debug_flags & DEBUG_FORCE_WAITDEPS) {
-      bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0000);
-      va_vdst = 0;
-      vm_vsrc = 0;
-      sa_sdst = 0;
-   } else if (instr->opcode == aco_opcode::s_waitcnt_depctr) {
-      /* va_vdst already obtained through parse_depctr_wait(). */
-      vm_vsrc = (instr->salu().imm >> 2) & 0x7;
-      sa_sdst = instr->salu().imm & 0x1;
+      wait = parse_depctr_wait(bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0000));
    } else if (instr->isLDSDIR() && state.program->gfx_level >= GFX12) {
-      vm_vsrc = instr->ldsdir().wait_vsrc ? 7 : 0;
+      wait.vm_vsrc = instr->ldsdir().wait_vsrc ? 7 : 0;
    }
 
    if (instr->isLDSDIR()) {
       unsigned count = handle_lds_direct_valu_hazard(state, instr);
       LDSDIR_instruction* ldsdir = &instr->ldsdir();
-      if (count < va_vdst) {
+      if (count < wait.va_vdst) {
          ldsdir->wait_vdst = MIN2(ldsdir->wait_vdst, count);
-         va_vdst = MIN2(va_vdst, count);
+         wait.va_vdst = MIN2(wait.va_vdst, count);
       }
    }
 
@@ -1435,7 +1427,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
     * VALU reads VGPR written by transcendental instruction without 6+ VALU or 2+ transcendental
     * in-between.
     */
-   if (state.program->gfx_level < GFX11_5 && va_vdst > 0 && instr->isVALU()) {
+   if (state.program->gfx_level < GFX11_5 && wait.va_vdst > 0 && instr->isVALU()) {
       uint8_t num_valu = 15;
       uint8_t num_trans = 15;
       for (Operand& op : instr->operands) {
@@ -1448,15 +1440,15 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
          }
       }
       if (num_trans <= 1 && num_valu <= 5) {
-         bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0fff);
-         va_vdst = 0;
+         depctr_imm &= 0x0fff;
+         wait.va_vdst = 0;
       }
    }
 
-   if (va_vdst > 0 && state.program->gfx_level < GFX12 &&
+   if (wait.va_vdst > 0 && state.program->gfx_level < GFX12 &&
        handle_valu_partial_forwarding_hazard(state, instr)) {
-      bld.sopp(aco_opcode::s_waitcnt_depctr, 0x0fff);
-      va_vdst = 0;
+      depctr_imm &= 0x0fff;
+      wait.va_vdst = 0;
    }
 
    if (state.program->gfx_level < GFX12) {
@@ -1464,25 +1456,45 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
        * VALU reads SGPR as a lane mask and later written by SALU cannot safely be read by SALU or
        * VALU.
        */
-      if (state.program->wave_size == 64 && (instr->isSALU() || instr->isVALU()) &&
-          check_read_regs(instr, ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu)) {
-         bld.sopp(aco_opcode::s_waitcnt_depctr, 0xfffe);
-         sa_sdst = 0;
+      if (state.program->wave_size == 64 && (instr->isSALU() || instr->isVALU())) {
+         for (Operand& op : instr->operands) {
+            for (unsigned i = 0; i < op.size(); i++) {
+               PhysReg reg = op.physReg().advance(4 * i);
+               /* Hazard expires after 6 SALU instructions. */
+               if (ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.get(reg) < 6) {
+                  depctr_imm &= 0xfffe;
+                  wait.sa_sdst = 0;
+               }
+            }
+         }
       }
 
-      if (va_vdst == 0) {
+      if (wait.va_vdst == 0) {
          ctx.valu_since_wr_by_trans.reset();
          ctx.trans_since_wr_by_trans.reset();
       }
 
-      if (sa_sdst == 0)
+      if (wait.sa_sdst == 0)
          ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.reset();
 
-      if (state.program->wave_size == 64 && instr->isSALU() &&
-          check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
-         unsigned reg = instr->definitions[0].physReg().reg();
-         for (unsigned i = 0; i < instr->definitions[0].size(); i++)
-            ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu[reg + i] = 1;
+      if (state.program->wave_size == 64 && !instr->isSOPP()) {
+         if (instr->isSALU()) {
+            ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.inc();
+            if (check_written_regs(instr, ctx.sgpr_read_by_valu_as_lanemask)) {
+               for (unsigned i = 0; i < instr->definitions[0].size(); i++) {
+                  PhysReg reg = instr->definitions[0].physReg().advance(4 * i);
+                  ctx.sgpr_read_by_valu_as_lanemask[reg] = 0;
+                  ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.set(reg);
+               }
+            }
+         } else {
+            for (Definition& def : instr->definitions) {
+               if (def.physReg() < exec) {
+                  for (unsigned i = 0; i < instr->definitions[0].size(); i++)
+                     ctx.sgpr_read_by_valu_as_lanemask[def.physReg() + i] = 0;
+               }
+            }
+         }
       }
 
       if (instr->isVALU()) {
@@ -1532,21 +1544,21 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
       if (instr->isVALU() || instr->isSALU()) {
          unsigned expiry_count = instr->isSALU() ? 10 : 11;
          for (Operand& op : instr->operands) {
-            if (sa_sdst == 0)
+            if (wait.sa_sdst == 0)
                break;
 
             for (unsigned i = 0; i < op.size(); i++) {
                PhysReg reg = op.physReg().advance(i * 4);
                if (reg <= m0 && ctx.sgpr_read_by_valu_then_wr_by_salu.get(reg) < expiry_count) {
-                  bld.sopp(aco_opcode::s_waitcnt_depctr, 0xfffe);
-                  sa_sdst = 0;
+                  depctr_imm &= 0xfffe;
+                  wait.sa_sdst = 0;
                   break;
                }
             }
          }
       }
 
-      if (sa_sdst == 0)
+      if (wait.sa_sdst == 0)
          ctx.sgpr_read_by_valu_then_wr_by_salu.reset();
       else if (instr->isSALU() && !instr->isSOPP())
          ctx.sgpr_read_by_valu_then_wr_by_salu.inc();
@@ -1598,7 +1610,7 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
          fill_vgpr_bitset(ctx.vgpr_used_by_ds, op.physReg(), op.bytes());
    }
    wait_imm imm;
-   if (instr->isVALU() || instr->isEXP() || vm_vsrc == 0) {
+   if (instr->isVALU() || instr->isEXP() || wait.vm_vsrc == 0) {
       ctx.vgpr_used_by_vmem_load.reset();
       ctx.vgpr_used_by_vmem_sample.reset();
       ctx.vgpr_used_by_vmem_bvh.reset();
@@ -1650,6 +1662,11 @@ handle_instruction_gfx11(State& state, NOP_ctx_gfx11& ctx, aco_ptr<Instruction>&
                        instr->definitions[0].bytes());
    } else if (instr->isVALU()) {
       ctx.vgpr_written_by_wmma.reset();
+   }
+
+   /* Emit wait instruction if necessary */
+   if (depctr_imm != 0xFFFF) {
+      bld.sopp(aco_opcode::s_waitcnt_depctr, depctr_imm);
    }
 }
 
@@ -1712,7 +1729,7 @@ resolve_all_gfx11(State& state, NOP_ctx_gfx11& ctx,
 
    /* VALUMaskWriteHazard */
    if (state.program->gfx_level < GFX12 && state.program->wave_size == 64) {
-      if (ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.any()) {
+      if (!ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.empty()) {
          waitcnt_depctr &= 0xfffe;
          ctx.sgpr_read_by_valu_as_lanemask_then_wr_by_salu.reset();
       }

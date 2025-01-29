@@ -50,6 +50,7 @@
 #include <clang/CodeGen/CodeGenAction.h>
 #include <clang/Lex/PreprocessorOptions.h>
 #include <clang/Frontend/CompilerInstance.h>
+#include <clang/Frontend/FrontendActions.h>
 #include <clang/Frontend/TextDiagnosticBuffer.h>
 #include <clang/Frontend/TextDiagnosticPrinter.h>
 #include <clang/Frontend/Utils.h>
@@ -781,25 +782,16 @@ clc_free_kernels_info(const struct clc_kernel_info *kernels,
    free((void *)kernels);
 }
 
-static std::unique_ptr<::llvm::Module>
-clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
-                           const struct clc_compile_args *args,
-                           const struct clc_logger *logger,
-                           struct set *dependencies)
+static std::unique_ptr<clang::CompilerInstance>
+clc_compile_create_clang(LLVMContext &llvm_ctx,
+                         const struct clc_compile_args *args,
+                         const struct clc_logger *logger,
+                         raw_string_ostream &diag_log_stream)
 {
    static_assert(std::has_unique_object_representations<clc_optional_features>(),
                  "no padding allowed inside clc_optional_features");
 
-   std::string diag_log_str;
-   raw_string_ostream diag_log_stream { diag_log_str };
-
    std::unique_ptr<clang::CompilerInstance> c { new clang::CompilerInstance };
-   std::shared_ptr<clang::DependencyCollector> dep;
-   if (dependencies != nullptr) {
-      dep = std::make_shared<clang::DependencyCollector>();
-      c->addDependencyCollector(dep);
-   }
-
    clang::DiagnosticsEngine diag {
       new clang::DiagnosticIDs,
       new clang::DiagnosticOptions,
@@ -846,7 +838,7 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
 
    if (diag.hasErrorOccurred()) {
       clc_error(logger, "%sErrors occurred during Clang invocation.\n",
-                diag_log_str.c_str());
+                diag_log_stream.str().c_str());
       return {};
    }
 
@@ -865,8 +857,6 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
 
    c->setTarget(clang::TargetInfo::CreateTargetInfo(
                    c->getDiagnostics(), c->getInvocation().TargetOpts));
-
-   c->getFrontendOpts().ProgramAction = clang::frontend::EmitLLVMOnly;
 
 #ifdef USE_STATIC_OPENCL_C_H
    c->getHeaderSearchOpts().UseBuiltinIncludes = false;
@@ -1043,6 +1033,27 @@ clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
            args->source.name,
            ::llvm::MemoryBuffer::getMemBufferCopy(std::string(args->source.value)).release());
 
+   return c;
+}
+
+static std::unique_ptr<::llvm::Module>
+clc_compile_to_llvm_module(LLVMContext &llvm_ctx,
+                           const struct clc_compile_args *args,
+                           const struct clc_logger *logger,
+                           struct set *dependencies)
+{
+   std::string diag_log_str;
+   raw_string_ostream diag_log_stream { diag_log_str };
+
+   auto c = clc_compile_create_clang(llvm_ctx, args, logger, diag_log_stream);
+   c->getFrontendOpts().ProgramAction = clang::frontend::EmitLLVMOnly;
+
+   std::shared_ptr<clang::DependencyCollector> dep;
+   if (dependencies != nullptr) {
+      dep = std::make_shared<clang::DependencyCollector>();
+      c->addDependencyCollector(dep);
+   }
+
    // Compile the code
    clang::EmitLLVMOnlyAction act(&llvm_ctx);
    if (!c->ExecuteAction(act)) {
@@ -1198,6 +1209,50 @@ clc_c_to_spir(const struct clc_compile_args *args,
    out_spir->size = buffer.size_in_bytes();
    out_spir->data = malloc(out_spir->size);
    memcpy(out_spir->data, buffer.data(), out_spir->size);
+
+   return 0;
+}
+
+int
+clc_pch(const struct clc_compile_args *args,
+        const struct clc_logger *logger,
+        const char *out,
+        struct set *dependencies)
+{
+   clc_initialize_llvm();
+
+   LLVMContext llvm_ctx;
+   llvm_ctx.setDiagnosticHandlerCallBack(llvm_log_handler,
+                                         const_cast<clc_logger *>(logger));
+
+   std::string diag_log_str;
+   raw_string_ostream diag_log_stream { diag_log_str };
+
+   auto c = clc_compile_create_clang(llvm_ctx, args, logger, diag_log_stream);
+   if (!c)
+      return -1;
+
+   std::shared_ptr<clang::DependencyCollector> dep;
+   if (dependencies != nullptr) {
+      dep = std::make_shared<clang::DependencyCollector>();
+      c->addDependencyCollector(dep);
+   }
+
+   // Generate the PCH
+   c->getFrontendOpts().ProgramAction = clang::frontend::GeneratePCH;
+   c->getFrontendOpts().OutputFile = out;
+   clang::GeneratePCHAction act;
+   if (!c->ExecuteAction(act)) {
+      clc_error(logger, "%sError executing PCH generation action.\n",
+                diag_log_str.c_str());
+      return -1;
+   }
+
+   if (dependencies != nullptr) {
+      for (auto dep : dep->getDependencies()) {
+         _mesa_set_add(dependencies, ralloc_strdup(dependencies, dep.c_str()));
+      }
+   }
 
    return 0;
 }

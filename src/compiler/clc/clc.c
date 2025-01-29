@@ -124,6 +124,18 @@ clc_free_spirv(struct clc_binary *spirv)
 }
 
 bool
+clc_compile_pch(const struct clc_compile_args *args,
+                const struct clc_logger *logger,
+                const char *out_pch,
+                struct set *dependencies)
+{
+   if (clc_pch(args, logger, out_pch, dependencies) < 0)
+      return false;
+
+   return true;
+}
+
+bool
 clc_compile_c_to_spirv(const struct clc_compile_args *args,
                        const struct clc_logger *logger,
                        struct clc_binary *out_spirv,

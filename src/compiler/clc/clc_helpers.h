@@ -65,6 +65,12 @@ clc_spir_to_spirv(const struct clc_binary *in_spir,
                   struct clc_binary *out_spirv);
 
 int
+clc_pch(const struct clc_compile_args *args,
+        const struct clc_logger *logger,
+        const char *out,
+        struct set *dependencies);
+
+int
 clc_c_to_spirv(const struct clc_compile_args *args,
                const struct clc_logger *logger,
                struct clc_binary *out_spirvl,

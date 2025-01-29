@@ -33,6 +33,11 @@ print_usage(char *exec_name, FILE *f)
       exec_name);
 }
 
+static int
+compile_clc(void *mem_ctx, struct util_dynarray *input_files,
+            struct util_dynarray *clang_args, struct clc_logger *logger,
+            struct set *deps, char *outfile);
+
 int
 main(int argc, char **argv)
 {
@@ -48,15 +53,11 @@ main(int argc, char **argv)
    char *outfile = NULL, *depfile = NULL;
    struct util_dynarray clang_args;
    struct util_dynarray input_files;
-   struct util_dynarray spirv_objs;
-   struct util_dynarray spirv_ptr_objs;
 
    void *mem_ctx = ralloc_context(NULL);
 
    util_dynarray_init(&clang_args, mem_ctx);
    util_dynarray_init(&input_files, mem_ctx);
-   util_dynarray_init(&spirv_objs, mem_ctx);
-   util_dynarray_init(&spirv_ptr_objs, mem_ctx);
 
    struct set *deps =
       _mesa_set_create(mem_ctx, _mesa_hash_string, _mesa_key_string_equal);
@@ -111,11 +112,41 @@ main(int argc, char **argv)
       .warning = msg_callback,
    };
 
-   util_dynarray_foreach(&input_files, char *, infile) {
+   int err = compile_clc(mem_ctx, &input_files, &clang_args, &logger, deps, outfile);
+   if (err) {
+      ralloc_free(mem_ctx);
+      return err;
+   }
+
+   if (depfile) {
+      FILE *fp = fopen(depfile, "w");
+      fprintf(fp, "%s:", outfile);
+      set_foreach(deps, ent) {
+         fprintf(fp, " %s", (const char *)ent->key);
+      }
+      fprintf(fp, "\n");
+      fclose(fp);
+   }
+
+   ralloc_free(mem_ctx);
+   return err;
+}
+
+static int
+compile_clc(void *mem_ctx, struct util_dynarray *input_files,
+            struct util_dynarray *clang_args, struct clc_logger *logger,
+            struct set *deps, char *outfile)
+{
+   struct util_dynarray spirv_objs;
+   struct util_dynarray spirv_ptr_objs;
+
+   util_dynarray_init(&spirv_objs, mem_ctx);
+   util_dynarray_init(&spirv_ptr_objs, mem_ctx);
+
+   util_dynarray_foreach(input_files, char *, infile) {
       FILE *fp = fopen(*infile, "rb");
       if (!fp) {
          fprintf(stderr, "Failed to open %s\n", *infile);
-         ralloc_free(mem_ctx);
          return 1;
       }
 
@@ -126,7 +157,6 @@ main(int argc, char **argv)
       char *map = ralloc_array_size(mem_ctx, 1, len + 1);
       if (!map) {
          fprintf(stderr, "Failed to allocate");
-         ralloc_free(mem_ctx);
          return 1;
       }
 
@@ -137,8 +167,8 @@ main(int argc, char **argv)
       struct clc_compile_args clc_args = {
          .source.name = *infile,
          .source.value = map,
-         .args = util_dynarray_begin(&clang_args),
-         .num_args = util_dynarray_num_elements(&clang_args, char *),
+         .args = util_dynarray_begin(clang_args),
+         .num_args = util_dynarray_num_elements(clang_args, char *),
       };
 
       /* Enable all features, we don't know the target here and it is the
@@ -150,8 +180,7 @@ main(int argc, char **argv)
       struct clc_binary *spirv_out =
          util_dynarray_grow(&spirv_objs, struct clc_binary, 1);
 
-      if (!clc_compile_c_to_spirv(&clc_args, &logger, spirv_out, deps)) {
-         ralloc_free(mem_ctx);
+      if (!clc_compile_c_to_spirv(&clc_args, logger, spirv_out, deps)) {
          return 1;
       }
    }
@@ -168,8 +197,7 @@ main(int argc, char **argv)
       .create_library = true,
    };
    struct clc_binary final_spirv;
-   if (!clc_link_spirv(&link_args, &logger, &final_spirv)) {
-      ralloc_free(mem_ctx);
+   if (!clc_link_spirv(&link_args, logger, &final_spirv)) {
       return 1;
    }
 
@@ -177,22 +205,11 @@ main(int argc, char **argv)
    fwrite(final_spirv.data, final_spirv.size, 1, fp);
    fclose(fp);
 
-   if (depfile) {
-      FILE *fp = fopen(depfile, "w");
-      fprintf(fp, "%s:", outfile);
-      set_foreach(deps, ent) {
-         fprintf(fp, " %s", (const char *)ent->key);
-      }
-      fprintf(fp, "\n");
-      fclose(fp);
-   }
-
    util_dynarray_foreach(&spirv_objs, struct clc_binary, p) {
       clc_free_spirv(p);
    }
 
    clc_free_spirv(&final_spirv);
-   ralloc_free(mem_ctx);
 
    return 0;
 }

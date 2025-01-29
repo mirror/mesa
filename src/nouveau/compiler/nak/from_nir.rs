@@ -2344,8 +2344,10 @@ impl<'a> ShaderFromNir<'a> {
                     } else {
                         MemOrder::Weak
                     }
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
 
                 let comps = intrin.num_components;
@@ -2379,8 +2381,10 @@ impl<'a> ShaderFromNir<'a> {
                     } else {
                         MemOrder::Weak
                     }
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
 
                 let comps = intrin.num_components;
@@ -2417,13 +2421,19 @@ impl<'a> ShaderFromNir<'a> {
                 // let sample = self.get_src(&srcs[2]);
                 let data = self.get_src(&srcs[3]);
 
+                let mem_order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
+
                 let comps = intrin.num_components;
                 assert!(srcs[3].bit_size() == 32);
                 assert!(comps == 1 || comps == 2 || comps == 4);
 
                 b.push_op(OpSuSt {
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order,
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                     mask: (1 << comps) - 1,

@@ -4771,23 +4771,44 @@ should_split_wrmask(const nir_instr *instr, UNUSED const void *data)
 static unsigned
 bi_lower_bit_size(const nir_instr *instr, UNUSED void *data)
 {
-   if (instr->type != nir_instr_type_alu)
-      return 0;
-
-   nir_alu_instr *alu = nir_instr_as_alu(instr);
-
-   switch (alu->op) {
-   case nir_op_fexp2:
-   case nir_op_flog2:
-   case nir_op_fpow:
-   case nir_op_fsin:
-   case nir_op_fcos:
-   case nir_op_bit_count:
-   case nir_op_bitfield_reverse:
-      return (nir_src_bit_size(alu->src[0].src) == 32) ? 0 : 32;
-   default:
-      return 0;
+   switch (instr->type) {
+   case nir_instr_type_alu: {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      switch (alu->op) {
+      case nir_op_fexp2:
+      case nir_op_flog2:
+      case nir_op_fpow:
+      case nir_op_fsin:
+      case nir_op_fcos:
+      case nir_op_bit_count:
+      case nir_op_bitfield_reverse:
+         if (nir_src_bit_size(alu->src[0].src) != 32)
+            return 32;
+         break;
+      default:
+         break;
+      }
+      break;
    }
+
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+      switch (intr->intrinsic) {
+      case nir_intrinsic_read_invocation:
+      case nir_intrinsic_ballot:
+      case nir_intrinsic_ballot_relaxed:
+         if (nir_src_bit_size(intr->src[0]) != 32)
+            return 32;
+         break;
+      default:
+         break;
+      }
+   }
+
+   default:
+      break;
+   }
+   return 0;
 }
 
 /* Although Bifrost generally supports packed 16-bit vec2 and 8-bit vec4,

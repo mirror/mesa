@@ -90,14 +90,18 @@ st_get_external_sampler_key(struct st_context *st, struct gl_program *prog)
             break;
          }
          FALLTHROUGH;
+      case PIPE_FORMAT_Y8U8V8_420_UNORM:
       case PIPE_FORMAT_NV12:
-         if (stObj->pt->format == PIPE_FORMAT_R8_G8B8_420_UNORM) {
+         if (stObj->pt->format == PIPE_FORMAT_R8_G8B8_420_UNORM
+            || stObj->pt->format == PIPE_FORMAT_R8G8B8_420_UNORM) {
             key.lower_yuv |= (1 << unit);
             break;
          }
          FALLTHROUGH;
+      case PIPE_FORMAT_Y10U10V10_420_UNORM:
       case PIPE_FORMAT_NV15:
-         if (stObj->pt->format == PIPE_FORMAT_R10_G10B10_420_UNORM) {
+         if (stObj->pt->format == PIPE_FORMAT_R10_G10B10_420_UNORM
+            || stObj->pt->format == PIPE_FORMAT_R10G10B10_420_UNORM) {
             key.lower_yuv |= (1 << unit);
             break;
          }

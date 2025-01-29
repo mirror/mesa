@@ -101,6 +101,7 @@ struct pan_image_slice_layout {
 struct pan_image_layout {
    uint64_t modifier;
    enum pipe_format format;
+   unsigned plane;
    unsigned width, height, depth;
    unsigned nr_samples;
    enum mali_texture_dimension dim;
@@ -272,18 +273,34 @@ enum pan_afbc_mode {
    PAN_AFBC_MODE_R11G11B10,
    PAN_AFBC_MODE_S8,
 
+   /* these are somewhat special */
+   PAN_AFBC_MODE_YUV420_6C8,
+   PAN_AFBC_MODE_YUV420_2C8,
+   PAN_AFBC_MODE_YUV420_1C8,
+   PAN_AFBC_MODE_YUV420_6C10,
+   PAN_AFBC_MODE_YUV420_2C10,
+   PAN_AFBC_MODE_YUV420_1C10,
+
+   PAN_AFBC_MODE_YUV422_4C8,
+   PAN_AFBC_MODE_YUV422_2C8,
+   PAN_AFBC_MODE_YUV422_1C8,
+   PAN_AFBC_MODE_YUV422_4C10,
+   PAN_AFBC_MODE_YUV422_2C10,
+   PAN_AFBC_MODE_YUV422_1C10,
+
    /* Sentintel signalling a format that cannot be compressed */
    PAN_AFBC_MODE_INVALID
 };
 
-enum pan_afbc_mode panfrost_afbc_format(unsigned arch, enum pipe_format format);
+enum pan_afbc_mode panfrost_afbc_format(unsigned arch, enum pipe_format format,
+                                        int plane);
 
 /* A format may be compressed as AFBC if it has an AFBC internal format */
 
 static inline bool
 panfrost_format_supports_afbc(unsigned arch, enum pipe_format format)
 {
-   return panfrost_afbc_format(arch, format) != PAN_AFBC_MODE_INVALID;
+   return panfrost_afbc_format(arch, format, 0) != PAN_AFBC_MODE_INVALID;
 }
 
 #define AFBC_HEADER_BYTES_PER_TILE 16
@@ -469,7 +486,7 @@ void pan_iview_get_surface(const struct pan_image_view *iview, unsigned level,
 
 #if PAN_ARCH >= 9
 enum mali_afbc_compression_mode
-GENX(pan_afbc_compression_mode)(enum pipe_format format);
+GENX(pan_afbc_compression_mode)(enum pipe_format format, int plane);
 #endif
 
 #if PAN_ARCH >= 10

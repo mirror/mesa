@@ -127,7 +127,11 @@ def has_access(format):
         'r8_b8_g8_420_unorm',
         'g8_b8_r8_420_unorm',
         'r8_g8_b8_unorm',
+        'r8g8b8_420_unorm',
+        'r10g10b10_420_unorm',
         'y8_unorm',
+        'y8u8v8_420_unorm',
+        'y10u10v10_420_unorm',
     ]
     if format.short_name() in noaccess_formats:
         return False

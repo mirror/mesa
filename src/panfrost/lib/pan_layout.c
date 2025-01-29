@@ -376,6 +376,7 @@ format_minimum_alignment(unsigned arch, enum pipe_format format, uint64_t mod)
 
    switch (format) {
    /* For v7+, NV12/NV21/I420 have a looser alignment requirement of 16 bytes */
+   case PIPE_FORMAT_R8G8B8_420_UNORM:
    case PIPE_FORMAT_R8_G8B8_420_UNORM:
    case PIPE_FORMAT_G8_B8R8_420_UNORM:
    case PIPE_FORMAT_R8_G8_B8_420_UNORM:
@@ -456,16 +457,37 @@ panfrost_get_legacy_stride(const struct pan_image_layout *layout,
    }
 }
 
+static unsigned
+get_width_from_afbc_legacy_stride(unsigned legacy_stride,
+                                  enum pipe_format format)
+{
+   const struct util_format_description *desc = util_format_description(format);
+   unsigned block_size = util_format_get_blocksize(format);
+
+   assert(desc != NULL);
+
+   if (desc->layout == UTIL_FORMAT_LAYOUT_SUBSAMPLED) {
+      /* adjust for number of blocks per line */
+      block_size /= desc->block.height;
+      /* now find number of pixels per line, rather than blocks
+       * note that the stride need not necessarily be a multiple of the
+       * block size, it could be bigger than required, so round up
+       */
+      return (legacy_stride * desc->block.width + block_size - 1) / block_size;
+   }
+
+   return (legacy_stride + block_size - 1) / block_size;
+}
+
 unsigned
 panfrost_from_legacy_stride(unsigned legacy_stride, enum pipe_format format,
                             uint64_t modifier)
 {
    struct pan_block_size block_size =
       panfrost_renderblock_size(modifier, format);
-
    if (drm_is_afbc(modifier)) {
-      unsigned width = legacy_stride / util_format_get_blocksize(format);
-
+      unsigned width = get_width_from_afbc_legacy_stride(legacy_stride,
+                                                         format);
       return pan_afbc_row_stride(modifier, width);
    } else if (drm_is_afrc(modifier)) {
       struct pan_block_size tile_size =
@@ -486,6 +508,36 @@ panfrost_texture_offset(const struct pan_image_layout *layout, unsigned level,
 {
    return layout->slices[level].offset + (array_idx * layout->array_stride) +
           (surface_idx * layout->slices[level].surface_stride);
+}
+
+static unsigned
+get_effective_width(enum pipe_format format, uint64_t modifier,
+                    unsigned plane, unsigned width, unsigned align)
+{
+   /* for AFBC YUV formats, we need the actual width of a row;
+    * for others, we need the number of blocks */
+   if (! (drm_is_afbc(modifier) && panfrost_format_is_yuv(format)) )
+      width = util_format_get_nblocksx(format, width);
+
+   return ALIGN_POT(width, align);
+}
+
+static unsigned
+get_effective_height(enum pipe_format format, uint64_t modifier,
+                     unsigned plane, unsigned height, unsigned align)
+{
+   const struct util_format_description *desc = util_format_description(format);
+
+   assert(desc != NULL);
+
+   if (util_format_is_compressed(format))
+      height = util_format_get_nblocksy(format, height);
+   else if (desc->layout == UTIL_FORMAT_LAYOUT_PLANAR2 && plane > 0)
+      /* the second plane of a PLANAR2 is subsampled, but this is not
+       * reflected in the block description */
+      height *= 2;
+
+   return ALIGN_POT(height, align);
 }
 
 bool
@@ -560,9 +612,11 @@ pan_image_layout_init(unsigned arch, struct pan_image_layout *layout,
       struct pan_image_slice_layout *slice = &layout->slices[l];
 
       unsigned effective_width =
-         ALIGN_POT(util_format_get_nblocksx(layout->format, width), align_w);
+         get_effective_width(layout->format, layout->modifier,
+                             layout->plane, width, align_w);
       unsigned effective_height =
-         ALIGN_POT(util_format_get_nblocksy(layout->format, height), align_h);
+         get_effective_height(layout->format, layout->modifier,
+                              layout->plane, height, align_h);
       unsigned row_stride;
 
       /* Align levels to cache-line as a performance improvement for

@@ -347,6 +347,32 @@ panfrost_walk_dmabuf_modifiers(struct pipe_screen *screen,
                                uint64_t *modifiers, unsigned int *external_only,
                                int *out_count, uint64_t test_modifier, bool allow_afrc)
 {
+   /* Check for some formats that will be emulated */
+   bool emulated_format = true;
+   switch(format) {
+   case PIPE_FORMAT_NV12:
+      format = PIPE_FORMAT_R8_G8B8_420_UNORM;
+      break;
+   case PIPE_FORMAT_NV15:
+      format = PIPE_FORMAT_R10_G10B10_420_UNORM;
+      break;
+   case PIPE_FORMAT_NV16:
+      format = PIPE_FORMAT_R8_G8B8_422_UNORM;
+      break;
+   case PIPE_FORMAT_NV20:
+      format = PIPE_FORMAT_R10_G10B10_422_UNORM;
+      break;
+   case PIPE_FORMAT_Y8U8V8_420_UNORM:
+      format = PIPE_FORMAT_R8G8B8_420_UNORM;
+      break;
+   case PIPE_FORMAT_Y10U10V10_420_UNORM:
+      format = PIPE_FORMAT_R10G10B10_420_UNORM;
+      break;
+   default:
+      emulated_format = false;
+      break;
+   }
+
    /* Query AFBC status */
    struct panfrost_device *dev = pan_device(screen);
    bool afbc =
@@ -384,7 +410,7 @@ panfrost_walk_dmabuf_modifiers(struct pipe_screen *screen,
          modifiers[count] = pan_best_modifiers[i];
 
          if (external_only)
-            external_only[count] = false;
+            external_only[count] = emulated_format;
       }
       count++;
    }

@@ -1798,7 +1798,7 @@ struct wsi_wl_present_id {
     * which uses frame callback to signal DRI3 COMPLETE. */
    struct wl_callback *frame;
    uint64_t present_id;
-   uint64_t flow_id;
+   struct mesa_trace_flow flow;
    uint64_t submission_time;
    const VkAllocationCallbacks *alloc;
    struct wsi_wl_swapchain *chain;
@@ -2055,9 +2055,9 @@ wsi_wl_swapchain_acquire_next_image_explicit(struct wsi_swapchain *wsi_chain,
                                              uint32_t *image_index)
 {
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
-   uint64_t id = 0;
+   struct mesa_trace_flow flow = { 0 };
 
-   MESA_TRACE_FUNC_FLOW(&id);
+   MESA_TRACE_FUNC_FLOW(&flow);
 
    /* See comments in queue_present() */
    if (chain->retired)
@@ -2080,7 +2080,7 @@ wsi_wl_swapchain_acquire_next_image_explicit(struct wsi_swapchain *wsi_chain,
    STACK_ARRAY_FINISH(images);
 
    if (result == VK_SUCCESS) {
-      loader_wayland_buffer_set_flow(&chain->images[*image_index].wayland_buffer, id);
+      loader_wayland_buffer_set_flow(&chain->images[*image_index].wayland_buffer, &flow);
       if (chain->suboptimal)
          result = VK_SUBOPTIMAL_KHR;
    }
@@ -2096,9 +2096,9 @@ wsi_wl_swapchain_acquire_next_image_implicit(struct wsi_swapchain *wsi_chain,
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
    struct timespec start_time, end_time;
    struct timespec rel_timeout;
-   uint64_t id = 0;
+   struct mesa_trace_flow flow = { 0 };
 
-   MESA_TRACE_FUNC_FLOW(&id);
+   MESA_TRACE_FUNC_FLOW(&flow);
 
    /* See comments in queue_present() */
    if (chain->retired)
@@ -2126,7 +2126,7 @@ wsi_wl_swapchain_acquire_next_image_implicit(struct wsi_swapchain *wsi_chain,
             /* We found a non-busy image */
             *image_index = i;
             chain->images[i].busy = true;
-            loader_wayland_buffer_set_flow(&chain->images[i].wayland_buffer, id);
+            loader_wayland_buffer_set_flow(&chain->images[i].wayland_buffer, &flow);
             return (chain->suboptimal ? VK_SUBOPTIMAL_KHR : VK_SUCCESS);
          }
       }
@@ -2321,9 +2321,8 @@ wsi_wl_swapchain_queue_present(struct wsi_swapchain *wsi_chain,
    struct wsi_wl_swapchain *chain = (struct wsi_wl_swapchain *)wsi_chain;
    bool timestamped = false;
    bool queue_dispatched = false;
-   uint64_t flow_id = chain->images[image_index].wayland_buffer.flow_id;
 
-   MESA_TRACE_FUNC_FLOW(&flow_id);
+   MESA_TRACE_FUNC_FLOW(&chain->images[image_index].wayland_buffer.flow);
 
    /* In case we're sending presentation feedback requests, make sure the
     * queue their events are in is dispatched.

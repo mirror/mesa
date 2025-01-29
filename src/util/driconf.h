@@ -790,6 +790,10 @@
    DRI_CONF_OPT_B(anv_assume_full_subgroups_with_barrier, def, \
                   "Assume full subgroups requirement for compute shaders that use control barriers")
 
+#define DRI_CONF_ANV_FORCE_CS_SIMD32(def) \
+   DRI_CONF_OPT_B(force_cs_simd32, def, \
+                  "Force specific compute shader to use SIMD32 for WA hang issue")
+
 #define DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(def) \
    DRI_CONF_OPT_B(anv_sample_mask_out_opengl_behaviour, def, \
                   "Ignore sample mask out when having single sampled target")

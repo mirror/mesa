@@ -1716,19 +1716,114 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
        image->vk.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
       isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
 
-   if (device->queue_count > 1) {
+   /* Deal with access from multiple types of engines. */
+   const uint32_t qf_idx_num =
+      create_info->vk_info->queueFamilyIndexCount;
+   uint32_t used_eng_classes = 0;
+   bool *eng_types = vk_zalloc(&device->vk.alloc,
+                               INTEL_ENGINE_CLASS_INVALID * sizeof(bool),
+                               8,
+                               VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+
+   for (uint32_t i = 0; i < qf_idx_num; i++) {
+      const uint32_t qf_idx =
+         create_info->vk_info->pQueueFamilyIndices[i];
+
+      /* VUID-VkImageCreateInfo-sharingMode-01420
+       * If sharingMode is VK_SHARING_MODE_CONCURRENT, each element of
+       * pQueueFamilyIndices must be unique and must be less than
+       * pQueueFamilyPropertyCount returned by either
+       * vkGetPhysicalDeviceQueueFamilyProperties or
+       * vkGetPhysicalDeviceQueueFamilyProperties2 for the physicalDevice
+       * that was used to create device.
+       *
+       * Uniqueness among queue families is not checked. We are more
+       * interested in kinds (classes) of engines behind these families.
+       */
+      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT &&
+          qf_idx >= device->physical->queue.family_count) {
+         r = VK_ERROR_UNKNOWN;
+         vk_free(&device->vk.alloc, eng_types);
+         goto fail;
+      }
+
+      struct anv_queue_family *queue_family =
+            &device->physical->queue.families[qf_idx];
+
+      if (!eng_types[queue_family->engine_class]) {
+         eng_types[queue_family->engine_class] = true;
+         used_eng_classes++;
+      }
+   }
+
+   vk_free(&device->vk.alloc, eng_types);
+
+   if (used_eng_classes > 1) {
       /* Notify ISL that the app may access this image from different engines.
        * Note that parallel access to the surface will occur regardless of the
        * sharing mode.
        */
       isl_extra_usage_flags |= ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT;
 
-      /* If the resource is created with the CONCURRENT sharing mode, we can't
-       * support compression because we aren't allowed barriers in order to
-       * construct the main surface data with FULL_RESOLVE/PARTIAL_RESOLVE.
-       */
-      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT)
-         isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT) {
+         /* The VkSharingModes, either exclusive or concurrent, are defined in
+          * terms of queue families in the spec. It implies at least two queues
+          * (from different queue families) are needed in concurrent mode.
+          *
+          * (https://registry.khronos.org/vulkan/specs/latest/man/html/
+          * VkSharingMode.html)
+          */
+         assert(device->queue_count > 1);
+
+         /* VUID-VkImageCreateInfo-sharingMode-00942
+          * If sharingMode is VK_SHARING_MODE_CONCURRENT, queueFamilyIndexCount
+          * must be greater than 1.
+          */
+         if (qf_idx_num <= 1) {
+            r = VK_ERROR_UNKNOWN;
+            goto fail;
+         }
+
+         if (device->info->ver < 20) {
+            /* Pre-Xe2:
+             * If the resource is created with the CONCURRENT sharing mode,
+             * we can't support compression because we aren't allowed
+             * barriers in order to construct the main surface data with
+             * FULL_RESOLVE/PARTIAL_RESOLVE.
+             *
+             * Features like HiZ and MCS will also be disabled later once
+             * ISL_SURF_USAGE_DISABLE_AUX_BIT is set.
+             */
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         } else if (eng_types[INTEL_ENGINE_CLASS_VIDEO] &&
+                    !device->info->has_local_mem) {
+            /* Xe2+:
+             * The PAT-based CCS compression supports concurrent access across
+             * engines with an exception of media engine in integrated GPU
+             * platforms.
+             */
+            anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
+                          "Xe2+: Concurrent access from media engine, no "
+                          "compression");
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         } else if (image->vk.samples > 1 ||
+                    (image->vk.usage &
+                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+            /* Xe2+:
+             * MCS and HiZ are supported only on render engine, so we have to
+             * disable them. Setting ISL_SURF_USAGE_DISABLE_AUX_BIT will also
+             * disable CCS compression that can support concurrent access on
+             * other engines, as a cost to simplify the implementation.
+             *
+             * TODO: Actually, should we keep the two features disabled in
+             * exclusive mode as well?
+             */
+            anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
+                          "Xe2+: Concurrent access, no compression on depth "
+                          "and MCS");
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         }
+      }
    }
 
    /* Aux is pointless if it will never be used as an attachment. */

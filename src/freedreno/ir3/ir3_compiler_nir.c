@@ -5787,6 +5787,7 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
       IR3_PASS(ir, ir3_dce, so);
    }
 
+   IR3_PASS(ir, ir3_imm_const_to_preamble, so);
    IR3_PASS(ir, ir3_sched_add_deps);
 
    /* At this point, all the dead code should be long gone: */

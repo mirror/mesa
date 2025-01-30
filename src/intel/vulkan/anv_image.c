@@ -754,7 +754,7 @@ add_aux_surface_if_supported(struct anv_device *device,
          return add_aux_state_tracking_buffer(device, image, aux_state_offset,
                                               plane);
       }
-   } else if (surf->usage & ISL_SURF_USAGE_STENCIL_BIT) {
+   } else if (surf->usage & (ISL_SURF_USAGE_STENCIL_BIT | ISL_SURF_USAGE_CPB_BIT)) {
       if (!isl_surf_supports_ccs(&device->isl_dev, surf, NULL))
          return VK_SUCCESS;
 

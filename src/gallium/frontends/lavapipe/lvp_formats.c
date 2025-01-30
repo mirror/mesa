@@ -176,6 +176,8 @@ lvp_physical_device_get_format_properties(struct lvp_physical_device *physical_d
 
    if (pformat == PIPE_FORMAT_R32_UINT ||
        pformat == PIPE_FORMAT_R32_SINT ||
+       pformat == PIPE_FORMAT_R64_UINT ||
+       pformat == PIPE_FORMAT_R64_SINT ||
        pformat == PIPE_FORMAT_R32_FLOAT) {
       features |= VK_FORMAT_FEATURE_2_STORAGE_IMAGE_ATOMIC_BIT;
       buffer_features |= VK_FORMAT_FEATURE_2_STORAGE_TEXEL_BUFFER_ATOMIC_BIT;

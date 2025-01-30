@@ -8,7 +8,7 @@ use std::cell::RefCell;
 use std::cmp::{max, Ord, Ordering};
 use std::collections::{hash_set, HashMap, HashSet};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct LiveSet {
     live: PerRegFile<u32>,
     set: HashSet<SSAValue>,
@@ -16,10 +16,12 @@ pub struct LiveSet {
 
 impl LiveSet {
     pub fn new() -> LiveSet {
-        LiveSet {
-            live: Default::default(),
-            set: HashSet::new(),
-        }
+        Default::default()
+    }
+
+    pub fn clear(&mut self) {
+        self.live = Default::default();
+        self.set.clear();
     }
 
     pub fn contains(&self, ssa: &SSAValue) -> bool {

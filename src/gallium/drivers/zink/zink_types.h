@@ -1689,6 +1689,7 @@ struct zink_sampler_view {
    /* Optional sampler view returning red (depth) in all channels, for shader rewrites. */
    struct zink_surface *zs_view;
    struct zink_zs_swizzle swizzle;
+   struct zink_resource *import2d;
 };
 
 struct zink_image_view {
@@ -1697,6 +1698,7 @@ struct zink_image_view {
       struct zink_surface *surface;
       struct zink_buffer_view *buffer_view;
    };
+   struct zink_resource *import2d;
 };
 
 static inline struct zink_sampler_view *

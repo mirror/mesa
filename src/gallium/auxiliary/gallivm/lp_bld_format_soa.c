@@ -314,8 +314,7 @@ lp_build_unpack_rgba_soa(struct gallivm_state *gallivm,
    assert(format_desc->block.width == 1);
    assert(format_desc->block.height == 1);
    assert(format_desc->block.bits <= type.width);
-   /* FIXME: Support more output types */
-   assert(type.width == 32);
+   assert(type.width >= 32);
 
    lp_build_context_init(&bld, gallivm, type);
 
@@ -992,7 +991,6 @@ lp_build_pack_rgba_soa(struct gallivm_state *gallivm,
    assert(format_desc->block.width == 1);
    assert(format_desc->block.height == 1);
    assert(format_desc->block.bits <= type.width);
-   /* FIXME: Support more output types */
    assert(type.width == 32);
 
    lp_build_context_init(&bld, gallivm, type);
@@ -1024,7 +1022,11 @@ lp_build_store_rgba_soa(struct gallivm_state *gallivm,
    unsigned num_stores = 0;
 
    memset(packed, 0, sizeof(LLVMValueRef) * 4);
-   if (format_desc->layout == UTIL_FORMAT_LAYOUT_PLAIN &&
+
+   if (util_format_is_pure_integer(format) && format_desc->block.bits == 64) {
+      memcpy(packed, rgba_in, sizeof(packed));
+      num_stores = format_desc->nr_channels;
+   } else if (format_desc->layout == UTIL_FORMAT_LAYOUT_PLAIN &&
        format_desc->colorspace == UTIL_FORMAT_COLORSPACE_RGB &&
        !util_format_is_alpha(format) &&
        format_desc->block.width == 1 &&
@@ -1096,6 +1098,7 @@ lp_build_store_rgba_soa(struct gallivm_state *gallivm,
 
    assert(exec_mask);
 
+   LLVMTypeRef int64_ptr_type = LLVMPointerType(LLVMInt64TypeInContext(gallivm->context), 0);
    LLVMTypeRef int32_ptr_type = LLVMPointerType(LLVMInt32TypeInContext(gallivm->context), 0);
    LLVMTypeRef int16_ptr_type = LLVMPointerType(LLVMInt16TypeInContext(gallivm->context), 0);
    LLVMTypeRef int8_ptr_type = LLVMPointerType(LLVMInt8TypeInContext(gallivm->context), 0);
@@ -1123,8 +1126,11 @@ lp_build_store_rgba_soa(struct gallivm_state *gallivm,
       } else if (format_desc->block.bits == 16) {
          this_offset = LLVMBuildBitCast(gallivm->builder, this_offset, int16_ptr_type, "");
          data = LLVMBuildTrunc(gallivm->builder, data, LLVMInt16TypeInContext(gallivm->context), "");
-      } else
+      } else if (format_desc->block.bits == 32) {
          this_offset = LLVMBuildBitCast(gallivm->builder, this_offset, int32_ptr_type, "");
+      } else {
+         this_offset = LLVMBuildBitCast(gallivm->builder, this_offset, int64_ptr_type, "");
+      }
       LLVMBuildStore(gallivm->builder, data, this_offset);
       lp_build_endif(&ifthen);
       lp_build_loop_end_cond(&loop_state, lp_build_const_int32(gallivm, type.length),

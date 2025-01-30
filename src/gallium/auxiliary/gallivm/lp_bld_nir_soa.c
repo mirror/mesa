@@ -4230,10 +4230,15 @@ visit_store_image(struct lp_build_nir_soa_context *bld,
    for (unsigned i = 0; i < 4; i++) {
       params.indata[i] = in_val[i];
 
-      if (integer)
-         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int_bld.vec_type, "");
-      else
-         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->base.vec_type, "");
+      if (nir_src_bit_size(instr->src[3]) == 64) {
+         assert(integer);
+         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int64_bld.vec_type, "");
+      } else {
+         if (integer)
+            params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int_bld.vec_type, "");
+         else
+            params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->base.vec_type, "");
+      }
    }
    if (nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS)
       params.ms_index = get_src(bld, &instr->src[2], 0);
@@ -4334,24 +4339,28 @@ visit_atomic_image(struct lp_build_nir_soa_context *bld,
    if (nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS)
       params.ms_index = get_src(bld, &instr->src[2], 0);
 
+   LLVMTypeRef indata_type = NULL;
+   if (nir_src_bit_size(instr->src[3]) == 64) {
+      assert(integer);
+      indata_type = bld->int64_bld.vec_type;
+   } else {
+      if (integer)
+         indata_type = bld->int_bld.vec_type;
+      else
+         indata_type = bld->base.vec_type;
+   }
+
    if (instr->intrinsic == nir_intrinsic_image_atomic_swap ||
        instr->intrinsic == nir_intrinsic_bindless_image_atomic_swap) {
       LLVMValueRef cas_val = get_src(bld, &instr->src[4], 0);
       params.indata[0] = in_val;
       params.indata2[0] = cas_val;
-
-      if (integer)
-         params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], bld->int_bld.vec_type, "");
-      else
-         params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], bld->base.vec_type, "");
+      params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], indata_type, "");
    } else {
       params.indata[0] = in_val;
    }
 
-   if (integer)
-      params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], bld->int_bld.vec_type, "");
-   else
-      params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], bld->base.vec_type, "");
+   params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], indata_type, "");
 
    params.outdata = result;
 

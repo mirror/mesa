@@ -3105,6 +3105,10 @@ struct lp_type
 lp_build_texel_type(struct lp_type texel_type,
                     const struct util_format_description *format_desc)
 {
+   if (format_desc->channel[0].size == 64 && format_desc->block.width == 1 &&
+       format_desc->block.height == 1 && format_desc->block.depth == 1)
+      texel_type.width = 64;
+
    /* always using the first channel hopefully should be safe,
     * if not things WILL break in other places anyway.
     */
@@ -4519,7 +4523,9 @@ lp_build_do_atomic_soa(struct gallivm_state *gallivm,
 {
    const enum pipe_format format = format_desc->format;
 
-   bool valid = format == PIPE_FORMAT_R32_UINT ||
+   bool valid = format == PIPE_FORMAT_R64_UINT ||
+                format == PIPE_FORMAT_R64_SINT ||
+                format == PIPE_FORMAT_R32_UINT ||
                 format == PIPE_FORMAT_R32_SINT ||
                 format == PIPE_FORMAT_R32_FLOAT;
 
@@ -4561,6 +4567,10 @@ lp_build_do_atomic_soa(struct gallivm_state *gallivm,
    LLVMTypeRef ref_type = (format == PIPE_FORMAT_R32_FLOAT) ?
       LLVMFloatTypeInContext(gallivm->context) :
       LLVMInt32TypeInContext(gallivm->context);
+   if (format_desc->block.bits == 64) {
+      assert(integer);
+      ref_type = LLVMInt64TypeInContext(gallivm->context);
+   }
 
    LLVMTypeRef atom_res_elem_type =
       LLVMVectorType(ref_type, type.length);

@@ -30,7 +30,7 @@ struct nouveau_screen {
    struct nouveau_client *client;
    struct nouveau_pushbuf *pushbuf;
 
-   char chipset_name[8];
+   char chipset_name[190];
 
    bool initialized;
 

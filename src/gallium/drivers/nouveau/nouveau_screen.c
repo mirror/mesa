@@ -30,6 +30,8 @@
 #include "nouveau_mm.h"
 #include "nouveau_buffer.h"
 
+#include "nouveau/headers/nvidia/g_nv_name_released.h"
+
 #include <compiler/glsl_types.h>
 
 /* XXX this should go away */
@@ -41,6 +43,37 @@
 #define NV_GENERIC_VM_LIMIT_SHIFT 39
 
 int nouveau_mesa_debug = 0;
+
+static const char *
+name_for_chip(uint32_t dev_id,
+              uint16_t subsystem_id,
+              uint16_t subsystem_vendor_id)
+{
+   const char *name = NULL;
+   for (uint32_t i = 0; i < ARRAY_SIZE(sChipsReleased); i++) {
+      const CHIPS_RELEASED *chip = &sChipsReleased[i];
+
+      if (dev_id != chip->devID)
+         continue;
+
+      if (chip->subSystemID == 0 && chip->subSystemVendorID == 0) {
+         /* When subSystemID and subSystemVendorID are both 0, this is the
+          * default name for the given chip.  A more specific name may exist
+          * elsewhere in the list.
+          */
+         assert(name == NULL);
+         name = chip->name;
+         continue;
+      }
+
+      /* If we find a specific name, return it */
+      if (chip->subSystemID == subsystem_id &&
+          chip->subSystemVendorID == subsystem_vendor_id)
+         return chip->name;
+   }
+
+   return name;
+}
 
 static const char *
 nouveau_screen_get_name(struct pipe_screen *pscreen)
@@ -291,6 +324,25 @@ nouveau_device_uuid(struct pipe_screen *pscreen, char *uuid)
    nv_device_uuid(&screen->device->info, (void *)uuid, PIPE_UUID_SIZE, false);
 }
 
+static void nouveau_init_renderer_string(struct nouveau_screen *screen)
+{
+   char first_name[256] = {}, second_name[32] = {};
+   uint64_t device_id;
+   int ret;
+
+   snprintf(second_name, sizeof(second_name), "(nouveau, NV%02X)", screen->device->chipset);
+   ret = nouveau_getparam(screen->device, NOUVEAU_GETPARAM_PCI_DEVICE, &device_id);
+   if (!ret) {
+      const char *name = name_for_chip(device_id, 0, 0);
+      if (name) {
+	 snprintf(first_name, sizeof(first_name), "%s", name);
+      }
+   }
+
+   snprintf(screen->chipset_name, sizeof(screen->chipset_name), "%s %s",
+	    first_name, second_name);
+}
+
 int
 nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
 {
@@ -412,7 +464,7 @@ nouveau_screen_init(struct nouveau_screen *screen, struct nouveau_device *dev)
    if (!ret)
       screen->cpu_gpu_time_delta = time - screen->cpu_gpu_time_delta * 1000;
 
-   snprintf(screen->chipset_name, sizeof(screen->chipset_name), "NV%02X", dev->chipset);
+   nouveau_init_renderer_string(screen);
    pscreen->get_name = nouveau_screen_get_name;
    pscreen->get_screen_fd = nouveau_screen_get_fd;
    pscreen->get_vendor = nouveau_screen_get_vendor;

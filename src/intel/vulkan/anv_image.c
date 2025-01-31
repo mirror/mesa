@@ -412,6 +412,13 @@ formats_ccs_e_compatible(const struct anv_physical_device *physical_device,
    if (!(create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
       return true;
 
+   /* Starting with Xe2, CCS can support format re-interpretation between
+    * renderable and non-renderable formats. So, we don't need to check the
+    * format list.
+    */
+   if (devinfo->ver >= 20)
+      return true;
+
    if (!fmt_list || fmt_list->viewFormatCount == 0)
       return false;
 

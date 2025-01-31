@@ -121,6 +121,8 @@ USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "util/u_prim.h"
 
 #include "gallium/include/pipe/p_state.h"
+#include "state_tracker/st_cb_flush.h"
+#include "state_tracker/st_context.h"
 
 #include "vbo_private.h"
 #include "api_exec_decl.h"
@@ -145,9 +147,9 @@ static
 void _vbo_bo_mark_range_as_used(struct gl_context *ctx, struct free_bo_pool_entry *entry,
                                 uint32_t start, uint32_t end_excl);
 static
-void _vbo_bo_add_to_free_list(struct gl_context *ctx,
-                              struct gl_buffer_object *bo,
-                              uint32_t start, uint32_t end_excl);
+struct free_bo_pool_entry * _vbo_bo_add_to_free_list(struct gl_context *ctx,
+                                                     struct gl_buffer_object *bo,
+                                                     uint32_t start, uint32_t end_excl);
 /*
  * NOTE: Old 'parity' issue is gone, but copying can still be
  * wrong-footed on replay.
@@ -882,9 +884,11 @@ compile_vertex_list(struct gl_context *ctx)
 
    if (save->free_bo_pool && total_bytes_needed < VBO_SAVE_SHARED_BUFFER_SIZE) {
       uint32_t hole_bit_count = 0;
-      uint32_t start_in_bo;
+      uint32_t start_in_bo, frs, fre;
+      bool needs_wait = true;
+      struct st_context *st = st_context(ctx);
 
-      for (int i = 0; i < VBO_SAVE_FREE_BO_POOL_SIZE && bo == NULL; i++) {
+      for (int i = 0; i < VBO_SAVE_FREE_BO_POOL_SIZE; i++) {
          struct free_bo_pool_entry *entry = &save->free_bo_pool[i];
          unsigned range_start, range_end;
 
@@ -893,8 +897,8 @@ compile_vertex_list(struct gl_context *ctx)
 
          BITSET_FOREACH_RANGE(range_start, range_end, entry->free_mask, VBO_SAVE_BUFFER_N_BITS) {
             uint32_t s = range_end - range_start, start;
-            /* There's a better candidate already, so skip this one. */
-            if (reuse_entry && s >= hole_bit_count)
+            /* Skip larger entries if the current one won't cause a wait. */
+            if (reuse_entry && !needs_wait && s >= hole_bit_count)
                continue;
 
             if (!is_vbo_storage_large_enough(save,
@@ -904,10 +908,34 @@ compile_vertex_list(struct gl_context *ctx)
                                              &start))
                continue;
 
+            bool wait;
+            if (entry->release_fence) {
+               bool done = st->screen->fence_finish(st->screen, NULL, entry->release_fence, 0);
+               if (done) {
+                  st->screen->fence_reference(st->screen, &entry->release_fence, NULL);
+                  BITSET_FOREACH_RANGE(frs, fre, entry->free_mask, VBO_SAVE_BUFFER_N_BITS)
+                     BITSET_CLEAR_RANGE(entry->dirty_mask, frs, fre);
+                  st->screen->fence_reference(st->screen, &entry->release_fence, NULL);
+                  wait = false;
+               } else {
+                  /* This BO has a release fence, but is the range we want to reuse
+                   * protected by this fence?
+                   */
+                  uint32_t r_end = (start + total_bytes_needed - 1) / VBO_SAVE_BUFFER_PER_BIT;
+                  wait = BITSET_TEST_RANGE(entry->dirty_mask, range_start, r_end);
+               }
+            } else {
+               wait = false;
+            }
+
+            if (reuse_entry && !needs_wait && wait)
+               continue;
+
             reuse_entry = entry;
             hole_bit_count = s;
             reuse_range_start = range_start;
             start_in_bo = start;
+            needs_wait = wait;
          }
       }
       if (reuse_entry) {
@@ -917,6 +945,27 @@ compile_vertex_list(struct gl_context *ctx)
                            indices, &max_index);
          upload_offset = vao_buffer_offset + start_offset * stride;
          bo = reuse_entry->bo;
+
+         if (needs_wait) {
+            struct st_context *st = st_context(ctx);
+
+            st_flush(st, NULL, 0);
+
+            st->screen->fence_finish(st->screen, NULL, reuse_entry->release_fence,
+                                     OS_TIMEOUT_INFINITE);
+            st->screen->fence_reference(st->screen, &reuse_entry->release_fence, NULL);
+
+            /* Since we had to wait, clear dirty flags of signaled fences. */
+            for (int i = 0; i < VBO_SAVE_FREE_BO_POOL_SIZE; i++) {
+               struct free_bo_pool_entry *entry = &save->free_bo_pool[i];
+               if (entry->release_fence &&
+                   st->screen->fence_finish(st->screen, NULL, entry->release_fence, 0)) {
+                  BITSET_FOREACH_RANGE(frs, fre, entry->free_mask, VBO_SAVE_BUFFER_N_BITS)
+                     BITSET_CLEAR_RANGE(entry->dirty_mask, frs, fre);
+                  st->screen->fence_reference(st->screen, &entry->release_fence, NULL);
+               }
+            }
+         }
       }
    }
 
@@ -2205,13 +2254,21 @@ void _vbo_bo_mark_range_as_used(struct gl_context *ctx, struct free_bo_pool_entr
                         (end_excl - 1) / VBO_SAVE_BUFFER_PER_BIT));
    BITSET_CLEAR_RANGE(entry->free_mask, start / VBO_SAVE_BUFFER_PER_BIT,
                                         (end_excl - 1) / VBO_SAVE_BUFFER_PER_BIT);
-   if (BITSET_IS_EMPTY(entry->free_mask))
+   if (BITSET_IS_EMPTY(entry->free_mask)) {
+      struct st_context *st = st_context(ctx);
       _mesa_reference_buffer_object(ctx, &entry->bo, NULL);
+      if (entry->release_fence)
+         st->screen->fence_reference(st->screen, &entry->release_fence, NULL);
+   } else {
+      BITSET_SET_RANGE(entry->dirty_mask,
+                       start / VBO_SAVE_BUFFER_PER_BIT,
+                       (end_excl - 1) / VBO_SAVE_BUFFER_PER_BIT);
+   }
 }
 
-static
-void _vbo_bo_add_to_free_list(struct gl_context *ctx, struct gl_buffer_object *bo,
-                              uint32_t start, uint32_t end_excl)
+static struct free_bo_pool_entry *
+_vbo_bo_add_to_free_list(struct gl_context *ctx, struct gl_buffer_object *bo,
+                         uint32_t start, uint32_t end_excl)
 {
    struct vbo_save_context *save = &vbo_context(ctx)->save;
    struct free_bo_pool_entry *e = NULL;
@@ -2263,7 +2320,12 @@ void _vbo_bo_add_to_free_list(struct gl_context *ctx, struct gl_buffer_object *b
       /* Clear the portion that is free. */
       BITSET_SET_RANGE(e->free_mask, start / VBO_SAVE_BUFFER_PER_BIT,
                                      (end_excl - 1) / VBO_SAVE_BUFFER_PER_BIT);
+      /* Update the dirty mask as well. */
+      BITSET_CLEAR_RANGE(e->dirty_mask, 0, (bo->Size - 1) / VBO_SAVE_BUFFER_PER_BIT);
+      BITSET_SET_RANGE(e->dirty_mask, 0, start / VBO_SAVE_BUFFER_PER_BIT);
    }
+
+   return e;
 }
 
 
@@ -2287,8 +2349,9 @@ vbo_save_release_bo(struct gl_context *ctx, struct gl_buffer_object **_bo,
    if (single_owner || !save->free_bo_pool)
       return;
 
+   struct free_bo_pool_entry *entry = NULL;
    for (int i = 0; i < VBO_SAVE_FREE_BO_POOL_SIZE; i++) {
-      struct free_bo_pool_entry *entry = &save->free_bo_pool[i];
+      entry = &save->free_bo_pool[i];
 
       if (bo == entry->bo) {
          /* If free_bo_pool is now the only owner of this bo, drop it to avoid keeping
@@ -2302,12 +2365,22 @@ vbo_save_release_bo(struct gl_context *ctx, struct gl_buffer_object **_bo,
 
          BITSET_SET_RANGE(entry->free_mask, start / VBO_SAVE_BUFFER_PER_BIT,
                                             (end_excl - 1) / VBO_SAVE_BUFFER_PER_BIT);
-         return;
+         goto attach_fence;
       }
    }
 
    /* We make it here if bo isn't already in free_bo_pool, so add a new entry. */
-   _vbo_bo_add_to_free_list(ctx, bo, start, end_excl);
+   entry = _vbo_bo_add_to_free_list(ctx, bo, start, end_excl);
+
+attach_fence:
+   if (entry) {
+      struct st_context *st = st_context(ctx);
+
+      /* Get a deferred fence for this bo: past this fence, the free+dirty
+       * ranges of this BO can be reused.
+       */
+      st_flush(st, &entry->release_fence, PIPE_FLUSH_DEFERRED);
+   }
 }
 
 

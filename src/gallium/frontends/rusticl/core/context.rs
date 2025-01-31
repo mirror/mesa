@@ -110,6 +110,14 @@ impl Context {
             .image_array_size
             .try_into_with_err(CL_OUT_OF_HOST_MEMORY)?;
         let target = cl_mem_type_to_texture_target(desc.image_type);
+        let mipmap_levels = desc
+            .num_mip_levels
+            // num_mip_levels specifies the amount of _total_ levels including the base one with the
+            // addition that 0 also means 1 base level. However in gallium/mesa the term
+            // "last_level" is used, so it's a 0 based number meaning we have to subtract 1.
+            .saturating_sub(1)
+            .try_into()
+            .map_err(|_| CL_OUT_OF_HOST_MEMORY)?;
 
         let mut res = HashMap::new();
         for &dev in &self.devs {
@@ -124,6 +132,7 @@ impl Context {
                     height,
                     depth,
                     array_size,
+                    mipmap_levels,
                     target,
                     pipe_format,
                     user_ptr,
@@ -137,6 +146,7 @@ impl Context {
                     height,
                     depth,
                     array_size,
+                    mipmap_levels,
                     target,
                     pipe_format,
                     res_type,
@@ -149,10 +159,12 @@ impl Context {
         }
 
         if !user_ptr.is_null() {
-            let bx = desc.bx()?;
+            let bx = desc.bx(0)?;
             let stride = desc.row_pitch()?;
             let layer_stride = desc.slice_pitch();
 
+            // This isn't supported by the spec
+            debug_assert_eq!(mipmap_levels, 0);
             res.iter()
                 .filter(|(_, r)| copy || !r.is_user())
                 .map(|(d, r)| {
@@ -200,25 +212,38 @@ impl Context {
         modifier: u64,
         image_type: cl_mem_object_type,
         gl_target: cl_GLenum,
-        format: pipe_format,
+        format: cl_image_format,
         gl_props: GLMemProps,
     ) -> CLResult<HashMap<&'static Device, Arc<PipeResource>>> {
         let mut res = HashMap::new();
         let target = cl_mem_type_to_texture_target_gl(image_type, gl_target);
+        let pipe_format = if image_type == CL_MEM_OBJECT_BUFFER {
+            pipe_format::PIPE_FORMAT_NONE
+        } else {
+            format.to_pipe_format().unwrap()
+        };
 
         for dev in &self.devs {
+            let enable_bind_as_image = if target != pipe_texture_target::PIPE_BUFFER {
+                dev.formats[&format][&image_type] as u32 & CL_MEM_WRITE_ONLY != 0
+            } else {
+                false
+            };
+
             let resource = dev
                 .screen()
                 .resource_import_dmabuf(
                     handle,
                     modifier,
                     target,
-                    format,
+                    pipe_format,
                     gl_props.stride,
                     gl_props.width,
                     gl_props.height,
                     gl_props.depth,
                     gl_props.array_size,
+                    gl_props.mipmap_levels,
+                    enable_bind_as_image,
                 )
                 .ok_or(CL_OUT_OF_RESOURCES)?;
 

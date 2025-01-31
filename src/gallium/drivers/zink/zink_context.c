@@ -4873,6 +4873,7 @@ zink_resource_copy_region(struct pipe_context *pctx,
       region.srcSubresource.aspectMask = src->aspect;
       region.srcSubresource.mipLevel = src_level;
       enum pipe_texture_target src_target = src->base.b.target;
+      enum pipe_texture_target dst_target = dst->base.b.target;
       if (src->need_2D)
          src_target = src_target == PIPE_TEXTURE_1D ? PIPE_TEXTURE_2D : PIPE_TEXTURE_2D_ARRAY;
       switch (src_target) {
@@ -4884,7 +4885,14 @@ zink_resource_copy_region(struct pipe_context *pctx,
          region.srcSubresource.baseArrayLayer = src_box->z;
          region.srcSubresource.layerCount = src_box->depth;
          region.srcOffset.z = 0;
-         region.extent.depth = 1;
+         /* VUID-vkCmdCopyImage-srcImage-01791
+          * If srcImage is of type VK_IMAGE_TYPE_2D, and dstImage is of type VK_IMAGE_TYPE_3D, then
+          * for each element of pRegions, extent.depth must equal srcSubresource.layerCount
+          */
+         if (src_target == PIPE_TEXTURE_2D_ARRAY && dst_target == PIPE_TEXTURE_3D)
+            region.extent.depth = src_box->depth;
+         else
+            region.extent.depth = 1;
          break;
       case PIPE_TEXTURE_3D:
          /* this uses depth */
@@ -4906,7 +4914,6 @@ zink_resource_copy_region(struct pipe_context *pctx,
 
       region.dstSubresource.aspectMask = dst->aspect;
       region.dstSubresource.mipLevel = dst_level;
-      enum pipe_texture_target dst_target = dst->base.b.target;
       if (dst->need_2D)
          dst_target = dst_target == PIPE_TEXTURE_1D ? PIPE_TEXTURE_2D : PIPE_TEXTURE_2D_ARRAY;
       switch (dst_target) {

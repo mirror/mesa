@@ -310,8 +310,8 @@ rusticl_mesa_bindings = rust.bindgen(
     '--constified-enum-module', 'pipe_query_type',
     '--allowlist-type',         'pipe_resource_usage',
     '--bitfield-enum',          'pipe_resource_usage',
-    '--allowlist-type',         'pipe_tex_filter',
-    '--constified-enum-module', 'pipe_tex_filter',
+    '--allowlist-type',         'pipe_tex_(mip)?filter',
+    '--constified-enum-module', 'pipe_tex_(mip)?filter',
     '--allowlist-type',         'pipe_tex_wrap',
     '--constified-enum-module', 'pipe_tex_wrap',
 

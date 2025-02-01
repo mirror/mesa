@@ -63,8 +63,6 @@ typedef enum {
    ppir_op_asin,
    ppir_op_acos,
 
-   ppir_op_atan,
-   ppir_op_atan2,
    ppir_op_atan_pt1,
    ppir_op_atan2_pt1,
    ppir_op_atan_pt2,

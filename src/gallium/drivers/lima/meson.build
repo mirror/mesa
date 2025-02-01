@@ -25,6 +25,7 @@ files_lima = files(
   'ir/pp/liveness.c',
   'ir/pp/codegen.h',
   'ir/pp/codegen.c',
+  'ir/pp/compact.c',
   'ir/pp/node_to_instr.c',
   'ir/pp/disasm.c',
 

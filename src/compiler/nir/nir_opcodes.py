@@ -342,6 +342,8 @@ unop("fquantize2f16", tfloat, "(fabs(src0) < ldexpf(1.0, -14)) ? copysignf(0.0f,
 
 unop("fsin", tfloat, "bit_size == 64 ? sin(src0) : sinf(src0)")
 unop("fcos", tfloat, "bit_size == 64 ? cos(src0) : cosf(src0)")
+unop("atan", tfloat, "bit_size == 64 ? atan(src0) : atanf(src0)")
+
 
 # dfrexp
 unop_convert("frexp_exp", tint32, tfloat, "frexp(src0, &dst);")
@@ -609,6 +611,8 @@ def binop_reduce_all_sizes(name, output_size, src_type, prereduce_expr,
                 prereduce_expr, reduce_expr, final_expr, description)
    binop_reduce("b32" + name[1:], output_size, tbool32, src_type,
                 prereduce_expr, reduce_expr, final_expr, description)
+
+binop("atan2", tfloat, "", "bit_size == 64 ? atan2(src0, src1) : atan2f(src0, src1)")
 
 binop("fadd", tfloat, _2src_commutative + associative,"""
 if (nir_is_rounding_mode_rtz(execution_mode, bit_size)) {

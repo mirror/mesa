@@ -4159,6 +4159,9 @@ typedef struct nir_shader_compiler_options {
    /* Lowers when 32x32->64 bit multiplication is not supported */
    bool lower_mul_2x32_64;
 
+   /* Indicates that atan and atan2 are supported */
+   bool has_atan;
+
    /* Indicates that urol and uror are supported */
    bool has_rotate8;
    bool has_rotate16;

@@ -45,7 +45,9 @@ static void *ppir_node_create_ssa(ppir_block *block, ppir_op op, nir_def *ssa)
    dest->write_mask = u_bit_consecutive(0, ssa->num_components);
 
    if (node->type == ppir_node_type_load ||
-       node->type == ppir_node_type_store)
+       node->type == ppir_node_type_store ||
+       node->op == ppir_op_atan2_pt1 ||
+       node->op == ppir_op_atan_pt1)
       dest->ssa.is_head = true;
 
    return node;
@@ -71,7 +73,9 @@ static void *ppir_node_create_reg(ppir_block *block, ppir_op op,
    dest->write_mask = mask;
 
    if (node->type == ppir_node_type_load ||
-       node->type == ppir_node_type_store)
+       node->type == ppir_node_type_store ||
+       node->op == ppir_op_atan2_pt1 ||
+       node->op == ppir_op_atan_pt1)
       dest->reg->is_head = true;
 
    return node;
@@ -186,6 +190,9 @@ static int nir_to_ppir_opcodes[nir_num_opcodes] = {
    [nir_op_flog2] = ppir_op_log2,
    [nir_op_fexp2] = ppir_op_exp2,
    [nir_op_fsqrt] = ppir_op_sqrt,
+   [nir_op_atan_utg_pt1] = ppir_op_atan_pt1,
+   [nir_op_atan2_utg_pt1] = ppir_op_atan2_pt1,
+   [nir_op_atan_utg_pt2] = ppir_op_atan_pt2,
    [nir_op_fsin] = ppir_op_sin,
    [nir_op_fcos] = ppir_op_cos,
    [nir_op_fmax] = ppir_op_max,
@@ -235,6 +242,9 @@ static bool ppir_emit_alu(ppir_block *block, nir_instr *ni)
       break;
    case ppir_op_sum4:
       src_mask = 0b1111;
+      break;
+   case ppir_op_atan_pt2:
+      src_mask = 0b111;
       break;
    default:
       src_mask = pd->write_mask;

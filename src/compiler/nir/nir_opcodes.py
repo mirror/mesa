@@ -1343,6 +1343,13 @@ unop("fcos_mdg", tfloat, "cosf(3.141592653589793 * src0)")
 # additional ALU that NIR may be able to optimize.
 unop("fsin_agx", tfloat, "sinf(src0 * (6.2831853/4.0))")
 
+# Utgard specific atan and atan2, done through a 2-step LUT
+unop_horiz("atan_utg_pt1", 3, tfloat, 1, tfloat, "dst.x = dst.y = dst.z = atanf(src0.x);")
+binop_horiz("atan2_utg_pt1", 3, tfloat, 1, tfloat, 1, tfloat, "dst.x = dst.y = dst.z = atan2f(src0.x, src1.x);")
+unop_horiz("atan_utg_pt2", 1, tfloat, 3, tfloat, "dst.x = src0.z;")
+unop_horiz("atan2_utg_pt2", 1, tfloat, 3, tfloat, "dst.x = src0.z;")
+unop_horiz("atan2_utg_pt2_scaled", 1, tfloat, 3, tfloat, "dst.x = src0.z;")
+
 # AGX specific bitfield extraction from a pair of 32bit registers.
 # src0,src1: the two registers
 # src2: bit position of the LSB of the bitfield

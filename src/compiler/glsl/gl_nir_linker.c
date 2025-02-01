@@ -72,6 +72,8 @@ gl_nir_opts(nir_shader *nir)
          NIR_PASS(_, nir, nir_lower_phis_to_scalar, false);
       }
 
+      if (!nir->options->has_atan)
+         NIR_PASS(_, nir, nir_lower_atan);
       NIR_PASS(_, nir, nir_lower_alu);
       NIR_PASS(_, nir, nir_lower_pack);
       NIR_PASS(progress, nir, nir_copy_prop);

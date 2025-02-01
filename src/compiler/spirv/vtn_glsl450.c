@@ -603,11 +603,11 @@ handle_glsl450_alu(struct vtn_builder *b, enum GLSLstd450 entrypoint,
       break;
 
    case GLSLstd450Atan:
-      dest->def = nir_atan(nb, src[0]);
+      dest->def = nir_lowered_atan(nb, src[0]);
       break;
 
    case GLSLstd450Atan2:
-      dest->def = nir_atan2(nb, src[0], src[1]);
+      dest->def = nir_lowered_atan2(nb, src[0], src[1]);
       break;
 
    case GLSLstd450Frexp: {

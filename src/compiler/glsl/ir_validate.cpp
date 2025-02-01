@@ -751,6 +751,8 @@ ir_validate::visit_leave(ir_expression *ir)
       break;
 
    case ir_unop_atan:
+   case ir_unop_asin:
+   case ir_unop_acos:
       assert(glsl_type_is_float_16_32_64(ir->operands[0]->type));
       assert(ir->type == ir->operands[0]->type);
       break;

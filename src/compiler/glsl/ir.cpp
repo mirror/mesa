@@ -246,6 +246,8 @@ ir_expression::ir_expression(int op, ir_rvalue *op0)
    case ir_unop_interpolate_at_centroid:
    case ir_unop_clz:
    case ir_unop_saturate:
+   case ir_unop_asin:
+   case ir_unop_acos:
    case ir_unop_atan:
       this->type = op0->type;
       break;

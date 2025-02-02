@@ -1250,8 +1250,11 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
          assert(inst->force_writemask_all && inst->group == 0);
          assert(inst->dst.file == BAD_FILE);
          brw_set_default_exec_size(p, BRW_EXECUTE_1);
+         brw_gfx12hp_swsb_stall(p, true);
          brw_MOV(p, retype(brw_flag_subreg(inst->flag_subreg), BRW_TYPE_UD),
                  retype(brw_mask_reg(0), BRW_TYPE_UD));
+         brw_gfx12hp_swsb_stall(p, false);
+         brw_SYNC(p, TGL_SYNC_NOP);
          break;
       }
       case SHADER_OPCODE_BROADCAST:
@@ -1354,9 +1357,14 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
              */
             if (brw_get_default_swsb(p).mode != TGL_SBID_NULL)
                brw_SYNC(p, TGL_SYNC_NOP);
+            /* When certain Arch Registers (sr, cr, ce) are used as a source,
+             * dependency must be set on all pipes
+             */
+            brw_gfx12hp_swsb_stall(p, true);
             brw_set_default_swsb(p, tgl_swsb_regdist(1));
             brw_MOV(p, dst, src[0]);
             brw_set_default_swsb(p, tgl_swsb_regdist(1));
+            brw_gfx12hp_swsb_stall(p, false);
             brw_AND(p, dst, dst, brw_imm_ud(0xffffffff));
          } else {
             brw_MOV(p, dst, src[0]);

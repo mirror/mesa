@@ -151,6 +151,8 @@ void brw_set_default_flag_reg(struct brw_codegen *p, int reg, int subreg);
 void brw_set_default_acc_write_control(struct brw_codegen *p, unsigned value);
 void brw_set_default_swsb(struct brw_codegen *p, struct tgl_swsb value);
 
+void brw_gfx12hp_swsb_stall(struct brw_codegen *p, bool stall_next);
+
 void brw_init_codegen(const struct brw_isa_info *isa,
                       struct brw_codegen *p, void *mem_ctx);
 bool brw_has_jip(const struct intel_device_info *devinfo, enum opcode opcode);

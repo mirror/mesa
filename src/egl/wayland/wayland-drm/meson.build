@@ -44,7 +44,7 @@ wp_dir = dep_wl_protocols.get_variable(pkgconfig : 'pkgdatadir', internal : 'pkg
 wp_protos = {
   'fifo-v1': 'staging/fifo/fifo-v1.xml',
   'commit-timing-v1': 'staging/commit-timing/commit-timing-v1.xml',
-  'linux-dmabuf-unstable-v1': 'unstable/linux-dmabuf/linux-dmabuf-unstable-v1.xml',
+  'linux-dmabuf-v1': 'stable/linux-dmabuf/linux-dmabuf-v1.xml',
   'presentation-time': 'stable/presentation-time/presentation-time.xml',
   'tearing-control-v1': 'staging/tearing-control/tearing-control-v1.xml',
   'linux-drm-syncobj-v1': 'staging/linux-drm-syncobj/linux-drm-syncobj-v1.xml',

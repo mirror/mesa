@@ -115,7 +115,7 @@ if with_dri
     deps_for_egl += [dep_wayland_client, dep_wayland_server, dep_wayland_egl_headers]
     link_for_egl += [libwayland_drm, libloader_wayland_helper]
     files_egl += files('drivers/dri2/platform_wayland.c')
-    files_egl += wp_files['linux-dmabuf-unstable-v1']
+    files_egl += wp_files['linux-dmabuf-v1']
     files_egl += [wayland_drm_client_protocol_h]
     incs_for_egl += include_directories('wayland/wayland-drm')
   endif

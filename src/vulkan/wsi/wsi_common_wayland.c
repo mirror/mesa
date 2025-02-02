@@ -43,7 +43,7 @@
 #include "wsi_common_private.h"
 #include "fifo-v1-client-protocol.h"
 #include "commit-timing-v1-client-protocol.h"
-#include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "linux-dmabuf-v1-client-protocol.h"
 #include "presentation-time-client-protocol.h"
 #include "linux-drm-syncobj-v1-client-protocol.h"
 #include "tearing-control-v1-client-protocol.h"

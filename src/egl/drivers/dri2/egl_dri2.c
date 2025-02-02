@@ -48,7 +48,7 @@
 #include "dri_screen.h"
 
 #ifdef HAVE_WAYLAND_PLATFORM
-#include "linux-dmabuf-unstable-v1-client-protocol.h"
+#include "linux-dmabuf-v1-client-protocol.h"
 #include "wayland-drm-client-protocol.h"
 #include "wayland-drm.h"
 #include <wayland-client.h>

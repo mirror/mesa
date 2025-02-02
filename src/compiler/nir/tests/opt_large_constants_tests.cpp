@@ -62,7 +62,6 @@ TEST_F(nir_large_constants_test, small_int_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 32
       decl_function main () (entrypoint)
 
       impl main {
@@ -95,7 +94,6 @@ TEST_F(nir_large_constants_test, small_uint8_t_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 8
       decl_function main () (entrypoint)
 
       impl main {
@@ -129,19 +127,20 @@ TEST_F(nir_large_constants_test, small_bool_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 32
       decl_function main () (entrypoint)
 
       impl main {
           block b0:  // preds:
           32    %0 = @load_workgroup_index
-          32    %1 = load_const (0x000000aa = 170)
-          32    %2 = ushr %1 (0xaa), %0
+          32    %1 = load_const (0x00000155 = 341)
+          32    %2 = ushr %1 (0x155), %0
           32    %3 = load_const (0x00000001)
           32    %4 = iand %2, %3 (0x1)
-          32    %5 = load_const (0x00000000)
-          1     %6 = ine %4, %5 (0x0)
-                     @use (%6)
+          32    %5 = load_const (0xffffffff = -1 = 4294967295)
+          32    %6 = iadd %4, %5 (0xffffffff)
+          32    %7 = load_const (0x00000000)
+          1     %8 = ine %6, %7 (0x0)
+                     @use (%8)
                      // succs: b1
           block b1:
       }
@@ -162,7 +161,6 @@ TEST_F(nir_large_constants_test, small_uint64_t_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 64
       decl_function main () (entrypoint)
 
       impl main {
@@ -196,7 +194,6 @@ TEST_F(nir_large_constants_test, small_float_natural_numbers_including_zero_arra
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 32
       decl_function main () (entrypoint)
 
       impl main {
@@ -230,19 +227,28 @@ TEST_F(nir_large_constants_test, small_float_natural_numbers_including_zero_vec_
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 64
       decl_function main () (entrypoint)
 
       impl main {
-          block b0:  // preds:
-          32    %0 = @load_workgroup_index
-          32    %1 = load_const (0x00000000)
-          32    %2 = load_const (0x00000003)
-          32    %3 = ishl %0, %2 (0x3)
-          32    %4 = iadd %1 (0x0), %3
-          32x2  %5 = @load_constant (%4) (base=0, range=64, access=none, align_mul=4, align_offset=0)
-                     @use (%5)
-                     // succs: b1
+          block b0:   // preds:
+          32     %0 = @load_workgroup_index
+          32     %1 = load_const (0x76543210 = 1985229328)
+          32     %2 = load_const (0x00000002)
+          32     %3 = ishl %0, %2 (0x2)
+          32     %4 = ushr %1 (0x76543210), %3
+          32     %5 = load_const (0x0000000f = 15)
+          32     %6 = iand %4, %5 (0xf)
+          32     %7 = u2f32 %6
+          32     %8 = load_const (0x01234567 = 19088743)
+          32     %9 = load_const (0x00000002)
+          32    %10 = ishl %0, %9 (0x2)
+          32    %11 = ushr %8 (0x1234567), %10
+          32    %12 = load_const (0x0000000f = 15)
+          32    %13 = iand %11, %12 (0xf)
+          32    %14 = u2f32 %13
+          32x2  %15 = vec2 %7, %14
+                      @use (%15)
+                      // succs: b1
           block b1:
       }
    )"));
@@ -262,19 +268,22 @@ TEST_F(nir_large_constants_test, small_float_whole_numbers_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 32
       decl_function main () (entrypoint)
 
       impl main {
-          block b0:  // preds:
-          32    %0 = @load_workgroup_index
-          32    %1 = load_const (0x00000000)
-          32    %2 = load_const (0x00000002)
-          32    %3 = ishl %0, %2 (0x2)
-          32    %4 = iadd %1 (0x0), %3
-          32    %5 = @load_constant (%4) (base=0, range=32, access=none, align_mul=4, align_offset=0)
-                     @use (%5)
-                     // succs: b1
+          block b0:   // preds:
+          32     %0 = @load_workgroup_index
+          32     %1 = load_const (0x76543210 = 1985229328)
+          32     %2 = load_const (0x00000002)
+          32     %3 = ishl %0, %2 (0x2)
+          32     %4 = ushr %1 (0x76543210), %3
+          32     %5 = load_const (0x0000000f = 15)
+          32     %6 = iand %4, %5 (0xf)
+          32     %7 = load_const (0xfffffffc = -4 = 4294967292)
+          32     %8 = iadd %6, %7 (0xfffffffc)
+          32     %9 = i2f32 %8
+                      @use (%9)
+                      // succs: b1
           block b1:
       }
    )"));
@@ -296,19 +305,25 @@ TEST_F(nir_large_constants_test, small_fraction_array)
       name: nir_large_constants_test
       workgroup_size: 1, 1, 1
       subgroup_size: 0
-      constants: 32
       decl_function main () (entrypoint)
 
       impl main {
-          block b0:  // preds:
-          32    %0 = @load_workgroup_index
-          32    %1 = load_const (0x00000000)
-          32    %2 = load_const (0x00000002)
-          32    %3 = ishl %0, %2 (0x2)
-          32    %4 = iadd %1 (0x0), %3
-          32    %5 = @load_constant (%4) (base=0, range=32, access=none, align_mul=4, align_offset=0)
-                     @use (%5)
-                     // succs: b1
+          block b0:   // preds:
+          32     %0 = @load_workgroup_index
+          64     %1 = load_const (0x12100e0c09060300 = 1301555737163858688)
+          32     %2 = load_const (0x00000003)
+          32     %3 = ishl %0, %2 (0x3)
+          64     %4 = ushr %1 (0x12100e0c09060300), %3
+          32     %5 = unpack_64_2x32_split_x %4
+          32     %6 = load_const (0x000000ff = 255)
+          32     %7 = iand %5, %6 (0xff)
+          32     %8 = load_const (0xfffffff4 = -12 = 4294967284)
+          32     %9 = iadd %7, %8 (0xfffffff4)
+          32    %10 = i2f32 %9
+          32    %11 = load_const (0x3e2aaaab = 0.166667)
+          32    %12 = fmul %10, %11 (0.166667)
+                      @use (%12)
+                      // succs: b1
           block b1:
       }
    )"));

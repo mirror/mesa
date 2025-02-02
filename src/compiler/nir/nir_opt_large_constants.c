@@ -112,6 +112,8 @@ write_const_values(void *dst, const nir_const_value *src,
 
 struct small_constant {
    uint64_t data;
+   int64_t min;
+   uint32_t denom;
    uint32_t bit_size;
    bool is_float;
    uint32_t bit_stride;
@@ -134,7 +136,8 @@ struct var_info {
    uint32_t constant_data_size;
    void *constant_data;
 
-   struct small_constant small_constant;
+   uint32_t num_components;
+   struct small_constant small_constant[NIR_MAX_VEC_COMPONENTS];
 };
 
 static int
@@ -221,61 +224,92 @@ handle_constant_store(void *mem_ctx, struct var_info *info,
                       bit_size);
 }
 
-static void
-get_small_constant(struct var_info *info, glsl_type_size_align_func size_align)
+#define NIR_SMALL_CONSTANT_MAX_ABS_VALUE 255
+
+/* Tries to fit one component of an array of vectors into a literal.
+ * Returns true on success.
+ */
+static bool
+get_small_constant_component(struct small_constant *info, uint32_t array_len,
+                             uint32_t bit_size, nir_const_value *values,
+                             uint32_t stride)
 {
-   if (!glsl_type_is_array(info->var->type))
-      return;
+   int64_t min = INT64_MAX;
 
-   const struct glsl_type *elem_type = glsl_get_array_element(info->var->type);
-   if (!glsl_type_is_scalar(elem_type))
-      return;
+   bool is_float = bit_size >= 16;
 
-   uint32_t array_len = glsl_get_length(info->var->type);
-   uint32_t bit_size = glsl_get_bit_size(elem_type);
-
-   /* If our array is large, don't even bother */
-   if (array_len > 64)
-      return;
-
-   /* Skip cases that can be lowered to a bcsel ladder more efficiently. */
-   if (array_len <= 3)
-      return;
-
-   uint32_t elem_size, elem_align;
-   size_align(elem_type, &elem_size, &elem_align);
-   uint32_t stride = ALIGN_POT(elem_size, elem_align);
-
-   if (stride != (bit_size == 1 ? 4 : bit_size / 8))
-      return;
-
-   nir_const_value values[64];
-   read_const_values(values, info->constant_data, array_len, bit_size);
-
-   bool is_float = true;
-   if (bit_size < 16) {
-      is_float = false;
-   } else {
+   uint32_t denom = 1;
+   if (is_float) {
+      bool found_denom = true;
       for (unsigned i = 0; i < array_len; i++) {
-         /* See if it's an easily convertible float.
-          * TODO: Compute greatest common divisor to support non-integer floats.
-          * TODO: Compute min value and add it to the result of
-          *       build_small_constant_load for handling negative floats.
+         double float_value = nir_const_value_as_float(values[i * stride], bit_size);
+         if (abs(float_value) > NIR_SMALL_CONSTANT_MAX_ABS_VALUE) {
+            is_float = false;
+            break;
+         }
+
+         /* Try out small denominators. Handling large denominators is not worth it
+          * because the numerators will be large in that case, making it unlikely that
+          * they will fit into 64 bits.
           */
-         uint64_t u = nir_const_value_as_float(values[i], bit_size);
-         nir_const_value fc = nir_const_value_for_float(u, bit_size);
-         is_float &= !memcmp(&fc, &values[i], bit_size / 8);
+         uint32_t value_denom = 0;
+         for (uint32_t candidate_denom = 1; candidate_denom <= 10; candidate_denom++) {
+            double expanded = float_value * candidate_denom;
+            if (floor(expanded) * (1.0f / (float)candidate_denom) == float_value) {
+               value_denom = candidate_denom;
+               break;
+            }
+         }
+
+         if (!value_denom) {
+            found_denom = false;
+            break;
+         } else {
+            /* Make sure the common denominator contains the prime factors of all denominators. */
+            uint32_t primes[] = { 2, 3, 5, 7 };
+            for (uint32_t prime_index = 0; prime_index < ARRAY_SIZE(primes); prime_index++) {
+               uint32_t prime = primes[prime_index];
+               uint32_t tmp_denom = denom;
+               while (value_denom % prime == 0) {
+                  if (tmp_denom % prime != 0)
+                     denom *= prime;
+
+                  tmp_denom = DIV_ROUND_UP(tmp_denom, prime);
+                  value_denom = DIV_ROUND_UP(value_denom, prime);
+               }
+            }
+         }
+      }
+
+      for (unsigned i = 0; i < array_len; i++) {
+         int64_t int_value = nir_const_value_as_float(values[i * stride], bit_size) * denom;
+         nir_const_value fc = nir_const_value_for_float(int_value * (1.0f / (float)denom), bit_size);
+         is_float &= !memcmp(&fc, &values[i * stride], bit_size / 8);
+
+         min = MIN2(min, int_value);
+      }
+
+      if (is_float && !found_denom)
+         return false;
+   }
+   
+   if (!is_float) {
+      min = INT64_MAX;
+      for (unsigned i = 0; i < array_len; i++) {
+         int64_t integer = nir_const_value_as_int(values[i * stride], bit_size);
+         min = MIN2(min, integer);
       }
    }
 
    uint32_t used_bits = 0;
    for (unsigned i = 0; i < array_len; i++) {
-      uint64_t u64_elem = is_float ? nir_const_value_as_float(values[i], bit_size)
-                                   : nir_const_value_as_uint(values[i], bit_size);
-      if (!u64_elem)
+      int64_t i64_elem = is_float ? nir_const_value_as_float(values[i * stride], bit_size) * denom
+                                  : nir_const_value_as_int(values[i * stride], bit_size);
+      i64_elem -= min;
+      if (!i64_elem)
          continue;
 
-      uint32_t elem_bits = util_logbase2_64(u64_elem) + 1;
+      uint32_t elem_bits = util_logbase2_64(i64_elem) + 1;
       used_bits = MAX2(used_bits, elem_bits);
    }
 
@@ -285,53 +319,110 @@ get_small_constant(struct var_info *info, glsl_type_size_align_func size_align)
    used_bits = util_next_power_of_two(used_bits);
 
    if (used_bits * array_len > 64)
+      return false;
+
+   for (unsigned i = 0; i < array_len; i++) {
+      int64_t i64_elem = is_float ? nir_const_value_as_float(values[i * stride], bit_size) * denom
+                                  : nir_const_value_as_uint(values[i * stride], bit_size);
+      i64_elem -= min;
+
+      info->data |= i64_elem << (i * used_bits);
+   }
+
+   info->min = min;
+   info->denom = denom;
+   /* Limit bit_size >= 32 to avoid unnecessary conversions.  */
+   info->bit_size =
+      MAX2(util_next_power_of_two(used_bits * array_len), 32);
+   info->is_float = is_float;
+   info->bit_stride = used_bits;
+
+   return true;
+}
+
+static void
+get_small_constant(struct var_info *info)
+{
+   if (!glsl_type_is_array(info->var->type))
       return;
+
+   const struct glsl_type *elem_type = glsl_get_array_element(info->var->type);
+   if (!glsl_type_is_scalar(elem_type) && !glsl_type_is_vector(elem_type))
+      return;
+
+   uint32_t array_len = glsl_get_length(info->var->type);
+   uint32_t num_components = glsl_get_vector_elements(elem_type);
+   uint32_t bit_size = glsl_get_bit_size(elem_type);
+
+   /* If our array is large, don't even bother */
+   if (array_len * num_components > 64)
+      return;
+
+   /* Skip cases that can be lowered to a bcsel ladder more efficiently. */
+   if (array_len <= 3)
+      return;
+
+   nir_const_value array_values[64];
+   read_const_values(array_values, info->constant_data, array_len * num_components, bit_size);
 
    info->is_small = true;
 
-   for (unsigned i = 0; i < array_len; i++) {
-      uint64_t u64_elem = is_float ? nir_const_value_as_float(values[i], bit_size)
-                                   : nir_const_value_as_uint(values[i], bit_size);
-
-      info->small_constant.data |= u64_elem << (i * used_bits);
+   for (uint32_t c = 0; c < num_components; c++) {
+      if (!get_small_constant_component(&info->small_constant[c], array_len, bit_size,
+                                        &array_values[c], num_components)) {
+         info->is_small = false;
+         break;
+      }
    }
 
-   /* Limit bit_size >= 32 to avoid unnecessary conversions.  */
-   info->small_constant.bit_size =
-      MAX2(util_next_power_of_two(used_bits * array_len), 32);
-   info->small_constant.is_float = is_float;
-   info->small_constant.bit_stride = used_bits;
+   info->num_components = num_components;
 }
 
 static nir_def *
 build_small_constant_load(nir_builder *b, nir_deref_instr *deref,
-                          struct var_info *info, glsl_type_size_align_func size_align)
+                          struct var_info *info)
 {
-   struct small_constant *constant = &info->small_constant;
 
-   nir_def *imm = nir_imm_intN_t(b, constant->data, constant->bit_size);
+   nir_def *ret[NIR_MAX_VEC_COMPONENTS] = { NULL };
 
-   assert(deref->deref_type == nir_deref_type_array);
-   nir_def *index = deref->arr.index.ssa;
+   for (uint32_t c = 0; c < info->num_components; c++) {
+      struct small_constant *constant = &info->small_constant[c];
 
-   nir_def *shift = nir_imul_imm(b, index, constant->bit_stride);
+      nir_def *imm = nir_imm_intN_t(b, constant->data, constant->bit_size);
 
-   nir_def *ret = nir_ushr(b, imm, nir_u2u32(b, shift));
-   ret = nir_iand_imm(b, ret, BITFIELD64_MASK(constant->bit_stride));
+      assert(deref->deref_type == nir_deref_type_array);
+      nir_def *index = deref->arr.index.ssa;
 
-   const unsigned bit_size = glsl_get_bit_size(deref->type);
-   if (bit_size < 8) {
-      /* Booleans are special-cased to be 32-bit */
-      assert(glsl_type_is_boolean(deref->type));
-      ret = nir_ine_imm(b, ret, 0);
-   } else {
-      if (constant->is_float)
-         ret = nir_u2fN(b, ret, bit_size);
-      else if (bit_size != constant->bit_size)
-         ret = nir_u2uN(b, ret, bit_size);
+      imm = nir_ushr(b, imm, nir_imul_imm(b, index, constant->bit_stride));
+      if (constant->bit_size == 64 && constant->bit_stride <= 32)
+         imm = nir_unpack_64_2x32_split_x(b, imm);
+
+      ret[c] = nir_iand_imm(b, imm, BITFIELD64_MASK(constant->bit_stride));
+      ret[c] = nir_iadd_imm(b, ret[c], constant->min);
+
+      const unsigned bit_size = glsl_get_bit_size(deref->type);
+      if (bit_size < 8) {
+         /* Booleans are special-cased to be 32-bit */
+         assert(glsl_type_is_boolean(deref->type));
+         ret[c] = nir_ine_imm(b, ret[c], 0);
+      } else {
+         if (constant->is_float) {
+            if (constant->min >= 0)
+               ret[c] = nir_u2fN(b, ret[c], bit_size);
+            else
+               ret[c] = nir_i2fN(b, ret[c], bit_size);
+
+            if (constant->denom != 1)
+               ret[c] = nir_fmul_imm(b, ret[c], 1.0f / (float)constant->denom);
+         } else if (bit_size != constant->bit_size) {
+            ret[c] = nir_u2uN(b, ret[c], bit_size);
+         }
+      }
    }
 
-   return ret;
+   if (info->num_components > 1)
+      return nir_vec(b, ret, info->num_components);
+   return ret[0];
 }
 
 /** Lower large constant variables to shader constant data
@@ -484,7 +575,7 @@ nir_opt_large_constants(nir_shader *shader,
       if (!info->is_constant)
          continue;
 
-      get_small_constant(info, size_align);
+      get_small_constant(info);
 
       unsigned var_size, var_align;
       size_align(info->var->type, &var_size, &var_align);
@@ -494,12 +585,14 @@ nir_opt_large_constants(nir_shader *shader,
          continue;
       }
 
-      if (i > 0 && var_info_cmp(info, &var_infos[i - 1]) == 0) {
-         info->var->data.location = var_infos[i - 1].var->data.location;
-         info->duplicate = true;
-      } else {
-         info->var->data.location = ALIGN_POT(shader->constant_data_size, var_align);
-         shader->constant_data_size = info->var->data.location + var_size;
+      if (!info->is_small) {
+         if (i > 0 && var_info_cmp(info, &var_infos[i - 1]) == 0) {
+            info->var->data.location = var_infos[i - 1].var->data.location;
+            info->duplicate = true;
+         } else {
+            info->var->data.location = ALIGN_POT(shader->constant_data_size, var_align);
+            shader->constant_data_size = info->var->data.location + var_size;
+         }
       }
 
       has_constant |= info->is_constant;
@@ -547,7 +640,7 @@ nir_opt_large_constants(nir_shader *shader,
             struct var_info *info = &var_infos[var->index];
             if (info->is_small) {
                b.cursor = nir_after_instr(&intrin->instr);
-               nir_def *val = build_small_constant_load(&b, deref, info, size_align);
+               nir_def *val = build_small_constant_load(&b, deref, info);
                nir_def_replace(&intrin->def, val);
                nir_deref_instr_remove_if_unused(deref);
             } else if (info->is_constant) {

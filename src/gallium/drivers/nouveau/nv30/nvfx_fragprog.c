@@ -39,7 +39,7 @@ struct nvfx_fpc {
    unsigned nr_imm;
 
    struct util_dynarray if_stack;
-   //struct util_dynarray loop_stack;
+   struct util_dynarray loop_stack;
    struct util_dynarray label_relocs;
 };
 
@@ -300,9 +300,8 @@ nv40_fp_ret(struct nvfx_fpc *fpc)
 }
 
 static void
-nv40_fp_rep(struct nvfx_fpc *fpc, unsigned count, unsigned target)
+nv40_fp_rep(struct nvfx_fpc *fpc, unsigned count)
 {
-        struct nvfx_relocation reloc;
         uint32_t *hw;
         fpc->inst_offset = fpc->fp->insn_len;
         grow_insns(fpc, 4);
@@ -318,11 +317,16 @@ nv40_fp_rep(struct nvfx_fpc *fpc, unsigned count, unsigned target)
                         (count << NV40_FP_OP_REP_COUNT1_SHIFT) |
                         (count << NV40_FP_OP_REP_COUNT2_SHIFT) |
                         (count << NV40_FP_OP_REP_COUNT3_SHIFT);
-        hw[3] = 0; /* | end_offset */
-        reloc.target = target;
-        reloc.location = fpc->inst_offset + 3;
-        util_dynarray_append(&fpc->label_relocs, struct nvfx_relocation, reloc);
-        //util_dynarray_append(&fpc->loop_stack, unsigned, target);
+        hw[3] = 0; /* | end_offset will be patched by nv40_fp_rep_end */
+        util_dynarray_append(&fpc->loop_stack, unsigned, fpc->inst_offset);
+}
+
+static void
+nv40_fp_rep_end(struct nvfx_fpc *fpc)
+{
+   unsigned rep = util_dynarray_pop(&fpc->loop_stack, unsigned);
+   uint32_t *hw = &fpc->fp->insn[rep];
+   hw[3] = fpc->inst_offset + 4;
 }
 
 #if 0
@@ -809,10 +813,13 @@ nvfx_fragprog_parse_instruction(struct nvfx_fpc *fpc,
       if(!fpc->is_nv4x)
          goto nv3x_cflow;
       /* TODO: we should support using two nested REPs to allow a > 255 iteration count */
-      nv40_fp_rep(fpc, 255, finst->Label.Label);
+      nv40_fp_rep(fpc, 255);
       break;
 
    case TGSI_OPCODE_ENDLOOP:
+      if (!fpc->is_nv4x)
+         goto nv3x_cflow;
+      nv40_fp_rep_end(fpc);
       break;
 
    case TGSI_OPCODE_BRK:
@@ -1158,7 +1165,7 @@ out:
       util_dynarray_fini(&fpc->if_stack);
       util_dynarray_fini(&fpc->label_relocs);
       util_dynarray_fini(&fpc->imm_data);
-      //util_dynarray_fini(&fpc->loop_stack);
+      util_dynarray_fini(&fpc->loop_stack);
       FREE(fpc);
    }
 

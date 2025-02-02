@@ -122,8 +122,8 @@ mkdir_if_needed(const char *path)
       if (S_ISDIR(sb.st_mode)) {
          return 0;
       } else {
-         fprintf(stderr, "Cannot use %s for shader cache (not a directory)"
-                         "---disabling.\n", path);
+         mesa_loge("Cannot use %s for shader cache (not a directory)"
+                   "---disabling.", path);
          return -1;
       }
    }
@@ -132,8 +132,8 @@ mkdir_if_needed(const char *path)
    if (ret == 0 || (ret == -1 && errno == EEXIST))
      return 0;
 
-   fprintf(stderr, "Failed to create %s for shader cache (%s)---disabling.\n",
-           path, strerror(errno));
+   mesa_loge("Failed to create %s for shader cache (%s)---disabling.", path,
+             strerror(errno));
 
    return -1;
 }
@@ -894,9 +894,8 @@ disk_cache_generate_cache_dir(void *mem_ctx, const char *gpu_name,
    if (!path) {
       path = secure_getenv("MESA_GLSL_CACHE_DIR");
       if (path)
-         fprintf(stderr,
-                 "*** MESA_GLSL_CACHE_DIR is deprecated; "
-                 "use MESA_SHADER_CACHE_DIR instead ***\n");
+         mesa_logw("MESA_GLSL_CACHE_DIR is deprecated by "
+                   "MESA_SHADER_CACHE_DIR");
    }
 
    if (path) {
@@ -1000,9 +999,8 @@ disk_cache_enabled()
    if (!getenv(envvar_name)) {
       envvar_name = "MESA_GLSL_CACHE_DISABLE";
       if (getenv(envvar_name))
-         fprintf(stderr,
-                 "*** MESA_GLSL_CACHE_DISABLE is deprecated; "
-                 "use MESA_SHADER_CACHE_DISABLE instead ***\n");
+         mesa_logw("MESA_GLSL_CACHE_DISABLE is deprecated by "
+                   "MESA_SHADER_CACHE_DISABLE");
    }
 
    if (debug_get_bool_option(envvar_name, disable_by_default) ||

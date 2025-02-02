@@ -164,9 +164,8 @@ disk_cache_type_create(const char *gpu_name,
    if (!max_size_str) {
       max_size_str = getenv("MESA_GLSL_CACHE_MAX_SIZE");
       if (max_size_str)
-         fprintf(stderr,
-                 "*** MESA_GLSL_CACHE_MAX_SIZE is deprecated; "
-                 "use MESA_SHADER_CACHE_MAX_SIZE instead ***\n");
+         mesa_logw("MESA_GLSL_CACHE_MAX_SIZE is deprecated by "
+                   "MESA_SHADER_CACHE_MAX_SIZE");
    }
 
    #ifdef MESA_SHADER_CACHE_MAX_SIZE
@@ -312,9 +311,9 @@ void
 disk_cache_destroy(struct disk_cache *cache)
 {
    if (unlikely(cache && cache->stats.enabled)) {
-      printf("disk shader cache:  hits = %u, misses = %u\n",
-             cache->stats.hits,
-             cache->stats.misses);
+      mesa_logi("disk shader cache:  hits = %u, misses = %u",
+                cache->stats.hits,
+                cache->stats.misses);
    }
 
    if (cache && util_queue_is_initialized(&cache->cache_queue)) {

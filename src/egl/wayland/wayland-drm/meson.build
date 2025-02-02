@@ -44,7 +44,6 @@ wp_dir = dep_wl_protocols.get_variable(pkgconfig : 'pkgdatadir', internal : 'pkg
 wp_protos = {
   'fifo-v1': 'staging/fifo/fifo-v1.xml',
   'commit-timing-v1': 'staging/commit-timing/commit-timing-v1.xml',
-  'linux-dmabuf-v1': 'stable/linux-dmabuf/linux-dmabuf-v1.xml',
   'presentation-time': 'stable/presentation-time/presentation-time.xml',
   'tearing-control-v1': 'staging/tearing-control/tearing-control-v1.xml',
   'linux-drm-syncobj-v1': 'staging/linux-drm-syncobj/linux-drm-syncobj-v1.xml',
@@ -65,3 +64,17 @@ foreach name, xml : wp_protos
   )
   wp_files += { name: [code, header] }
 endforeach
+
+dmabufcode = custom_target(
+  'linux-dmabuf-v1-protocol.c',
+  input : 'linux-dmabuf-v1.xml',
+  output : 'linux-dmabuf-v1-protocol.c',
+  command : [prog_wl_scanner, wl_scanner_arg, '@INPUT@', '@OUTPUT@'],
+)
+dmabufheader = custom_target(
+  'linux-dmabuf-v1-client-protocol.h',
+  input : 'linux-dmabuf-v1.xml',
+  output : 'linux-dmabuf-v1-client-protocol.h',
+  command : [prog_wl_scanner, 'client-header', '@INPUT@', '@OUTPUT@'],
+)
+wp_files += { 'linux-dmabuf-v1': [dmabufcode, dmabufheader] }

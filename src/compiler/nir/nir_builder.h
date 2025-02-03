@@ -2304,18 +2304,19 @@ nir_build_string(nir_builder *build, const char *value);
  * Call a given nir_function * with a variadic number of nir_def * arguments.
  *
  * Defined with __VA_ARGS__ instead of va_list so we can assert the correct
- * number of parameters are passed in.
+ * number of parameters are passed in. Adds an additional NULL element to
+ * prevent the compiler from complaining about 0 sized arrays.
  */
-#define nir_call(build, func, ...)                         \
-   do {                                                    \
-      nir_def *args[] = { __VA_ARGS__ };                   \
-      nir_build_call(build, func, ARRAY_SIZE(args), args); \
+#define nir_call(build, func, ...)                                  \
+   do {                                                             \
+      nir_def *_args[] = { NULL, __VA_ARGS__ };                     \
+      nir_build_call(build, func, ARRAY_SIZE(args) - 1, _args + 1); \
    } while (0)
 
-#define nir_call_indirect(build, func, callee, ...)                           \
-   do {                                                                       \
-      nir_def *_args[] = { __VA_ARGS__ };                                     \
-      nir_build_indirect_call(build, func, callee, ARRAY_SIZE(_args), _args); \
+#define nir_call_indirect(build, func, callee, ...)                                   \
+   do {                                                                               \
+      nir_def *_args[] = { NULL, __VA_ARGS__ };                                       \
+      nir_build_indirect_call(build, func, callee, ARRAY_SIZE(_args) - 1, _args + 1); \
    } while (0)
 
 nir_def *

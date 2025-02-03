@@ -27,10 +27,148 @@ print_usage(char *exec_name, FILE *f)
       f,
       "Usage: %s [options] [input files] -- [clang args]\n"
       "Options:\n"
-      "  -h  --help              Print this help.\n"
-      "  -o, --out <filename>    Specify the output filename.\n"
-      "  -v, --verbose           Print more information during compilation.\n",
+      "  -h, --help                   Print this help.\n"
+      "  -p, --emit-pch               Creates a PCH of the OpenCL header files and all inputs.\n"
+      "  -c, --include-pch <filename> Uses the given PCH file.\n"
+      "  -o, --out <filename>         Specify the output filename.\n"
+      "  -v, --verbose                Print more information during compilation.\n",
       exec_name);
+}
+
+static char*
+read_file(void *mem_ctx, const char *infile)
+{
+   FILE *fp = fopen(infile, "rb");
+   if (!fp) {
+      fprintf(stderr, "Failed to open %s\n", infile);
+      return NULL;
+   }
+
+   fseek(fp, 0L, SEEK_END);
+   size_t len = ftell(fp);
+   rewind(fp);
+
+   char *map = ralloc_array_size(mem_ctx, 1, len + 1);
+   if (!map) {
+      fprintf(stderr, "Failed to allocate");
+      return NULL;
+   }
+
+   fread(map, 1, len, fp);
+   map[len] = 0;
+   fclose(fp);
+
+   return map;
+}
+
+static int
+compile_clc(void *mem_ctx, struct util_dynarray *input_files,
+            struct util_dynarray *clang_args, struct clc_logger *logger,
+            struct set *deps, char *outfile)
+{
+   struct util_dynarray spirv_objs;
+   struct util_dynarray spirv_ptr_objs;
+
+   util_dynarray_init(&spirv_objs, mem_ctx);
+   util_dynarray_init(&spirv_ptr_objs, mem_ctx);
+
+   util_dynarray_foreach(input_files, char *, infile) {
+      char *map = read_file(mem_ctx, *infile);
+      if (!map)
+         return 1;
+
+      struct clc_compile_args clc_args = {
+         .source.name = *infile,
+         .source.value = map,
+         .args = util_dynarray_begin(clang_args),
+         .num_args = util_dynarray_num_elements(clang_args, char *),
+      };
+
+      /* Enable all features, we don't know the target here and it is the
+       * responsibility of the driver to only use features they will actually
+       * support. Not our job to blow up here.
+       */
+      memset(&clc_args.features, true, sizeof(clc_args.features));
+
+      struct clc_binary *spirv_out =
+         util_dynarray_grow(&spirv_objs, struct clc_binary, 1);
+
+      if (!clc_compile_c_to_spirv(&clc_args, logger, spirv_out, deps)) {
+         return 1;
+      }
+   }
+
+
+   util_dynarray_foreach(&spirv_objs, struct clc_binary, p) {
+      util_dynarray_append(&spirv_ptr_objs, struct clc_binary *, p);
+   }
+
+   struct clc_linker_args link_args = {
+      .in_objs = util_dynarray_begin(&spirv_ptr_objs),
+      .num_in_objs =
+         util_dynarray_num_elements(&spirv_ptr_objs, struct clc_binary *),
+      .create_library = true,
+   };
+   struct clc_binary final_spirv;
+   if (!clc_link_spirv(&link_args, logger, &final_spirv)) {
+      return 1;
+   }
+
+   FILE *fp = fopen(outfile, "w");
+   fwrite(final_spirv.data, final_spirv.size, 1, fp);
+   fclose(fp);
+
+   util_dynarray_foreach(&spirv_objs, struct clc_binary, p) {
+      clc_free_spirv(p);
+   }
+
+   clc_free_spirv(&final_spirv);
+
+   return 0;
+}
+
+static int
+compile_pch(void *mem_ctx, struct util_dynarray *input_files,
+            struct util_dynarray *clang_args, struct clc_logger *logger,
+            struct set *deps, char *outfile)
+{
+   struct util_dynarray headers;
+   struct clc_compile_args clc_args = {
+      .args = util_dynarray_begin(clang_args),
+      .num_args = util_dynarray_num_elements(clang_args, char *),
+      .source = {
+         .name = "empty.cl",
+         .value = "",
+      },
+   };
+
+   /* Enable all features, we don't know the target here and it is the
+      * responsibility of the driver to only use features they will actually
+      * support. Not our job to blow up here.
+      */
+   memset(&clc_args.features, true, sizeof(clc_args.features));
+   util_dynarray_init(&headers, mem_ctx);
+
+   util_dynarray_foreach(input_files, char *, infile) {
+      char *map = read_file(mem_ctx, *infile);
+      if (!map)
+         return 1;
+
+      struct clc_named_value header = {
+         .name = *infile,
+         .value = map,
+      };
+
+      util_dynarray_append(&headers, struct clc_named_value, header);
+   }
+
+   clc_args.num_headers = util_dynarray_num_elements(&headers, struct clc_named_value);
+   if (clc_args.num_headers)
+      clc_args.headers = util_dynarray_begin(&headers);
+
+   if (!clc_compile_pch(&clc_args, logger, outfile, deps))
+      return 1;
+   return 0;
 }
 
 int
@@ -40,29 +178,28 @@ main(int argc, char **argv)
       {"help", no_argument, 0, 'h'},
       {"in", required_argument, 0, 'i'},
       {"out", required_argument, 0, 'o'},
+      {"emit-pch", no_argument, 0, 'p'},
       {"depfile", required_argument, 0, 'd'},
+      {"include-pch", required_argument, 0, 'c'},
       {"verbose", no_argument, 0, 'v'},
       {0, 0, 0, 0},
    };
 
+   bool pch = false;
    char *outfile = NULL, *depfile = NULL;
    struct util_dynarray clang_args;
    struct util_dynarray input_files;
-   struct util_dynarray spirv_objs;
-   struct util_dynarray spirv_ptr_objs;
 
    void *mem_ctx = ralloc_context(NULL);
 
    util_dynarray_init(&clang_args, mem_ctx);
    util_dynarray_init(&input_files, mem_ctx);
-   util_dynarray_init(&spirv_objs, mem_ctx);
-   util_dynarray_init(&spirv_ptr_objs, mem_ctx);
 
    struct set *deps =
       _mesa_set_create(mem_ctx, _mesa_hash_string, _mesa_key_string_equal);
 
    int ch;
-   while ((ch = getopt_long(argc, argv, "he:i:o:d:v", long_options, NULL)) !=
+   while ((ch = getopt_long(argc, argv, "he:i:o:d:p:c:v", long_options, NULL)) !=
           -1) {
       switch (ch) {
       case 'h':
@@ -73,6 +210,13 @@ main(int argc, char **argv)
          break;
       case 'd':
          depfile = optarg;
+         break;
+      case 'p':
+         pch = true;
+         break;
+      case 'c':
+         util_dynarray_append(&clang_args, char *, "-include-pch");
+         util_dynarray_append(&clang_args, char *, optarg);
          break;
       default:
          fprintf(stderr, "Unrecognized option \"%s\".\n", optarg);
@@ -94,7 +238,7 @@ main(int argc, char **argv)
    util_dynarray_append(&clang_args, char *, "-cl-std=cl2.0");
    util_dynarray_append(&clang_args, char *, "-D__OPENCL_VERSION__=200");
 
-   if (util_dynarray_num_elements(&input_files, char *) == 0) {
+   if (util_dynarray_num_elements(&input_files, char *) == 0 && !pch) {
       fprintf(stderr, "No input file(s).\n");
       print_usage(argv[0], stderr);
       return -1;
@@ -111,71 +255,16 @@ main(int argc, char **argv)
       .warning = msg_callback,
    };
 
-   util_dynarray_foreach(&input_files, char *, infile) {
-      FILE *fp = fopen(*infile, "rb");
-      if (!fp) {
-         fprintf(stderr, "Failed to open %s\n", *infile);
-         ralloc_free(mem_ctx);
-         return 1;
-      }
+   int err;
+   if (pch)
+      err = compile_pch(mem_ctx, &input_files, &clang_args, &logger, deps, outfile);
+   else
+      err = compile_clc(mem_ctx, &input_files, &clang_args, &logger, deps, outfile);
 
-      fseek(fp, 0L, SEEK_END);
-      size_t len = ftell(fp);
-      rewind(fp);
-
-      char *map = ralloc_array_size(mem_ctx, 1, len + 1);
-      if (!map) {
-         fprintf(stderr, "Failed to allocate");
-         ralloc_free(mem_ctx);
-         return 1;
-      }
-
-      fread(map, 1, len, fp);
-      map[len] = 0;
-      fclose(fp);
-
-      struct clc_compile_args clc_args = {
-         .source.name = *infile,
-         .source.value = map,
-         .args = util_dynarray_begin(&clang_args),
-         .num_args = util_dynarray_num_elements(&clang_args, char *),
-      };
-
-      /* Enable all features, we don't know the target here and it is the
-       * responsibility of the driver to only use features they will actually
-       * support. Not our job to blow up here.
-       */
-      memset(&clc_args.features, true, sizeof(clc_args.features));
-
-      struct clc_binary *spirv_out =
-         util_dynarray_grow(&spirv_objs, struct clc_binary, 1);
-
-      if (!clc_compile_c_to_spirv(&clc_args, &logger, spirv_out, deps)) {
-         ralloc_free(mem_ctx);
-         return 1;
-      }
-   }
-
-
-   util_dynarray_foreach(&spirv_objs, struct clc_binary, p) {
-      util_dynarray_append(&spirv_ptr_objs, struct clc_binary *, p);
-   }
-
-   struct clc_linker_args link_args = {
-      .in_objs = util_dynarray_begin(&spirv_ptr_objs),
-      .num_in_objs =
-         util_dynarray_num_elements(&spirv_ptr_objs, struct clc_binary *),
-      .create_library = true,
-   };
-   struct clc_binary final_spirv;
-   if (!clc_link_spirv(&link_args, &logger, &final_spirv)) {
+   if (err) {
       ralloc_free(mem_ctx);
-      return 1;
+      return err;
    }
-
-   FILE *fp = fopen(outfile, "w");
-   fwrite(final_spirv.data, final_spirv.size, 1, fp);
-   fclose(fp);
 
    if (depfile) {
       FILE *fp = fopen(depfile, "w");
@@ -187,12 +276,6 @@ main(int argc, char **argv)
       fclose(fp);
    }
 
-   util_dynarray_foreach(&spirv_objs, struct clc_binary, p) {
-      clc_free_spirv(p);
-   }
-
-   clc_free_spirv(&final_spirv);
    ralloc_free(mem_ctx);
-
-   return 0;
+   return err;
 }

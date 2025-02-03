@@ -28,6 +28,15 @@ intel_shader_files = files(
   'util.cl',
 )
 
+intel_shaders_pch = custom_target(
+  output : 'intel_gfx_shaders.pch',
+  command : [
+    prog_mesa_clc,
+    '--emit-pch',
+    '-o', '@OUTPUT@',
+  ],
+)
+
 intel_shaders_gens = [ [ 80,   8],
                        [ 90,   9],
                        [110,  11],
@@ -43,7 +52,9 @@ foreach gen : intel_shaders_gens
     output : 'intel_gfx@0@_shaders.spv'.format(gen[0]),
     command : [
       prog_mesa_clc,
-      intel_shader_files, '-o', '@OUTPUT@', '--',
+      intel_shader_files,
+      '--include-pch', intel_shaders_pch,
+      '-o', '@OUTPUT@', '--',
       '-DNDEBUG=1',
       '-DGFX_VERx10=@0@'.format(gen[0]),
       '-I' + join_paths(meson.current_source_dir(), '.'),

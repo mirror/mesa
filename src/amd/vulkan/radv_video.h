@@ -22,8 +22,13 @@
 struct radv_physical_device;
 struct rvcn_sq_var;
 struct radv_cmd_buffer;
+struct radv_image_create_info;
 
 #define RADV_ENC_MAX_RATE_LAYER 4
+
+#define RADV_BIND_SESSION_CTX 0
+#define RADV_BIND_DECODER_CTX 1
+#define RADV_BIND_ENCODE_AV1_CDF_STORE RADV_BIND_DECODER_CTX
 
 struct radv_vid_mem {
    struct radv_device_memory *mem;
@@ -85,5 +90,9 @@ VkResult radv_video_get_encode_session_memory_requirements(struct radv_device *d
                                                            uint32_t *pMemoryRequirementsCount,
                                                            VkVideoSessionMemoryRequirementsKHR *pMemoryRequirements);
 void radv_video_patch_encode_session_parameters(struct vk_video_session_parameters *params);
+void radv_video_get_enc_dpb_image(struct radv_device *device,
+                                  const struct VkVideoProfileListInfoKHR *profile_list,
+                                  struct radv_image *image,
+                                  struct radv_image_create_info *create_info);
 
 #endif /* RADV_VIDEO_H */

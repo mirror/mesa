@@ -214,6 +214,8 @@ __clone_def(clone_state *state, nir_instr *ninstr,
             nir_def *ndef, const nir_def *def)
 {
    nir_def_init(ninstr, ndef, def->num_components, def->bit_size);
+   ndef->divergent = def->divergent;
+   ndef->loop_invariant = def->loop_invariant;
    if (likely(state->remap_table))
       add_remap(state, ndef, def);
 }

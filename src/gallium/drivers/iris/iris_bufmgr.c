@@ -1991,6 +1991,24 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd,
     */
    if (modifier == I915_FORMAT_MOD_4_TILED_BMG_CCS) {
       bo->real.heap = IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT;
+   } else if (bufmgr->devinfo.ver >= 20 && bufmgr->devinfo.has_local_mem) {
+      /* Xe2+:
+       * In anv driver, the exported resource should have compression
+       * disabled, and this is done with a special CMF value. But it seems
+       * the disabling doesn't happen on Xe2 DGs. As a result, we still get
+       * compressed resource. However, CMF approach in anv driver helps us
+       * to workaround compliance issue with the Vulkan spec on all Xe2
+       * platforms.
+       *
+       * We treat the imported buffers without modifiers as compressed in
+       * iris instead as a workaround. We can do so safely because
+       * uncompressed writes on Xe2 update CCS like compressed ops does:
+       *
+       * Bspec 70550 (r58127) MOCS and PAT Register Space
+       *    Table - Description of Field names
+       *       Lossless Compression Enable
+       */
+      bo->real.heap = IRIS_HEAP_DEVICE_LOCAL_COMPRESSED;
    } else if (modifier == I915_FORMAT_MOD_4_TILED_LNL_CCS) {
       bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT;
    }  else {

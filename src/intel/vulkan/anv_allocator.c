@@ -1479,7 +1479,7 @@ anv_bo_unmap_close(struct anv_device *device, struct anv_bo *bo)
    device->kmd_backend->gem_close(device, bo);
 }
 
-static void
+void
 anv_bo_vma_free(struct anv_device *device, struct anv_bo *bo)
 {
    if (bo->offset != 0 && !(bo->alloc_flags & ANV_BO_ALLOC_FIXED_ADDRESS)) {
@@ -1499,7 +1499,15 @@ anv_bo_finish(struct anv_device *device, struct anv_bo *bo)
    anv_bo_unmap_close(device, bo);
 }
 
-static VkResult
+bool
+anv_bo_is_small_heap(enum anv_bo_alloc_flags alloc_flags)
+{
+   return alloc_flags & (ANV_BO_ALLOC_DESCRIPTOR_POOL |
+                         ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL |
+                         ANV_BO_ALLOC_32BIT_ADDRESS);
+}
+
+VkResult
 anv_bo_vma_alloc_or_close(struct anv_device *device,
                           struct anv_bo *bo,
                           enum anv_bo_alloc_flags alloc_flags,
@@ -1508,11 +1516,7 @@ anv_bo_vma_alloc_or_close(struct anv_device *device,
    assert(bo->vma_heap == NULL);
    assert(explicit_address == intel_48b_address(explicit_address));
 
-   const bool is_small_heap =
-      alloc_flags & (ANV_BO_ALLOC_DESCRIPTOR_POOL |
-                     ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL |
-                     ANV_BO_ALLOC_32BIT_ADDRESS);
-
+   const bool is_small_heap = anv_bo_is_small_heap(alloc_flags);
    uint32_t align = device->physical->info.mem_alignment;
 
    /* If it's big enough to store a tiled resource, we need 64K alignment */

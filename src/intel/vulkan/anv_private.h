@@ -2381,6 +2381,14 @@ void anv_vma_free(struct anv_device *device,
                   struct util_vma_heap *vma_heap,
                   uint64_t address, uint64_t size);
 
+VkResult anv_bo_vma_alloc_or_close(struct anv_device *device,
+                                   struct anv_bo *bo,
+                                   enum anv_bo_alloc_flags alloc_flags,
+                                   uint64_t explicit_address);
+void anv_bo_vma_free(struct anv_device *device, struct anv_bo *bo);
+
+bool anv_bo_is_small_heap(enum anv_bo_alloc_flags alloc_flags);
+
 struct anv_reloc_list {
    bool                                         uses_relocs;
    uint32_t                                     dep_words;

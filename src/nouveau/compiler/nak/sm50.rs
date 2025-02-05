@@ -2076,7 +2076,7 @@ impl SM50Op for OpTex {
         e.set_tex_dim(28..31, self.dim);
         e.set_field(31..35, self.mask);
         e.set_bit(35, false); // ToDo: NDV
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
         e.set_bit(50, self.z_cmpr);
     }
 }
@@ -2109,7 +2109,7 @@ impl SM50Op for OpTld {
         e.set_tex_dim(28..31, self.dim);
         e.set_field(31..35, self.mask);
         e.set_bit(35, self.offset);
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
         e.set_bit(50, self.is_ms);
 
         assert!(
@@ -2157,7 +2157,7 @@ impl SM50Op for OpTld4 {
         e.set_tex_dim(28..31, self.dim);
         e.set_field(31..35, self.mask);
         e.set_bit(35, false); // ToDo: NDV
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
         e.set_bit(50, self.z_cmpr);
     }
 }
@@ -2189,7 +2189,7 @@ impl SM50Op for OpTmml {
         e.set_tex_dim(28..31, self.dim);
         e.set_field(31..35, self.mask);
         e.set_bit(35, false); // ToDo: NDV
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
     }
 }
 
@@ -2221,7 +2221,7 @@ impl SM50Op for OpTxd {
         e.set_tex_dim(28..31, self.dim);
         e.set_field(31..35, self.mask);
         e.set_bit(35, self.offset);
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
     }
 }
 
@@ -2261,7 +2261,7 @@ impl SM50Op for OpTxq {
             },
         );
         e.set_field(31..35, self.mask);
-        e.set_bit(49, false); // TODO: .NODEP
+        e.set_bit(49, self.nodep);
     }
 }
 

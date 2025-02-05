@@ -199,16 +199,17 @@ PRAGMA_DIAGNOSTIC_PUSH
 PRAGMA_DIAGNOSTIC_ERROR(-Wpadded)
 
 enum brw_robustness_flags {
-   BRW_ROBUSTNESS_UBO  = BITFIELD_BIT(0),
-   BRW_ROBUSTNESS_SSBO = BITFIELD_BIT(1),
+   BRW_ROBUSTNESS_UBO   = BITFIELD_BIT(0),
+   BRW_ROBUSTNESS_SSBO  = BITFIELD_BIT(1),
+   BRW_ROBUSTNESS_IMAGE = BITFIELD_BIT(2),
 };
 
 struct brw_base_prog_key {
    unsigned program_string_id;
 
-   enum brw_robustness_flags robust_flags:2;
+   enum brw_robustness_flags robust_flags:3;
 
-   unsigned padding:22;
+   unsigned padding:21;
 
    /**
     * Apply workarounds for SIN and COS input range problems.

@@ -22,6 +22,7 @@
  */
 
 #include "compiler/nir/nir_builder.h"
+#include "compiler/nir/nir_format_convert.h"
 #include "intel_nir.h"
 
 /**
@@ -163,6 +164,38 @@ pack_lod_or_bias_and_offset(nir_builder *b, nir_tex_instr *tex)
 }
 
 static bool
+pack_const_offset(nir_builder *b, nir_tex_instr *tex)
+{
+   int offset_index = nir_tex_instr_src_index(tex, nir_tex_src_offset);
+   if (offset_index < 0)
+      return false;
+
+   b->cursor = nir_before_instr(&tex->instr);
+
+   nir_def *offset = tex->src[offset_index].src.ssa;
+
+   static const unsigned bits4[] = { 4, 4, 4 };
+
+   offset = nir_pad_vector_imm_int(b, offset, 0, 3);
+   offset = nir_format_clamp_sint(b, offset, bits4);
+
+   nir_def *packed_offset = NULL;
+   const unsigned num_components = nir_tex_instr_src_size(tex, offset_index);
+   for (unsigned c = 0; c < num_components; c++) {
+      nir_def *c_shifted = nir_ishl_imm(
+         b,
+         nir_iand_imm(b, nir_channel(b, offset, c), 0xf),
+         4 * (2 - c));
+      packed_offset = packed_offset == NULL ? c_shifted : nir_ior(b, packed_offset, c_shifted);
+   }
+
+   nir_tex_instr_remove_src(tex, offset_index);
+   nir_tex_instr_add_src(tex, nir_tex_src_backend2, packed_offset);
+
+   return true;
+}
+
+static bool
 intel_nir_lower_texture_instr(nir_builder *b, nir_instr *instr, void *cb_data)
 {
    if (instr->type != nir_instr_type_tex)
@@ -171,27 +204,38 @@ intel_nir_lower_texture_instr(nir_builder *b, nir_instr *instr, void *cb_data)
    const struct intel_nir_lower_texture_opts *opts = cb_data;
    nir_tex_instr *tex = nir_instr_as_tex(instr);
 
+   bool progress = false;
+
+   /* TG4 has its own lower or can have its own space in the payload for the
+    * offset. Otherwise do the encoding here for the header.
+    */
+   if (tex->op != nir_texop_tg4 &&
+       tex->op != nir_texop_txf)
+      progress |= pack_const_offset(b, tex);
+
    switch (tex->op) {
    case nir_texop_txl:
    case nir_texop_txb:
-   case nir_texop_tg4:
+   case nir_texop_tg4: {
+      bool progress = false;
+
       if (tex->is_array &&
           tex->sampler_dim == GLSL_SAMPLER_DIM_CUBE &&
           opts->combined_lod_and_array_index) {
-         return pack_lod_and_array_index(b, tex);
+         progress |= pack_lod_and_array_index(b, tex);
       }
 
-      if (tex->op == nir_texop_tg4 && opts->combined_lod_or_bias_and_offset) {
-         return pack_lod_or_bias_and_offset(b, tex);
-      }
+      if (tex->op == nir_texop_tg4 &&
+          opts->combined_lod_or_bias_and_offset)
+         progress |= pack_lod_or_bias_and_offset(b, tex);
 
-      return false;
+      break;
+   }
    default:
-      /* Nothing to do */
-      return false;
+      break;
    }
 
-   return false;
+   return progress;
 }
 
 bool

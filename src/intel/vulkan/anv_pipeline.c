@@ -305,9 +305,17 @@ anv_stage_allocate_bind_map_tables(struct anv_pipeline *pipeline,
 }
 
 static enum brw_robustness_flags
-anv_get_robust_flags(const struct vk_pipeline_robustness_state *rstate)
+anv_get_robust_flags(const struct anv_device *device,
+                     const struct vk_pipeline_robustness_state *rstate)
 {
    return
+      /* Assume robustness with EXT_pipeline_robustness because this can be
+       * turned on/off per pipeline and we have no visibility on this here.
+       */
+      ((device->vk.enabled_features.robustImageAccess ||
+        device->vk.enabled_features.robustImageAccess2 ||
+        device->vk.enabled_extensions.EXT_pipeline_robustness) ?
+       BRW_ROBUSTNESS_IMAGE : 0) |
       ((rstate->storage_buffers !=
         VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_DISABLED_EXT) ?
        BRW_ROBUSTNESS_SSBO : 0) |
@@ -320,7 +328,7 @@ static void
 populate_base_prog_key(struct anv_pipeline_stage *stage,
                        const struct anv_device *device)
 {
-   stage->key.base.robust_flags = anv_get_robust_flags(&stage->rstate);
+   stage->key.base.robust_flags = anv_get_robust_flags(device, &stage->rstate);
    stage->key.base.limit_trig_input_range =
       device->physical->instance->limit_trig_input_range;
 }
@@ -588,7 +596,7 @@ anv_stage_write_shader_hash(struct anv_pipeline_stage *stage,
    vk_pipeline_hash_shader_stage(stage->pipeline_flags, stage->info,
                                  &stage->rstate, stage->shader_sha1);
 
-   stage->robust_flags = anv_get_robust_flags(&stage->rstate);
+   stage->robust_flags = anv_get_robust_flags(device, &stage->rstate);
 
    /* Use lowest dword of source shader sha1 for shader hash. */
    stage->source_hash = ((uint32_t*)stage->shader_sha1)[0];
@@ -902,6 +910,25 @@ print_ubo_load(nir_builder *b,
 }
 #endif
 
+static bool
+lower_non_tg4_non_uniform_offsets(const nir_tex_instr *tex,
+                                  unsigned index, void *data)
+{
+   /* HW cannot deal with divergent surfaces/samplers */
+   if (tex->src[index].src_type == nir_tex_src_texture_offset ||
+       tex->src[index].src_type == nir_tex_src_texture_handle ||
+       tex->src[index].src_type == nir_tex_src_sampler_offset ||
+       tex->src[index].src_type == nir_tex_src_sampler_handle)
+      return true;
+
+   if (tex->src[index].src_type == nir_tex_src_offset) {
+      /* HW can deal with TG4 divergent offsets only */
+      return tex->op != nir_texop_tg4;
+   }
+
+   return false;
+}
+
 static void
 anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
                        void *mem_ctx,
@@ -1013,7 +1040,8 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    enum nir_lower_non_uniform_access_type lower_non_uniform_access_types =
       nir_lower_non_uniform_texture_access |
       nir_lower_non_uniform_image_access |
-      nir_lower_non_uniform_get_ssbo_size;
+      nir_lower_non_uniform_get_ssbo_size |
+      nir_lower_non_uniform_texture_offset_access;
 
    /* In practice, most shaders do not have non-uniform-qualified
     * accesses (see
@@ -1029,6 +1057,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
       NIR_PASS(_, nir, nir_lower_non_uniform_access,
                &(nir_lower_non_uniform_access_options) {
                   .types = lower_non_uniform_access_types,
+                  .tex_src_callback = lower_non_tg4_non_uniform_offsets,
                   .callback = NULL,
                });
 
@@ -1996,12 +2025,6 @@ anv_pipeline_nir_preprocess(struct anv_pipeline *pipeline,
 
    struct brw_nir_compiler_opts opts = {
       .softfp64 = device->fp64_nir,
-      /* Assume robustness with EXT_pipeline_robustness because this can be
-       * turned on/off per pipeline and we have no visibility on this here.
-       */
-      .robust_image_access = device->vk.enabled_features.robustImageAccess ||
-                             device->vk.enabled_features.robustImageAccess2 ||
-                             device->vk.enabled_extensions.EXT_pipeline_robustness,
       .input_vertices = stage->nir->info.stage == MESA_SHADER_TESS_CTRL ?
                         stage->key.tcs.input_vertices : 0,
    };

@@ -7302,9 +7302,13 @@ brw_from_nir_emit_texture(nir_to_brw_state &ntb,
          break;
 
       case nir_tex_src_offset: {
+         /* For anything but TG4, should have been lowered by
+          * intel_nir_lower_texture()
+          */
+         assert(instr->op == nir_texop_tg4);
          uint32_t offset_bits = 0;
          if (brw_texture_offset(instr, i, &offset_bits)) {
-            header_bits |= offset_bits;
+            srcs[TEX_LOGICAL_SRC_PACKED_OFFSET] = brw_imm_ud(offset_bits);
          } else {
             /* On gfx12.5+, if the offsets are not both constant and in the
              * {-8,7} range, nir_lower_tex() will have already lowered the
@@ -7359,10 +7363,13 @@ brw_from_nir_emit_texture(nir_to_brw_state &ntb,
        * into a single (32-bit) value.
        */
       case nir_tex_src_backend2:
-         assert(instr->op == nir_texop_tg4);
-         pack_lod_bias_and_offset = true;
-         srcs[TEX_LOGICAL_SRC_LOD] =
-            retype(get_nir_src_imm(ntb, instr->src[i].src), BRW_TYPE_F);
+         if (instr->op == nir_texop_tg4) {
+            pack_lod_bias_and_offset = true;
+            srcs[TEX_LOGICAL_SRC_LOD] =
+               retype(get_nir_src_imm(ntb, instr->src[i].src), BRW_TYPE_F);
+         } else {
+            srcs[TEX_LOGICAL_SRC_PACKED_OFFSET] = bld.emit_uniformize(src);
+         }
          break;
 
       /* If this parameter is present, we are packing either the explicit LOD

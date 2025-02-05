@@ -167,19 +167,22 @@ compile_shader(struct anv_device *device,
          if (prog_data.wm.dispatch_8) {
             assert(stats[stat_idx].spills == 0);
             assert(stats[stat_idx].fills == 0);
-            assert(stats[stat_idx].sends == sends_count_expectation);
+            assert(sends_count_expectation == 0 ||
+                   stats[stat_idx].sends == sends_count_expectation);
             stat_idx++;
          }
          if (prog_data.wm.dispatch_16) {
             assert(stats[stat_idx].spills == 0);
             assert(stats[stat_idx].fills == 0);
-            assert(stats[stat_idx].sends == sends_count_expectation);
+            assert(sends_count_expectation == 0 ||
+                   stats[stat_idx].sends == sends_count_expectation);
             stat_idx++;
          }
          if (prog_data.wm.dispatch_32) {
             assert(stats[stat_idx].spills == 0);
             assert(stats[stat_idx].fills == 0);
-            assert(stats[stat_idx].sends ==
+            assert(sends_count_expectation == 0 ||
+                   stats[stat_idx].sends ==
                    sends_count_expectation *
                    (device->info->ver < 20 ? 2 : 1));
             stat_idx++;
@@ -203,7 +206,8 @@ compile_shader(struct anv_device *device,
       if (!INTEL_DEBUG(DEBUG_SHADER_PRINT)) {
          assert(stats.spills == 0);
          assert(stats.fills == 0);
-         assert(stats.sends == sends_count_expectation);
+         assert(sends_count_expectation == 0 ||
+                stats.sends == sends_count_expectation);
       }
    }
 

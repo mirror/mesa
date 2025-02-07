@@ -147,10 +147,13 @@ anv_vm_bind_to_drm_xe_vm_bind(struct anv_device *device,
    struct anv_bo *bo = anv_bind->bo;
    uint16_t pat_index = bo ?
       anv_device_get_pat_entry(device, bo->alloc_flags)->index : 0;
+   struct anv_bo *real_bo = bo ? anv_bo_get_real(bo) : NULL;
+   /* real_offset is needed for sparse bindings */
+   uint64_t real_offset = (bo && real_bo != bo) ? (bo->offset - real_bo->offset) : 0;
 
    struct drm_xe_vm_bind_op xe_bind = {
          .obj = 0,
-         .obj_offset = anv_bind->bo_offset,
+         .obj_offset = anv_bind->bo_offset + real_offset,
          .range = anv_bind->size,
          .addr = intel_48b_address(anv_bind->address),
          .op = DRM_XE_VM_BIND_OP_UNMAP,

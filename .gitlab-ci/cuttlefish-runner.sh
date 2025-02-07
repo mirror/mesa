@@ -7,7 +7,8 @@
 section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
-export PATH=/cuttlefish/bin:$PATH
+export PATH=/cuttlefish/bin:/android-tools/android-cts/jdk/bin/:/android-tools/build-tools:/android-tools/platform-tools:$PATH
+export JAVA_HOME=/android-tools/android-cts/jdk
 export LD_LIBRARY_PATH=/cuttlefish/lib64:${CI_PROJECT_DIR}/install/lib:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
 
@@ -143,7 +144,12 @@ else
   fi
 fi
 
-# The script sets EXIT_CODE
-. "$(dirname "$0")/android-deqp-runner.sh"
+if [ -n "$USE_ANDROID_CTS" ]; then
+  # The script sets EXIT_CODE
+  . "$(dirname "$0")/android-cts-runner.sh"
+else
+  # The script sets EXIT_CODE
+  . "$(dirname "$0")/android-deqp-runner.sh"
+fi
 
 exit $EXIT_CODE

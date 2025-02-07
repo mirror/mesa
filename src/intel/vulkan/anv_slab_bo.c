@@ -41,8 +41,7 @@ anv_bo_alloc_flags_to_slab_heap(struct anv_device *device,
                                            ANV_BO_ALLOC_SCANOUT |
                                            ANV_BO_ALLOC_PROTECTED |
                                            ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL |
-                                           ANV_BO_ALLOC_IMPORTED |
-                                           ANV_BO_ALLOC_AUX_CCS;
+                                           ANV_BO_ALLOC_IMPORTED;
 
    if (device->info->kmd_type == INTEL_KMD_TYPE_I915) {
       not_supported |= (ANV_BO_ALLOC_IMPLICIT_SYNC |

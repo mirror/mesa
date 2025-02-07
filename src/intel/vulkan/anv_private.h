@@ -2278,7 +2278,7 @@ anv_sanitize_map_params(struct anv_device *device,
 
 
 VkResult anv_device_alloc_bo(struct anv_device *device,
-                             const char *name, uint64_t size,
+                             const char *name, const uint64_t size,
                              uint32_t alignment,
                              enum anv_bo_alloc_flags alloc_flags,
                              uint64_t explicit_address,

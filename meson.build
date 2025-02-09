@@ -75,6 +75,7 @@ with_vulkan_vram_report_limit_layer = get_option('vulkan-layers').contains('vram
 with_tools = get_option('tools')
 if with_tools.contains('all')
   with_tools = [
+    'aco',
     'drm-shim',
     'dlclose-skip',
     'etnaviv',

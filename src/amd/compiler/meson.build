@@ -97,3 +97,27 @@ idep_aco = declare_dependency(
   link_with : _libaco,
   sources : [aco_opcodes_h, aco_builder_h],
 )
+
+
+cpp_args_aco_disassembler_fuzzer = cpp.get_supported_arguments(['-fno-rtti', '-Wimplicit-fallthrough', '-Wshadow'])
+
+
+disassembler_fuzzer = executable(
+  'disassembler_fuzzer',
+  files('disassembler/aco_disassembler_fuzzer.cpp'),
+  include_directories : [
+    inc_include, inc_src, inc_amd, inc_amd_common,
+  ],
+  link_with : [
+    libamd_common, libamd_common_llvm,
+  ],
+  dependencies : [
+    idep_aco, idep_nir_headers
+  ],
+  cpp_args : [
+    cpp_args_aco_disassembler_fuzzer, cpp_msvc_compat_args
+  ],
+  gnu_symbol_visibility : 'hidden',
+  build_by_default : with_tools.contains('aco'),
+  install : with_tools.contains('aco'),
+)

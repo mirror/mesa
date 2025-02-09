@@ -607,11 +607,65 @@ bi_rewrite_index_src_single(bi_instr *ins, bi_index old, bi_index new)
    }
 }
 
-/* If register allocation fails, find the best spill node */
+struct bi_spill_candidate {
+   unsigned reg;
+   unsigned benefit;
+};
 
-static signed
-bi_choose_spill_node(bi_context *ctx, struct lcra_state *l)
+/* insert a new spill candidate into an array
+ * the array can hold at most max_candidates candidates,
+ * and starts off holding num_candidates
+ * returns the new num_candidates after updating the
+ * array, which is kept sorted by descending benefit
+ * (highest benefit first)
+ */
+static unsigned
+bi_insert_spill_candidate(struct bi_spill_candidate *candidates,
+                          unsigned max_candidates, unsigned num_candidates,
+                          unsigned reg, unsigned benefit)
 {
+   unsigned i;
+   unsigned tail_size;
+
+   assert(max_candidates > 0);
+   /* find index i for the new candidate */
+   for (i = 0; i < num_candidates; i++) {
+      if (candidates[i].benefit < benefit) {
+         break; /* insert here */
+      }
+   }
+   if (i >= max_candidates)
+      return num_candidates; /* do not insert */
+
+   if (i == num_candidates) {
+      candidates[i].reg = reg;
+      candidates[i].benefit = benefit;
+      return num_candidates+1;
+   }
+   if (num_candidates < max_candidates) {
+      num_candidates++;
+   }
+   tail_size = (num_candidates - i) - 1;
+
+   /* copy the "tail_size" candidates forward */
+   memmove(candidates + i + 1, candidates + i, tail_size * sizeof(candidates[0]));
+   candidates[i].reg = reg;
+   candidates[i].benefit = benefit;
+
+   /* update num_candidates if necessary */
+   if (num_candidates < max_candidates) {
+      num_candidates++;
+   }
+   return num_candidates;
+}
+
+/* If register allocation fails, find the best nodes to spill */
+/* returns the number of candidates found */
+static unsigned
+bi_choose_spill_nodes(bi_context *ctx, struct lcra_state *l,
+                      struct bi_spill_candidate *candidates, unsigned max_candidates)
+{
+   unsigned num_candidates = 0;
    /* Pick a node satisfying bi_spill_register's preconditions */
    BITSET_WORD *no_spill =
       calloc(sizeof(BITSET_WORD), BITSET_WORDS(l->node_count));
@@ -632,9 +686,6 @@ bi_choose_spill_node(bi_context *ctx, struct lcra_state *l)
       }
    }
 
-   unsigned best_benefit = 0.0;
-   signed best_node = -1;
-
    if (nodearray_is_sparse(&l->linear[l->spill_node])) {
       nodearray_sparse_foreach(&l->linear[l->spill_node], elem) {
          unsigned i = nodearray_sparse_key(elem);
@@ -650,9 +701,9 @@ bi_choose_spill_node(bi_context *ctx, struct lcra_state *l)
 
          unsigned benefit = lcra_count_constraints(l, i);
 
-         if (benefit > best_benefit) {
-            best_benefit = benefit;
-            best_node = i;
+         if (benefit > 0) {
+            num_candidates = bi_insert_spill_candidate(candidates, max_candidates,
+                                                       num_candidates, i, benefit);
          }
       }
    } else {
@@ -669,15 +720,15 @@ bi_choose_spill_node(bi_context *ctx, struct lcra_state *l)
 
          unsigned benefit = lcra_count_constraints(l, i);
 
-         if (benefit > best_benefit) {
-            best_benefit = benefit;
-            best_node = i;
+         if (benefit > 0) {
+            num_candidates = bi_insert_spill_candidate(candidates, max_candidates,
+                                                       num_candidates, i, benefit);
          }
       }
    }
 
    free(no_spill);
-   return best_node;
+   return num_candidates;
 }
 
 static unsigned
@@ -1083,7 +1134,8 @@ bi_register_allocate(bi_context *ctx)
    struct lcra_state *l = NULL;
    bool success = false;
 
-   unsigned iter_count = 2000; /* max iterations */
+   unsigned max_iters = 500; /* max iterations */
+   unsigned iter_count = 0;
 
    /* Number of bytes of memory we've spilled into */
    unsigned spill_count = ctx->info.tls_size;
@@ -1110,43 +1162,48 @@ bi_register_allocate(bi_context *ctx)
    }
 
    /* Otherwise, use the register file and spill until we succeed */
-   while (!success && ((iter_count--) > 0)) {
+   while (!success && ((iter_count++) < max_iters)) {
       l = bi_allocate_registers(ctx, &success, true);
 
       if (success) {
          ctx->info.work_reg_count = 64;
       } else {
-         signed spill_node = bi_choose_spill_node(ctx, l);
-         lcra_free(l);
-         l = NULL;
+#define MAX_SPILL_CANDIDATES 4
+         struct bi_spill_candidate spill_candidates[MAX_SPILL_CANDIDATES];
+         unsigned num_spills = bi_choose_spill_nodes(ctx, l, spill_candidates,
+                                                     MAX_SPILL_CANDIDATES);
 
-         if (spill_node == -1)
+         if (num_spills == 0)
             unreachable("Failed to choose spill node\n");
 
          if (ctx->inputs->is_blend)
             unreachable("Blend shaders may not spill");
 
-         /* By default, we use packed TLS addressing on Valhall.
-          * We cannot cross 16 byte boundaries with packed TLS
-          * addressing. Align to ensure this doesn't happen. This
-          * could be optimized a bit.
-          */
-         if (ctx->arch >= 9)
-            spill_count = ALIGN_POT(spill_count, 16);
+         for (unsigned i = 0; i < num_spills; i++) {
+            unsigned spill_node = spill_candidates[i].reg;
 
-         spill_count +=
-            bi_spill_register(ctx, bi_get_index(spill_node), spill_count);
+            /* By default, we use packed TLS addressing on Valhall.
+             * We cannot cross 16 byte boundaries with packed TLS
+             * addressing. Align to ensure this doesn't happen. This
+             * could be optimized a bit.
+             */
+            if (ctx->arch >= 9)
+               spill_count = ALIGN_POT(spill_count, 16);
 
-         /* In case the spill affected an instruction with tied
-          * operands, we need to fix up.
-          */
-         bi_coalesce_tied(ctx);
+            spill_count +=
+               bi_spill_register(ctx, bi_get_index(spill_node), spill_count);
+            /* In case the spill affected an instruction with tied
+             * operands, we need to fix up.
+             */
+            bi_coalesce_tied(ctx);
+         }
+         lcra_free(l);
+         l = NULL;
       }
    }
 
    assert(success);
    assert(l != NULL);
-
    ctx->info.tls_size = spill_count;
    bi_install_registers(ctx, l);
 

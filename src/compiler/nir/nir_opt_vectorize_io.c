@@ -563,6 +563,7 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
                continue;
 
             case nir_intrinsic_emit_vertex:
+            case nir_intrinsic_emit_vertex_with_counter:
                /* Don't vectorize across GS emits. */
                progress |= vectorize_batch(&io_instructions);
                BITSET_ZERO(has_output_loads);

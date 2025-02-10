@@ -1929,6 +1929,11 @@ struct isl_cpb_emit_info {
     * The Memory Object Control state for the surface.
     */
    uint32_t mocs;
+
+   /**
+    * Aux usage of the CPB surface
+    */
+   enum isl_aux_usage aux_usage;
 };
 
 /*

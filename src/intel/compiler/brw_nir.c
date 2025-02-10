@@ -137,6 +137,23 @@ type_size_dvec4(const struct glsl_type *type, bool bindless)
    return type_size_xvec4(type, false, bindless);
 }
 
+static nir_variable_mode
+stage_urb_variables(gl_shader_stage stage)
+{
+   switch (stage) {
+   case MESA_SHADER_VERTEX:
+   case MESA_SHADER_TASK:
+      return nir_var_shader_out;
+   case MESA_SHADER_TESS_CTRL:
+   case MESA_SHADER_TESS_EVAL:
+   case MESA_SHADER_GEOMETRY:
+   case MESA_SHADER_MESH:
+      return nir_var_shader_in | nir_var_shader_out;
+   default:
+      return 0;
+   }
+}
+
 static bool
 remap_tess_levels(nir_builder *b, nir_intrinsic_instr *intr,
                   enum tess_primitive_mode _primitive_mode)
@@ -1760,6 +1777,17 @@ brw_postprocess_nir(nir_shader *nir, const struct brw_compiler *compiler,
       NIR_PASS(_, nir, intel_nir_lower_shading_rate_output);
 
    OPT(brw_nir_tag_speculative_access);
+
+   nir_variable_mode io_vectorize_urb = stage_urb_variables(nir->info.stage);
+   if (io_vectorize_urb) {
+      /* Ensure that all constant offsets are merged for opt_vectorize_io */
+      OPT(nir_opt_cse);
+      OPT(nir_opt_dce);
+
+      /* opt_vectorize_io requires that accesses are scalarized */
+      OPT(nir_lower_io_to_scalar, io_vectorize_urb, NULL, NULL);
+      OPT(nir_opt_vectorize_io, io_vectorize_urb, true);
+   }
 
    brw_nir_optimize(nir, devinfo);
 

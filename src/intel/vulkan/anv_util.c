@@ -185,6 +185,7 @@ anv_device_print_init(struct anv_device *device)
    VkResult result =
       anv_device_alloc_bo(device, "printf",
                           anv_printf_buffer_size(),
+                          0,
                           ANV_BO_ALLOC_CAPTURE |
                           ANV_BO_ALLOC_MAPPED |
                           ANV_BO_ALLOC_HOST_COHERENT |

@@ -44,7 +44,7 @@ anv_bo_sync_init(struct vk_device *vk_device,
    sync->state = initial_value ? ANV_BO_SYNC_STATE_SIGNALED :
                                  ANV_BO_SYNC_STATE_RESET;
 
-   return anv_device_alloc_bo(device, "bo-sync", 4096,
+   return anv_device_alloc_bo(device, "bo-sync", 4096, 0,
                               ANV_BO_ALLOC_EXTERNAL |
                               ANV_BO_ALLOC_IMPLICIT_SYNC |
                               ANV_BO_ALLOC_INTERNAL,

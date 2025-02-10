@@ -1464,7 +1464,9 @@ alloc_private_binding(struct anv_device *device,
    }
 
    VkResult result = anv_device_alloc_bo(device, "image-binding-private",
-                                         binding->memory_range.size, 0, 0,
+                                         binding->memory_range.size,
+                                         binding->memory_range.alignment,
+                                         0, 0,
                                          &binding->address.bo);
    if (result == VK_SUCCESS) {
       pthread_mutex_lock(&device->mutex);

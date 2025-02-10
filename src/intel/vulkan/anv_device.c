@@ -73,7 +73,7 @@ anv_device_init_border_colors(struct anv_device *device)
 static VkResult
 anv_device_init_trivial_batch(struct anv_device *device)
 {
-   VkResult result = anv_device_alloc_bo(device, "trivial-batch", 4096,
+   VkResult result = anv_device_alloc_bo(device, "trivial-batch", 4096, 0,
                                          ANV_BO_ALLOC_MAPPED |
                                          ANV_BO_ALLOC_HOST_COHERENT |
                                          ANV_BO_ALLOC_INTERNAL |
@@ -692,7 +692,7 @@ VkResult anv_CreateDevice(
          goto fail_aux_tt_pool;
    }
 
-   result = anv_device_alloc_bo(device, "workaround", 8192,
+   result = anv_device_alloc_bo(device, "workaround", 8192, 4096,
                                 ANV_BO_ALLOC_CAPTURE |
                                 ANV_BO_ALLOC_HOST_COHERENT |
                                 ANV_BO_ALLOC_MAPPED |
@@ -703,7 +703,7 @@ VkResult anv_CreateDevice(
       goto fail_surface_aux_map_pool;
 
    if (intel_needs_workaround(device->info, 14019708328)) {
-      result = anv_device_alloc_bo(device, "dummy_aux", 4096,
+      result = anv_device_alloc_bo(device, "dummy_aux", 4096, 4096,
                                    0 /* alloc_flags */,
                                    0 /* explicit_address */,
                                    &device->dummy_aux_bo);
@@ -721,7 +721,7 @@ VkResult anv_CreateDevice(
     * HAS 1607240579 then provides the size information: 4K
     */
    if (device->info->verx10 >= 200) {
-      result = anv_device_alloc_bo(device, "mem_fence", 4096,
+      result = anv_device_alloc_bo(device, "mem_fence", 4096, 4096,
                                    ANV_BO_ALLOC_NO_LOCAL_MEM, 0,
                                    &device->mem_fence_bo);
       if (result != VK_SUCCESS)
@@ -772,7 +772,7 @@ VkResult anv_CreateDevice(
          align(brw_rt_ray_queries_hw_stacks_size(device->info), 4096);
 
       result = anv_device_alloc_bo(device, "ray queries",
-                                   ray_queries_size,
+                                   ray_queries_size, 0,
                                    ANV_BO_ALLOC_INTERNAL,
                                    0 /* explicit_address */,
                                    &device->ray_query_bo[0]);
@@ -783,7 +783,7 @@ VkResult anv_CreateDevice(
       if (intel_needs_workaround(device->isl_dev.info, 14022863161) &&
           device_has_compute_queue) {
          result = anv_device_alloc_bo(device, "ray queries",
-                                      ray_queries_size,
+                                      ray_queries_size, 0,
                                       ANV_BO_ALLOC_INTERNAL,
                                       0 /* explicit_address */,
                                       &device->ray_query_bo[1]);
@@ -861,7 +861,7 @@ VkResult anv_CreateDevice(
          128 * 1024 * intel_device_info_dual_subslice_id_bound(device->info);
       result = anv_device_alloc_bo(device,
                                    "rt-btd-fifo",
-                                   btd_fifo_bo_size,
+                                   btd_fifo_bo_size, 0,
                                    ANV_BO_ALLOC_INTERNAL,
                                    0 /* explicit_address */,
                                    &device->btd_fifo_bo);
@@ -1648,10 +1648,26 @@ VkResult anv_AllocateMemory(
       alloc_flags |= ANV_BO_ALLOC_HOST_COHERENT;
    }
 
-   /* Regular allocate (not importing memory). */
+   uint32_t alignment = 4 * 1024;
+   if (dedicated_info && dedicated_info->image != VK_NULL_HANDLE) {
+      ANV_FROM_HANDLE(anv_image, image, dedicated_info->image);
 
+      for (enum anv_image_memory_binding binding = 0;
+           binding < ANV_IMAGE_MEMORY_BINDING_END;
+           binding++)
+         alignment = MAX2(alignment, image->bindings[binding].memory_range.alignment);
+   }
+
+   if (dedicated_info && dedicated_info->buffer != VK_NULL_HANDLE) {
+      ANV_FROM_HANDLE(anv_buffer, buffer, dedicated_info->buffer);
+
+      if (buffer->vk.create_flags & VK_BUFFER_CREATE_SPARSE_BINDING_BIT)
+         alignment = MAX2(alignment, ANV_SPARSE_BLOCK_SIZE);
+   }
+
+   /* Regular allocate (not importing memory). */
    result = anv_device_alloc_bo(device, "user", pAllocateInfo->allocationSize,
-                                alloc_flags, client_address, &mem->bo);
+                                alignment, alloc_flags, client_address, &mem->bo);
    if (result != VK_SUCCESS)
       goto fail;
 

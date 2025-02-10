@@ -440,6 +440,7 @@ anv_block_pool_expand_range(struct anv_block_pool *pool, uint32_t size)
    VkResult result = anv_device_alloc_bo(pool->device,
                                          pool->name,
                                          new_bo_size,
+                                         0,
                                          pool->bo_alloc_flags,
                                          intel_48b_address(pool->start_address + pool->size),
                                          &new_bo);
@@ -1273,6 +1274,7 @@ anv_bo_pool_alloc(struct anv_bo_pool *pool, uint32_t size,
    VkResult result = anv_device_alloc_bo(pool->device,
                                          pool->name,
                                          pow2_size,
+                                         0,
                                          pool->bo_alloc_flags,
                                          0 /* explicit_address */,
                                          &bo);
@@ -1381,7 +1383,7 @@ anv_scratch_pool_alloc(struct anv_device *device, struct anv_scratch_pool *pool,
     *
     * so nothing will ever touch the top page.
     */
-   VkResult result = anv_device_alloc_bo(device, "scratch", size,
+   VkResult result = anv_device_alloc_bo(device, "scratch", size, 1024,
                                          pool->alloc_flags,
                                          0 /* explicit_address */,
                                          &bo);
@@ -1592,6 +1594,7 @@ VkResult
 anv_device_alloc_bo(struct anv_device *device,
                     const char *name,
                     uint64_t size,
+                    uint32_t alignment,
                     enum anv_bo_alloc_flags alloc_flags,
                     uint64_t explicit_address,
                     struct anv_bo **bo_out)

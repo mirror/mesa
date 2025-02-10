@@ -177,16 +177,29 @@ fs_visitor::mark_last_urb_write_with_eot()
 
 static unsigned
 round_components_to_whole_registers(const intel_device_info *devinfo,
+                                    gl_shader_stage stage,
                                     unsigned c)
 {
-   return DIV_ROUND_UP(c, 8 * reg_unit(devinfo)) * reg_unit(devinfo);
+   /* Stages loading push constants through pull messages, need to align to
+    * physical register size for the send destinations.
+    */
+   if (devinfo->verx10 >= 125 &&
+       (gl_shader_stage_is_compute(stage) ||
+        gl_shader_stage_is_mesh(stage) ||
+        gl_shader_stage_is_rt(stage)))
+      return DIV_ROUND_UP(c, 8 * reg_unit(devinfo)) * reg_unit(devinfo);
+
+   /* Otherwise push constants are delivered through the payload from
+    * 3DSTATE_CONSTANT_* instructions, the alignment is only 32B.
+    */
+   return DIV_ROUND_UP(c, 8);
 }
 
 void
 fs_visitor::assign_curb_setup()
 {
    unsigned uniform_push_length =
-      round_components_to_whole_registers(devinfo, prog_data->nr_params);
+      round_components_to_whole_registers(devinfo, stage, prog_data->nr_params);
 
    unsigned ubo_push_length = 0;
    unsigned ubo_push_start[4];
@@ -194,14 +207,18 @@ fs_visitor::assign_curb_setup()
       ubo_push_start[i] = 8 * (ubo_push_length + uniform_push_length);
       ubo_push_length += prog_data->ubo_ranges[i].length;
 
-      assert(ubo_push_start[i] % (8 * reg_unit(devinfo)) == 0);
-      assert(ubo_push_length % (1 * reg_unit(devinfo)) == 0);
+      assert(ubo_push_start[i] % 8 == 0);
    }
 
    prog_data->curb_read_length = uniform_push_length + ubo_push_length;
    if (stage == MESA_SHADER_FRAGMENT &&
        ((struct brw_wm_prog_key *)key)->null_push_constant_tbimr_workaround)
       prog_data->curb_read_length = MAX2(1, prog_data->curb_read_length);
+
+   /* The read length needs to be aligned to physical register for the
+    * following data in the payload.
+    */
+   prog_data->curb_read_length = align(prog_data->curb_read_length, reg_unit(devinfo));
 
    uint64_t used = 0;
    const bool pull_constants =

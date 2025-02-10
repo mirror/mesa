@@ -574,10 +574,12 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
                continue;
             }
 
-            /* Only scalar 16 and 32-bit instructions are allowed. */
             ASSERTED nir_def *value = is_load ? &intr->def : intr->src[0].ssa;
             assert(value->num_components == 1);
-            assert(value->bit_size == 16 || value->bit_size == 32);
+
+            /* Only scalar 16 and 32-bit instructions are allowed. */
+            if (value->bit_size != 16 && value->bit_size != 32)
+               continue;
 
             util_dynarray_append(&io_instructions, void *, intr);
             if (is_output)

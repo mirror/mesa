@@ -1384,6 +1384,8 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
        */
       if (INTEL_DEBUG(DEBUG_SWSB_STALL) && devinfo->ver >= 12) {
          brw_set_default_swsb(p, tgl_swsb_regdist(1));
+         brw_set_default_mask_control(p, BRW_MASK_DISABLE);
+         brw_set_default_predicate_control(p, BRW_PREDICATE_NONE);
          brw_SYNC(p, TGL_SYNC_NOP);
       }
    }

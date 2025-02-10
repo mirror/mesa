@@ -998,7 +998,7 @@ lvp_lower_ray_tracing_instr(nir_builder *b, nir_instr *instr, void *data)
    case nir_intrinsic_load_ray_triangle_vertex_positions: {
       def = lvp_load_vertex_position(
          b, nir_load_var(b, state->instance_addr), nir_load_var(b, state->primitive_id),
-         nir_intrinsic_column(intr));
+         nir_imm_int(b, nir_intrinsic_column(intr)));
       break;
    }
    /* Internal system values */

@@ -8,7 +8,16 @@
 #ifndef LVP_ACCELERATION_STRUCTURE_H
 #define LVP_ACCELERATION_STRUCTURE_H
 
+#ifndef __OPENCL_VERSION__
 #include "lvp_private.h"
+
+void
+lvp_build_acceleration_structure(VkAccelerationStructureBuildGeometryInfoKHR *info,
+                                 const VkAccelerationStructureBuildRangeInfoKHR *ranges);
+#else
+#include "compiler/libcl/libcl.h"
+#define VK_UUID_SIZE 16U /* for lvp_accel_struct_serialization_header */
+#endif
 
 #define LVP_GEOMETRY_OPAQUE (1u << 31)
 
@@ -100,9 +109,5 @@ struct lvp_accel_struct_serialization_header {
 #define LVP_BVH_ROOT_NODE_OFFSET (sizeof(struct lvp_bvh_header))
 #define LVP_BVH_ROOT_NODE        (LVP_BVH_ROOT_NODE_OFFSET | lvp_bvh_node_internal)
 #define LVP_BVH_INVALID_NODE     0xFFFFFFFF
-
-void
-lvp_build_acceleration_structure(VkAccelerationStructureBuildGeometryInfoKHR *info,
-                                 const VkAccelerationStructureBuildRangeInfoKHR *ranges);
 
 #endif

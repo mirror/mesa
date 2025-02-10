@@ -442,7 +442,7 @@ lower_rq_load(nir_builder *b, nir_def *index, nir_intrinsic_instr *instr,
    case nir_ray_query_value_intersection_triangle_vertex_positions:
       return lvp_load_vertex_position(
          b, rq_load_var(b, index, intersection->instance_addr),
-         rq_load_var(b, index, intersection->primitive_id), column);
+         rq_load_var(b, index, intersection->primitive_id), nir_imm_int(b, column));
    default:
       unreachable("Invalid nir_ray_query_value!");
    }
@@ -592,7 +592,8 @@ lvp_nir_lower_ray_queries(struct nir_shader *shader)
          progress = true;
       }
 
-      nir_foreach_block (block, function->impl) {
+      /* Calling into bindgen'd code requires a _safe block iterator */
+      nir_foreach_block_safe (block, function->impl) {
          nir_foreach_instr_safe (instr, block) {
             if (instr->type != nir_instr_type_intrinsic)
                continue;

@@ -173,7 +173,7 @@ main(int argc, char **argv)
       return 1;
    }
 
-   FILE *fp = fopen(outfile, "w");
+   FILE *fp = fopen(outfile, "wb");
    fwrite(final_spirv.data, final_spirv.size, 1, fp);
    fclose(fp);
 

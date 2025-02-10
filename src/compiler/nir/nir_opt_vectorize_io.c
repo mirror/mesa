@@ -27,12 +27,17 @@
 #include "nir_builder.h"
 #include "util/u_dynarray.h"
 
+struct opt_state {
+   bool ignore_io_semantic_location;
+};
+
 /* Return 0 if loads/stores are vectorizable. Return 1 or -1 to define
  * an ordering between non-vectorizable instructions. This is used by qsort,
  * to sort all gathered instructions into groups of vectorizable instructions.
  */
 static int
-compare_is_not_vectorizable(nir_intrinsic_instr *a, nir_intrinsic_instr *b)
+compare_is_not_vectorizable(nir_intrinsic_instr *a, nir_intrinsic_instr *b,
+                            struct opt_state *state)
 {
    if (a->intrinsic != b->intrinsic)
       return a->intrinsic > b->intrinsic ? 1 : -1;
@@ -55,8 +60,13 @@ compare_is_not_vectorizable(nir_intrinsic_instr *a, nir_intrinsic_instr *b)
 
    nir_io_semantics sem0 = nir_intrinsic_io_semantics(a);
    nir_io_semantics sem1 = nir_intrinsic_io_semantics(b);
-   if (sem0.location != sem1.location)
-      return sem0.location > sem1.location ? 1 : -1;
+   if (state->ignore_io_semantic_location) {
+      if (nir_intrinsic_base(a) != nir_intrinsic_base(b))
+         return nir_intrinsic_base(a) > nir_intrinsic_base(b) ? 1 : -1;
+   } else {
+      if (sem0.location != sem1.location)
+         return sem0.location > sem1.location ? 1 : -1;
+   }
 
    /* The mediump flag isn't mergable. */
    if (sem0.medium_precision != sem1.medium_precision)
@@ -99,12 +109,13 @@ compare_is_not_vectorizable(nir_intrinsic_instr *a, nir_intrinsic_instr *b)
 }
 
 static int
-compare_intr(const void *xa, const void *xb)
+compare_intr(const void *xa, const void *xb, void *data)
 {
    nir_intrinsic_instr *a = *(nir_intrinsic_instr **)xa;
    nir_intrinsic_instr *b = *(nir_intrinsic_instr **)xb;
+   struct opt_state *state = data;
 
-   int comp = compare_is_not_vectorizable(a, b);
+   int comp = compare_is_not_vectorizable(a, b, state);
    if (comp)
       return comp;
 
@@ -395,7 +406,8 @@ vectorize_slot(nir_intrinsic_instr *chan[8], unsigned mask)
 }
 
 static bool
-vectorize_batch(struct util_dynarray *io_instructions)
+vectorize_batch(struct util_dynarray *io_instructions,
+                struct opt_state *state)
 {
    unsigned num_instr = util_dynarray_num_elements(io_instructions, void *);
 
@@ -416,7 +428,7 @@ vectorize_batch(struct util_dynarray *io_instructions)
     *
     * This reorders instructions in the array, but not in the shader.
     */
-   qsort(io_instructions->data, num_instr, sizeof(void*), compare_intr);
+   qsort_r(io_instructions->data, num_instr, sizeof(void*), compare_intr, state);
 
    nir_intrinsic_instr *chan[8] = {0}, *prev = NULL;
    unsigned chan_mask = 0;
@@ -431,7 +443,7 @@ vectorize_batch(struct util_dynarray *io_instructions)
       /* If the next instruction is not vectorizable, vectorize what
        * we have gathered so far.
        */
-      if (prev && compare_is_not_vectorizable(prev, *intr)) {
+      if (prev && compare_is_not_vectorizable(prev, *intr, state)) {
          /* We need at least 2 instructions to have something to do. */
          if (util_bitcount(chan_mask) > 1)
             progress |= vectorize_slot(chan, chan_mask);
@@ -466,8 +478,12 @@ vectorize_batch(struct util_dynarray *io_instructions)
 }
 
 bool
-nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
+nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes,
+                     bool ignore_io_semantic_location)
 {
+   struct opt_state state = {
+      .ignore_io_semantic_location = ignore_io_semantic_location,
+   };
    assert(!(modes & ~(nir_var_shader_in | nir_var_shader_out)));
 
    if (shader->info.stage == MESA_SHADER_FRAGMENT &&
@@ -481,8 +497,10 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
        * but that is only done when outputs are ignored, so vectorize them
        * separately.
        */
-      bool progress_in = nir_opt_vectorize_io(shader, nir_var_shader_in);
-      bool progress_out = nir_opt_vectorize_io(shader, nir_var_shader_out);
+      bool progress_in = nir_opt_vectorize_io(shader, nir_var_shader_in,
+                                              ignore_io_semantic_location);
+      bool progress_out = nir_opt_vectorize_io(shader, nir_var_shader_out,
+                                               ignore_io_semantic_location);
       return progress_in || progress_out;
    }
 
@@ -545,7 +563,7 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
                 */
                if (BITSET_TEST(is_load ? has_output_stores : has_output_loads,
                                index)) {
-                  progress |= vectorize_batch(&io_instructions);
+                  progress |= vectorize_batch(&io_instructions, &state);
                   BITSET_ZERO(has_output_loads);
                   BITSET_ZERO(has_output_stores);
                }
@@ -556,7 +574,7 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
                /* Don't vectorize across TCS barriers. */
                if (modes & nir_var_shader_out &&
                    nir_intrinsic_memory_modes(intr) & nir_var_shader_out) {
-                  progress |= vectorize_batch(&io_instructions);
+                  progress |= vectorize_batch(&io_instructions, &state);
                   BITSET_ZERO(has_output_loads);
                   BITSET_ZERO(has_output_stores);
                }
@@ -565,7 +583,7 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
             case nir_intrinsic_emit_vertex:
             case nir_intrinsic_emit_vertex_with_counter:
                /* Don't vectorize across GS emits. */
-               progress |= vectorize_batch(&io_instructions);
+               progress |= vectorize_batch(&io_instructions, &state);
                BITSET_ZERO(has_output_loads);
                BITSET_ZERO(has_output_stores);
                continue;
@@ -586,7 +604,7 @@ nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes)
                BITSET_SET(is_load ? has_output_loads : has_output_stores, index);
          }
 
-         progress |= vectorize_batch(&io_instructions);
+         progress |= vectorize_batch(&io_instructions, &state);
       }
 
       nir_metadata_preserve(impl, progress ? (nir_metadata_block_index |

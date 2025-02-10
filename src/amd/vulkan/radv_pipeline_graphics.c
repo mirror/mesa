@@ -1531,8 +1531,8 @@ radv_graphics_shaders_link_varyings_second(struct radv_shader_stage *producer_st
     * stage here, because ac_nir_lower_ngg/legacy already takes care of that.
     */
    if (consumer->info.stage != MESA_SHADER_FRAGMENT) {
-      NIR_PASS(_, producer, nir_opt_vectorize_io, nir_var_shader_out);
-      NIR_PASS(_, consumer, nir_opt_vectorize_io, nir_var_shader_in);
+      NIR_PASS(_, producer, nir_opt_vectorize_io, nir_var_shader_out, false);
+      NIR_PASS(_, consumer, nir_opt_vectorize_io, nir_var_shader_in, false);
    }
 
    /* Gather shader info; at least the I/O info likely changed

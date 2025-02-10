@@ -143,6 +143,11 @@ vectorize_load(nir_intrinsic_instr *chan[8], unsigned start, unsigned count,
    nir_intrinsic_copy_const_indices(new_intr, first);
    nir_intrinsic_set_component(new_intr, start);
 
+   if (nir_intrinsic_has_range(new_intr))
+      nir_intrinsic_set_range(new_intr, nir_intrinsic_range(first));
+   if (nir_intrinsic_has_range_base(new_intr))
+      nir_intrinsic_set_range_base(new_intr, nir_intrinsic_range_base(first));
+
    if (merge_low_high_16_to_32) {
       nir_io_semantics sem = nir_intrinsic_io_semantics(new_intr);
       sem.high_16bits = 0;
@@ -282,6 +287,12 @@ vectorize_store(nir_intrinsic_instr *chan[8], unsigned start, unsigned count,
    nir_intrinsic_set_io_semantics(last, sem);
    nir_intrinsic_set_component(last, start);
    nir_intrinsic_set_write_mask(last, BITFIELD_MASK(count));
+
+   if (nir_intrinsic_has_range(last))
+      nir_intrinsic_set_range(last, nir_intrinsic_range(chan[start]));
+   if (nir_intrinsic_has_range_base(last))
+      nir_intrinsic_set_range_base(last, nir_intrinsic_range_base(chan[start]));
+
    last->num_components = count;
 
    nir_builder b = nir_builder_at(nir_before_instr(&last->instr));

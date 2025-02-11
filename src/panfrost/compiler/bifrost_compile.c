@@ -5518,10 +5518,10 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
             nir_metadata_control_flow, &gpu_id);
 
    NIR_PASS(_, nir, pan_lower_sample_pos);
-   NIR_PASS(_, nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
    NIR_PASS(_, nir, nir_lower_64bit_phis);
-   NIR_PASS(_, nir, pan_lower_helper_invocation);
    NIR_PASS(_, nir, nir_lower_int64);
+   NIR_PASS(_, nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
+   NIR_PASS(_, nir, pan_lower_helper_invocation);
 
    NIR_PASS(_, nir, nir_opt_idiv_const, 8);
    NIR_PASS(_, nir, nir_lower_idiv,

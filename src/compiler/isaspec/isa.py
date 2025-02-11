@@ -258,6 +258,7 @@ class BitSet(object):
         self.xml = xml
         self.name = xml.attrib['name']
         self.display_name = xml.attrib['displayname'] if 'displayname' in xml.attrib else self.name
+        self.doc = xml.find('doc')
         self.meta = {}
 
         # Used for generated encoder, to de-duplicate encoding for
@@ -432,6 +433,7 @@ class BitSetEnum(object):
     def __init__(self, isa, xml):
         self.isa = isa
         self.name = xml.attrib['name']
+        self.doc = xml.find('doc')
 
         # Table mapping value to name
         self.values = {}

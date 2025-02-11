@@ -2952,6 +2952,13 @@ to upconvert to 32b float internally?
 	</reg32>
 	<reg64 offset="0x0c03" name="VSC_DRAW_STRM_SIZE_ADDRESS" type="waddress" usage="cmd"/>
 	<reg32 offset="0x0c06" name="VSC_BIN_COUNT" usage="rp_blit">
+		<bitfield name="EXPANDEDBINEN" pos="0" type="boolean">
+			<doc>
+				When this is enabled, a triangle is considered
+				visible in a given bin even if it only
+				intersects one of the bin's neighbors.
+			</doc>
+		</bitfield>
 		<bitfield name="NX" low="1" high="10" type="uint"/>
 		<bitfield name="NY" low="11" high="20" type="uint"/>
 	</reg32>
@@ -3442,6 +3449,7 @@ to upconvert to 32b float internally?
 	<reg32 offset="0x810b" name="GRAS_LRZ_CNTL2" variants="A7XX-" usage="rp_blit">
 		<bitfield name="DISABLE_ON_WRONG_DIR" pos="0" type="boolean"/>
 		<bitfield name="FC_ENABLE" pos="1" type="boolean"/>
+		<bitfield name="EXPANDEDBINEN" pos="3" type="boolean"/>
 	</reg32>
 
 	<!-- 0x810c-0x810f invalid -->

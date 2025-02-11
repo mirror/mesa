@@ -5899,6 +5899,8 @@ void genX(CmdEndRendering)(
                                gfx->color_att_count,
                                gfx->samples);
 
+   anv_measure_endrenderpass(cmd_buffer);
+
    anv_cmd_buffer_reset_rendering(cmd_buffer);
 }
 

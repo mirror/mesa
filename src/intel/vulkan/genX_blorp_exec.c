@@ -59,6 +59,8 @@ static void blorp_measure_end(struct blorp_batch *_batch,
                          params->dst.view.format,
                          params->src.view.format,
                          (_batch->flags & BLORP_BATCH_PREDICATE_ENABLE));
+
+   anv_measure_end_snapshot(cmd_buffer);
 }
 
 static void *

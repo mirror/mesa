@@ -287,11 +287,6 @@ intel_measure_state_changed(const struct intel_measure_batch *batch,
    if (config.flags & INTEL_MEASURE_DRAW)
       return true;
 
-   if (batch->index % 2 == 0) {
-      /* no snapshot is running, but we have a start event */
-      return true;
-   }
-
    if (config.flags & (INTEL_MEASURE_FRAME | INTEL_MEASURE_BATCH)) {
       /* only start collection when index == 0, at the beginning of a batch */
       return false;

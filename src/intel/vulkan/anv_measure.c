@@ -116,6 +116,7 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
    struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
    enum anv_timestamp_capture_type capture_type;
    unsigned index = measure->base.index++;
+   measure->base.event_count++;
 
    if (event_name == NULL)
       event_name = intel_measure_snapshot_string(type);
@@ -171,17 +172,29 @@ anv_measure_start_snapshot(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 
-static void
-anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
-                         uint32_t event_count)
+void
+_anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
+                          enum intel_measure_events end_for)
 {
    struct anv_batch *batch = &cmd_buffer->batch;
    struct anv_measure_batch *measure = cmd_buffer->measure;
    struct anv_physical_device *device = cmd_buffer->device->physical;
    struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
    enum anv_timestamp_capture_type capture_type;
-   unsigned index = measure->base.index++;
-   assert(index % 2 == 1);
+
+   if (!config || !measure)
+      return;
+
+   /* Only end in event matches type being collected */
+   if ((end_for & config->flags) == 0)
+      return;
+
+   /* When using event intervals, only end when reach interval count */
+   if (measure->base.event_count != config->event_interval)
+      return;
+
+   if (measure->base.index % 2 == 0)
+      return;
 
    if (config->cpu_measure)
       return;
@@ -192,6 +205,7 @@ anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
    else
       capture_type = ANV_TIMESTAMP_CAPTURE_AT_CS_STALL;
 
+   unsigned index = measure->base.index;
    (*device->cmd_emit_timestamp)(batch, cmd_buffer->device,
                                  (struct anv_address) {
                                     .bo = measure->bo,
@@ -202,7 +216,9 @@ anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
    struct intel_measure_snapshot *snapshot = &(measure->base.snapshots[index]);
    memset(snapshot, 0, sizeof(*snapshot));
    snapshot->type = INTEL_SNAPSHOT_END;
-   snapshot->event_count = event_count;
+   snapshot->event_count = measure->base.event_count;
+   measure->base.event_count = 0;
+   measure->base.index++;
 }
 
 static bool
@@ -258,16 +274,14 @@ _anv_measure_snapshot(struct anv_cmd_buffer *cmd_buffer,
    }
 
    /* increment event count */
-   ++measure->base.event_count;
-   if (measure->base.event_count == 1 ||
-       measure->base.event_count == config->event_interval + 1) {
+   if (measure->base.event_count == 0 ||
+       measure->base.event_count == config->event_interval) {
       /* the first event of an interval */
 
       if (measure->base.index % 2) {
          /* end the previous event */
-         anv_measure_end_snapshot(cmd_buffer, measure->base.event_count - 1);
+         _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_ALL);
       }
-      measure->base.event_count = 1;
 
       if (measure->base.index == config->batch_size) {
          /* Snapshot buffer is full.  The batch must be flushed before
@@ -404,10 +418,8 @@ _anv_measure_submit(struct anv_cmd_buffer *cmd_buffer)
    base->batch_size = cmd_buffer->total_batch_size;
    base->frame = measure_device->frame;
 
-   if (base->index %2 == 1) {
-      anv_measure_end_snapshot(cmd_buffer, base->event_count);
-      base->event_count = 0;
-   }
+   if (base->index %2 == 1)
+      _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_ALL);
 
    if (config->cpu_measure)
       return;
@@ -444,23 +456,6 @@ _anv_measure_acquire(struct anv_device *device)
 }
 
 void
-_anv_measure_endcommandbuffer(struct anv_cmd_buffer *cmd_buffer)
-{
-   struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
-   struct anv_measure_batch *measure = cmd_buffer->measure;
-
-   if (!config)
-      return;
-   if (measure == NULL)
-      return;
-   if (measure->base.index % 2 == 0)
-      return;
-
-   anv_measure_end_snapshot(cmd_buffer, measure->base.event_count);
-   measure->base.event_count = 0;
-}
-
-void
 _anv_measure_beginrenderpass(struct anv_cmd_buffer *cmd_buffer)
 {
    struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
@@ -471,14 +466,10 @@ _anv_measure_beginrenderpass(struct anv_cmd_buffer *cmd_buffer)
    if (!config || !measure)
       return;
 
-   bool filtering = (config->flags & (INTEL_MEASURE_RENDERPASS |
-                                      INTEL_MEASURE_SHADER));
-   if (filtering && measure->base.index % 2 == 1) {
-      /* snapshot for previous renderpass was not ended */
-      anv_measure_end_snapshot(cmd_buffer,
-                               measure->base.event_count);
-      measure->base.event_count = 0;
-   }
+   /* compute-only work between render passes is collected into an implicit
+      renderpass of index=0. End that implicit renderpass here. */
+   if (measure->base.index % 2 == 1)
+      _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_RENDERPASS);
 
    measure->base.renderpass =
       (uintptr_t) p_atomic_inc_return(&measure_device->render_pass_count);
@@ -508,8 +499,7 @@ _anv_measure_add_secondary(struct anv_cmd_buffer *primary,
       return;
    }
 
-   if (measure->base.index % 2 == 1)
-      anv_measure_end_snapshot(primary, measure->base.event_count);
+   _anv_measure_end_snapshot(primary, INTEL_MEASURE_ALL);
 
    struct intel_measure_snapshot *snapshot = &(measure->base.snapshots[measure->base.index]);
    _anv_measure_snapshot(primary, INTEL_SNAPSHOT_SECONDARY_BATCH, NULL, 0);

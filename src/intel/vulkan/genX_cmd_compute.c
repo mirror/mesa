@@ -638,6 +638,8 @@ void genX(CmdDispatchBase)(
                               groupCountX, groupCountY, groupCountZ,
                               pipeline->source_hash);
    }
+
+   anv_measure_end_snapshot(cmd_buffer);
 }
 
 static void
@@ -699,6 +701,8 @@ emit_unaligned_cs_walker(
                               groupCountX, groupCountY, groupCountZ,
                               pipeline->source_hash);
    }
+
+   anv_measure_end_snapshot(cmd_buffer);
 }
 
 /*
@@ -805,6 +809,8 @@ genX(cmd_buffer_dispatch_indirect)(struct anv_cmd_buffer *cmd_buffer,
                                        anv_address_utrace(indirect_addr),
                                        pipeline->source_hash);
    }
+
+   anv_measure_end_snapshot(cmd_buffer);
 }
 
 void genX(CmdDispatchIndirect)(

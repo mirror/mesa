@@ -59,6 +59,7 @@ enum intel_measure_events {
    INTEL_MEASURE_SHADER     = (1 << 2),
    INTEL_MEASURE_BATCH      = (1 << 3),
    INTEL_MEASURE_FRAME      = (1 << 4),
+   INTEL_MEASURE_ALL        = 0x1F,
 };
 
 enum intel_measure_device_type { INTEL_MEASURE_DEVICE_VK=0, INTEL_MEASURE_DEVICE_OGL };

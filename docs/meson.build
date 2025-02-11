@@ -16,6 +16,13 @@ if get_option('werror')
   sphinx_args += '-W'
 endif
 
+rst_isaspec = custom_target(
+  'isaspec_rst',
+  depend_files: files('isaspec-doc-wrapper.py'),
+  command: ['./isaspec-doc-wrapper.py', '--out-dir', meson.current_source_dir() + '/isaspec_rst'],
+  output: 'isaspec_rst',
+)
+
 html_docs = custom_target(
   'html',
   depfile: 'docs.d',
@@ -26,6 +33,7 @@ html_docs = custom_target(
             meson.current_source_dir(), '@OUTPUT@'],
   output: 'html',
   build_by_default: get_option('html-docs').enabled(),
+  depends: rst_isaspec,
 )
 
 html_docs_path = get_option('html-docs-path')

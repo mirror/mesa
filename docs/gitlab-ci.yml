@@ -29,6 +29,8 @@ pages:
         - src/compiler/nir/nir.h
         - src/intel/isl/**/*
         - src/vulkan/runtime/**/*
+        # Paths from isaspec-doc.py
+        - src/freedreno/isa/ir3.xml
       when: always
     # Other cases default to never
 

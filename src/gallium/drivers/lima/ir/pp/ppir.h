@@ -63,8 +63,6 @@ typedef enum {
    ppir_op_asin,
    ppir_op_acos,
 
-   ppir_op_atan,
-   ppir_op_atan2,
    ppir_op_atan_pt1,
    ppir_op_atan2_pt1,
    ppir_op_atan_pt2,
@@ -737,6 +735,7 @@ bool ppir_lower_prog(ppir_compiler *comp);
 bool ppir_node_to_instr(ppir_compiler *comp);
 bool ppir_schedule_prog(ppir_compiler *comp);
 bool ppir_regalloc_prog(ppir_compiler *comp);
+bool ppir_compact_prog(ppir_compiler *comp);
 bool ppir_codegen_prog(ppir_compiler *comp);
 void ppir_liveness_analysis(ppir_compiler *comp);
 

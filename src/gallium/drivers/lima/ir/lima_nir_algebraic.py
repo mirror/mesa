@@ -42,6 +42,15 @@ ppir_algebraic_late = [
     (('fmax', 'a', 0.0), ('fclamp_pos', 'a')),
 ]
 
+lower_atan = [
+    (('atan', 'a'), ('atan_utg_pt2', ('atan_utg_pt1', 'a'))),
+    (('atan2', 'x', 'y'), ('atan2_utg_pt2', ('atan2_utg_pt1', 'x', 'y'))),
+]
+
+lower_atan2_pt2 = [
+    (('atan2_utg_pt2', 'x'), ('atan_utg_pt2', ('vec3', ('fmul', 'x.x', 'x.y'), 'x.y', 'x.z'))),
+]
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('-p', '--import-path', required=True)
@@ -61,6 +70,10 @@ def run():
                                       lower_ftrunc).render())
     print(nir_algebraic.AlgebraicPass("lima_nir_ppir_algebraic_late",
                                       ppir_algebraic_late).render())
+    print(nir_algebraic.AlgebraicPass("lima_nir_ppir_lower_atan",
+                                      lower_atan).render())
+    print(nir_algebraic.AlgebraicPass("lima_nir_ppir_lower_atan2_pt2",
+                                      lower_atan2_pt2).render())
 
 if __name__ == '__main__':
     main()

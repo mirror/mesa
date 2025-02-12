@@ -114,8 +114,11 @@ static bool ppir_do_one_node_to_instr(ppir_block *block, ppir_node *node)
          }
       }
 
+      if (node->instr)
+         break;
+
       /* can't inserted to any existing instr, create one */
-      if (!node->instr && !create_new_instr(block, node))
+      if (!create_new_instr(block, node))
          return false;
 
       break;

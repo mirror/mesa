@@ -762,7 +762,7 @@ const __DRIbackgroundCallableExtension driBackgroundCallable = {
    .isThreadSafe            = driIsThreadSafe,
 };
 
-const __DRIuseInvalidateExtension dri2UseInvalidate = {
+const __DRIuseInvalidateExtension driUseInvalidate = {
    .base = { __DRI_USE_INVALIDATE, 1 }
 };
 

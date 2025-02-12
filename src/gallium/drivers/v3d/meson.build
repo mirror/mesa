@@ -50,7 +50,7 @@ foreach ver : v3d_versions
     ],
     c_args : [v3d_args, '-DV3D_VERSION=' + ver],
     gnu_symbol_visibility : 'hidden',
-    dependencies : [dep_v3d_hw, dep_libdrm, dep_valgrind, idep_nir_headers, idep_mesautil],
+    dependencies : [dep_v3d_hw, dep_libdrm, dep_valgrind, idep_nir_headers, idep_mesautil, dep_x11],
 )
 
 endforeach
@@ -70,7 +70,7 @@ libv3d = static_library(
   gnu_symbol_visibility : 'hidden',
   dependencies : [
     dep_v3d_hw, dep_libdrm, dep_valgrind,
-    idep_nir_headers, idep_mesautil,
+    idep_nir_headers, idep_mesautil, dep_x11,
   ],
   link_with: [per_version_libs],
 )

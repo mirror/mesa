@@ -409,12 +409,16 @@ intel_measure_push_result(struct intel_measure_device *device,
    struct intel_measure_ringbuffer *rb = device->ringbuffer;
 
    uint64_t *timestamps = batch->timestamps;
-   assert(timestamps != NULL);
-   assert(batch->index == 0 || timestamps[0] != 0);
+   uint64_t last_timestamp = 0;
+   int event_index = 0;
+   assert(batch->timestamps != NULL);
+   assert(batch->index == 0 || batch->timestamps[0] != 0);
 
    for (int i = 0; i < batch->index; i += 2) {
       const struct intel_measure_snapshot *begin = &batch->snapshots[i];
       const struct intel_measure_snapshot *end = &batch->snapshots[i+1];
+      uint64_t *start_ts = timestamps + i;
+      uint64_t *end_ts = timestamps + i+1;
 
       assert (end->type == INTEL_SNAPSHOT_END);
 
@@ -425,6 +429,26 @@ intel_measure_push_result(struct intel_measure_device *device,
          begin->secondary->primary_renderpass = batch->renderpass;
          intel_measure_push_result(device, begin->secondary);
          continue;
+      } else if (begin->type == INTEL_SNAPSHOT_COMPUTE) {
+         if (device->config->compute_encoding ==
+             INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x32b) {
+            /* Convert 32b timestamp -> 64b by reusing high bits
+             * from last timestamp.
+             */
+            uint64_t highbits = last_timestamp & 0xFFFFFFFF00000000;
+            *start_ts = highbits | *start_ts >> 32;
+            *end_ts   = highbits | *end_ts >> 32;
+         } else if (device->config->compute_encoding ==
+                    INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b) {
+            bool has_padding = i % 4 == 2;
+            if (has_padding)
+               i += 2;
+
+            /* Start/end timestamps expected in second and fourth uint64. */
+            start_ts = timestamps + i + 1;
+            end_ts = timestamps + i + 3;
+            i += 2;
+         }
       }
 
       const uint64_t prev_end_ts = rb->results[rb->head].end_ts;
@@ -451,16 +475,17 @@ intel_measure_push_result(struct intel_measure_device *device,
       memset(buffered_result, 0, sizeof(*buffered_result));
       memcpy(&buffered_result->snapshot, begin,
              sizeof(struct intel_measure_snapshot));
-      buffered_result->start_ts = timestamps[i];
-      buffered_result->end_ts = timestamps[i+1];
+      buffered_result->start_ts = *start_ts;
+      buffered_result->end_ts = *end_ts;
       buffered_result->idle_duration =
          raw_timestamp_delta(prev_end_ts, buffered_result->start_ts);
       buffered_result->frame = batch->frame;
       buffered_result->batch_count = batch->batch_count;
       buffered_result->batch_size = batch->batch_size;
       buffered_result->primary_renderpass = batch->primary_renderpass;
-      buffered_result->event_index = i / 2;
+      buffered_result->event_index = event_index++;
       buffered_result->snapshot.event_count = end->event_count;
+      last_timestamp = *end_ts;
    }
 }
 

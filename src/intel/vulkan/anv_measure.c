@@ -56,6 +56,13 @@ anv_measure_device_init(struct anv_physical_device *device)
                 rb_bytes, 8,
                 VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
    measure_device->ringbuffer = rb;
+
+   if (device->info.verx10 == 125)
+      measure_device->config->compute_encoding = INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x32b;
+   else if (device->info.verx10 > 125)
+      measure_device->config->compute_encoding = INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b;
+   else
+      measure_device->config->compute_encoding = INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_2x64b;
 }
 
 static struct intel_measure_config*
@@ -181,6 +188,9 @@ _anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
    struct anv_physical_device *device = cmd_buffer->device->physical;
    struct intel_measure_config *config = config_from_command_buffer(cmd_buffer);
    enum anv_timestamp_capture_type capture_type;
+   unsigned index = measure->base.index;
+   int64_t offset = index * sizeof(uint64_t);
+   void* last_walker = NULL;
 
    if (!config || !measure)
       return;
@@ -202,16 +212,34 @@ _anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
    if ((batch->engine_class == INTEL_ENGINE_CLASS_COPY) ||
        (batch->engine_class == INTEL_ENGINE_CLASS_VIDEO))
       capture_type = ANV_TIMESTAMP_CAPTURE_END_OF_PIPE;
+   else if (measure->base.snapshots[index-1].type == INTEL_SNAPSHOT_COMPUTE &&
+            config != INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_2x64b)
+      capture_type = ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER;
    else
       capture_type = ANV_TIMESTAMP_CAPTURE_AT_CS_STALL;
 
-   unsigned index = measure->base.index;
+   if (capture_type == ANV_TIMESTAMP_REWRITE_COMPUTE_WALKER) {
+      /* Adjust offset to write to both start and end timestamp slots.
+       * 4x64 will also write into next one or two start/end timestamp slots,
+       * depending on whether padding is needed to meet alignment restrictions.
+       */
+      last_walker = cmd_buffer->state.last_compute_walker;
+      assert(last_walker);
+      if (config->compute_encoding == INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x32b)
+         offset = (index - 1) * sizeof(uint64_t);
+      else { /*INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b */
+         bool needs_padding = index % 4 == 3;
+         measure->base.index += (needs_padding) ? 4 : 2;
+         offset = align64((index - 1) * sizeof(uint64_t), 32);
+      }
+   }
+
    (*device->cmd_emit_timestamp)(batch, cmd_buffer->device,
                                  (struct anv_address) {
                                     .bo = measure->bo,
-                                    .offset = index * sizeof(uint64_t) },
+                                    .offset = offset },
                                  capture_type,
-                                 NULL);
+                                 last_walker);
 
    struct intel_measure_snapshot *snapshot = &(measure->base.snapshots[index]);
    memset(snapshot, 0, sizeof(*snapshot));
@@ -254,6 +282,15 @@ state_changed(struct anv_cmd_buffer *cmd_buffer,
                                       vs, tcs, tes, gs, fs, cs, ms, ts);
 }
 
+static bool
+snapshot_buffer_full(struct anv_measure_batch *measure,
+                     struct intel_measure_config *config)
+{
+   uint32_t max_entry_size =
+      (config->compute_encoding == INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b) ? 3 : 1;
+   return (measure->base.index >= config->batch_size - max_entry_size);
+}
+
 void
 _anv_measure_snapshot(struct anv_cmd_buffer *cmd_buffer,
                      enum intel_measure_snapshot_type type,
@@ -283,7 +320,7 @@ _anv_measure_snapshot(struct anv_cmd_buffer *cmd_buffer,
          _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_ALL);
       }
 
-      if (measure->base.index == config->batch_size) {
+      if (snapshot_buffer_full(measure, config)) {
          /* Snapshot buffer is full.  The batch must be flushed before
           * additional snapshots can be taken.
           */

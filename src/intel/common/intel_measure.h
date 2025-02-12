@@ -64,6 +64,18 @@ enum intel_measure_events {
 
 enum intel_measure_device_type { INTEL_MEASURE_DEVICE_VK=0, INTEL_MEASURE_DEVICE_OGL };
 
+/* Starting Gfx12.5, dispatches must use ComputeWalker::PostSync to get
+ * accurate timestamps. Output of PostSync varies per platform:
+ *   Gfx12.5: 4x 32b values, 16B alignment
+ *   Gfx20+:  4x 64b values, 32B alignment
+ */
+enum intel_measure_compute_timestamp_encoding {
+   INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_2x64b, /* 2x UINT64. Same as non-compute data */
+   INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x32b, /* 4x UINT32. Use second and fourth values */
+   INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b, /* 4x UINT64. Use second and fourth values */
+};
+
+
 struct intel_measure_config {
 
    /* Stderr, or optionally set with INTEL_MEASURE=file={path{ */
@@ -110,6 +122,11 @@ struct intel_measure_config {
 
    /* Measure CPU timing, not GPU timing */
    bool                       cpu_measure;
+
+   /* Compute timestamp encoding type. Depends on output format of
+    * COMPUTE_WALKER::PostSync for platform.
+    */
+   enum intel_measure_compute_timestamp_encoding compute_encoding;
 };
 
 struct intel_measure_batch;

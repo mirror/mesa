@@ -3948,9 +3948,18 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
    NIR_PASS_V(s, nir_lower_frexp);
 
+   /* One pass of late algebraic to get optimizations like "flt(a+b, 0) -> flt(a, -b) before we go fusing ffmas. */
+   NIR_PASS_V(s, nir_opt_algebraic_late);
+
+   /* Fuse ffmas before settling late algebraic (which has things that take
+    * fused ffmas and turn them into lrps).
+    */
+   NIR_PASS_V(s, nir_opt_fuse_ffma, NULL);
+
    bool progress;
    do {
       progress = false;
+
       NIR_PASS(progress, s, nir_opt_algebraic_late);
       if (progress) {
          NIR_PASS_V(s, nir_copy_prop);
@@ -4051,8 +4060,7 @@ const void *nir_to_tgsi_options(struct nir_shader *s,
 
 static const nir_shader_compiler_options nir_to_tgsi_compiler_options = {
    .fdot_replicates = true,
-   .fuse_ffma32 = true,
-   .fuse_ffma64 = true,
+   .split_ffma = true,
    .lower_extract_byte = true,
    .lower_extract_word = true,
    .lower_insert_byte = true,

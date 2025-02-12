@@ -135,8 +135,7 @@ static int r300_get_video_param(struct pipe_screen *screen,
 
 #define COMMON_NIR_OPTIONS                    \
    .fdot_replicates = true,                   \
-   .fuse_ffma32 = true,                       \
-   .fuse_ffma64 = true,                       \
+   .split_ffma = true,                        \
    .lower_bitops = true,                      \
    .lower_extract_byte = true,                \
    .lower_extract_word = true,                \

@@ -1918,6 +1918,68 @@ nvk_flush_vp_state(struct nvk_cmd_buffer *cmd)
 }
 
 static uint32_t
+vk_to_nv9097_dr_mode(VkDiscardRectangleModeEXT vk_mode)
+{
+   STATIC_ASSERT(VK_DISCARD_RECTANGLE_MODE_INCLUSIVE_EXT ==
+                 NV9097_SET_WINDOW_CLIP_TYPE_V_INCLUSIVE);
+   STATIC_ASSERT(VK_DISCARD_RECTANGLE_MODE_EXCLUSIVE_EXT ==
+                 NV9097_SET_WINDOW_CLIP_TYPE_V_EXCLUSIVE);
+   assert(vk_mode <= NV9097_SET_WINDOW_CLIP_TYPE_V_EXCLUSIVE);
+   return vk_mode;
+}
+
+static void
+nvk_flush_dr_state(struct nvk_cmd_buffer *cmd)
+{
+   struct nvk_device *dev = nvk_cmd_buffer_device(cmd);
+   struct nvk_physical_device *pdev = nvk_device_physical(dev);
+
+   const struct vk_dynamic_graphics_state *dyn =
+      &cmd->vk.dynamic_graphics_state;
+
+   struct nv_push *p =
+      nvk_cmd_buffer_push(cmd, 3 * NVK_MAX_DISCARD_RECTANGLES + 2);
+
+   // VK_EXT_discard_rectangles
+   if (BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DR_RECTANGLES) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DR_ENABLE) ||
+       BITSET_TEST(dyn->dirty, MESA_VK_DYNAMIC_DR_MODE)) {
+      const uint32_t sr_max =
+         nvk_image_max_dimension(&pdev->info, VK_IMAGE_TYPE_2D);
+
+      P_IMMD(p, NV9097, SET_WINDOW_CLIP_ENABLE, dyn->dr.enable);
+      P_IMMD(p, NV9097, SET_WINDOW_CLIP_TYPE, vk_to_nv9097_dr_mode(dyn->dr.mode));
+
+      for (unsigned i = 0; i < NVK_MAX_DISCARD_RECTANGLES; i++) {
+         const bool is_rect_enabled = i < dyn->dr.rectangle_count;
+         uint32_t xmin = 0;
+         uint32_t xmax = 0;
+         uint32_t ymin = 0;
+         uint32_t ymax = 0;
+
+         if (is_rect_enabled) {
+            const VkRect2D *r = &dyn->dr.rectangles[i];
+
+            xmin = MIN2(sr_max, r->offset.x);
+            xmax = MIN2(sr_max, r->offset.x + r->extent.width);
+            ymin = MIN2(sr_max, r->offset.y);
+            ymax = MIN2(sr_max, r->offset.y + r->extent.height);
+         }
+
+         P_MTHD(p, NV9097, SET_WINDOW_CLIP_HORIZONTAL(i));
+         P_NV9097_SET_WINDOW_CLIP_HORIZONTAL(p, i, {
+            .xmin = xmin,
+            .xmax = xmax,
+         });
+         P_NV9097_SET_WINDOW_CLIP_VERTICAL(p, i, {
+            .ymin = ymin,
+            .ymax = ymax,
+         });
+      }
+   }
+}
+
+static uint32_t
 vk_to_nv9097_polygon_mode(VkPolygonMode vk_mode)
 {
    ASSERTED uint16_t vk_to_nv9097[] = {
@@ -3255,6 +3317,7 @@ nvk_cmd_flush_gfx_dynamic_state(struct nvk_cmd_buffer *cmd)
    nvk_flush_ia_state(cmd);
    nvk_flush_ts_state(cmd);
    nvk_flush_vp_state(cmd);
+   nvk_flush_dr_state(cmd);
    nvk_flush_rs_state(cmd);
    nvk_flush_fsr_state(cmd);
    nvk_flush_ms_state(cmd);

@@ -216,6 +216,7 @@ nvk_get_device_extensions(const struct nvk_instance *instance,
       .EXT_descriptor_buffer = true,
       .EXT_descriptor_indexing = true,
       .EXT_device_generated_commands = true,
+      .EXT_discard_rectangles = true,
 #ifdef VK_USE_PLATFORM_DISPLAY_KHR
       .EXT_display_control = true,
 #endif
@@ -964,6 +965,9 @@ nvk_get_device_properties(const struct nvk_instance *instance,
          VK_PIPELINE_ROBUSTNESS_BUFFER_BEHAVIOR_ROBUST_BUFFER_ACCESS_2_EXT,
       .defaultRobustnessImages =
          VK_PIPELINE_ROBUSTNESS_IMAGE_BEHAVIOR_ROBUST_IMAGE_ACCESS_2_EXT,
+
+      /* VK_EXT_discard_rectangles */
+      .maxDiscardRectangles = NVK_MAX_DISCARD_RECTANGLES,
 
       /* VK_KHR_compute_shader_derivatives */
       .meshAndTaskShaderDerivatives = false,

@@ -143,7 +143,8 @@ struct intel_measure_snapshot {
 
 struct intel_measure_buffered_result {
    struct intel_measure_snapshot snapshot;
-   uint64_t start_ts, end_ts, idle_duration, batch_size;
+   int64_t idle_duration;
+   uint64_t start_ts, end_ts, batch_size;
    unsigned frame, batch_count, event_index, primary_renderpass;
 ;
 };

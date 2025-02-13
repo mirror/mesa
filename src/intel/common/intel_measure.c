@@ -371,15 +371,12 @@ intel_measure_frame_transition(unsigned frame)
    }
 }
 
-#define TIMESTAMP_BITS 36
-static uint64_t
-raw_timestamp_delta(uint64_t time0, uint64_t time1)
+static int64_t
+get_timestamp_ns(const struct intel_device_info *devinfo,
+                 int64_t gpu_timestamp)
 {
-   if (time0 > time1) {
-      return (1ULL << TIMESTAMP_BITS) + time1 - time0;
-   } else {
-      return time1 - time0;
-   }
+   int64_t multiplier = 1000000000ull / devinfo->timestamp_frequency;
+   return gpu_timestamp * multiplier;
 }
 
 /**
@@ -477,8 +474,7 @@ intel_measure_push_result(struct intel_measure_device *device,
              sizeof(struct intel_measure_snapshot));
       buffered_result->start_ts = *start_ts;
       buffered_result->end_ts = *end_ts;
-      buffered_result->idle_duration =
-         raw_timestamp_delta(prev_end_ts, buffered_result->start_ts);
+      buffered_result->idle_duration = buffered_result->start_ts - prev_end_ts;
       buffered_result->frame = batch->frame;
       buffered_result->batch_count = batch->batch_count;
       buffered_result->batch_size = batch->batch_size;
@@ -615,23 +611,21 @@ print_combined_results(struct intel_measure_device *measure_device,
       return;
    --result_count;
 
-   uint64_t duration_ts = raw_timestamp_delta(start_result->start_ts,
-                                              current_result->end_ts);
+   int64_t duration_ts = start_result->end_ts - current_result->start_ts;
    unsigned event_count = start_result->snapshot.event_count;
    while (result_count-- > 0) {
       assert(ringbuffer_size(result_rb) > 0);
       current_result = ringbuffer_pop(result_rb);
       if (current_result == NULL)
          return;
-      duration_ts += raw_timestamp_delta(current_result->start_ts,
-                                         current_result->end_ts);
+      duration_ts += current_result->end_ts - current_result->start_ts;
       event_count += current_result->snapshot.event_count;
    }
 
-   uint64_t duration_idle_ns =
-      intel_device_info_timebase_scale(info, start_result->idle_duration);
-   uint64_t duration_time_ns =
-      intel_device_info_timebase_scale(info, duration_ts);
+   int64_t duration_idle_ns =
+      get_timestamp_ns(info, start_result->idle_duration);
+   int64_t duration_time_ns =
+      get_timestamp_ns(info, duration_ts);
    const struct intel_measure_snapshot *begin = &start_result->snapshot;
    uint32_t renderpass = (start_result->primary_renderpass)
       ? start_result->primary_renderpass : begin->renderpass;

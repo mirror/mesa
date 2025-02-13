@@ -726,6 +726,118 @@ fn test_op_isetp() {
 }
 
 #[test]
+fn test_op_lea() {
+    if RunSingleton::get().sm.sm() >= 70 {
+        let src_mods = [
+            (SrcMod::None, SrcMod::None),
+            (SrcMod::INeg, SrcMod::None),
+            (SrcMod::None, SrcMod::INeg),
+        ];
+
+        for (intermediate_mod, b_mod) in src_mods {
+            for shift in 0..32 {
+                for dst_high in [false, true] {
+                    let mut op = OpLea {
+                        dst: Dst::None,
+                        overflow: Dst::None,
+                        a: 0.into(),
+                        b: 0.into(),
+                        a_high: 0.into(),
+                        shift,
+                        dst_high,
+                        intermediate_mod,
+                    };
+                    op.b.src_mod = b_mod;
+
+                    test_foldable_op(op);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_op_leax() {
+    if RunSingleton::get().sm.sm() >= 70 {
+        let src_mods = [
+            (SrcMod::None, SrcMod::None),
+            (SrcMod::BNot, SrcMod::None),
+            (SrcMod::None, SrcMod::BNot),
+        ];
+
+        for (intermediate_mod, b_mod) in src_mods {
+            for shift in 0..32 {
+                for dst_high in [false, true] {
+                    let mut op = OpLeaX {
+                        dst: Dst::None,
+                        overflow: Dst::None,
+                        a: 0.into(),
+                        b: 0.into(),
+                        a_high: 0.into(),
+                        carry: 0.into(),
+                        shift,
+                        dst_high,
+                        intermediate_mod,
+                    };
+                    op.b.src_mod = b_mod;
+
+                    test_foldable_op(op);
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn test_lea64() {
+    let run = RunSingleton::get();
+    let invocations = 100;
+
+    for shift in 0..64 {
+        let mut b = TestShaderBuilder::new(run.sm.as_ref());
+
+        let x = Src::from([
+            b.ld_test_data(0, MemType::B32)[0],
+            b.ld_test_data(4, MemType::B32)[0],
+        ]);
+
+        let y = Src::from([
+            b.ld_test_data(8, MemType::B32)[0],
+            b.ld_test_data(12, MemType::B32)[0],
+        ]);
+
+        let dst = b.lea64(x, y, shift);
+        b.st_test_data(16, MemType::B32, dst[0].into());
+        b.st_test_data(20, MemType::B32, dst[1].into());
+
+        let bin = b.compile();
+
+        let mut a = Acorn::new();
+        let mut data = Vec::new();
+        for _ in 0..invocations {
+            data.push([
+                get_iadd_int(&mut a),
+                get_iadd_int(&mut a),
+                get_iadd_int(&mut a),
+                get_iadd_int(&mut a),
+                0,
+                0,
+            ]);
+        }
+
+        run.run.run(&bin, &mut data).unwrap();
+
+        for d in &data {
+            let x = u64::from(d[0]) | (u64::from(d[1]) << 32);
+            let y = u64::from(d[2]) | (u64::from(d[3]) << 32);
+            let dst = (x << shift).wrapping_add(y);
+            assert_eq!(d[4], dst as u32);
+            assert_eq!(d[5], (dst >> 32) as u32);
+        }
+    }
+}
+
+#[test]
 fn test_op_lop2() {
     if RunSingleton::get().sm.sm() < 70 {
         let logic_ops =

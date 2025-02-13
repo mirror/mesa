@@ -1478,6 +1478,16 @@ impl<'a> ShaderFromNir<'a> {
                     b.shr(srcs[0], srcs[1], true)
                 }
             }
+            nir_op_lea_nv => {
+                let src_a = srcs[1];
+                let src_b = srcs[0];
+                let shift = nir_srcs[2].comp_as_uint(0).unwrap() as u8;
+                match alu.def.bit_size {
+                    32 => b.lea(src_a, src_b, shift),
+                    64 => b.lea64(src_a, src_b, shift),
+                    x => panic!("unsupported bit size for nir_op_lea_nv: {x}"),
+                }
+            }
             nir_op_isub => match alu.def.bit_size {
                 32 => b.iadd(srcs[0], srcs[1].ineg(), 0.into()),
                 64 => b.iadd64(srcs[0], srcs[1].ineg(), 0.into()),

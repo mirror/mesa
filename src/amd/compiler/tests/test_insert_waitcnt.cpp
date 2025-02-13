@@ -54,28 +54,28 @@ BEGIN_TEST(insert_waitcnt.clause)
    //>> p_unit_test 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
 
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
-   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[0], 0
-   //! v1: %0:v[6] = buffer_load_dword %0:s[0-3], %0:v[0], 0
-   //! v1: %0:v[7] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0:3], %0:v[0], 0
+   //! v1: %0:v[6] = buffer_load_dword %0:s[0:3], %0:v[0], 0
+   //! v1: %0:v[7] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v0, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v6, desc0, op_v0, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v7, desc0, op_v0, Operand::zero(), 0, false);
    //! s_waitcnt vmcnt(0)
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[4], 0
-   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[5], 0
-   //! v1: %0:v[6] = buffer_load_dword %0:s[0-3], %0:v[6], 0
-   //! v1: %0:v[7] = buffer_load_dword %0:s[0-3], %0:v[7], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[4], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0:3], %0:v[5], 0
+   //! v1: %0:v[6] = buffer_load_dword %0:s[0:3], %0:v[6], 0
+   //! v1: %0:v[7] = buffer_load_dword %0:s[0:3], %0:v[7], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v4, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v5, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v6, desc0, op_v6, Operand::zero(), 0, false);
    bld.mubuf(aco_opcode::buffer_load_dword, def_v7, desc0, op_v7, Operand::zero(), 0, false);
    //! s_waitcnt vmcnt(0)
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[4]
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[5]
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[6]
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[7]
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[4]
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[5]
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[6]
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[7]
    bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v4, 0, false);
    bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v5, 0, false);
    bld.mubuf(aco_opcode::buffer_store_dword, desc0, op_v0, Operand::zero(), op_v6, 0, false);
@@ -85,13 +85,13 @@ BEGIN_TEST(insert_waitcnt.clause)
    bld.reset(program->create_and_insert_block());
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
 
-   //! s4: %0:s[4-7] = s_load_dwordx4 %0:s[0-1], 0
+   //! s4: %0:s[4:7] = s_load_dwordx4 %0:s[0:1], 0
    bld.smem(aco_opcode::s_load_dwordx4, Definition(PhysReg(4), s4), Operand(PhysReg(0), s2),
             Operand::zero());
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
    //! s_waitcnt lgkmcnt(0) vmcnt(0)
-   //! v1: %0:v[5] = buffer_load_dword %0:s[4-7], %0:v[4], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[4:7], %0:v[4], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v5, Operand(PhysReg(4), s4), op_v4, Operand::zero(),
              0, false);
 
@@ -99,14 +99,14 @@ BEGIN_TEST(insert_waitcnt.clause)
    bld.reset(program->create_and_insert_block());
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
 
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
    //! v_nop
    bld.vop1(aco_opcode::v_nop);
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
    //! s_waitcnt vmcnt(0)
-   //! v1: %0:v[5] = buffer_load_dword %0:s[0-3], %0:v[4], 0
+   //! v1: %0:v[5] = buffer_load_dword %0:s[0:3], %0:v[4], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v5, desc0, op_v4, Operand::zero(), 0, false);
 
    finish_waitcnt_test();
@@ -122,7 +122,7 @@ BEGIN_TEST(insert_waitcnt.waw.mixed_vmem_lds.vmem)
 
    //>> BB0
    //! /* logical preds: / linear preds: / kind: top-level, */
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
 
    //>> BB1
@@ -140,7 +140,7 @@ BEGIN_TEST(insert_waitcnt.waw.mixed_vmem_lds.vmem)
    //>> BB2
    //! /* logical preds: BB0, BB1, / linear preds: BB0, BB1, / kind: uniform, */
    //! s_waitcnt lgkmcnt(0)
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
 
    finish_waitcnt_test();
@@ -156,7 +156,7 @@ BEGIN_TEST(insert_waitcnt.waw.mixed_vmem_lds.lds)
 
    //>> BB0
    //! /* logical preds: / linear preds: / kind: top-level, */
-   //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc0, op_v0, Operand::zero(), 0, false);
 
    //>> BB1
@@ -191,28 +191,28 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
       Operand desc_s8(PhysReg(8), s8);
 
       //>> p_unit_test 0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       //~gfx12! s_wait_loadcnt imm:0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(0));
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
       //>> p_unit_test 1
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_loadcnt imm:0
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
 
       //>> p_unit_test 2
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_loadcnt imm:0
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
@@ -220,29 +220,29 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
                Operand(PhysReg(272), RegClass::get(RegType::vgpr, 11 * 4)));
 
       //>> p_unit_test 3
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       //~gfx12! s_wait_samplecnt imm:0
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3));
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
 
       //>> p_unit_test 4
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_samplecnt imm:0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(4));
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
       //>> p_unit_test 5
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_samplecnt imm:0
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(5));
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
@@ -250,9 +250,9 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
                Operand(PhysReg(272), RegClass::get(RegType::vgpr, 11 * 4)));
 
       //>> p_unit_test 6
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       //~gfx12! s_wait_bvhcnt imm:0
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(6));
       bld.mimg(aco_opcode::image_bvh64_intersect_ray, def_v4, desc_s4, Operand(s4), Operand(v1),
@@ -261,10 +261,10 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
                Operand(PhysReg(272), RegClass::get(RegType::vgpr, 11 * 4)));
 
       //>> p_unit_test 7
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_bvhcnt imm:0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(7));
       bld.mimg(aco_opcode::image_bvh64_intersect_ray, def_v4, desc_s4, Operand(s4), Operand(v1),
@@ -272,10 +272,10 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
       //>> p_unit_test 8
-      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d
+      //! v1: %0:v[4] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_bvhcnt imm:0
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       bld.reset(program->create_and_insert_block());
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(8));
       bld.mimg(aco_opcode::image_bvh64_intersect_ray, def_v4, desc_s4, Operand(s4), Operand(v1),
@@ -284,13 +284,13 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
 
       //>> BB9
       //! /* logical preds: / linear preds: / kind: */
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.reset(program->create_and_insert_block());
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
       //>> BB10
       //! /* logical preds: / linear preds: / kind: */
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.reset(program->create_and_insert_block());
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
@@ -304,19 +304,19 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
       //! /* logical preds: BB9, BB10, / linear preds: BB9, BB10, / kind: uniform, */
       //! p_unit_test 9
       //~gfx12! s_wait_loadcnt imm:0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(9));
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
       //>> BB12
       //! /* logical preds: / linear preds: / kind: */
-      //! v1: %0:v[4] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
+      //! v1: %0:v[4] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
       bld.reset(program->create_and_insert_block());
       bld.mimg(aco_opcode::image_sample, def_v4, desc_s8, desc_s4, Operand(v1), op_v0);
 
       //>> BB13
       //! /* logical preds: / linear preds: / kind: */
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.reset(program->create_and_insert_block());
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
@@ -332,7 +332,7 @@ BEGIN_TEST(insert_waitcnt.waw.vmem_types)
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_loadcnt imm:0
       //~gfx12! s_wait_samplecnt imm:0
-      //! v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+      //! v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(10));
       bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
 
@@ -360,9 +360,9 @@ BEGIN_TEST(insert_waitcnt.vmem)
    Operand desc_s4(PhysReg(0), s4);
    Operand desc_s8(PhysReg(8), s8);
 
-   //>> v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
-   //! v1: %0:v[5] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
-   //! v1: %0:v[6] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d unrm r128
+   //>> v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
+   //! v1: %0:v[5] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
+   //! v1: %0:v[6] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d unrm r128
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
    bld.mimg(aco_opcode::image_sample, def_v5, desc_s8, desc_s4, Operand(v1), op_v0);
    Instruction* instr =
@@ -372,9 +372,9 @@ BEGIN_TEST(insert_waitcnt.vmem)
    instr->mimg().unrm = true;
    instr->mimg().r128 = true;
 
-   //! v1: %0:v[7] = image_load %0:s[8-15],  s4: undef,  v1: undef, %0:v[0] 1d
-   //! v1: %0:v[8] = image_sample %0:s[8-15], %0:s[0-3],  v1: undef, %0:v[0] 1d
-   //! v1: %0:v[9] = image_bvh64_intersect_ray %0:s[0-3],  s4: undef,  v1: undef, %0:v[16-26] 1d unrm r128
+   //! v1: %0:v[7] = image_load %0:s[8:15],  s4: undef,  v1: undef, %0:v[0] 1d
+   //! v1: %0:v[8] = image_sample %0:s[8:15], %0:s[0:3],  v1: undef, %0:v[0] 1d
+   //! v1: %0:v[9] = image_bvh64_intersect_ray %0:s[0:3],  s4: undef,  v1: undef, %0:v[16:26] 1d unrm r128
    bld.mimg(aco_opcode::image_load, def_v7, desc_s8, Operand(s4), Operand(v1), op_v0, 0x1);
    bld.mimg(aco_opcode::image_sample, def_v8, desc_s8, desc_s4, Operand(v1), op_v0);
    instr = bld.mimg(aco_opcode::image_bvh64_intersect_ray, def_v9, desc_s4, Operand(s4),
@@ -403,7 +403,7 @@ BEGIN_TEST(insert_waitcnt.vmem)
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(5), op_v9);
 
    /* Despite not using a sampler, this uses samplecnt. */
-   //! v1: %0:v[5] = image_msaa_load %0:s[8-15], s4: undef, v1: undef, %0:v[0] 1d
+   //! v1: %0:v[5] = image_msaa_load %0:s[8:15], s4: undef, v1: undef, %0:v[0] 1d
    //! s_wait_samplecnt imm:0
    //! p_unit_test 6, %0:v[5]
    bld.mimg(aco_opcode::image_msaa_load, def_v5, desc_s8, Operand(s4), Operand(v1), op_v0);
@@ -430,9 +430,9 @@ BEGIN_TEST(insert_waitcnt.lds_smem)
       Operand desc_s4(PhysReg(0), s4);
 
       //>> v1: %0:v[4] = ds_read_b32 %0:v[0]
-      //! s1: %0:s[4] = s_buffer_load_dword %0:s[0-3], %0:s[0]
+      //! s1: %0:s[4] = s_buffer_load_dword %0:s[0:3], %0:s[0]
       //! v1: %0:v[5] = ds_read_b32 %0:v[0]
-      //! s1: %0:s[5] = s_buffer_load_dword %0:s[0-3], %0:s[0]
+      //! s1: %0:s[5] = s_buffer_load_dword %0:s[0:3], %0:s[0]
       bld.ds(aco_opcode::ds_read_b32, def_v4, op_v0);
       bld.smem(aco_opcode::s_buffer_load_dword, def_s4, desc_s4, op_s0);
       bld.ds(aco_opcode::ds_read_b32, def_v5, op_v0);
@@ -473,9 +473,9 @@ BEGIN_TEST(insert_waitcnt.sendmsg_smem)
       Operand desc_s4(PhysReg(0), s4);
 
       //>> s1: %0:s[4] = s_sendmsg_rtn_b32 3 sendmsg(rtn_get_realtime)
-      //! s1: %0:s[5] = s_buffer_load_dword %0:s[0-3], %0:s[0]
+      //! s1: %0:s[5] = s_buffer_load_dword %0:s[0:3], %0:s[0]
       //! s1: %0:s[6] = s_sendmsg_rtn_b32 3 sendmsg(rtn_get_realtime)
-      //! s1: %0:s[7] = s_buffer_load_dword %0:s[0-3], %0:s[0]
+      //! s1: %0:s[7] = s_buffer_load_dword %0:s[0:3], %0:s[0]
       bld.sop1(aco_opcode::s_sendmsg_rtn_b32, def_s4, Operand::c32(sendmsg_rtn_get_realtime));
       bld.smem(aco_opcode::s_buffer_load_dword, def_s5, desc_s4, op_s0);
       bld.sop1(aco_opcode::s_sendmsg_rtn_b32, def_s6, Operand::c32(sendmsg_rtn_get_realtime));
@@ -513,7 +513,7 @@ BEGIN_TEST(insert_waitcnt.vmem_ds)
    program->workgroup_size = 128;
    program->wgp_mode = true;
 
-   //>> v1: %0:v[4] = buffer_load_dword %0:s[0-3], %0:v[0], 0
+   //>> v1: %0:v[4] = buffer_load_dword %0:s[0:3], %0:v[0], 0
    //! v1: %0:v[5] = ds_read_b32 %0:v[0]
    bld.mubuf(aco_opcode::buffer_load_dword, def_v4, desc_s4, op_v0, Operand::zero(), 0, false);
    bld.ds(aco_opcode::ds_read_b32, def_v5, op_v0);
@@ -522,7 +522,7 @@ BEGIN_TEST(insert_waitcnt.vmem_ds)
    //! p_unit_test 0, %0:v[4], %0:v[5]
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(0), op_v4, op_v5);
 
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[1] storage:buffer
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[1] storage:buffer
    //! v1: %0:v[5] = ds_write_b32 %0:v[0], %0:v[1] storage:shared
    Instruction* instr =
       bld.mubuf(aco_opcode::buffer_store_dword, desc_s4, op_v0, Operand::zero(), op_v1, 0, false)

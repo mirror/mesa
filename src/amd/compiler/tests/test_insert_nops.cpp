@@ -68,34 +68,34 @@ BEGIN_TEST(insert_nops.nsa_to_vmem_bug)
 
    /* no nop needed because offset&6==0 */
    //>> p_unit_test 0
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:8 offen
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:8 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
    create_mimg(true, 6, 4);
    create_mubuf(8);
 
    /* nop needed */
    //! p_unit_test 1
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
    //! s_nop
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:4 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:4 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1u));
    create_mimg(true, 6, 4);
    create_mubuf(4);
 
    /* no nop needed because the MIMG is not NSA */
    //! p_unit_test 2
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[1], %0:v[2], %0:v[3], %0:v[4], %0:v[5] 2d
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:4 offen
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[1], %0:v[2], %0:v[3], %0:v[4], %0:v[5] 2d
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:4 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2u));
    create_mimg(false, 6, 2);
    create_mubuf(4);
 
    /* no nop needed because there's already an instruction in-between */
    //! p_unit_test 3
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
    //! v_nop
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:4 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:4 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3u));
    create_mimg(true, 6, 4);
    bld.vop1(aco_opcode::v_nop);
@@ -103,19 +103,19 @@ BEGIN_TEST(insert_nops.nsa_to_vmem_bug)
 
    /* no nop needed because the NSA instruction is under 4 dwords */
    //! p_unit_test 4
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2] 2d
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:4 offen
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2] 2d
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:4 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(4u));
    create_mimg(true, 2, 3);
    create_mubuf(4);
 
    /* NSA instruction and MUBUF/MTBUF in a different block */
    //! p_unit_test 5
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
    //! BB1
    //! /* logical preds: / linear preds: BB0, / kind: uniform, */
    //! s_nop
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offset:4 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offset:4 offen
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(5u));
    create_mimg(true, 6, 4);
    bld.reset(program->create_and_insert_block());
@@ -134,7 +134,7 @@ BEGIN_TEST(insert_nops.writelane_to_nsa_bug)
    //>> p_unit_test 0
    //! v1: %0:v[255] = v_writelane_b32_e64 0, 0, %0:v[255]
    //! s_nop
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2] 2d
    bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
    bld.writelane(Definition(PhysReg(511), v1), Operand::zero(), Operand::zero(),
                  Operand(PhysReg(511), v1));
@@ -143,7 +143,7 @@ BEGIN_TEST(insert_nops.writelane_to_nsa_bug)
    /* no nop needed because the MIMG is not NSA */
    //! p_unit_test 1
    //! v1: %0:v[255] = v_writelane_b32_e64 0, 0, %0:v[255]
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[1] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[1] 2d
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1u));
    bld.writelane(Definition(PhysReg(511), v1), Operand::zero(), Operand::zero(),
                  Operand(PhysReg(511), v1));
@@ -153,7 +153,7 @@ BEGIN_TEST(insert_nops.writelane_to_nsa_bug)
    //! p_unit_test 2
    //! v1: %0:v[255] = v_writelane_b32_e64 0, 0, %0:v[255]
    //! v_nop
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2] 2d
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2u));
    bld.writelane(Definition(PhysReg(511), v1), Operand::zero(), Operand::zero(),
                  Operand(PhysReg(511), v1));
@@ -166,7 +166,7 @@ BEGIN_TEST(insert_nops.writelane_to_nsa_bug)
    //! BB1
    //! /* logical preds: / linear preds: BB0, / kind: uniform, */
    //! s_nop
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2] 2d
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3u));
    bld.writelane(Definition(PhysReg(511), v1), Operand::zero(), Operand::zero(),
                  Operand(PhysReg(511), v1));
@@ -184,7 +184,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
 
    /* WaR: VMEM load */
    //>> p_unit_test 0
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! s_waitcnt_depctr vm_vsrc(0)
    //! s1: %0:s[0] = s_mov_b32 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(0));
@@ -192,7 +192,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(0), s1), Operand::zero());
 
    //! p_unit_test 1
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! s_waitcnt_depctr vm_vsrc(0)
    //! s2: %0:exec = s_mov_b64 -1
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
@@ -201,7 +201,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
 
    /* no hazard: VMEM load */
    //! p_unit_test 2
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! s1: %0:s[4] = s_mov_b32 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
    create_mubuf(0);
@@ -209,7 +209,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
 
    /* no hazard: VMEM load with VALU in-between */
    //! p_unit_test 3
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! v_nop
    //! s1: %0:s[0] = s_mov_b32 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3));
@@ -258,7 +258,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
 
    /* no hazard: VMEM/LDS with the correct waitcnt in-between */
    //! p_unit_test 8
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! s_waitcnt vmcnt(0)
    //! s1: %0:s[0] = s_mov_b32 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(8));
@@ -267,7 +267,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(0), s1), Operand::zero());
 
    //! p_unit_test 9
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[0] offen
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[0] offen
    //! s_waitcnt_vscnt %0:null imm:0
    //! s1: %0:s[0] = s_mov_b32 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(9));
@@ -287,7 +287,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
 
    /* VMEM/LDS with the wrong waitcnt in-between */
    //! p_unit_test 11
-   //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+   //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
    //! s_waitcnt_vscnt %0:null imm:0
    //! s_waitcnt_depctr vm_vsrc(0)
    //! s1: %0:s[0] = s_mov_b32 0
@@ -297,7 +297,7 @@ BEGIN_TEST(insert_nops.vmem_to_scalar_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(0), s1), Operand::zero());
 
    //! p_unit_test 12
-   //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[0] offen
+   //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[0] offen
    //! s_waitcnt lgkmcnt(0)
    //! s_waitcnt_depctr vm_vsrc(0)
    //! s1: %0:s[0] = s_mov_b32 0
@@ -455,7 +455,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* WaR: VMEM */
       //>> p_unit_test 0
-      //! v1: %0:v[1] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+      //! v1: %0:v[1] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
       //~gfx11! s_waitcnt_depctr vm_vsrc(0)
       //~gfx11! v1: %0:v[0] = lds_direct_load %0:m0
       //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0 wait_vsrc:0
@@ -465,7 +465,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* WaW: VMEM */
       //! p_unit_test 1
-      //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[1], 0 offen
+      //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[1], 0 offen
       //~gfx11! s_waitcnt_depctr vm_vsrc(0)
       //~gfx11! v1: %0:v[0] = lds_direct_load %0:m0
       //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0 wait_vsrc:0
@@ -475,7 +475,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* no hazard: VMEM */
       //! p_unit_test 2
-      //! v1: %0:v[1] = buffer_load_dword %0:s[0-3], %0:v[1], 0 offen
+      //! v1: %0:v[1] = buffer_load_dword %0:s[0:3], %0:v[1], 0 offen
       //! v1: %0:v[0] = lds_direct_load %0:m0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
       create_mubuf(0, PhysReg(257), PhysReg(257));
@@ -483,7 +483,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* no hazard: VMEM with VALU in-between */
       //! p_unit_test 3
-      //! v1: %0:v[1] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+      //! v1: %0:v[1] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
       //! v_nop
       //! v1: %0:v[0] = lds_direct_load %0:m0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3));
@@ -531,7 +531,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* no hazard: VMEM/LDS with the correct waitcnt in-between */
       //! p_unit_test 8
-      //! v1: %0:v[1] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+      //! v1: %0:v[1] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
       //~gfx11! s_waitcnt vmcnt(0)
       //~gfx12! s_wait_loadcnt imm:0
       //! v1: %0:v[0] = lds_direct_load %0:m0
@@ -544,7 +544,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
       bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
       //! p_unit_test 9
-      //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[0] offen
+      //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[0] offen
       //~gfx11! s_waitcnt_vscnt %0:null imm:0
       //~gfx12! s_wait_storecnt imm:0
       //! v1: %0:v[0] = lds_direct_load %0:m0
@@ -571,7 +571,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       if (gfx >= GFX12) {
          //~gfx12! p_unit_test 11
-         //~gfx12! v1: %0:v[1] = image_load %0:s[0-7], s4: undef, v1: undef, %0:v[0-1] 2d
+         //~gfx12! v1: %0:v[1] = image_load %0:s[0:7], s4: undef, v1: undef, %0:v[0:1] 2d
          //~gfx12! s_wait_loadcnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(11));
@@ -585,7 +585,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
          bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
          //~gfx12! p_unit_test 12
-         //~gfx12! v1: %0:v[1] = image_sample %0:s[0-7], %0:s[0-3], v1: undef, %0:v[0-1] 2d
+         //~gfx12! v1: %0:v[1] = image_sample %0:s[0:7], %0:s[0:3], v1: undef, %0:v[0:1] 2d
          //~gfx12! s_wait_samplecnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(12));
@@ -599,7 +599,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
          bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
          //~gfx12! p_unit_test 13
-         //~gfx12! v4: %0:v[0-3] = image_bvh64_intersect_ray %0:s[0-3], s4: undef, v1: undef, %0:v[0-1], %0:v[2], %0:v[3-5], %0:v[6-8], %0:v[9-11] 1d unrm r128
+         //~gfx12! v4: %0:v[0:3] = image_bvh64_intersect_ray %0:s[0:3], s4: undef, v1: undef, %0:v[0:1], %0:v[2], %0:v[3:5], %0:v[6:8], %0:v[9:11] 1d unrm r128
          //~gfx12! s_wait_bvhcnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(13));
@@ -610,7 +610,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       /* VMEM/LDS with the wrong waitcnt in-between */
       //! p_unit_test 14
-      //! v1: %0:v[1] = buffer_load_dword %0:s[0-3], %0:v[0], 0 offen
+      //! v1: %0:v[1] = buffer_load_dword %0:s[0:3], %0:v[0], 0 offen
       //~gfx11! s_waitcnt_vscnt %0:null imm:0
       //~gfx11! s_waitcnt_depctr vm_vsrc(0)
       //~gfx11! v1: %0:v[0] = lds_direct_load %0:m0
@@ -625,7 +625,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
       bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
       //! p_unit_test 15
-      //! buffer_store_dword %0:s[0-3], %0:v[0], 0, %0:v[0] offen
+      //! buffer_store_dword %0:s[0:3], %0:v[0], 0, %0:v[0] offen
       //~gfx11! s_waitcnt lgkmcnt(0)
       //~gfx11! s_waitcnt_depctr vm_vsrc(0)
       //~gfx11! v1: %0:v[0] = lds_direct_load %0:m0
@@ -655,7 +655,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
       bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
       //! p_unit_test 17
-      //! v1: %0:v[0] = buffer_load_dword %0:s[0-3], %0:v[1], 0 offen
+      //! v1: %0:v[0] = buffer_load_dword %0:s[0:3], %0:v[1], 0 offen
       //~gfx11! s_waitcnt_vscnt %0:null imm:0
       //~gfx11! s_waitcnt_depctr vm_vsrc(0)
       //~gfx11! v1: %0:v[0] = lds_direct_load %0:m0
@@ -671,7 +671,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
 
       if (gfx >= GFX12) {
          //~gfx12! p_unit_test 18
-         //~gfx12! v1: %0:v[1] = image_load %0:s[0-7], s4: undef, v1: undef, %0:v[0-1] 2d
+         //~gfx12! v1: %0:v[1] = image_load %0:s[0:7], s4: undef, v1: undef, %0:v[0:1] 2d
          //~gfx12! s_wait_samplecnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0 wait_vsrc:0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(18));
@@ -685,7 +685,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
          bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
          //~gfx12! p_unit_test 19
-         //~gfx12! v1: %0:v[1] = image_sample %0:s[0-7], %0:s[0-3], v1: undef, %0:v[0-1] 2d
+         //~gfx12! v1: %0:v[1] = image_sample %0:s[0:7], %0:s[0:3], v1: undef, %0:v[0:1] 2d
          //~gfx12! s_wait_loadcnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0 wait_vsrc:0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(19));
@@ -699,7 +699,7 @@ BEGIN_TEST(insert_nops.lds_direct_vmem)
          bld.ldsdir(aco_opcode::lds_direct_load, Definition(PhysReg(256), v1), Operand(m0, s1));
 
          //~gfx12! p_unit_test 20
-         //~gfx12! v4: %0:v[0-3] = image_bvh64_intersect_ray %0:s[0-3], s4: undef, v1: undef, %0:v[0-1], %0:v[2], %0:v[3-5], %0:v[6-8], %0:v[9-11] 1d unrm r128
+         //~gfx12! v4: %0:v[0:3] = image_bvh64_intersect_ray %0:s[0:3], s4: undef, v1: undef, %0:v[0:1], %0:v[2], %0:v[3:5], %0:v[6:8], %0:v[9:11] 1d unrm r128
          //~gfx12! s_wait_loadcnt imm:0
          //~gfx12! v1: %0:v[0] = lds_direct_load %0:m0 wait_vsrc:0
          bld.pseudo(aco_opcode::p_unit_test, Operand::c32(20));
@@ -1068,7 +1068,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* Basic case. */
    //>> p_unit_test 0
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
@@ -1080,7 +1080,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* Mitigation. */
    //! p_unit_test 1
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! v1: %0:v[1] = v_mov_b32 %0:s[1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
@@ -1092,7 +1092,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(2), s1), Operand(PhysReg(1), s1));
 
    //! p_unit_test 2
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
@@ -1105,7 +1105,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(2), s1), Operand(PhysReg(1), s1));
 
    //! p_unit_test 3
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
@@ -1118,7 +1118,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* v_cndmask_b32 is both involved in the hazard and is a mitigation. */
    //! p_unit_test 4
-   //! v1: %0:v[0] = v_cndmask_b32 %0:s[2], 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 %0:s[2], 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
@@ -1130,7 +1130,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* VALU reading exec does not mitigate the hazard. We also don't consider literals. */
    //! p_unit_test 5
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! v1: %0:v[1] = v_mov_b32 %0:exec_lo
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
@@ -1143,7 +1143,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(2), s1), Operand(PhysReg(1), s1));
 
    //! p_unit_test 6
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! v1: %0:v[1] = v_mov_b32 0x200
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
@@ -1157,7 +1157,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* Basic case: VALU. */
    //! p_unit_test 7
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! v1: %0:v[1] = v_mov_b32 %0:s[1]
@@ -1169,9 +1169,9 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    /* SALU which both reads and writes a lane mask SGPR. */
    //! p_unit_test 8
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[1] = s_mov_b32 0
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2-3]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2:3]
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[2] = s_mov_b32 %0:s[1]
    //! s_waitcnt_depctr sa_sdst(0)
@@ -1188,9 +1188,9 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    /* When a SALU writes a lane mask, we shouldn't forget the current SGPRs used as lane masks then
     * written. */
    //! p_unit_test 9
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[0] = s_mov_b32 0
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2-3]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2:3]
    //! s1: %0:s[2] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[4] = s_mov_b32 %0:s[0]
@@ -1208,7 +1208,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    /* When a SALU writes a lane mask, we shouldn't forget all SGPRs used as lane masks, there might
     * be later problematic writes. */
    //! p_unit_test 10
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[0] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[4] = s_mov_b32 %0:s[0]
@@ -1224,7 +1224,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
    bld.sop1(aco_opcode::s_mov_b32, Definition(PhysReg(5), s1), Operand(PhysReg(1), s1));
 
    //! p_unit_test 11
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    //! s1: %0:s[0] = s_mov_b32 0
    //! s_waitcnt_depctr sa_sdst(0)
    //! s1: %0:s[4] = s_mov_b32 %0:s[0]
@@ -1244,7 +1244,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    //! BB1
    //! /* logical preds: / linear preds: BB0, / kind: */
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0-1]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[0:1]
    bld.reset(program->create_and_insert_block());
    program->blocks[0].linear_succs.push_back(1);
    program->blocks[1].linear_preds.push_back(0);
@@ -1253,7 +1253,7 @@ BEGIN_TEST(insert_nops.valu_mask_write)
 
    //! BB2
    //! /* logical preds: / linear preds: BB0, / kind: */
-   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2-3]
+   //! v1: %0:v[0] = v_cndmask_b32 0, 0, %0:s[2:3]
    bld.reset(program->create_and_insert_block());
    program->blocks[0].linear_succs.push_back(2);
    program->blocks[2].linear_preds.push_back(0);
@@ -1287,9 +1287,9 @@ BEGIN_TEST(insert_nops.wmma_raw)
 
    /* Basic case. */
    //>> p_unit_test 0
-   //! v4: %_:v[20-23] = v_wmma_f16_16x16x16_f16 %_:v[0-7].xx, %_:v[8-15].xx, %_:v[20-23].xx
+   //! v4: %_:v[20:23] = v_wmma_f16_16x16x16_f16 %_:v[0:7].xx, %_:v[8:15].xx, %_:v[20:23].xx
    //! v_nop
-   //! v4: %_:v[48-51] = v_wmma_f16_16x16x16_f16 %_:v[24-31].xx, %_:v[16-23].xx, %_:v[48-51].xx
+   //! v4: %_:v[48:51] = v_wmma_f16_16x16x16_f16 %_:v[24:31].xx, %_:v[16:23].xx, %_:v[48:51].xx
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(0));
    Operand A(PhysReg(256 + 0), v8);
    Operand B(PhysReg(256 + 8), v8);
@@ -1304,9 +1304,9 @@ BEGIN_TEST(insert_nops.wmma_raw)
 
    /* Mitigation. */
    //! p_unit_test 1
-   //! v4: %_:v[20-23] = v_wmma_f16_16x16x16_f16 %_:v[0-7].xx, %_:v[8-15].xx, %_:v[20-23].xx
+   //! v4: %_:v[20:23] = v_wmma_f16_16x16x16_f16 %_:v[0:7].xx, %_:v[8:15].xx, %_:v[20:23].xx
    //! v1: %_:v[56] = v_rcp_f32 0
-   //! v4: %_:v[48-51] = v_wmma_f16_16x16x16_f16 %_:v[24-31].xx, %_:v[16-23].xx, %_:v[48-51].xx
+   //! v4: %_:v[48:51] = v_wmma_f16_16x16x16_f16 %_:v[24:31].xx, %_:v[16:23].xx, %_:v[48:51].xx
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
    A.setFixed(PhysReg(256 + 0));
    B.setFixed(PhysReg(256 + 8));
@@ -1322,8 +1322,8 @@ BEGIN_TEST(insert_nops.wmma_raw)
 
    /* No hazard. */
    //>> p_unit_test 2
-   //! v4: %_:v[20-23] = v_wmma_f16_16x16x16_f16 %_:v[0-7].xx, %_:v[8-15].xx, %_:v[20-23].xx
-   //! v4: %_:v[48-51] = v_wmma_f16_16x16x16_f16 %_:v[24-31].xx, %_:v[32-39].xx, %_:v[48-51].xx
+   //! v4: %_:v[20:23] = v_wmma_f16_16x16x16_f16 %_:v[0:7].xx, %_:v[8:15].xx, %_:v[20:23].xx
+   //! v4: %_:v[48:51] = v_wmma_f16_16x16x16_f16 %_:v[24:31].xx, %_:v[32:39].xx, %_:v[48:51].xx
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(2));
    A.setFixed(PhysReg(256 + 0));
    B.setFixed(PhysReg(256 + 8));
@@ -1337,8 +1337,8 @@ BEGIN_TEST(insert_nops.wmma_raw)
              0);
 
    //>> p_unit_test 3
-   //! v4: %_:v[20-23] = v_wmma_f16_16x16x16_f16 %_:v[0-7].xx, %_:v[8-15].xx, %_:v[20-23].xx
-   //! v4: %_:v[20-23] = v_wmma_f16_16x16x16_f16 %_:v[24-31].xx, %_:v[32-39].xx, %_:v[20-23].xx
+   //! v4: %_:v[20:23] = v_wmma_f16_16x16x16_f16 %_:v[0:7].xx, %_:v[8:15].xx, %_:v[20:23].xx
+   //! v4: %_:v[20:23] = v_wmma_f16_16x16x16_f16 %_:v[24:31].xx, %_:v[32:39].xx, %_:v[20:23].xx
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(3));
    A.setFixed(PhysReg(256 + 0));
    B.setFixed(PhysReg(256 + 8));
@@ -1825,7 +1825,7 @@ BEGIN_TEST(insert_nops.setpc_gfx7)
 
       /* Break up SMEM clauses: resolved by the s_setpc_b64 itself */
       //! p_unit_test 1
-      //! s1: %0:s[0] = s_load_dword %0:s[0-1]
+      //! s1: %0:s[0] = s_load_dword %0:s[0:1]
       //! s_setpc_b64 0
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(1));
       bld.smem(aco_opcode::s_load_dword, Definition(PhysReg(0), s1), Operand(PhysReg(0), s2));
@@ -1884,7 +1884,7 @@ BEGIN_TEST(insert_nops.setpc_gfx7)
        * them. */
 
       //>> p_unit_test 7
-      //! buffer_store_dwordx3 %0:s[0-3], %0:v[0], 0, %0:v[0-2] offen
+      //! buffer_store_dwordx3 %0:s[0:3], %0:v[0], 0, %0:v[0:2] offen
       //! s_nop
       create_program(gfx, compute_cs, 64, CHIP_UNKNOWN);
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(7));
@@ -1902,7 +1902,7 @@ BEGIN_TEST(insert_nops.setpc_gfx7)
 
       /* Break up SMEM clauses */
       //>> p_unit_test 9
-      //! s1: %0:s[0] = s_load_dword %0:s[0-1]
+      //! s1: %0:s[0] = s_load_dword %0:s[0:1]
       //! s_nop
       create_program(gfx, compute_cs, 64, CHIP_UNKNOWN);
       bld.pseudo(aco_opcode::p_unit_test, Operand::c32(9));
@@ -1989,7 +1989,7 @@ BEGIN_TEST(insert_nops.setpc_gfx10)
 
    /* SMEMtoVectorWriteHazard */
    //>> p_unit_test 7
-   //! s1: %0:s[0] = s_load_dword %0:s[0-1]
+   //! s1: %0:s[0] = s_load_dword %0:s[0:1]
    //! s1: %0:null = s_mov_b32 0
    create_program(GFX10, compute_cs, 64, CHIP_UNKNOWN);
    bld.pseudo(aco_opcode::p_unit_test, Operand::c32(7));
@@ -1999,7 +1999,7 @@ BEGIN_TEST(insert_nops.setpc_gfx10)
    /* NSAToVMEMBug is already resolved indirectly through VMEMtoScalarWriteHazard and
     * LdsBranchVmemWARHazard. */
    //>> p_unit_test 8
-   //! v1: %0:v[0] = image_sample %0:s[0-7], %0:s[0-3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
+   //! v1: %0:v[0] = image_sample %0:s[0:7], %0:s[0:3],  v1: undef, %0:v[0], %0:v[2], %0:v[4], %0:v[6], %0:v[8], %0:v[10] 2d
    //! s_waitcnt_depctr vm_vsrc(0)
    //! s_waitcnt_vscnt %0:null imm:0
    create_program(GFX10, compute_cs, 64, CHIP_UNKNOWN);
@@ -2113,7 +2113,7 @@ BEGIN_TEST(insert_nops.setpc_gfx11)
 
    /* WMMA Hazards */
    //! p_unit_test 7
-   //! v4: %0:v[20-23] = v_wmma_f16_16x16x16_f16 %0:v[0-7].xx, %0:v[8-15].xx, %0:v[20-23].xx
+   //! v4: %0:v[20:23] = v_wmma_f16_16x16x16_f16 %0:v[0:7].xx, %0:v[8:15].xx, %0:v[20:23].xx
    //! v_nop
    //! s_waitcnt_depctr va_vdst(0)
    //! s_setpc_b64 0

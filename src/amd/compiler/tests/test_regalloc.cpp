@@ -64,17 +64,17 @@ BEGIN_TEST(regalloc._32bit_partial_write)
 END_TEST
 
 BEGIN_TEST(regalloc.precolor.swap)
-   //>> s2: %op0:s[0-1] = p_startpgm
+   //>> s2: %op0:s[0:1] = p_startpgm
    if (!setup_cs("s2", GFX10))
       return;
 
    program->dev.sgpr_limit = 4;
 
-   //! s2: %op1:s[2-3] = p_unit_test
+   //! s2: %op1:s[2:3] = p_unit_test
    Temp op1 = bld.pseudo(aco_opcode::p_unit_test, bld.def(s2));
 
-   //! s2: %op0_2:s[2-3], s2: %op1_2:s[0-1] = p_parallelcopy %op0:s[0-1], %op1:s[2-3]
-   //! p_unit_test %op0_2:s[2-3], %op1_2:s[0-1]
+   //! s2: %op0_2:s[2:3], s2: %op1_2:s[0:1] = p_parallelcopy %op0:s[0:1], %op1:s[2:3]
+   //! p_unit_test %op0_2:s[2:3], %op1_2:s[0:1]
    Operand op(inputs[0]);
    op.setPrecolored(PhysReg(2));
    bld.pseudo(aco_opcode::p_unit_test, op, op1);
@@ -83,29 +83,29 @@ BEGIN_TEST(regalloc.precolor.swap)
 END_TEST
 
 BEGIN_TEST(regalloc.precolor.blocking_vector)
-   //>> s2: %tmp0:s[0-1], s1: %tmp1:s[2] = p_startpgm
+   //>> s2: %tmp0:s[0:1], s1: %tmp1:s[2] = p_startpgm
    if (!setup_cs("s2 s1", GFX10))
       return;
 
-   //! s1: %tmp1_2:s[1], s2: %tmp0_2:s[2-3] = p_parallelcopy %tmp1:s[2], %tmp0:s[0-1]
+   //! s1: %tmp1_2:s[1], s2: %tmp0_2:s[2:3] = p_parallelcopy %tmp1:s[2], %tmp0:s[0:1]
    //! p_unit_test %tmp1_2:s[1]
    Operand op(inputs[1]);
    op.setPrecolored(PhysReg(1));
    bld.pseudo(aco_opcode::p_unit_test, op);
 
-   //! p_unit_test %tmp0_2:s[2-3]
+   //! p_unit_test %tmp0_2:s[2:3]
    bld.pseudo(aco_opcode::p_unit_test, inputs[0]);
 
    finish_ra_test(ra_test_policy());
 END_TEST
 
 BEGIN_TEST(regalloc.precolor.vector.test)
-   //>> s2: %tmp0:s[0-1], s1: %tmp1:s[2], s1: %tmp2:s[3] = p_startpgm
+   //>> s2: %tmp0:s[0:1], s1: %tmp1:s[2], s1: %tmp2:s[3] = p_startpgm
    if (!setup_cs("s2 s1 s1", GFX10))
       return;
 
-   //! s2: %tmp0_2:s[2-3], s1: %tmp2_2:s[#t2] = p_parallelcopy %tmp0:s[0-1], %tmp2:s[3]
-   //! p_unit_test %tmp0_2:s[2-3]
+   //! s2: %tmp0_2:s[2:3], s1: %tmp2_2:s[#t2] = p_parallelcopy %tmp0:s[0:1], %tmp2:s[3]
+   //! p_unit_test %tmp0_2:s[2:3]
    Operand op(inputs[0]);
    op.setPrecolored(PhysReg(2));
    bld.pseudo(aco_opcode::p_unit_test, op);
@@ -117,12 +117,12 @@ BEGIN_TEST(regalloc.precolor.vector.test)
 END_TEST
 
 BEGIN_TEST(regalloc.precolor.vector.collect)
-   //>> s2: %tmp0:s[0-1], s1: %tmp1:s[2], s1: %tmp2:s[3] = p_startpgm
+   //>> s2: %tmp0:s[0:1], s1: %tmp1:s[2], s1: %tmp2:s[3] = p_startpgm
    if (!setup_cs("s2 s1 s1", GFX10))
       return;
 
-   //! s2: %tmp0_2:s[2-3], s1: %tmp1_2:s[#t1], s1: %tmp2_2:s[#t2] = p_parallelcopy %tmp0:s[0-1], %tmp1:s[2], %tmp2:s[3]
-   //! p_unit_test %tmp0_2:s[2-3]
+   //! s2: %tmp0_2:s[2:3], s1: %tmp1_2:s[#t1], s1: %tmp2_2:s[#t2] = p_parallelcopy %tmp0:s[0:1], %tmp1:s[2], %tmp2:s[3]
+   //! p_unit_test %tmp0_2:s[2:3]
    Operand op(inputs[0]);
    op.setPrecolored(PhysReg(2));
    bld.pseudo(aco_opcode::p_unit_test, op);
@@ -187,10 +187,10 @@ BEGIN_TEST(regalloc.branch_def_phis_at_merge_block)
    bld.reset(program->create_and_insert_block());
    program->blocks[1].linear_preds.push_back(0);
 
-   //! s2: %tmp:s[0-1] = p_linear_phi 0
+   //! s2: %tmp:s[0:1] = p_linear_phi 0
    Temp tmp = bld.pseudo(aco_opcode::p_linear_phi, bld.def(s2), Operand::c64(0u));
 
-   //! p_unit_test %tmp:s[0-1]
+   //! p_unit_test %tmp:s[0:1]
    bld.pseudo(aco_opcode::p_unit_test, tmp);
 
    finish_ra_test(ra_test_policy());
@@ -201,7 +201,7 @@ BEGIN_TEST(regalloc.branch_def_phis_at_branch_block)
    if (!setup_cs("", GFX10))
       return;
 
-   //! s2: %tmp:s[0-1] = p_unit_test
+   //! s2: %tmp:s[0:1] = p_unit_test
    Temp tmp = bld.pseudo(aco_opcode::p_unit_test, bld.def(s2));
 
    //! p_cbranch_z %0:scc
@@ -212,7 +212,7 @@ BEGIN_TEST(regalloc.branch_def_phis_at_branch_block)
    bld.reset(program->create_and_insert_block());
    program->blocks[1].linear_preds.push_back(0);
 
-   //! p_unit_test %tmp:s[0-1]
+   //! p_unit_test %tmp:s[0:1]
    bld.pseudo(aco_opcode::p_unit_test, tmp);
    bld.branch(aco_opcode::p_branch);
 
@@ -342,11 +342,11 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.compact_grow)
        */
       //! lv1: %ltmp1_2:v[31] = p_parallelcopy %ltmp1:v[30]
       //! v1: %tmp_2:v[#_] = p_parallelcopy %tmp:v[29]
-      //! lv2: %ltmp2:v[29-30] = p_start_linear_vgpr
+      //! lv2: %ltmp2:v[29:30] = p_start_linear_vgpr
       Temp ltmp2 = bld.pseudo(aco_opcode::p_start_linear_vgpr, bld.def(v2.as_linear()));
 
       //! p_end_linear_vgpr %ltmp1_2:v[31]
-      //! p_end_linear_vgpr %ltmp2:v[29-30]
+      //! p_end_linear_vgpr %ltmp2:v[29:30]
       end_linear_vgpr(ltmp1);
       end_linear_vgpr(ltmp2);
 
@@ -383,16 +383,16 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.compact_shrink)
 
       /* Unlike regalloc.linear_vgpr.alloc.compact_grow, this shrinks the linear VGPR area. */
       //! lv1: %ltmp3_2:v[30], lv1: %ltmp1_2:v[31] = p_parallelcopy %ltmp3:v[28], %ltmp1:v[30]
-      //! lv2: %ltmp5:v[28-29] = p_start_linear_vgpr
+      //! lv2: %ltmp5:v[28:29] = p_start_linear_vgpr
       Temp ltmp5 = bld.pseudo(aco_opcode::p_start_linear_vgpr, bld.def(v2.as_linear()));
 
       /* There should be enough space for 28 normal VGPRs. */
-      //! v28: %_:v[0-27] = p_unit_test
+      //! v28: %_:v[0:27] = p_unit_test
       bld.pseudo(aco_opcode::p_unit_test, bld.def(RegClass::get(RegType::vgpr, 28 * 4)));
 
       //! p_end_linear_vgpr %ltmp1_2:v[31]
       //! p_end_linear_vgpr %ltmp3_2:v[30]
-      //! p_end_linear_vgpr %ltmp5:v[28-29]
+      //! p_end_linear_vgpr %ltmp5:v[28:29]
       end_linear_vgpr(ltmp1);
       end_linear_vgpr(ltmp3);
       end_linear_vgpr(ltmp5);
@@ -416,7 +416,7 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.compact_for_normal)
       end_linear_vgpr(ltmp0);
 
       //! lv1: %ltmp1_2:v[31] = p_parallelcopy %ltmp1:v[30]
-      //! v31: %_:v[0-30] = p_unit_test
+      //! v31: %_:v[0:30] = p_unit_test
       bld.pseudo(aco_opcode::p_unit_test, bld.def(RegClass::get(RegType::vgpr, 31 * 4)));
 
       //! p_end_linear_vgpr %ltmp1_2:v[31]
@@ -441,7 +441,7 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.compact_for_vec)
       end_linear_vgpr(ltmp0);
 
       //! lv1: %ltmp1_2:v[31] = p_parallelcopy %ltmp1:v[30]
-      //! v31: %_:v[0-30] = p_create_vector v31: undef
+      //! v31: %_:v[0:30] = p_create_vector v31: undef
       RegClass v31 = RegClass::get(RegType::vgpr, 31 * 4);
       bld.pseudo(aco_opcode::p_create_vector, bld.def(v31), Operand(v31));
 
@@ -458,7 +458,7 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.killed_op)
       if (!setup_cs("", GFX8, CHIP_UNKNOWN, subvariant))
          continue;
 
-      //>> v31: %tmp0:v[0-30] = p_unit_test
+      //>> v31: %tmp0:v[0:30] = p_unit_test
       //! v1: %tmp1:v[31] = p_unit_test
       Temp tmp0 =
          bld.pseudo(aco_opcode::p_unit_test, bld.def(RegClass::get(RegType::vgpr, 31 * 4)));
@@ -481,7 +481,7 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.move_killed_op)
       if (!setup_cs("", GFX8, CHIP_UNKNOWN, subvariant))
          continue;
 
-      //>> v30: %tmp0:v[0-29] = p_unit_test
+      //>> v30: %tmp0:v[0:29] = p_unit_test
       //! v1: %tmp1:v[30] = p_unit_test
       //! v1: %tmp2:v[31] = p_unit_test
       Temp tmp0 =
@@ -496,7 +496,7 @@ BEGIN_TEST(regalloc.linear_vgpr.alloc.move_killed_op)
       Temp ltmp0 = bld.pseudo(aco_opcode::p_start_linear_vgpr, bld.def(v1.as_linear()), tmp1);
       end_linear_vgpr(ltmp0);
 
-      //! p_unit_test %tmp0:v[0-29], %tmp2_2:v[30]
+      //! p_unit_test %tmp0:v[0:29], %tmp2_2:v[30]
       bld.pseudo(aco_opcode::p_unit_test, tmp0, tmp2);
 
       finish_ra_test(ra_test_policy{pessimistic});
@@ -509,7 +509,7 @@ BEGIN_TEST(regalloc.linear_vgpr.compact_for_future_def)
       if (!setup_cs("", GFX8, CHIP_UNKNOWN, subvariant))
          continue;
 
-      //>> lv2: %ltmp0:v[30-31] = p_start_linear_vgpr
+      //>> lv2: %ltmp0:v[30:31] = p_start_linear_vgpr
       //! lv1: %ltmp1:v[29] = p_start_linear_vgpr
       //! lv1: %ltmp2:v[28] = p_start_linear_vgpr
       //! p_end_linear_vgpr %ltmp1:v[29]
@@ -535,7 +535,7 @@ BEGIN_TEST(regalloc.linear_vgpr.compact_for_future_def)
       program->blocks[1].linear_preds.push_back(0);
       program->blocks[1].logical_preds.push_back(0);
 
-      //! v29: %_:v[0-28] = p_unit_test
+      //! v29: %_:v[0:28] = p_unit_test
       //! p_branch
       bld.pseudo(aco_opcode::p_unit_test, bld.def(RegClass::get(RegType::vgpr, 29 * 4)));
       bld.branch(aco_opcode::p_branch);
@@ -547,7 +547,7 @@ BEGIN_TEST(regalloc.linear_vgpr.compact_for_future_def)
       program->blocks[2].logical_preds.push_back(1);
       program->blocks[2].kind |= block_kind_top_level;
 
-      //! p_end_linear_vgpr %ltmp0_2:v[30-31]
+      //! p_end_linear_vgpr %ltmp0_2:v[30:31]
       //! p_end_linear_vgpr %ltmp2_2:v[29]
       end_linear_vgpr(ltmp0);
       end_linear_vgpr(ltmp2);
@@ -608,8 +608,8 @@ BEGIN_TEST(regalloc.linear_vgpr.compact_for_future_phis)
       program->blocks[2].kind |= block_kind_top_level;
 
       RegClass v30 = RegClass::get(RegType::vgpr, 30 * 4);
-      //! v30: %tmp:v[0-29] = p_phi v30: undef
-      //! p_unit_test %tmp:v[0-29]
+      //! v30: %tmp:v[0:29] = p_phi v30: undef
+      //! p_unit_test %tmp:v[0:29]
       Temp tmp = bld.pseudo(aco_opcode::p_phi, bld.def(v30), Operand(v30));
       bld.pseudo(aco_opcode::p_unit_test, tmp);
 

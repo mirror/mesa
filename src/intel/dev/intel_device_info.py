@@ -172,7 +172,7 @@ Enum("intel_cooperative_matrix_component_type",
       "INTEL_CMAT_UINT8"])
 
 Enum("intel_engine_class",
-     ["INTEL_ENGINE_CLASS_RENDER",
+     [EnumValue("INTEL_ENGINE_CLASS_RENDER", value=0),
       "INTEL_ENGINE_CLASS_COPY",
       "INTEL_ENGINE_CLASS_VIDEO",
       "INTEL_ENGINE_CLASS_VIDEO_ENHANCE",

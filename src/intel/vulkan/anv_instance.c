@@ -18,6 +18,7 @@ static const driOptionDescription anv_dri_options[] = {
       DRI_CONF_ANV_ASSUME_FULL_SUBGROUPS_WITH_BARRIER(false)
       DRI_CONF_ANV_DISABLE_FCV(false)
       DRI_CONF_ANV_ENABLE_BUFFER_COMP(false)
+      DRI_CONF_ANV_GS_USE_PIPELINE_TOPOLOGY(false)
       DRI_CONF_ANV_EXTERNAL_MEMORY_IMPLICIT_SYNC(true)
       DRI_CONF_ANV_FORCE_GUC_LOW_LATENCY(false)
       DRI_CONF_ANV_SAMPLE_MASK_OUT_OPENGL_BEHAVIOUR(false)
@@ -175,6 +176,8 @@ anv_init_dri_options(struct anv_instance *instance)
        driQueryOptionb(&instance->dri_options, "anv_disable_fcv");
     instance->enable_buffer_comp =
        driQueryOptionb(&instance->dri_options, "anv_enable_buffer_comp");
+    instance->anv_gs_use_pipeline_topology =
+       driQueryOptionb(&instance->dri_options, "anv_gs_use_pipeline_topology");
     instance->external_memory_implicit_sync =
        driQueryOptionb(&instance->dri_options, "anv_external_memory_implicit_sync");
     instance->compression_control_enabled =

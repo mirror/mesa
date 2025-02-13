@@ -1323,6 +1323,7 @@ struct anv_instance {
     bool                                        has_fake_sparse;
     bool                                        disable_fcv;
     bool                                        enable_buffer_comp;
+    bool                                        anv_gs_use_pipeline_topology;
     bool                                        compression_control_enabled;
     bool                                        anv_fake_nonlocal_memory;
     bool                                        anv_upper_bound_descriptor_pool_sampler;
@@ -1605,6 +1606,7 @@ struct anv_gfx_dynamic_state {
    /* 3DSTATE_GS */
    struct {
       uint32_t ReorderMode;
+      uint32_t ExpectedVertexCount;
    } gs;
 
    /* 3DSTATE_LINE_STIPPLE */

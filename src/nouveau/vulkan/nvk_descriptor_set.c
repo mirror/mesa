@@ -55,7 +55,9 @@ get_sampled_image_view_desc(VkDescriptorType descriptor_type,
                             const VkDescriptorImageInfo *const info,
                             void *dst, size_t dst_size)
 {
-   struct nvk_sampled_image_descriptor desc[3] = { };
+   struct nvk_sampled_image_descriptor desc[NVK_MAX_IMAGE_PLANES] = { };
+   STATIC_ASSERT(NVK_MAX_SAMPLER_PLANES <= NVK_MAX_IMAGE_PLANES);
+
    uint8_t plane_count = 1;
 
    if (descriptor_type != VK_DESCRIPTOR_TYPE_SAMPLER &&

@@ -16,6 +16,7 @@ pub type ImageUsageFlags = u8;
 pub const IMAGE_USAGE_2D_VIEW_BIT: ImageUsageFlags = 1 << 0;
 pub const IMAGE_USAGE_LINEAR_BIT: ImageUsageFlags = 1 << 1;
 pub const IMAGE_USAGE_SPARSE_RESIDENCY_BIT: ImageUsageFlags = 1 << 2;
+pub const IMAGE_USAGE_VIDEO_BIT: ImageUsageFlags = 1 << 3;
 
 #[derive(Clone, Debug, Copy, PartialEq, Default)]
 #[repr(u8)]
@@ -188,13 +189,28 @@ impl Image {
         dev: &nil_rs_bindings::nv_device_info,
         info: &ImageInitInfo,
     ) -> Self {
-        Self::new(dev, info)
+        Self::new(dev, std::slice::from_ref(info), 0)
+    }
+
+    #[no_mangle]
+    pub extern "C" fn nil_image_new_planar(
+        dev: &nil_rs_bindings::nv_device_info,
+        info: *const ImageInitInfo,
+        plane: usize,
+        plane_count: usize,
+    ) -> Self {
+        assert!(plane < plane_count);
+        let infos = unsafe { std::slice::from_raw_parts(info, plane_count) };
+
+        Self::new(dev, infos, plane)
     }
 
     pub fn new(
         dev: &nil_rs_bindings::nv_device_info,
-        info: &ImageInitInfo,
+        infos: &[ImageInitInfo],
+        plane: usize,
     ) -> Self {
+        let info = &infos[plane];
         match info.dim {
             ImageDim::_1D => {
                 assert!(info.extent_px.height == 1);
@@ -230,7 +246,31 @@ impl Image {
                     .clamp(info.extent_px.to_B(info.format, sample_layout))
             }
         } else if (info.usage & IMAGE_USAGE_SPARSE_RESIDENCY_BIT) != 0 {
+            assert!((info.usage & IMAGE_USAGE_VIDEO_BIT) == 0);
             Tiling::sparse(info.format, info.dim)
+        } else if (info.usage & IMAGE_USAGE_VIDEO_BIT) != 0 {
+            assert!((info.usage & IMAGE_USAGE_SPARSE_RESIDENCY_BIT) == 0);
+            let mut min_tiling = Tiling::choose(
+                info.extent_px,
+                info.format,
+                sample_layout,
+                info.usage,
+            );
+            for p in 0..infos.len() {
+                let plane_tiling = Tiling::choose(
+                    infos[p].extent_px,
+                    infos[p].format,
+                    sample_layout,
+                    infos[p].usage,
+                );
+                min_tiling.x_log2 =
+                    std::cmp::min(min_tiling.x_log2, plane_tiling.x_log2);
+                min_tiling.y_log2 =
+                    std::cmp::min(min_tiling.y_log2, plane_tiling.y_log2);
+                min_tiling.z_log2 =
+                    std::cmp::min(min_tiling.z_log2, plane_tiling.z_log2);
+            }
+            min_tiling
         } else {
             Tiling::choose(
                 info.extent_px,

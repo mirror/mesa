@@ -2017,6 +2017,9 @@ genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer)
 static void
 emit_wa_18020335297_dummy_draw(struct anv_cmd_buffer *cmd_buffer)
 {
+   /* For Wa_16012775297, ensure VF_STATISTICS is emitted before 3DSTATE_VF
+    */
+   anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_VF_STATISTICS), zero);
 #if GFX_VERx10 >= 125
    anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_VFG), vfg) {
       vfg.DistributionMode = RR_STRICT;
@@ -2038,7 +2041,6 @@ emit_wa_18020335297_dummy_draw(struct anv_cmd_buffer *cmd_buffer)
       rr.BackFaceFillMode = FILL_MODE_SOLID;
    }
 
-   anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_VF_STATISTICS), zero);
    anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_VF_SGVS), zero);
 
 #if GFX_VER >= 11
@@ -2173,6 +2175,12 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VF_SGVS_2))
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.vf_sgvs_2);
 #endif
+
+   if (device->physical->instance->vf_component_packing &&
+       BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VF_COMPONENT_PACKING)) {
+      anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline,
+                                    final.vf_component_packing);
+   }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_VS)) {
       anv_batch_emit_pipeline_state_protected(&cmd_buffer->batch, pipeline,
@@ -2659,6 +2667,8 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
 #if GFX_VERx10 >= 125
          vf.GeometryDistributionEnable = true;
 #endif
+         vf.ComponentPackingEnable =
+            device->physical->instance->vf_component_packing;
          SET(vf, vf, IndexedDrawCutIndexEnable);
          SET(vf, vf, CutIndex);
       }

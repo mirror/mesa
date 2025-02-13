@@ -223,15 +223,63 @@ struct brw_base_prog_key {
 /**
  * OpenGL attribute slots fall in [0, VERT_ATTRIB_MAX - 1] with the range
  * [VERT_ATTRIB_GENERIC0, VERT_ATTRIB_MAX - 1] reserved for up to 16 user
- * input vertex attributes. In Vulkan, we expose up to 28 user vertex input
+ * input vertex attributes. In Vulkan, we expose up to 29 user vertex input
  * attributes that are mapped to slots also starting at VERT_ATTRIB_GENERIC0.
  */
 #define MAX_GL_VERT_ATTRIB     VERT_ATTRIB_MAX
-#define MAX_VK_VERT_ATTRIB     (VERT_ATTRIB_GENERIC0 + 28)
+#define MAX_VK_VERT_ATTRIB     (VERT_ATTRIB_GENERIC0 + 29)
+#define MAX_HW_VERT_ATTRIB     (VERT_ATTRIB_GENERIC0 + 34)
 
-/** The program key for Vertex Shaders. */
+/**
+ * Use the last 2 slots :
+ *   - slot 32: start vertex, vertex count, instance count, start instance
+ *   - slot 33: base vertex, base instance, draw id
+ */
+#define BRW_SVGS_VE_INDEX (32)
+#define BRW_DRAWID_VE_INDEX (33)
+
+/** The program key for Vertex Shaders.
+ *
+ * Notes about slot compaction & component packing:
+ *
+ * VF slot compaction is our default compiler behavior. The compiler looks at
+ * used inputs locations, for example [0, 2, 3], and will arrange things such
+ * that the payload only includes 3 vec4 in that case. Location 1 is
+ * completely dropped. The driver is expected to program
+ * 3DSTATE_VERTEX_ELEMENTS to match this. So even if the location 1 is
+ * described in the API input, the driver will not program it in
+ * 3DSTATE_VERTEX_ELEMENTS because it sees the compiler is not using it.
+ *
+ * Component compaction is a HW feature that removes unused components (for
+ * whatever slot [0, 31]) from the payload. Those values are stored in the URB
+ * by the VF but they get scrapped when the payload is generated. For example
+ * with input locations [ 0 vec2, 1 vec1, 2 vec4 ], the register payload for
+ * VF inputs will be made up of 7 GRFs (2 + 1 + 4). Without component
+ * compaction, the payload would be 12 GRFs (3 * 4).
+ *
+ * The HW component compaction feature only works on first 32 slots, so
+ * anything after that will deliver the full vec4.
+ */
 struct brw_vs_prog_key {
    struct brw_base_prog_key base;
+
+   /** Enable component packing
+    *
+    * Using this option requires that the driver programs
+    * 3DSTATE_VF_COMPONENT_PACKING with the values provided in
+    * brw_vs_prog_data::vf_component_packing
+    */
+   bool vf_component_packing : 1;
+
+   /** Prevent compaction of slots of VF inputs
+    *
+    * So that 3DSTATE_VERTEX_ELEMENTS programming remains independent of
+    * shader inputs (essentially an unused location should have an associated
+    * VERTEX_ELEMENT_STATE).
+    */
+   bool no_vf_slot_compaction : 1;
+
+   uint32_t padding : 30;
 };
 
 /** The program key for Tessellation Control Shaders. */
@@ -1021,14 +1069,15 @@ struct brw_vs_prog_data {
    uint64_t inputs_read;
    uint64_t double_inputs_read;
 
-   unsigned nr_attribute_slots;
-
    bool uses_vertexid;
    bool uses_instanceid;
    bool uses_is_indexed_draw;
    bool uses_firstvertex;
    bool uses_baseinstance;
    bool uses_drawid;
+   bool no_vf_slot_compaction;
+
+   uint32_t vf_component_packing[4];
 };
 
 struct brw_tcs_prog_data

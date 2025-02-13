@@ -307,6 +307,7 @@ Struct("intel_device_info",
         Member("bool", "has_indirect_unroll"),
         Member("bool", "has_negative_rhw_bug", compiler_field=True,
                comment="Intel hardware quirks"),
+        Member("bool", "supports_low_latency_hint"),
 
         Member("bool", "has_coarse_pixel_primitive_and_cb", compiler_field=True,
                comment=dedent("""\

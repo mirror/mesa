@@ -299,20 +299,20 @@ BranchCtrl	{ return BRANCH_CTRL; }
 "8N"	        { return QTR_8N; }
 
  /* data types */
-:?B 	{ return TYPE_B; }
-:?D 	{ return TYPE_D; }
-:?DF 	{ return TYPE_DF; }
-:?F 	{ return TYPE_F; }
-:?HF 	{ return TYPE_HF; }
-:?Q 	{ return TYPE_Q; }
-:?UB 	{ return TYPE_UB; }
-:?UD 	{ return TYPE_UD; }
-:?UW 	{ return TYPE_UW; }
-:?UQ 	{ return TYPE_UQ; }
-:?UV 	{ return TYPE_UV; }
-:?V 	{ return TYPE_V; }
-:?VF 	{ return TYPE_VF; }
-:?W 	{ return TYPE_W; }
+:?[Bb]		{ return TYPE_B; }
+:?[Dd]		{ return TYPE_D; }
+:?[Dd][Ff]	{ return TYPE_DF; }
+:?[Ff]		{ return TYPE_F; }
+:?[Hh][Ff]	{ return TYPE_HF; }
+:?[Qq]		{ return TYPE_Q; }
+:?[Uu][Bb]	{ return TYPE_UB; }
+:?[Uu][Dd]	{ return TYPE_UD; }
+:?[Uu][Ww]	{ return TYPE_UW; }
+:?[Uu][Qq]	{ return TYPE_UQ; }
+:?[Uu][Vv]	{ return TYPE_UV; }
+:?[Vv]		{ return TYPE_V; }
+:?[Vv][Ff]	{ return TYPE_VF; }
+:?[Ww]		{ return TYPE_W; }
 
  /* Address registers */
 "a0" 		{ return ADDRREG; }
@@ -388,7 +388,7 @@ sr[0-9]+ 	{ yylval.integer = atoi(yytext + 2); return STATEREG; }
 <MSGDESC>.      	{ }
 <MSGDESC>\n     	{ yycolumn = 1; }
 
-"0x"[0-9a-f][0-9a-f]* 	{
+"0x"[0-9a-fA-F]+	{
 			   yylval.llint = strtoull(yytext + 2, NULL, 16);
 			   return LONG;
 			}

@@ -555,7 +555,7 @@ _mesa_regen_renderbuffer_surface(struct gl_context *ctx,
 }
 
 /**
- * Create or update the pipe_surface of a FBO renderbuffer.
+ * Create or update the pipe_surface of a renderbuffer.
  * This is usually called after st_finalize_texture.
  */
 void
@@ -656,8 +656,6 @@ _mesa_update_renderbuffer_surface(struct gl_context *ctx,
    struct pipe_surface *surf = *psurf;
 
    if (!surf ||
-       surf->texture->nr_samples != rb->NumSamples ||
-       surf->texture->nr_storage_samples != rb->NumStorageSamples ||
        surf->format != format ||
        surf->texture != resource ||
        surf->width != rtt_width ||

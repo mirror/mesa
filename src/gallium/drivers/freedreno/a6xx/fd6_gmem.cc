@@ -406,7 +406,7 @@ patch_fb_read_gmem(struct fd_batch *batch)
       uint32_t descriptor[FDL6_TEX_CONST_DWORDS] = {
             A6XX_TEX_CONST_0_FMT(fd6_texture_format(
                   format, (enum a6xx_tile_mode)rsc->layout.tile_mode, false)) |
-            A6XX_TEX_CONST_0_SAMPLES(fd_msaa_samples(prsc->nr_samples)) |
+            A6XX_TEX_CONST_0_SAMPLES(fd_msaa_samples(pfb->samples)) |
             A6XX_TEX_CONST_0_SWAP(WZYX) |
             A6XX_TEX_CONST_0_TILE_MODE(TILE6_2) |
             COND(util_format_is_srgb(format), A6XX_TEX_CONST_0_SRGB) |

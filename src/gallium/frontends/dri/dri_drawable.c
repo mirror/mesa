@@ -58,8 +58,7 @@ dri_st_framebuffer_validate(struct st_context *st,
    int i;
    unsigned int lastStamp;
    struct pipe_resource **textures =
-      drawable->stvis.samples > 1 ? drawable->msaa_textures
-                                  : drawable->textures;
+      drawable->uses_msaa_textures ? drawable->msaa_textures : drawable->textures;
 
    statt_mask = 0x0;
    for (i = 0; i < count; i++)
@@ -107,7 +106,7 @@ dri_st_framebuffer_validate(struct st_context *st,
    /* Set the window-system buffers for the gallium frontend. */
    for (i = 0; i < count; i++)
       pipe_resource_reference(&out[i], textures[statts[i]]);
-   if (resolve && drawable->stvis.samples > 1) {
+   if (resolve && drawable->uses_msaa_textures) {
       if (statt_mask & BITFIELD_BIT(ST_ATTACHMENT_FRONT_LEFT))
          pipe_resource_reference(resolve, drawable->textures[ST_ATTACHMENT_FRONT_LEFT]);
       else if (statt_mask & BITFIELD_BIT(ST_ATTACHMENT_BACK_LEFT))
@@ -115,6 +114,19 @@ dri_st_framebuffer_validate(struct st_context *st,
    }
 
    return true;
+}
+
+/* Emits an MSAA resolve blit from the MSAA shadow resource to the actual window
+ * system drawable.
+ */
+void
+dri_drawable_msaa_resolve(struct pipe_context *pctx, struct dri_drawable *drawable,
+                          enum st_attachment_type statt)
+{
+   if (drawable->stvis.samples <= 1)
+      return;
+
+   dri_pipe_blit(pctx, drawable->textures[statt], drawable->msaa_textures[statt]);
 }
 
 static bool
@@ -152,6 +164,7 @@ struct dri_drawable *
 dri_create_drawable(struct dri_screen *screen, const struct dri_config *config,
                     bool isPixmap, void *loaderPrivate)
 {
+   struct pipe_screen *pscreen = screen->base.screen;
    const struct gl_config *visual = &config->modes;
    struct dri_drawable *drawable = NULL;
 
@@ -172,6 +185,9 @@ dri_create_drawable(struct dri_screen *screen, const struct dri_config *config,
    drawable->base.flush_front = dri_st_framebuffer_flush_front;
    drawable->base.validate = dri_st_framebuffer_validate;
    drawable->base.flush_swapbuffers = dri_st_framebuffer_flush_swapbuffers;
+
+   drawable->uses_msaa_textures =
+      visual->samples > 1 && (!pscreen->caps.surface_sample_count || pscreen->caps.avoid_surface_sample_count);
 
    drawable->screen = screen;
 
@@ -428,14 +444,11 @@ notify_before_flush_cb(void* _args)
     */
    _mesa_glthread_finish(st->ctx);
 
-   if (args->drawable->stvis.samples > 1 &&
+   if (args->drawable->uses_msaa_textures &&
        (args->reason == __DRI2_THROTTLE_SWAPBUFFER ||
         args->reason == __DRI2_NOTHROTTLE_SWAPBUFFER ||
         args->reason == __DRI2_THROTTLE_COPYSUBBUFFER)) {
-      /* Resolve the MSAA back buffer. */
-      dri_pipe_blit(st->pipe,
-                    args->drawable->textures[ST_ATTACHMENT_BACK_LEFT],
-                    args->drawable->msaa_textures[ST_ATTACHMENT_BACK_LEFT]);
+      dri_drawable_msaa_resolve(st->pipe, args->drawable, ST_ATTACHMENT_BACK_LEFT);
 
       if ((args->reason == __DRI2_THROTTLE_SWAPBUFFER ||
            args->reason == __DRI2_NOTHROTTLE_SWAPBUFFER) &&

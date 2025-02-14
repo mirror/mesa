@@ -938,6 +938,7 @@ struct pipe_caps {
    bool programmable_sample_locations;
    bool texture_mirror_clamp_to_edge;
    bool surface_sample_count;
+   bool avoid_surface_sample_count;
    bool image_atomic_float_add;
    bool query_pipeline_statistics_single;
    bool dest_surface_srgb_control;

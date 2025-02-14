@@ -269,12 +269,7 @@ drisw_swap_buffers_with_damage(struct dri_drawable *drawable, int nrects, const 
 
       st_context_flush(ctx->st, ST_FLUSH_FRONT, &fence, NULL, NULL);
 
-      if (drawable->stvis.samples > 1) {
-         /* Resolve the back buffer. */
-         dri_pipe_blit(ctx->st->pipe,
-                       drawable->textures[ST_ATTACHMENT_BACK_LEFT],
-                       drawable->msaa_textures[ST_ATTACHMENT_BACK_LEFT]);
-      }
+      dri_drawable_msaa_resolve(ctx->st->pipe, drawable, ST_ATTACHMENT_BACK_LEFT);
 
       screen->base.screen->fence_finish(screen->base.screen, ctx->st->pipe,
                                         fence, OS_TIMEOUT_INFINITE);
@@ -322,12 +317,7 @@ drisw_copy_sub_buffer(struct dri_drawable *drawable, int x, int y,
                                         fence, OS_TIMEOUT_INFINITE);
       screen->base.screen->fence_reference(screen->base.screen, &fence, NULL);
 
-      if (drawable->stvis.samples > 1) {
-         /* Resolve the back buffer. */
-         dri_pipe_blit(ctx->st->pipe,
-                       drawable->textures[ST_ATTACHMENT_BACK_LEFT],
-                       drawable->msaa_textures[ST_ATTACHMENT_BACK_LEFT]);
-      }
+      dri_drawable_msaa_resolve(ctx->st->pipe, drawable, ST_ATTACHMENT_BACK_LEFT);
 
       u_box_2d(x, drawable->h - y - h, w, h, &box);
       drisw_present_texture(ctx->st->pipe, drawable, ptex, 1, &box);
@@ -349,12 +339,8 @@ drisw_flush_frontbuffer(struct dri_context *ctx,
     */
    _mesa_glthread_finish(ctx->st->ctx);
 
-   if (drawable->stvis.samples > 1) {
-      /* Resolve the front buffer. */
-      dri_pipe_blit(ctx->st->pipe,
-                    drawable->textures[ST_ATTACHMENT_FRONT_LEFT],
-                    drawable->msaa_textures[ST_ATTACHMENT_FRONT_LEFT]);
-   }
+   dri_drawable_msaa_resolve(ctx->st->pipe, drawable, ST_ATTACHMENT_FRONT_LEFT);
+
    ptex = drawable->textures[statt];
 
    if (ptex) {
@@ -523,7 +509,7 @@ drisw_allocate_textures(struct dri_context *stctx,
             drawable->textures[statts[i]] =
                screen->base.screen->resource_create(screen->base.screen, &templ);
 
-         if (drawable->stvis.samples > 1) {
+         if (drawable->uses_msaa_textures) {
             templ.bind = templ.bind &
                ~(PIPE_BIND_SCANOUT | PIPE_BIND_SHARED | PIPE_BIND_DISPLAY_TARGET);
             templ.nr_samples = drawable->stvis.samples;

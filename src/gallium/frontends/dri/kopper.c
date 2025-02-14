@@ -335,7 +335,7 @@ XXX do this once swapinterval is hooked up
             drawable->textures[statts[i]] =
                screen->base.screen->resource_create(screen->base.screen, &templ);
       }
-      if (drawable->stvis.samples > 1 && !drawable->msaa_textures[statts[i]]) {
+      if (drawable->uses_msaa_textures && !drawable->msaa_textures[statts[i]]) {
          templ.bind = bind &
             ~(PIPE_BIND_SCANOUT | PIPE_BIND_SHARED | PIPE_BIND_DISPLAY_TARGET);
          templ.nr_samples = drawable->stvis.samples;
@@ -420,12 +420,8 @@ kopper_flush_frontbuffer(struct dri_context *ctx,
 
    drawable->flushing = true;
 
-   if (drawable->stvis.samples > 1) {
-      /* Resolve the front buffer. */
-      dri_pipe_blit(ctx->st->pipe,
-                    drawable->textures[ST_ATTACHMENT_FRONT_LEFT],
-                    drawable->msaa_textures[ST_ATTACHMENT_FRONT_LEFT]);
-   }
+   dri_drawable_msaa_resolve(ctx->st->pipe, drawable, ST_ATTACHMENT_FRONT_LEFT);
+
    ptex = drawable->textures[statt];
 
    if (ptex) {

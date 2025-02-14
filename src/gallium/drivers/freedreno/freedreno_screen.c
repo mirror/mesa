@@ -434,6 +434,11 @@ fd_init_screen_caps(struct fd_screen *screen)
    caps->fake_sw_msaa = !caps->texture_multisample;
 
    caps->surface_sample_count = is_a6xx(screen);
+   /* Workaround to avoid native winsys MSAA until remaining driver bugs are
+    * fixed.  In particular, LRZ gets allocated at the resource's sample count,
+    * but needs to be at the FB's sample count.
+    */
+   caps->avoid_surface_sample_count = is_a6xx(screen);
 
    caps->depth_clip_disable = is_a3xx(screen) || is_a4xx(screen) || is_a6xx(screen);
 

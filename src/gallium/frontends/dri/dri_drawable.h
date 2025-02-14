@@ -56,8 +56,21 @@ struct dri_drawable
    struct pipe_box *damage_rects;
    unsigned int num_damage_rects;
 
+   /* Set if the drawable is multisampled and we don't have
+    * PIPE_CAP_SURFACE_SAMPLE_COUNT
+    */
+   bool uses_msaa_textures;
+
+   /* Resources for the attachments of the drawable.  These are always
+    * single-sampled.
+    */
    struct pipe_resource *textures[ST_ATTACHMENT_COUNT];
+
+   /* Multisampled resource that we actually draw to if
+    * !PIPE_CAP_SURFACE_SAMPLE_COUNT.
+    */
    struct pipe_resource *msaa_textures[ST_ATTACHMENT_COUNT];
+
    unsigned int texture_mask, texture_stamp;
    int swap_interval;
 
@@ -154,6 +167,9 @@ dri_flush(struct dri_context *ctx,
 
 void
 dri_flush_drawable(struct dri_drawable *dPriv);
+
+void dri_drawable_msaa_resolve(struct pipe_context *pctx, struct dri_drawable *drawable,
+                               enum st_attachment_type statt);
 
 extern const __DRItexBufferExtension driTexBufferExtension;
 

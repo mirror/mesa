@@ -416,6 +416,37 @@ lower_alu_instr_width(nir_builder *b, nir_instr *instr, void *_data)
    return nir_builder_alu_instr_finish_and_insert(b, vec);
 }
 
+static nir_def *
+lower_fdot_instruction(nir_builder *b, nir_instr *instr, void *_data)
+{
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+   return lower_fdot(alu, b);
+}
+
+static bool
+is_fdot_instr(const nir_instr *instr, const void *_data)
+{
+   if (instr->type != nir_instr_type_alu)
+      return false;
+
+   nir_alu_instr *alu = nir_instr_as_alu(instr);
+   return (alu->op == nir_op_fdot2 ||
+           alu->op == nir_op_fdot3 ||
+           alu->op == nir_op_fdot4 ||
+           alu->op == nir_op_fdot8 ||
+           alu->op == nir_op_fdot16) ;
+
+}
+
+bool
+nir_lower_fdot_instruction(nir_shader *shader)
+{
+   return nir_shader_lower_instructions(shader,
+                                        is_fdot_instr,
+                                        lower_fdot_instruction,
+                                        NULL);
+}
+
 bool
 nir_lower_alu_width(nir_shader *shader, nir_vectorize_cb cb, const void *_data)
 {

@@ -6373,6 +6373,9 @@ void nir_print_use_dominators(nir_use_dominance_state *state,
                               nir_instr **instructions,
                               unsigned num_instructions);
 
+bool
+nir_lower_fdot_instruction(nir_shader *shader);
+
 #include "nir_inline_helpers.h"
 
 #ifdef __cplusplus

@@ -2954,6 +2954,7 @@ get_register_type(struct lp_build_nir_context *bld_base,
 void
 lp_build_nir_prepasses(struct nir_shader *nir)
 {
+   NIR_PASS_V(nir, nir_lower_fdot_instruction);
    NIR_PASS_V(nir, nir_convert_to_lcssa, true, true);
    NIR_PASS_V(nir, nir_convert_from_ssa, true, false);
    NIR_PASS_V(nir, nir_lower_locals_to_regs, 32);

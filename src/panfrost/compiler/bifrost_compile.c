@@ -2080,6 +2080,7 @@ bi_emit_intrinsic(bi_builder *b, nir_intrinsic_instr *instr)
    }
 
    case nir_intrinsic_read_invocation: {
+      assert(instr->src[0].ssa->bit_size == 32);
       enum bi_inactive_result inactive_result = BI_INACTIVE_RESULT_ZERO;
       enum bi_lane_op lane_op = BI_LANE_OP_NONE;
       enum bi_subgroup subgroup =
@@ -4770,23 +4771,44 @@ should_split_wrmask(const nir_instr *instr, UNUSED const void *data)
 static unsigned
 bi_lower_bit_size(const nir_instr *instr, UNUSED void *data)
 {
-   if (instr->type != nir_instr_type_alu)
-      return 0;
-
-   nir_alu_instr *alu = nir_instr_as_alu(instr);
-
-   switch (alu->op) {
-   case nir_op_fexp2:
-   case nir_op_flog2:
-   case nir_op_fpow:
-   case nir_op_fsin:
-   case nir_op_fcos:
-   case nir_op_bit_count:
-   case nir_op_bitfield_reverse:
-      return (nir_src_bit_size(alu->src[0].src) == 32) ? 0 : 32;
-   default:
-      return 0;
+   switch (instr->type) {
+   case nir_instr_type_alu: {
+      nir_alu_instr *alu = nir_instr_as_alu(instr);
+      switch (alu->op) {
+      case nir_op_fexp2:
+      case nir_op_flog2:
+      case nir_op_fpow:
+      case nir_op_fsin:
+      case nir_op_fcos:
+      case nir_op_bit_count:
+      case nir_op_bitfield_reverse:
+         if (nir_src_bit_size(alu->src[0].src) != 32)
+            return 32;
+         break;
+      default:
+         break;
+      }
+      break;
    }
+
+   case nir_instr_type_intrinsic: {
+      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+      switch (intr->intrinsic) {
+      case nir_intrinsic_read_invocation:
+      case nir_intrinsic_ballot:
+      case nir_intrinsic_ballot_relaxed:
+         if (nir_src_bit_size(intr->src[0]) != 32)
+            return 32;
+         break;
+      default:
+         break;
+      }
+   }
+
+   default:
+      break;
+   }
+   return 0;
 }
 
 /* Although Bifrost generally supports packed 16-bit vec2 and 8-bit vec4,
@@ -5456,32 +5478,7 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    };
    NIR_PASS(_, nir, nir_lower_ssbo, &ssbo_opts);
 
-   NIR_PASS(_, nir, pan_lower_sample_pos);
-   NIR_PASS(_, nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
-   NIR_PASS(_, nir, nir_lower_64bit_phis);
-   NIR_PASS(_, nir, pan_lower_helper_invocation);
-   NIR_PASS(_, nir, nir_lower_int64);
-
-   NIR_PASS(_, nir, nir_opt_idiv_const, 8);
-   NIR_PASS(_, nir, nir_lower_idiv,
-            &(nir_lower_idiv_options){.allow_fp16 = true});
-
-   NIR_PASS(_, nir, nir_lower_tex,
-            &(nir_lower_tex_options){
-               .lower_txs_lod = true,
-               .lower_txp = ~0,
-               .lower_tg4_broadcom_swizzle = true,
-               .lower_txd_cube_map = true,
-               .lower_invalid_implicit_lod = true,
-               .lower_index_to_offset = true,
-            });
-
-   NIR_PASS(_, nir, nir_lower_image_atomics_to_global);
-
-   /* on bifrost, lower MSAA load/stores to 3D load/stores */
-   if (pan_arch(gpu_id) < 9)
-      NIR_PASS(_, nir, pan_nir_lower_image_ms);
-
+   /* REMOVE THIS COMMENT: we need to have lower subgroups happen here for int64 ops to work properly */
    /*
     * TODO: we can implement certain operations (notably reductions, scans,
     * certain shuffles, etc) more efficiently than nir_lower_subgroups. Moreover
@@ -5519,6 +5516,32 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
 
    NIR_PASS(_, nir, nir_shader_intrinsics_pass, bi_lower_subgroups,
             nir_metadata_control_flow, &gpu_id);
+
+   NIR_PASS(_, nir, pan_lower_sample_pos);
+   NIR_PASS(_, nir, nir_lower_64bit_phis);
+   NIR_PASS(_, nir, nir_lower_int64);
+   NIR_PASS(_, nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
+   NIR_PASS(_, nir, pan_lower_helper_invocation);
+
+   NIR_PASS(_, nir, nir_opt_idiv_const, 8);
+   NIR_PASS(_, nir, nir_lower_idiv,
+            &(nir_lower_idiv_options){.allow_fp16 = true});
+
+   NIR_PASS(_, nir, nir_lower_tex,
+            &(nir_lower_tex_options){
+               .lower_txs_lod = true,
+               .lower_txp = ~0,
+               .lower_tg4_broadcom_swizzle = true,
+               .lower_txd_cube_map = true,
+               .lower_invalid_implicit_lod = true,
+               .lower_index_to_offset = true,
+            });
+
+   NIR_PASS(_, nir, nir_lower_image_atomics_to_global);
+
+   /* on bifrost, lower MSAA load/stores to 3D load/stores */
+   if (pan_arch(gpu_id) < 9)
+      NIR_PASS(_, nir, pan_nir_lower_image_ms);
 
    NIR_PASS(_, nir, nir_lower_alu_to_scalar, bi_scalarize_filter, NULL);
    NIR_PASS(_, nir, nir_lower_load_const_to_scalar);

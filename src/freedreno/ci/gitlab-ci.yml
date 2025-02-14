@@ -448,3 +448,16 @@ a750-vkd3d:
     HWCI_TEST_SCRIPT: install/vkd3d-runner.sh
     GPU_VERSION: freedreno-a750
     FDO_CI_CONCURRENT: 1
+
+a740_vkd3d:
+  extends:
+    - .b2c-freedreno-vk-test
+    - .a740-mupuf
+    - .valve-freedreno-turnip-manual-rules
+  timeout: 15m  # base runtime 3min
+  variables:
+    B2C_TIMEOUT_OVERALL_MINUTES: 12
+    B2C_TIMEOUT_BOOT_MINUTES: 10
+    HWCI_TEST_SCRIPT: install/vkd3d-runner.sh
+    GPU_VERSION: freedreno-a740
+    FDO_CI_CONCURRENT: 1

@@ -1901,8 +1901,8 @@
 
   <ins name="MKVEC.v2i16" title="Make 16-bit vector" dests="1" opcode="0xA1" opcode2="0x5" unused="true" unit="CVT">
     <desc>Calculates $A | (B \ll 16)$. Used to implement `(ushort2)(A, B)`</desc>
-    <src swizzle="true">A</src>
-    <src swizzle="true">B</src>
+    <src lane="true">A</src>
+    <src lane="true">B</src>
   </ins>
 
   <group name="ISUB" title="Integer subtract" dests="1" opcode2="1" unused="true" unit="CVT">

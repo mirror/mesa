@@ -138,24 +138,24 @@ compile_single_bs(const struct brw_compiler *compiler,
    }
 
    assert(selected_simd < int(ARRAY_SIZE(v)));
-   brw_shader *selected = v[selected_simd].get();
-   assert(selected);
+   assert(v[selected_simd]);
 
-   const unsigned dispatch_width = selected->dispatch_width;
+   brw_shader &selected = *v[selected_simd];
 
-   int offset = g->generate_code(selected->cfg, dispatch_width, selected->shader_stats,
-                                 selected->performance_analysis.require(), stats);
+   const unsigned dispatch_width = selected.dispatch_width;
+
+   int offset = g->generate_code(selected, stats);
    if (prog_offset)
       *prog_offset = offset;
    else
       assert(offset == 0);
 
    if (bsr)
-      *bsr = brw_bsr(compiler->devinfo, offset, dispatch_width, 0,
-                     selected->grf_used);
+      *bsr = brw_bsr(compiler->devinfo, offset, selected.dispatch_width, 0,
+                     selected.grf_used);
    else
       prog_data->base.grf_used = MAX2(prog_data->base.grf_used,
-                                      selected->grf_used);
+                                      selected.grf_used);
 
    return dispatch_width;
 }

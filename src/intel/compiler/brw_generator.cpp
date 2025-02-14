@@ -754,12 +754,13 @@ translate_systolic_depth(unsigned d)
 }
 
 int
-brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
-                            struct brw_shader_stats shader_stats,
-                            const brw_performance &perf,
-                            struct brw_compile_stats *stats,
-                            unsigned max_polygons)
+brw_generator::generate_code(const brw_shader &s,
+                             struct brw_compile_stats *stats)
 {
+   const int dispatch_width = s.dispatch_width;
+   struct brw_shader_stats shader_stats = s.shader_stats;
+   const brw_performance &perf = s.performance_analysis.require();
+
    /* align to 64 byte boundary. */
    brw_realign(p, 64);
 
@@ -770,10 +771,10 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
    int loop_count = 0, send_count = 0, nop_count = 0, sync_nop_count = 0;
    bool is_accum_used = false;
 
-   struct disasm_info *disasm_info = disasm_initialize(p->isa, cfg);
+   struct disasm_info *disasm_info = disasm_initialize(p->isa, s.cfg);
 
    enum opcode prev_opcode = BRW_OPCODE_ILLEGAL;
-   foreach_block_and_inst (block, brw_inst, inst, cfg) {
+   foreach_block_and_inst (block, brw_inst, inst, s.cfg) {
       if (inst->opcode == SHADER_OPCODE_UNDEF)
          continue;
 
@@ -1486,7 +1487,7 @@ brw_generator::generate_code(const cfg_t *cfg, int dispatch_width,
                         before_size, after_size);
    if (stats) {
       stats->dispatch_width = dispatch_width;
-      stats->max_polygons = max_polygons;
+      stats->max_polygons = s.max_polygons;
       stats->max_dispatch_width = dispatch_width;
       stats->instructions = before_size / 16 - nop_count - sync_nop_count;
       stats->sends = send_count;

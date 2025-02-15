@@ -146,6 +146,13 @@ struct intel_perf_query_result;
 #define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC_FAST
 #endif
 
+#define ANV_RT_STAGE_BITS (VK_SHADER_STAGE_RAYGEN_BIT_KHR |             \
+                           VK_SHADER_STAGE_ANY_HIT_BIT_KHR |            \
+                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |        \
+                           VK_SHADER_STAGE_MISS_BIT_KHR |               \
+                           VK_SHADER_STAGE_INTERSECTION_BIT_KHR |       \
+                           VK_SHADER_STAGE_CALLABLE_BIT_KHR)
+
 #define NSEC_PER_SEC 1000000000ull
 
 #define BINDING_TABLE_POOL_BLOCK_SIZE (65536)
@@ -3703,9 +3710,6 @@ struct anv_push_constants {
     */
    uint32_t surfaces_base_offset;
 
-   /* Robust access pushed registers. */
-   uint64_t push_reg_mask[MESA_SHADER_STAGES];
-
    /** Ray query globals (RT_DISPATCH_GLOBALS) */
    uint64_t ray_query_globals;
 
@@ -3716,6 +3720,9 @@ struct anv_push_constants {
 
          /** Dynamic TCS input vertices */
          uint32_t tcs_input_vertices;
+
+         /** Robust access pushed registers. */
+         uint64_t push_reg_mask[MESA_SHADER_STAGES];
       } gfx;
 
       struct {
@@ -5022,7 +5029,16 @@ struct anv_compute_pipeline {
 
    struct anv_shader_bin *                      cs;
    uint32_t                                     batch_data[9];
-   uint32_t                                     interface_descriptor_data[8];
+
+   union {
+      struct {
+         uint32_t                               interface_descriptor_data[8];
+         uint32_t                               gpgpu_walker[15];
+      } gfx9;
+      struct {
+         uint32_t                               compute_walker[39];
+      } gfx125;
+   };
 
    /* A small hash based of shader_info::source_sha1 for identifying shaders
     * in renderdoc/shader-db.

@@ -27,19 +27,50 @@ void genX(libanv_memcpy)(global void *dst_base,
 /* Copy size from src_ptr to dst_ptr for using a single lane with size
  * multiple of 4.
  */
-void genX(copy_data)(global void *dst_ptr,
-                     global void *src_ptr,
+void genX(copy_data)(global void *dst_base,
+                     global void *src_base,
                      uint32_t size)
 {
    for (uint32_t offset = 0; offset < size; offset += 16) {
+      global void *dst = dst_base + offset;
+      global void *src = src_base + offset;
       if (offset + 16 <= size) {
-         *(global uint4 *)(dst_ptr + offset) = *(global uint4 *)(src_ptr + offset);
+         /* printf("dst=%p src=%p\n", dst, src); */
+         /* uint4 v = *(global uint4 *)(src); */
+         /* printf("src: 0x%08x, 0x%08x, 0x%08x, 0x%08x\n", */
+         /*        v[0], v[1], v[2], v[3]); */
+         *(global uint4 *)(dst) = *(global uint4 *)(src);
       } else if (offset + 12 <= size) {
-         *(global uint3 *)(dst_ptr + offset) = *(global uint3 *)(src_ptr + offset);
+         /* uint3 v = *(global uint3 *)(src); */
+         /* printf("src: 0x%08x, 0x%08x, 0x%08x\n", */
+         /*        v[0], v[1], v[2]); */
+         *(global uint3 *)(dst) = *(global uint3 *)(src);
       } else if (offset + 8 <= size) {
-         *(global uint2 *)(dst_ptr + offset) = *(global uint2 *)(src_ptr + offset);
+         /* uint2 v = *(global uint2 *)(src); */
+         /* printf("src: 0x%08x, 0x%08x\n", */
+         /*        v[0], v[1]); */
+         *(global uint2 *)(dst) = *(global uint2 *)(src);
       } else if (offset + 4 <= size) {
-         *(global uint *)(dst_ptr + offset) = *(global uint *)(src_ptr + offset);
+         *(global uint *)(dst) = *(global uint *)(src);
+      }
+   }
+}
+
+/* memset data into dst_ptr */
+void genX(set_data)(global void *dst_base,
+                    uint32_t data,
+                    uint32_t size)
+{
+   for (uint32_t offset = 0; offset < size; offset += 16) {
+      global void *dst = dst_base + offset;
+      if (offset + 16 <= size) {
+         *(global uint4 *)(dst) = (uint4)data;
+      } else if (offset + 12 <= size) {
+         *(global uint3 *)(dst) = (uint3)data;
+      } else if (offset + 8 <= size) {
+         *(global uint2 *)(dst) = (uint2)data;
+      } else if (offset + 4 <= size) {
+         *(global uint *)(dst) = (uint)data;
       }
    }
 }

@@ -63,14 +63,17 @@ anv_get_buffer_memory_requirements(struct anv_device *device,
     *    supported memory type for the resource. The bit `1<<i` is set if and
     *    only if the memory type `i` in the VkPhysicalDeviceMemoryProperties
     *    structure for the physical device is supported.
-    *
-    * We have special memory types for descriptor buffers.
     */
+   bool need_dynamic_visible_buffer =
+      (usage & (VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
+                VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT)) ||
+      (device->info->verx10 <= 120 &&
+       (usage & VK_BUFFER_USAGE_2_PREPROCESS_BUFFER_BIT_EXT));
+
    uint32_t memory_types;
    if (flags & VK_BUFFER_CREATE_PROTECTED_BIT)
       memory_types = device->physical->memory.protected_mem_types;
-   else if (usage & (VK_BUFFER_USAGE_2_RESOURCE_DESCRIPTOR_BUFFER_BIT_EXT |
-                     VK_BUFFER_USAGE_2_SAMPLER_DESCRIPTOR_BUFFER_BIT_EXT))
+   else if (need_dynamic_visible_buffer)
       memory_types = device->physical->memory.dynamic_visible_mem_types;
    else if (device->physical->instance->enable_buffer_comp)
       memory_types = device->physical->memory.default_buffer_mem_types |

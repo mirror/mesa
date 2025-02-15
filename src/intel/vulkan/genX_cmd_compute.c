@@ -99,7 +99,7 @@ genX(cmd_buffer_ensure_cfe_state)(struct anv_cmd_buffer *cmd_buffer,
 }
 
 static void
-genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
+cmd_buffer_flush_compute_state(struct anv_cmd_buffer *cmd_buffer)
 {
    struct anv_cmd_compute_state *comp_state = &cmd_buffer->state.compute;
    struct anv_compute_pipeline *pipeline =
@@ -112,7 +112,8 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
 
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
-   genX(flush_descriptor_buffers)(cmd_buffer, &comp_state->base);
+   genX(flush_descriptor_buffers)(cmd_buffer, &comp_state->base,
+                                  pipeline->base.active_stages);
 
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
@@ -167,14 +168,15 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
    cmd_buffer->state.descriptors_dirty |=
       genX(cmd_buffer_flush_push_descriptors)(cmd_buffer,
                                               &cmd_buffer->state.compute.base,
-                                              &pipeline->base);
+                                              &pipeline->base,
+                                              &pipeline->base.layout);
 
    if ((cmd_buffer->state.descriptors_dirty & VK_SHADER_STAGE_COMPUTE_BIT) ||
        cmd_buffer->state.compute.pipeline_dirty) {
-      genX(cmd_buffer_flush_descriptor_sets)(cmd_buffer,
-                                             &cmd_buffer->state.compute.base,
-                                             VK_SHADER_STAGE_COMPUTE_BIT,
-                                             &pipeline->cs, 1);
+      genX(cmd_buffer_flush_shader_descriptor_sets)(cmd_buffer,
+                                                    &cmd_buffer->state.compute.base,
+                                                    VK_SHADER_STAGE_COMPUTE_BIT,
+                                                    &pipeline->cs, 1);
       cmd_buffer->state.descriptors_dirty &= ~VK_SHADER_STAGE_COMPUTE_BIT;
 
 #if GFX_VERx10 < 125
@@ -189,7 +191,7 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
 
       struct anv_state state =
          anv_cmd_buffer_merge_dynamic(cmd_buffer, iface_desc_data_dw,
-                                      pipeline->interface_descriptor_data,
+                                      pipeline->gfx9.interface_descriptor_data,
                                       GENX(INTERFACE_DESCRIPTOR_DATA_length),
                                       64);
 
@@ -226,6 +228,12 @@ genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
    cmd_buffer->state.compute.pipeline_dirty = false;
 
    genX(cmd_buffer_apply_pipe_flushes)(cmd_buffer);
+}
+
+void
+genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer)
+{
+   cmd_buffer_flush_compute_state(cmd_buffer);
 }
 
 static void
@@ -623,7 +631,7 @@ void genX(CmdDispatchBase)(
    if (cmd_buffer->state.rt.debug_marker_count == 0)
       trace_intel_begin_compute(&cmd_buffer->trace);
 
-   genX(cmd_buffer_flush_compute_state)(cmd_buffer);
+   cmd_buffer_flush_compute_state(cmd_buffer);
 
    if (cmd_buffer->state.conditional_render_enabled)
       genX(cmd_emit_conditional_render_predicate)(cmd_buffer);
@@ -792,7 +800,7 @@ genX(cmd_buffer_dispatch_indirect)(struct anv_cmd_buffer *cmd_buffer,
    if (cmd_buffer->state.rt.debug_marker_count == 0)
       trace_intel_begin_compute_indirect(&cmd_buffer->trace);
 
-   genX(cmd_buffer_flush_compute_state)(cmd_buffer);
+   cmd_buffer_flush_compute_state(cmd_buffer);
 
    if (cmd_buffer->state.conditional_render_enabled)
       genX(cmd_emit_conditional_render_predicate)(cmd_buffer);
@@ -1184,7 +1192,8 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
-   genX(flush_descriptor_buffers)(cmd_buffer, &rt->base);
+   genX(flush_descriptor_buffers)(cmd_buffer, &rt->base,
+                                  pipeline->base.active_stages);
 
    genX(flush_pipeline_select_gpgpu)(cmd_buffer);
 
@@ -1194,7 +1203,8 @@ cmd_buffer_trace_rays(struct anv_cmd_buffer *cmd_buffer,
 
    genX(cmd_buffer_flush_push_descriptors)(cmd_buffer,
                                            &cmd_buffer->state.rt.base,
-                                           &pipeline->base);
+                                           &pipeline->base,
+                                           &pipeline->base.layout);
 
    /* Add these to the reloc list as they're internal buffers that don't
     * actually have relocs to pick them up manually.

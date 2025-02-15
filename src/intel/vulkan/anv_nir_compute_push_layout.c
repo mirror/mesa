@@ -96,9 +96,10 @@ anv_nir_compute_push_layout(nir_shader *nir,
        * the shader.
        */
       const uint32_t push_reg_mask_start =
-         anv_drv_const_offset(push_reg_mask[nir->info.stage]);
-      const uint32_t push_reg_mask_end = push_reg_mask_start +
-                                         anv_drv_const_size(push_reg_mask[nir->info.stage]);
+         anv_drv_const_offset(gfx.push_reg_mask[nir->info.stage]);
+      const uint32_t push_reg_mask_end =
+         push_reg_mask_start +
+         anv_drv_const_size(gfx.push_reg_mask[nir->info.stage]);
       push_start = MIN2(push_start, push_reg_mask_start);
       push_end = MAX2(push_end, push_reg_mask_end);
    }
@@ -162,7 +163,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
    struct anv_push_range push_constant_range = {
       .set = ANV_DESCRIPTOR_SET_PUSH_CONSTANTS,
       .start = push_start / 32,
-      .length = ALIGN(push_end - push_start, devinfo->grf_size) / 32,
+      .length = DIV_ROUND_UP(push_end - push_start, 32),
    };
 
    if (has_push_intrinsic) {
@@ -217,7 +218,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
 
       if (robust_flags & BRW_ROBUSTNESS_UBO) {
          const uint32_t push_reg_mask_offset =
-            anv_drv_const_offset(push_reg_mask[nir->info.stage]);
+            anv_drv_const_offset(gfx.push_reg_mask[nir->info.stage]);
          assert(push_reg_mask_offset >= push_start);
          prog_data->push_reg_mask_param =
             (push_reg_mask_offset - push_start) / 4;
@@ -323,7 +324,7 @@ anv_nir_validate_push_layout(const struct anv_physical_device *pdevice,
                              struct anv_pipeline_bind_map *map)
 {
 #ifndef NDEBUG
-   unsigned prog_data_push_size = ALIGN(prog_data->nr_params, pdevice->info.grf_size / 4) / 8;
+   unsigned prog_data_push_size = ALIGN(prog_data->nr_params, 8) / 8;
 
    for (unsigned i = 0; i < 4; i++)
       prog_data_push_size += prog_data->ubo_ranges[i].length;

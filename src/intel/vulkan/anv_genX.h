@@ -107,6 +107,14 @@ void genX(batch_emit_vertex_input)(struct anv_batch *batch,
                                    struct anv_graphics_pipeline *pipeline,
                                    const struct vk_vertex_input_state *vi);
 
+void genX(batch_emit_gfx_pipeline_push_alloc)(struct anv_batch *batch,
+                                              struct anv_device *device,
+                                              struct anv_graphics_pipeline *pipeline);
+
+void genX(emit_indirect_dynamic_state)(struct anv_gen_gfx_state *state,
+                                       struct anv_cmd_buffer *cmd_buffer,
+                                       struct anv_indirect_execution_set *indirect_set);
+
 enum anv_pipe_bits
 genX(emit_apply_pipe_flushes)(struct anv_batch *batch,
                               struct anv_device *device,
@@ -136,6 +144,23 @@ genX(cmd_buffer_ensure_wa_14018283232)(struct anv_cmd_buffer *cmd_buffer,
    }
 }
 #endif
+
+static inline bool
+genX(need_wa_16014912113)(const struct intel_urb_config *prev_urb_cfg,
+                          const struct intel_urb_config *next_urb_cfg)
+{
+#if INTEL_NEEDS_WA_16014912113
+   /* When the config change and there was at a previous config. */
+   return intel_urb_setup_changed(prev_urb_cfg, next_urb_cfg,
+                                  MESA_SHADER_TESS_EVAL) &&
+          prev_urb_cfg->size[0] != 0;
+#else
+   return false;
+#endif
+}
+
+void genX(batch_emit_wa_16014912113)(struct anv_batch *batch,
+                                     const struct intel_urb_config *urb_cfg);
 
 static inline bool
 genX(cmd_buffer_set_coarse_pixel_active)(struct anv_cmd_buffer *cmd_buffer,
@@ -177,20 +202,35 @@ void genX(cmd_buffer_config_l3)(struct anv_cmd_buffer *cmd_buffer,
                                 const struct intel_l3_config *cfg);
 
 void genX(flush_descriptor_buffers)(struct anv_cmd_buffer *cmd_buffer,
-                                    struct anv_cmd_pipeline_state *pipe_state);
+                                    struct anv_cmd_pipeline_state *pipe_state,
+                                    VkShaderStageFlags active_stages);
 
 uint32_t
-genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
-                                       struct anv_cmd_pipeline_state *pipe_state,
-                                       const VkShaderStageFlags dirty,
-                                       struct anv_shader_bin **shaders,
-                                       uint32_t num_shaders);
+genX(cmd_buffer_flush_shader_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
+                                              struct anv_cmd_pipeline_state *pipe_state,
+                                              const VkShaderStageFlags dirty,
+                                              struct anv_shader_bin **shaders,
+                                              uint32_t num_shaders);
+
+uint32_t
+genX(cmd_buffer_flush_indirect_set_descriptors)(struct anv_cmd_buffer *cmd_buffer,
+                                                struct anv_cmd_pipeline_state *pipe_state,
+                                                struct anv_indirect_execution_set *indirect_set,
+                                                VkShaderStageFlags dirty);
 
 void genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(cmd_buffer_flush_gfx_runtime_state)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(cmd_buffer_flush_gfx_hw_state)(struct anv_cmd_buffer *cmd_buffer);
+
+void genX(cmd_buffer_flush_gfx_state)(struct anv_cmd_buffer *cmd_buffer);
+
+void genX(cmd_buffer_flush_indirect_gfx_state)(struct anv_cmd_buffer *cmd_buffer,
+                                               struct anv_indirect_command_layout *layout,
+                                               struct anv_indirect_execution_set *indirect_set);
+
+void genX(cmd_buffer_flush_compute_state)(struct anv_cmd_buffer *cmd_buffer);
 
 void genX(cmd_buffer_enable_pma_fix)(struct anv_cmd_buffer *cmd_buffer,
                                      bool enable);
@@ -321,6 +361,11 @@ genX(ray_tracing_pipeline_emit)(struct anv_ray_tracing_pipeline *pipeline);
 #endif
 
 void
+genX(write_gfx_indirect_descriptor)(struct anv_gen_gfx_indirect_descriptor *descriptor,
+                                    struct anv_indirect_execution_set *indirect_set,
+                                    struct anv_graphics_pipeline *pipeline);
+
+void
 genX(batch_set_preemption)(struct anv_batch *batch,
                            struct anv_device *device,
                            uint32_t current_pipeline,
@@ -419,19 +464,27 @@ genX(cmd_buffer_emit_push_descriptor_surfaces)(struct anv_cmd_buffer *cmd_buffer
 static inline VkShaderStageFlags
 genX(cmd_buffer_flush_push_descriptors)(struct anv_cmd_buffer *cmd_buffer,
                                         struct anv_cmd_pipeline_state *state,
-                                        struct anv_pipeline *pipeline)
+                                        struct anv_pipeline *pipeline,
+                                        struct anv_pipeline_sets_layout *layout)
 {
-   if (!pipeline->use_push_descriptor && !pipeline->use_push_descriptor_buffer)
-      return 0;
+   if (pipeline != NULL) {
+      if (!pipeline->use_push_descriptor && !pipeline->use_push_descriptor_buffer)
+         return 0;
+   } else {
+      if (layout->push_descriptor_set_index == -1)
+         return 0;
+   }
 
-   assert(pipeline->layout.push_descriptor_set_index != -1);
+   assert(layout->push_descriptor_set_index != -1);
    struct anv_descriptor_set *set =
-      state->descriptors[pipeline->layout.push_descriptor_set_index];
+      state->descriptors[layout->push_descriptor_set_index];
    assert(set->is_push);
 
    const VkShaderStageFlags push_buffer_dirty =
       cmd_buffer->state.push_descriptors_dirty &
-      pipeline->use_push_descriptor_buffer;
+      (pipeline != NULL ?
+       pipeline->use_push_descriptor_buffer :
+       layout->set[layout->push_descriptor_set_index].layout->stages);
    if (push_buffer_dirty) {
       if (set->desc_surface_state.map == NULL)
          genX(cmd_buffer_emit_push_descriptor_buffer_surface)(cmd_buffer, set);
@@ -441,7 +494,10 @@ genX(cmd_buffer_flush_push_descriptors)(struct anv_cmd_buffer *cmd_buffer,
    }
 
    const VkShaderStageFlags push_descriptor_dirty =
-      cmd_buffer->state.push_descriptors_dirty & pipeline->use_push_descriptor;
+      cmd_buffer->state.push_descriptors_dirty &
+      (pipeline != NULL ?
+       pipeline->use_push_descriptor :
+       layout->set[layout->push_descriptor_set_index].layout->stages);
    if (push_descriptor_dirty) {
       genX(cmd_buffer_emit_push_descriptor_surfaces)(cmd_buffer, set);
 

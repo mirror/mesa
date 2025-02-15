@@ -546,6 +546,8 @@ anv_cmd_buffer_flush_pipeline_state(struct anv_cmd_buffer *cmd_buffer,
     *
     * We avoid comparing protected packets as all the fields but the scratch
     * surface are identical. we just need to select the right one at emission.
+    *
+    * final.urb_wa_16014912113 is ignored.
     */
    diff_fix_state(URB,                      final.urb);
    diff_fix_state(VF_SGVS,                  final.vf_sgvs);
@@ -743,12 +745,7 @@ anv_cmd_buffer_get_pipeline_layout_state(struct anv_cmd_buffer *cmd_buffer,
       return &cmd_buffer->state.compute.base;
 
    case VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR:
-      *out_stages &= VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-         VK_SHADER_STAGE_ANY_HIT_BIT_KHR |
-         VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-         VK_SHADER_STAGE_MISS_BIT_KHR |
-         VK_SHADER_STAGE_INTERSECTION_BIT_KHR |
-         VK_SHADER_STAGE_CALLABLE_BIT_KHR;
+      *out_stages &= ANV_RT_STAGE_BITS;
       return &cmd_buffer->state.rt.base;
 
    default:
@@ -833,17 +830,19 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
           * With direct descriptors, the shaders can use the
           * anv_push_constants::desc_offsets to build bindless offsets. So
           * it's we always need to update the push constant data.
+          *
+          * Finally with EXT_device_generated_commands, the indirectly bound
+          * shaders are using anv_driver_constants::desc_offsets. We have no
+          * way to tell whether a particular layout will be used with an
+          * indirectly bound shader. So if the feature is enabled, also update
+          * the driver constants.
           */
          bool update_desc_sets =
+            cmd_buffer->device->vk.enabled_features.deviceGeneratedCommands ||
             !cmd_buffer->device->physical->indirect_descriptors ||
             (stages & (VK_SHADER_STAGE_TASK_BIT_EXT |
                        VK_SHADER_STAGE_MESH_BIT_EXT |
-                       VK_SHADER_STAGE_RAYGEN_BIT_KHR |
-                       VK_SHADER_STAGE_ANY_HIT_BIT_KHR |
-                       VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |
-                       VK_SHADER_STAGE_MISS_BIT_KHR |
-                       VK_SHADER_STAGE_INTERSECTION_BIT_KHR |
-                       VK_SHADER_STAGE_CALLABLE_BIT_KHR));
+                       ANV_RT_STAGE_BITS));
 
          if (update_desc_sets) {
             struct anv_push_constants *push = &pipe_state->push_constants;
@@ -910,19 +909,6 @@ anv_cmd_buffer_bind_descriptor_set(struct anv_cmd_buffer *cmd_buffer,
    cmd_buffer->state.push_constants_dirty |= dirty_stages;
    pipe_state->push_constants_data_dirty = true;
 }
-
-#define ANV_GRAPHICS_STAGE_BITS \
-   (VK_SHADER_STAGE_ALL_GRAPHICS | \
-    VK_SHADER_STAGE_MESH_BIT_EXT | \
-    VK_SHADER_STAGE_TASK_BIT_EXT)
-
-#define ANV_RT_STAGE_BITS \
-   (VK_SHADER_STAGE_RAYGEN_BIT_KHR | \
-    VK_SHADER_STAGE_ANY_HIT_BIT_KHR | \
-    VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR | \
-    VK_SHADER_STAGE_MISS_BIT_KHR | \
-    VK_SHADER_STAGE_INTERSECTION_BIT_KHR | \
-    VK_SHADER_STAGE_CALLABLE_BIT_KHR)
 
 void anv_CmdBindDescriptorSets2KHR(
     VkCommandBuffer                             commandBuffer,

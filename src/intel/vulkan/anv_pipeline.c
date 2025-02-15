@@ -33,6 +33,7 @@
 #include "common/intel_l3_config.h"
 #include "common/intel_sample_positions.h"
 #include "compiler/brw_disasm.h"
+#include "compiler/brw_prim.h"
 #include "anv_private.h"
 #include "compiler/brw_nir.h"
 #include "compiler/brw_nir_rt.h"
@@ -96,6 +97,40 @@ anv_shader_stage_to_nir(struct anv_device *device,
               nir_shader_get_entrypoint(nir), true, false);
 
    return nir;
+}
+
+struct anv_pipeline_bind_map *
+anv_pipeline_bind_map_clone(struct anv_device *device,
+                            const VkAllocationCallbacks *alloc,
+                            const struct anv_pipeline_bind_map *src)
+{
+   /* This is only for GRL, which we should never be dealing with here. */
+   assert(src->kernel_args_size == 0);
+   assert(src->kernel_arg_count == 0);
+
+   VK_MULTIALLOC(ma);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_bind_map, bind_map, 1);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_binding, surfaces, src->surface_count);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_binding, samplers, src->sampler_count);
+   VK_MULTIALLOC_DECL(&ma, struct anv_pipeline_embedded_sampler_binding, embedded_samplers, src->embedded_sampler_count);
+
+   if (!vk_multialloc_zalloc2(&ma, &device->vk.alloc, alloc,
+                              VK_SYSTEM_ALLOCATION_SCOPE_DEVICE))
+      return NULL;
+
+   memcpy(bind_map, src, sizeof(*src));
+
+   memcpy(surfaces, src->surface_to_descriptor,
+          sizeof(*surfaces) * src->surface_count);
+   bind_map->surface_to_descriptor = surfaces;
+   memcpy(samplers, src->sampler_to_descriptor,
+          sizeof(*samplers) * src->sampler_count);
+   bind_map->sampler_to_descriptor = samplers;
+   memcpy(embedded_samplers, src->embedded_sampler_to_binding,
+          sizeof(*embedded_samplers) * src->embedded_sampler_count);
+   bind_map->embedded_sampler_to_binding = embedded_samplers;
+
+   return bind_map;
 }
 
 static VkResult
@@ -334,7 +369,12 @@ populate_vs_prog_key(struct anv_pipeline_stage *stage,
    populate_base_prog_key(stage, device);
 
    stage->key.vs.vf_component_packing =
-      device->physical->instance->vf_component_packing;
+      device->physical->instance->vf_component_packing ||
+      (stage->pipeline_flags &
+       VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
+   stage->key.vs.no_vf_slot_compaction =
+      (stage->pipeline_flags &
+       VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
 }
 
 static void
@@ -629,6 +669,10 @@ anv_pipeline_hash_common(struct mesa_sha1 *ctx,
 
    const int spilling_rate = device->physical->compiler->spilling_rate;
    _mesa_sha1_update(ctx, &spilling_rate, sizeof(spilling_rate));
+
+   const bool device_bindable =
+      (pipeline->flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0;
+   _mesa_sha1_update(ctx, &device_bindable, sizeof(device_bindable));
 }
 
 static void
@@ -993,6 +1037,7 @@ anv_pipeline_lower_nir(struct anv_pipeline *pipeline,
    NIR_PASS_V(nir, anv_nir_apply_pipeline_layout,
               pdevice, stage->key.base.robust_flags,
               layout->independent_sets,
+              (pipeline->flags & VK_PIPELINE_CREATE_2_INDIRECT_BINDABLE_BIT_EXT) != 0,
               layout, &stage->bind_map, &push_map, mem_ctx);
 
    NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_mem_ubo,
@@ -2222,12 +2267,12 @@ anv_graphics_pipeline_compile(struct anv_graphics_base_pipeline *pipeline,
       anv_pipeline_nir_preprocess(&pipeline->base, &stages[s]);
    }
 
-   if (stages[MESA_SHADER_MESH].info && stages[MESA_SHADER_FRAGMENT].info) {
-      anv_apply_per_prim_attr_wa(stages[MESA_SHADER_MESH].nir,
-                                 stages[MESA_SHADER_FRAGMENT].nir,
-                                 device,
-                                 info);
-   }
+   /* if (stages[MESA_SHADER_MESH].info && stages[MESA_SHADER_FRAGMENT].info) { */
+   /*    anv_apply_per_prim_attr_wa(stages[MESA_SHADER_MESH].nir, */
+   /*                               stages[MESA_SHADER_FRAGMENT].nir, */
+   /*                               device, */
+   /*                               info); */
+   /* } */
 
    /* Walk backwards to link */
    struct anv_pipeline_stage *next_stage = NULL;
@@ -2785,6 +2830,58 @@ get_vs_input_elements(const struct brw_vs_prog_data *vs_prog_data)
           __builtin_popcount(elements_double) / 2;
 }
 
+static VkPolygonMode
+get_last_pre_raster_topology(struct anv_graphics_pipeline *pipeline)
+{
+   if (anv_pipeline_is_mesh(pipeline)) {
+      switch (get_mesh_prog_data(pipeline)->primitive_type) {
+      case MESA_PRIM_POINTS:
+         return VK_POLYGON_MODE_POINT;
+      case MESA_PRIM_LINES:
+         return VK_POLYGON_MODE_LINE;
+      case MESA_PRIM_TRIANGLES:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      default:
+         unreachable("invalid primitive type for mesh");
+      }
+   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_GEOMETRY)) {
+      switch (get_gs_prog_data(pipeline)->output_topology) {
+      case _3DPRIM_POINTLIST:
+         return VK_POLYGON_MODE_POINT;
+
+      case _3DPRIM_LINELIST:
+      case _3DPRIM_LINESTRIP:
+      case _3DPRIM_LINELOOP:
+         return VK_POLYGON_MODE_LINE;
+
+      case _3DPRIM_TRILIST:
+      case _3DPRIM_TRIFAN:
+      case _3DPRIM_TRISTRIP:
+      case _3DPRIM_RECTLIST:
+      case _3DPRIM_QUADLIST:
+      case _3DPRIM_QUADSTRIP:
+      case _3DPRIM_POLYGON:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      }
+      unreachable("Unsupported GS output topology");
+   } else if (anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_EVAL)) {
+      switch (get_tes_prog_data(pipeline)->output_topology) {
+      case INTEL_TESS_OUTPUT_TOPOLOGY_POINT:
+         return VK_POLYGON_MODE_POINT;
+
+      case INTEL_TESS_OUTPUT_TOPOLOGY_LINE:
+         return VK_POLYGON_MODE_LINE;
+
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CW:
+      case INTEL_TESS_OUTPUT_TOPOLOGY_TRI_CCW:
+         return ANV_POLYGON_MODE_DYNAMIC_POLYGON;
+      }
+      unreachable("Unsupported TCS output topology");
+   } else {
+      return ANV_POLYGON_MODE_DYNAMIC_PRIMITIVE;
+   }
+}
+
 static void
 anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
                            const struct vk_graphics_pipeline_state *state)
@@ -2828,12 +2925,14 @@ anv_graphics_pipeline_emit(struct anv_graphics_pipeline *pipeline,
       /* TODO(mesh): Mesh vs. Multiview with Instancing. */
    }
 
-
    pipeline->dynamic_patch_control_points =
       anv_pipeline_has_stage(pipeline, MESA_SHADER_TESS_CTRL) &&
       BITSET_TEST(state->dynamic, MESA_VK_DYNAMIC_TS_PATCH_CONTROL_POINTS) &&
       (pipeline->base.shaders[MESA_SHADER_TESS_CTRL]->dynamic_push_values &
        ANV_DYNAMIC_PUSH_INPUT_VERTICES);
+
+   pipeline->last_preraster_topology =
+      get_last_pre_raster_topology(pipeline);
 
    if (pipeline->base.shaders[MESA_SHADER_FRAGMENT] && state->ms) {
       pipeline->sample_shading_enable = state->ms->sample_shading_enable;

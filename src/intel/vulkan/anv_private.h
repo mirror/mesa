@@ -55,6 +55,7 @@
 #include "compiler/brw_kernel.h"
 #include "compiler/brw_rt.h"
 #include "ds/intel_driver_ds.h"
+#include "shaders/libintel_shaders.h"
 #include "util/bitset.h"
 #include "util/bitscan.h"
 #include "util/detect_os.h"
@@ -81,6 +82,7 @@
 #include "vk_debug_report.h"
 #include "vk_descriptor_update_template.h"
 #include "vk_device.h"
+#include "vk_device_generated_commands.h"
 #include "vk_device_memory.h"
 #include "vk_drm_syncobj.h"
 #include "vk_enum_defines.h"
@@ -146,6 +148,17 @@ struct intel_perf_query_result;
 #define CLOCK_MONOTONIC_RAW CLOCK_MONOTONIC_FAST
 #endif
 
+#define ANV_GRAPHICS_STAGE_BITS (VK_SHADER_STAGE_ALL_GRAPHICS | \
+                                 VK_SHADER_STAGE_MESH_BIT_EXT | \
+                                 VK_SHADER_STAGE_TASK_BIT_EXT)
+
+#define ANV_RT_STAGE_BITS (VK_SHADER_STAGE_RAYGEN_BIT_KHR |             \
+                           VK_SHADER_STAGE_ANY_HIT_BIT_KHR |            \
+                           VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR |        \
+                           VK_SHADER_STAGE_MISS_BIT_KHR |               \
+                           VK_SHADER_STAGE_INTERSECTION_BIT_KHR |       \
+                           VK_SHADER_STAGE_CALLABLE_BIT_KHR)
+
 #define NSEC_PER_SEC 1000000000ull
 
 #define BINDING_TABLE_POOL_BLOCK_SIZE (65536)
@@ -201,9 +214,6 @@ struct intel_perf_query_result;
  */
 #define MAX_BINDING_TABLE_SIZE 240
 
-#define ANV_SVGS_VB_INDEX    MAX_VBS
-#define ANV_DRAWID_VB_INDEX (MAX_VBS + 1)
-
 /* We reserve this MI ALU register for the purpose of handling predication.
  * Other code which uses the MI ALU should leave it alone.
  */
@@ -222,6 +232,9 @@ struct intel_perf_query_result;
 #define ANV_BINDLESS_SURFACE_BASE_ADDR_REG 0x2668 /* MI_ALU_REG13 */
 
 #define ANV_GRAPHICS_SHADER_STAGE_COUNT (MESA_SHADER_MESH + 1)
+
+#define ANV_POLYGON_MODE_DYNAMIC_POLYGON (VK_POLYGON_MODE_MAX_ENUM - 1)
+#define ANV_POLYGON_MODE_DYNAMIC_PRIMITIVE (VK_POLYGON_MODE_MAX_ENUM - 2)
 
 /* Defines where various values are defined in the inline parameter register.
  */
@@ -1846,6 +1859,13 @@ enum anv_internal_kernel_name {
    ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_COMPUTE,
    ANV_INTERNAL_KERNEL_COPY_QUERY_RESULTS_FRAGMENT,
    ANV_INTERNAL_KERNEL_MEMCPY_COMPUTE,
+   ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_COMPUTE,
+   ANV_INTERNAL_KERNEL_GENERATED_GFX_COMMANDS_STEP1_FRAGMENT,
+   ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_COMPUTE,
+   ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP1_FRAGMENT,
+   ANV_INTERNAL_KERNEL_GENERATED_CS_COMMANDS_STEP2_COMPUTE,
+   ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_COMPUTE,
+   ANV_INTERNAL_KERNEL_GENERATED_RT_COMMANDS_FRAGMENT,
 
    ANV_INTERNAL_KERNEL_COUNT,
 };
@@ -2874,6 +2894,9 @@ struct anv_descriptor_set_layout {
 
    VkDescriptorSetLayoutCreateFlags flags;
 
+   /* Stages that can use this layout */
+   VkShaderStageFlags stages;
+
    /* Type of descriptor set layout */
    enum anv_descriptor_set_layout_type type;
 
@@ -3300,6 +3323,8 @@ struct anv_pipeline_sets_layout {
 
    enum anv_descriptor_set_layout_type type;
 
+   VkShaderStageFlags stages;
+
    uint32_t num_sets;
    uint32_t num_dynamic_buffers;
    int push_descriptor_set_index;
@@ -3703,9 +3728,6 @@ struct anv_push_constants {
     */
    uint32_t surfaces_base_offset;
 
-   /* Robust access pushed registers. */
-   uint64_t push_reg_mask[MESA_SHADER_STAGES];
-
    /** Ray query globals (RT_DISPATCH_GLOBALS) */
    uint64_t ray_query_globals;
 
@@ -3716,6 +3738,9 @@ struct anv_push_constants {
 
          /** Dynamic TCS input vertices */
          uint32_t tcs_input_vertices;
+
+         /** Robust access pushed registers. */
+         uint64_t push_reg_mask[MESA_SHADER_STAGES];
       } gfx;
 
       struct {
@@ -4071,6 +4096,11 @@ enum anv_cmd_descriptor_buffer_mode {
    ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER,
 };
 
+enum anv_dgc_state {
+   ANV_DGC_STATE_COMPUTE = BITFIELD_BIT(0),
+   ANV_DGC_STATE_GRAPHIC = BITFIELD_BIT(1),
+};
+
 /** State required while building cmd buffer */
 struct anv_cmd_state {
    /* PIPELINE_SELECT.PipelineSelection */
@@ -4138,6 +4168,12 @@ struct anv_cmd_state {
    unsigned char                                sampler_sha1s[MESA_VULKAN_SHADER_STAGES][20];
    unsigned char                                surface_sha1s[MESA_VULKAN_SHADER_STAGES][20];
    unsigned char                                push_sha1s[MESA_VULKAN_SHADER_STAGES][20];
+
+   /**
+    * DGC states .
+    */
+   enum anv_dgc_state                           dgc_states;
+   bool                                         has_dgc;
 
    /* The last auxiliary surface operation (or equivalent operation) provided
     * to genX(cmd_buffer_update_color_aux_op).
@@ -4389,7 +4425,12 @@ static inline bool
 anv_cmd_buffer_is_compute_queue(const struct anv_cmd_buffer *cmd_buffer)
 {
    struct anv_queue_family *queue_family = cmd_buffer->queue_family;
-   return queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE;
+   /* Either it's a RCS engine masquerading as a compute queue, or it's an
+    * actual CCS.
+    */
+   return ((queue_family->queueFlags & VK_QUEUE_GRAPHICS_BIT) == 0 &&
+           queue_family->engine_class == INTEL_ENGINE_CLASS_RENDER) ||
+          queue_family->engine_class == INTEL_ENGINE_CLASS_COMPUTE;
 }
 
 static inline bool
@@ -4431,6 +4472,14 @@ anv_cmd_buffer_descriptor_buffer_address(struct anv_cmd_buffer *cmd_buffer,
 
    return cmd_buffer->state.descriptor_buffers.address[buffer_index];
 }
+
+#define anv_internal_kernel_variant(cmd_buffer, name) ({                \
+         ((anv_cmd_buffer_is_compute_queue(cmd_buffer) ||               \
+           (cmd_buffer)->state.current_pipeline ==                      \
+           (cmd_buffer)->device->physical->gpgpu_pipeline_value) ?      \
+          ANV_INTERNAL_KERNEL_##name##_COMPUTE :                        \
+          ANV_INTERNAL_KERNEL_##name##_FRAGMENT);                       \
+      })
 
 VkResult anv_cmd_buffer_init_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
 void anv_cmd_buffer_fini_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer);
@@ -4630,11 +4679,21 @@ struct anv_event {
 
 #define ANV_STAGE_MASK ((1 << MESA_VULKAN_SHADER_STAGES) - 1)
 
+#define ANV_VK_STAGE_MASK (ANV_GRAPHICS_STAGE_BITS |    \
+                           ANV_RT_STAGE_BITS |          \
+                           VK_SHADER_STAGE_COMPUTE_BIT)
+
 #define anv_foreach_stage(stage, stage_bits)                         \
    for (gl_shader_stage stage,                                       \
         __tmp = (gl_shader_stage)((stage_bits) & ANV_STAGE_MASK);    \
         stage = __builtin_ffs(__tmp) - 1, __tmp;                     \
         __tmp &= ~(1 << (stage)))
+
+#define anv_foreach_vk_stage(stage, stage_bits)                         \
+   for (VkShaderStageFlags stage,                                       \
+           __tmp = (stage_bits & ANV_VK_STAGE_MASK);                    \
+        stage = BITFIELD_BIT(__builtin_ffs(__tmp) - 1), __tmp;          \
+        __tmp &= ~(stage))
 
 struct anv_pipeline_bind_map {
    unsigned char                                surface_sha1[20];
@@ -4654,6 +4713,11 @@ struct anv_pipeline_bind_map {
 
    struct anv_push_range                        push_ranges[4];
 };
+
+struct anv_pipeline_bind_map *
+anv_pipeline_bind_map_clone(struct anv_device *device,
+                            const VkAllocationCallbacks *pAllocator,
+                            const struct anv_pipeline_bind_map *bind_map);
 
 struct anv_push_descriptor_info {
    /* A bitfield of descriptors used. */
@@ -4896,6 +4960,11 @@ struct anv_graphics_pipeline {
    uint32_t                                     view_mask;
    uint32_t                                     instance_multiplier;
 
+   /* Last select pre-rasterization topology mode (with some values indicating
+    * the dynamic values ANV_RASTER_POLYGON_MODE_DYNAMIC_*)
+    */
+   VkPolygonMode                                last_preraster_topology;
+
    bool                                         rp_has_ds_self_dep;
 
    bool                                         kill_pixel;
@@ -4937,12 +5006,16 @@ struct anv_graphics_pipeline {
     */
    uint32_t                                     batch_data[480];
 
+   /* Tracking for Wa_16014912113 */
+   uint32_t                                     ds_urb_cfg;
+
    /* Urb setup utilized by this pipeline. */
-   struct intel_urb_config urb_cfg;
+   struct intel_urb_config                      urb_cfg;
 
    /* Fully backed instructions, ready to be emitted in the anv_cmd_buffer */
    struct {
       struct anv_gfx_state_ptr                  urb;
+      struct anv_gfx_state_ptr                  urb_wa_16014912113;
       struct anv_gfx_state_ptr                  vf_sgvs;
       struct anv_gfx_state_ptr                  vf_sgvs_2;
       struct anv_gfx_state_ptr                  vf_sgvs_instancing;
@@ -5022,7 +5095,16 @@ struct anv_compute_pipeline {
 
    struct anv_shader_bin *                      cs;
    uint32_t                                     batch_data[9];
-   uint32_t                                     interface_descriptor_data[8];
+
+   union {
+      struct {
+         uint32_t                               interface_descriptor_data[8];
+         uint32_t                               gpgpu_walker[15];
+      } gfx9;
+      struct {
+         uint32_t                               compute_walker[39];
+      } gfx125;
+   };
 
    /* A small hash based of shader_info::source_sha1 for identifying shaders
     * in renderdoc/shader-db.
@@ -6293,6 +6375,108 @@ static inline uint32_t khr_perf_query_preamble_offset(const struct anv_query_poo
           pool->khr_perf_preamble_stride * pass;
 }
 
+struct anv_indirect_execution_set {
+   struct vk_object_base base;
+
+   struct anv_pipeline *template_pipeline;
+
+   enum anv_descriptor_set_layout_type layout_type;
+
+   struct anv_pipeline_bind_map *bind_map;
+
+   /** List of all the scratch buffers on < Gfx12.5 */
+   struct anv_reloc_list relocs;
+
+   struct anv_bo *bo;
+
+   bool uses_xfb;
+
+   uint32_t stride;
+
+   uint32_t max_final_commands_size;
+
+   /** Maximum scratch space for shaders */
+   uint32_t max_scratch;
+   /** Maximum number of ray queries used by shaders */
+   uint32_t max_ray_queries;
+};
+
+enum anv_gen_command_stage anv_vk_stage_to_generated_stage(VkShaderStageFlags vk_stage);
+
+uint32_t anv_vk_stages_to_generated_stages(VkShaderStageFlags vk_stages);
+
+void anv_indirect_descriptor_push_constants_write(struct anv_gen_gfx_indirect_descriptor *descriptor,
+                                                  struct anv_graphics_pipeline *pipeline);
+
+struct anv_indirect_command_layout {
+   struct vk_indirect_command_layout vk;
+
+   VkPipelineBindPoint bind_point;
+
+   struct anv_gen_gfx_layout gfx_layout;
+   struct anv_gen_cs_layout cs_layout;
+
+   /** Layout is as follow :
+    *  --------------------
+    *  |   prolog cmds    |
+    *  |------------------|
+    *  |  sequence cmds   |
+    *  |------------------|
+    *  |   epilog cmds    |
+    *  |------------------|
+    *  |  sideband data   |
+    *  |------------------|
+    *  |   prolog data    |
+    *  |------------------|
+    *  |  sequence data   |
+    *  --------------------
+    */
+
+   /**
+    * Non sequence related commands at the beginning of the preprocess buffer
+    */
+   uint32_t cmd_prolog_size;
+   /**
+    * Non sequence related commands at the end of the preprocess buffer (jump
+    * back to main batch)
+    */
+   uint32_t cmd_epilog_size;
+   /** Amount of command memory required for each sequence */
+   uint32_t cmd_size;
+   /** Non sequence related data */
+   uint32_t data_prolog_size;
+   /** Amount of data memory required (per sequence) */
+   uint32_t data_size;
+   /** Amount of sideband data memory required (not per sequence) */
+   uint32_t sideband_size;
+
+   /** Track if push constants are emitted at all */
+   bool emits_push_constants;
+
+   struct anv_indirect_command_layout_item {
+      const char *name;
+      uint32_t size;
+   } items[10];
+   uint32_t n_items;
+};
+
+void anv_generated_commands_gfx_print_state(const struct anv_gen_gfx_layout *layout,
+                                            const struct anv_indirect_command_layout *layout_obj);
+void anv_generated_commands_print_layout(const struct anv_indirect_command_layout *layout);
+
+void anv_generated_gfx_fill_state(struct anv_gen_gfx_state *state,
+                                  struct anv_cmd_buffer *cmd_buffer,
+                                  const struct anv_indirect_command_layout *layout_obj,
+                                  const struct anv_graphics_pipeline *pipeline,
+                                  const struct anv_indirect_execution_set *indirect_set);
+
+uint32_t anv_generated_gfx_fill_layout(struct anv_gen_gfx_layout *layout,
+                                       const struct anv_device *device,
+                                       const struct anv_indirect_command_layout *layout_obj,
+                                       const struct anv_graphics_pipeline *pipeline,
+                                       const struct anv_indirect_execution_set *indirect_set);
+
+
 struct anv_vid_mem {
    struct anv_device_memory *mem;
    VkDeviceSize       offset;
@@ -6562,6 +6746,12 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session, vk.base,
 VK_DEFINE_NONDISP_HANDLE_CASTS(anv_video_session_params, vk.base,
                                VkVideoSessionParametersKHR,
                                VK_OBJECT_TYPE_VIDEO_SESSION_PARAMETERS_KHR)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_indirect_command_layout, vk.base,
+                               VkIndirectCommandsLayoutEXT,
+                               VK_OBJECT_TYPE_INDIRECT_COMMANDS_LAYOUT_EXT)
+VK_DEFINE_NONDISP_HANDLE_CASTS(anv_indirect_execution_set, base,
+                               VkIndirectExecutionSetEXT,
+                               VK_OBJECT_TYPE_INDIRECT_EXECUTION_SET_EXT)
 
 #define anv_genX(devinfo, thing) ({             \
    __typeof(&gfx9_##thing) genX_thing;          \

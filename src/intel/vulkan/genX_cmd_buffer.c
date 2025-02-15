@@ -2237,10 +2237,9 @@ emit_binding_table(struct anv_cmd_buffer *cmd_buffer,
 static VkResult
 emit_samplers(struct anv_cmd_buffer *cmd_buffer,
               struct anv_cmd_pipeline_state *pipe_state,
-              struct anv_shader_bin *shader,
+              const struct anv_pipeline_bind_map *map,
               struct anv_state *state)
 {
-   struct anv_pipeline_bind_map *map = &shader->bind_map;
    if (map->sampler_count == 0) {
       *state = (struct anv_state) { 0, };
       return VK_SUCCESS;
@@ -2277,11 +2276,11 @@ emit_samplers(struct anv_cmd_buffer *cmd_buffer,
 }
 
 uint32_t
-genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
-                                       struct anv_cmd_pipeline_state *pipe_state,
-                                       const VkShaderStageFlags dirty,
-                                       struct anv_shader_bin **shaders,
-                                       uint32_t num_shaders)
+genX(cmd_buffer_flush_shader_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
+                                              struct anv_cmd_pipeline_state *pipe_state,
+                                              const VkShaderStageFlags dirty,
+                                              struct anv_shader_bin **shaders,
+                                              uint32_t num_shaders)
 {
    VkShaderStageFlags flushed = 0;
 
@@ -2296,7 +2295,8 @@ genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
          continue;
 
       assert(stage < ARRAY_SIZE(cmd_buffer->state.samplers));
-      result = emit_samplers(cmd_buffer, pipe_state, shaders[i],
+      result = emit_samplers(cmd_buffer, pipe_state,
+                             &shaders[i]->bind_map,
                              &cmd_buffer->state.samplers[stage]);
       if (result != VK_SUCCESS)
          break;
@@ -2331,7 +2331,8 @@ genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
 
          gl_shader_stage stage = shaders[i]->stage;
 
-         result = emit_samplers(cmd_buffer, pipe_state, shaders[i],
+         result = emit_samplers(cmd_buffer, pipe_state,
+                                &shaders[i]->bind_map,
                                 &cmd_buffer->state.samplers[stage]);
          if (result != VK_SUCCESS) {
             anv_batch_set_error(&cmd_buffer->batch, result);
@@ -2345,6 +2346,145 @@ genX(cmd_buffer_flush_descriptor_sets)(struct anv_cmd_buffer *cmd_buffer,
          }
 
          flushed |= mesa_to_vk_shader_stage(stage);
+      }
+   }
+
+   return flushed;
+}
+
+static VkResult
+emit_device_bindable_binding_table(struct anv_cmd_buffer *cmd_buffer,
+                                   struct anv_cmd_pipeline_state *pipe_state,
+                                   const struct anv_pipeline_bind_map *bind_map,
+                                   struct anv_state *bt_state)
+{
+   uint32_t state_offset;
+
+   if (bind_map->surface_count == 0) {
+      *bt_state = (struct anv_state) { 0, };
+      return VK_SUCCESS;
+   }
+
+   *bt_state = anv_cmd_buffer_alloc_binding_table(
+      cmd_buffer, bind_map->surface_count, &state_offset);
+   uint32_t *bt_map = bt_state->map;
+
+   if (bt_state->map == NULL)
+      return VK_ERROR_OUT_OF_DEVICE_MEMORY;
+
+   for (uint32_t s = 0; s < bind_map->surface_count; s++) {
+      struct anv_pipeline_binding *binding = &bind_map->surface_to_descriptor[s];
+
+      if (binding->set == ANV_DESCRIPTOR_SET_DESCRIPTORS_BUFFER) {
+         assert(pipe_state->descriptor_buffers[binding->index].state.alloc_size);
+         bt_map[s] = pipe_state->descriptor_buffers[binding->index].state.offset +
+                     state_offset;
+      } else {
+         assert(binding->set < MAX_SETS);
+         const struct anv_descriptor_set *set =
+            pipe_state->descriptors[binding->set];
+
+         const struct anv_descriptor *desc = &set->descriptors[binding->index];
+         if (desc->type == VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR ||
+             desc->type == VK_DESCRIPTOR_TYPE_SAMPLER) {
+            /* Nothing for us to do here */
+            continue;
+         }
+
+         uint32_t surface_state_offset;
+         surface_state_offset =
+            emit_direct_descriptor_binding_table_entry(cmd_buffer, pipe_state,
+                                                       set, binding, desc);
+         bt_map[s] = surface_state_offset + state_offset;
+      }
+   }
+
+   return VK_SUCCESS;
+}
+
+uint32_t
+genX(cmd_buffer_flush_indirect_set_descriptors)(struct anv_cmd_buffer *cmd_buffer,
+                                                struct anv_cmd_pipeline_state *pipe_state,
+                                                struct anv_indirect_execution_set *indirect_set,
+                                                VkShaderStageFlags dirty)
+{
+   /* In the IES case, we have 3 situations :
+    *
+    *    - on >= Gfx12.5, the binding table is never used, no need to flush it
+    *
+    *    - on < Gfx12.5 with legacy descriptors, all accesses are indirect and
+    *      the binding table is never used, no need to flush it
+    *
+    *    - on < Gfx12.5 with descriptor buffer, the only use of the binding
+    *      table is for the push descriptor set, we built a cross shader
+    *      compatible binding table layout (see
+    *      build_compatible_binding_table) we just need to flush that. We can
+    *      use the indirect set binding map.
+    */
+   if (cmd_buffer->device->info->verx10 >= 125)
+      return 0;
+   if (indirect_set->layout_type != ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_BUFFER)
+      return 0;
+
+   const struct anv_pipeline_bind_map *bind_map = indirect_set->bind_map;
+   VkShaderStageFlags flushed = 0;
+
+   VkResult result = VK_SUCCESS;
+   anv_foreach_vk_stage(vk_stage, dirty) {
+      if ((vk_stage & dirty) == 0)
+         continue;
+
+      gl_shader_stage stage = vk_to_mesa_shader_stage(vk_stage);
+
+      assert(stage < ARRAY_SIZE(cmd_buffer->state.samplers));
+      result = emit_samplers(cmd_buffer, pipe_state, bind_map,
+                             &cmd_buffer->state.samplers[stage]);
+      if (result != VK_SUCCESS)
+         break;
+
+      assert(stage < ARRAY_SIZE(cmd_buffer->state.binding_tables));
+      result = emit_device_bindable_binding_table(
+         cmd_buffer, pipe_state, bind_map,
+         &cmd_buffer->state.binding_tables[stage]);
+      if (result != VK_SUCCESS)
+         break;
+
+      flushed |= vk_stage;
+   }
+
+   if (result != VK_SUCCESS) {
+      assert(result == VK_ERROR_OUT_OF_DEVICE_MEMORY);
+
+      result = anv_cmd_buffer_new_binding_table_block(cmd_buffer);
+      if (result != VK_SUCCESS)
+         return 0;
+
+      /* Re-emit the BT base address so we get the new surface state base
+       * address before we start emitting binding tables etc.
+       */
+      genX(cmd_buffer_emit_bt_pool_base_address)(cmd_buffer);
+
+      /* Re-emit all active binding tables */
+      flushed = 0;
+
+      anv_foreach_vk_stage(vk_stage, dirty) {
+         gl_shader_stage stage = vk_to_mesa_shader_stage(vk_stage);
+
+         result = emit_samplers(cmd_buffer, pipe_state, bind_map,
+                                &cmd_buffer->state.samplers[stage]);
+         if (result != VK_SUCCESS) {
+            anv_batch_set_error(&cmd_buffer->batch, result);
+            return 0;
+         }
+         result = emit_device_bindable_binding_table(
+            cmd_buffer, pipe_state, bind_map,
+            &cmd_buffer->state.binding_tables[stage]);
+         if (result != VK_SUCCESS) {
+            anv_batch_set_error(&cmd_buffer->batch, result);
+            return 0;
+         }
+
+         flushed |= vk_stage;
       }
    }
 
@@ -2710,7 +2850,8 @@ compute_descriptor_set_sampler_offset(const struct anv_cmd_buffer *cmd_buffer,
 
 void
 genX(flush_descriptor_buffers)(struct anv_cmd_buffer *cmd_buffer,
-                               struct anv_cmd_pipeline_state *pipe_state)
+                               struct anv_cmd_pipeline_state *pipe_state,
+                               VkShaderStageFlags active_stages)
 {
    /* On Gfx12.5+ the STATE_BASE_ADDRESS BindlessSurfaceStateBaseAddress &
     * DynamicStateBaseAddress are fixed. So as long as we stay in one
@@ -2729,8 +2870,7 @@ genX(flush_descriptor_buffers)(struct anv_cmd_buffer *cmd_buffer,
           ANV_CMD_DESCRIPTOR_BUFFER_MODE_UNKNOWN);
    if (cmd_buffer->state.current_db_mode == ANV_CMD_DESCRIPTOR_BUFFER_MODE_BUFFER &&
        (cmd_buffer->state.descriptor_buffers.dirty ||
-        (pipe_state->pipeline->active_stages &
-         cmd_buffer->state.descriptor_buffers.offsets_dirty) != 0)) {
+        (active_stages & cmd_buffer->state.descriptor_buffers.offsets_dirty) != 0)) {
       struct anv_push_constants *push_constants =
          &pipe_state->push_constants;
       for (uint32_t i = 0; i < ARRAY_SIZE(push_constants->desc_surface_offsets); i++) {
@@ -2750,11 +2890,9 @@ genX(flush_descriptor_buffers)(struct anv_cmd_buffer *cmd_buffer,
 #endif
 
       cmd_buffer->state.push_constants_dirty |=
-         (cmd_buffer->state.descriptor_buffers.offsets_dirty &
-          pipe_state->pipeline->active_stages);
+         (cmd_buffer->state.descriptor_buffers.offsets_dirty & active_stages);
       pipe_state->push_constants_data_dirty = true;
-      cmd_buffer->state.descriptor_buffers.offsets_dirty &=
-         ~pipe_state->pipeline->active_stages;
+      cmd_buffer->state.descriptor_buffers.offsets_dirty &= ~active_stages;
    }
 
    cmd_buffer->state.descriptor_buffers.dirty = false;
@@ -3348,8 +3486,31 @@ emit_isp_disable(struct anv_cmd_buffer *cmd_buffer)
    }
 }
 
+static void
+reset_dgc_state(struct anv_cmd_buffer *cmd_buffer)
+{
+   if (!cmd_buffer->state.dgc_states)
+      return;
+
+#if GFX_VERx10 < 125
+   if (cmd_buffer->state.current_pipeline == GPGPU &&
+       (cmd_buffer->state.dgc_states & ANV_DGC_STATE_COMPUTE)) {
+      /* This works around the fact that indirect sets & preprocess buffer can
+       * be destroyed after then command buffer is executed and their state
+       * remain active in the HW context image. In that case, on context
+       * restore, the HW will try to reload some data and might run into a
+       * pagefault.
+       */
+      genX(cmd_buffer_flush_compute_state)(cmd_buffer);
+   }
+#endif
+
+   cmd_buffer->state.dgc_states = 0;
+}
+
 static VkResult
-end_command_buffer(struct anv_cmd_buffer *cmd_buffer)
+end_command_buffer(struct anv_cmd_buffer *cmd_buffer,
+                   bool is_companion)
 {
    if (anv_batch_has_error(&cmd_buffer->batch))
       return cmd_buffer->batch.status;
@@ -3364,19 +3525,25 @@ end_command_buffer(struct anv_cmd_buffer *cmd_buffer)
       return VK_SUCCESS;
    }
 
-   /* Flush query clears using blorp so that secondary query writes do not
-    * race with the clear.
-    */
-   if (cmd_buffer->state.queries.clear_bits) {
-      anv_add_pending_pipe_bits(cmd_buffer,
-                                ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
-                                "query clear flush prior command buffer end");
-   }
-
    /* Flush any in-progress CCS/MCS operations in preparation for chaining. */
    genX(cmd_buffer_update_color_aux_op(cmd_buffer, ISL_AUX_OP_NONE));
 
    genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
+
+   if (!is_companion) {
+      reset_dgc_state(cmd_buffer);
+
+      /* Flush query clears using blorp so that secondary query writes do not
+       * race with the clear.
+       */
+      if (cmd_buffer->state.queries.clear_bits) {
+         anv_add_pending_pipe_bits(cmd_buffer,
+                                   ANV_PIPE_QUERY_BITS(cmd_buffer->state.queries.clear_bits),
+                                   "query clear flush prior command buffer end");
+      }
+
+      genX(cmd_buffer_flush_generated_draws)(cmd_buffer);
+   }
 
    /* Turn on object level preemption if it is disabled to have it in known
     * state at the beginning of new command buffer.
@@ -3418,7 +3585,7 @@ genX(EndCommandBuffer)(
 {
    ANV_FROM_HANDLE(anv_cmd_buffer, cmd_buffer, commandBuffer);
 
-   VkResult status = end_command_buffer(cmd_buffer);
+   VkResult status = end_command_buffer(cmd_buffer, false);
    if (status != VK_SUCCESS)
       return status;
 
@@ -3428,7 +3595,7 @@ genX(EndCommandBuffer)(
    if (cmd_buffer->companion_rcs_cmd_buffer) {
        assert(anv_cmd_buffer_is_compute_queue(cmd_buffer) ||
               anv_cmd_buffer_is_blitter_queue(cmd_buffer));
-       status = end_command_buffer(cmd_buffer->companion_rcs_cmd_buffer);
+       status = end_command_buffer(cmd_buffer->companion_rcs_cmd_buffer, true);
    }
 
    ANV_RMV(cmd_buffer_create, cmd_buffer->device, cmd_buffer);
@@ -3773,6 +3940,13 @@ anv_pipe_flush_bits_for_access_flags(struct anv_cmd_buffer *cmd_buffer,
           * caches.
           */
          pipe_bits |= ANV_PIPE_CS_STALL_BIT | ANV_PIPE_INVALIDATE_BITS;
+         break;
+      case VK_ACCESS_2_COMMAND_PREPROCESS_WRITE_BIT_EXT:
+         /* Preprocess writes are all going through the data cache */
+         pipe_bits |= ANV_PIPE_UNTYPED_DATAPORT_CACHE_FLUSH_BIT;
+         pipe_bits |= ANV_PIPE_HDC_PIPELINE_FLUSH_BIT;
+         pipe_bits |= ANV_PIPE_DATA_CACHE_FLUSH_BIT;
+         pipe_bits |= ANV_PIPE_CS_STALL_BIT;
          break;
       default:
          break; /* Nothing to do */
@@ -4598,6 +4772,8 @@ genX(flush_pipeline_select)(struct anv_cmd_buffer *cmd_buffer,
 
    if (cmd_buffer->state.current_pipeline == pipeline)
       return;
+
+   reset_dgc_state(cmd_buffer);
 
 #if GFX_VER >= 20
    /* While PIPELINE_SELECT is not needed on Xe2+, our current assumption
@@ -6373,41 +6549,6 @@ genX(batch_emit_fast_color_dummy_blit)(struct anv_batch *batch,
       blt.DestinationSurfaceType = XY_SURFTYPE_2D;
       blt.DestinationSurfaceQPitch = 4;
       blt.DestinationTiling = XY_TILE_LINEAR;
-   }
-#endif
-}
-
-void
-genX(urb_workaround)(struct anv_cmd_buffer *cmd_buffer,
-                     const struct intel_urb_config *urb_cfg)
-{
-#if INTEL_NEEDS_WA_16014912113
-   const struct intel_urb_config *current =
-      &cmd_buffer->state.gfx.urb_cfg;
-   if (intel_urb_setup_changed(urb_cfg, current, MESA_SHADER_TESS_EVAL) &&
-       current->size[0] != 0) {
-      for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
-#if GFX_VER >= 12
-         anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_ALLOC_VS), urb) {
-            urb._3DCommandSubOpcode             += i;
-            urb.VSURBEntryAllocationSize        = current->size[i] - 1;
-            urb.VSURBStartingAddressSlice0      = current->start[i];
-            urb.VSURBStartingAddressSliceN      = current->start[i];
-            urb.VSNumberofURBEntriesSlice0      = i == 0 ? 256 : 0;
-            urb.VSNumberofURBEntriesSliceN      = i == 0 ? 256 : 0;
-         }
-#else
-         anv_batch_emit(&cmd_buffer->batch, GENX(3DSTATE_URB_VS), urb) {
-            urb._3DCommandSubOpcode      += i;
-            urb.VSURBStartingAddress      = current->start[i];
-            urb.VSURBEntryAllocationSize  = current->size[i] - 1;
-            urb.VSNumberofURBEntries      = i == 0 ? 256 : 0;
-         }
-#endif
-      }
-      anv_batch_emit(&cmd_buffer->batch, GENX(PIPE_CONTROL), pc) {
-         pc.HDCPipelineFlushEnable = true;
-      }
    }
 #endif
 }

@@ -176,8 +176,11 @@ export VK_DRIVER_FILES="/install/share/vulkan/icd.d/${VK_DRIVER}_icd.$ARCH.json"
 # your client's return code
 if [ -n "$HWCI_START_XORG" ]; then
   echo "touch /xorg-started; sleep 100000" > /xorg-script
-  env \
-    xinit /bin/sh /xorg-script -- /usr/bin/Xorg -noreset -s 0 -dpms -logfile "$RESULTS_DIR/Xorg.0.log" &
+  {
+    env \
+      xinit /bin/sh /xorg-script -- /usr/bin/Xorg -noreset -s 0 -dpms -logfile "$RESULTS_DIR/Xorg.0.log" ||
+      kill -SIGTERM $(pidof deqp-runner)
+  } &
   BACKGROUND_PIDS="$! $BACKGROUND_PIDS"
 
   # Wait for xorg to be ready for connections.
@@ -202,8 +205,11 @@ if [ -n "$HWCI_START_WESTON" ]; then
   export DISPLAY=:0
   mkdir -p /tmp/.X11-unix
 
-  env \
-    weston -Bheadless-backend.so --use-gl -Swayland-0 --xwayland --idle-time=0 &
+  {
+    env \
+      weston -Bheadless-backend.so --use-gl -Swayland-0 --xwayland --idle-time=0 ||
+      kill -SIGTERM $(pidof deqp-runner)
+  } &
   BACKGROUND_PIDS="$! $BACKGROUND_PIDS"
 
   while [ ! -S "$WESTON_X11_SOCK" ]; do sleep 1; done

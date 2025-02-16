@@ -21,6 +21,8 @@ use std::iter::Zip;
 use std::ops::{BitAnd, BitOr, Deref, DerefMut, Index, IndexMut, Not, Range};
 use std::slice;
 
+use crate::sm75_instr_latencies::{RegLatencySM75, URegLatencySM75};
+
 #[derive(Clone, Copy, Eq, Hash, PartialEq)]
 pub struct Label {
     idx: u32,
@@ -6511,6 +6513,8 @@ impl Op {
 
             // Integer ALU
             Op::BRev(_) | Op::Flo(_) | Op::PopC(_) => false,
+            Op::IDp4(_) => false,
+
             Op::IMad(_) | Op::IMul(_) => sm >= 70,
             Op::BMsk(_)
             | Op::IAbs(_)
@@ -6518,7 +6522,6 @@ impl Op {
             | Op::IAdd2X(_)
             | Op::IAdd3(_)
             | Op::IAdd3X(_)
-            | Op::IDp4(_)
             | Op::IMad64(_)
             | Op::IMnMx(_)
             | Op::ISetP(_)
@@ -6578,7 +6581,7 @@ impl Op {
             | Op::PBk(_)
             | Op::Cont(_)
             | Op::PCnt(_) => true,
-            Op::Bra(_) | Op::Exit(_) => true,
+            Op::Bra(_) | Op::Exit(_) |
             Op::WarpSync(_) => false,
 
             // The barrier half is HW scoreboarded by the GPR isn't.  When
@@ -6611,6 +6614,225 @@ impl Op {
             | Op::RegOut(_)
             | Op::Annotate(_) => {
                 panic!("Not a hardware opcode")
+            }
+        }
+    }
+
+    pub fn get_reg_latency_category_sm75(&self) -> RegLatencySM75 {
+        match self {
+
+            Op::IMad(_) | Op::IMul(_) => RegLatencySM75::IMADLo,
+            Op::IMad64(_) => RegLatencySM75::IMADWideLower, // vs upper C operand - work it out
+
+            Op::PopC(_) => RegLatencySM75::Decoupled,
+            Op::IAdd3(_)
+            | Op::IAdd3X(_) => RegLatencySM75::CoupledAlu,
+
+            Op::BMsk(_) => RegLatencySM75::CoupledAlu,
+            // Sgxt => RegLatencySM75::CoupledAlu,
+            Op::Lop3(_) => RegLatencySM75::CoupledAlu,
+            Op::Flo(_) => RegLatencySM75::Decoupled,
+            Op::ISetP(_) => RegLatencySM75::CoupledAlu,
+            Op::IAbs(_) => RegLatencySM75::CoupledAlu,
+            Op::Lea(_) => RegLatencySM75::CoupledAlu,
+            Op::IMnMx(_) => RegLatencySM75::CoupledAlu,
+            Op::I2I(_) => RegLatencySM75::CoupledAlu,
+            // I2IP => RegLatencySM75::CoupledAlu
+            Op::Shf(_) =>  RegLatencySM75::CoupledAlu,
+
+            Op::FFma(_) => RegLatencySM75::CoupledFMA,
+            Op::FAdd(_) => RegLatencySM75::CoupledFMA,
+            Op::FMul(_) => RegLatencySM75::CoupledFMA,
+            Op::FMnMx(_) => RegLatencySM75::CoupledAlu,
+            Op::FSwzAdd(_) => RegLatencySM75::CoupledFMA,
+            Op::FSet(_) => RegLatencySM75::CoupledAlu,
+            // FSel => RegLatencySM75::CoupledAlu,
+            Op::FSetP(_) => RegLatencySM75::CoupledAlu,
+            // FChk => RegLatencySM75::Decoupled,
+
+            Op::DAdd(_)
+            | Op::DFma(_)
+            | Op::DMul(_)
+            | Op::DSetP(_) => RegLatencySM75::RedirectedFP64,
+
+            Op::DMnMx(_) => RegLatencySM75::RedirectedFP64, // not in docs
+
+            Op::HAdd2(_)
+            | Op::HFma2(_)
+            | Op::HMul2(_)
+            | Op::HSet2(_)
+            | Op::HSetP2(_) => RegLatencySM75::RedirectedFP16,
+
+            Op::HMnMx2(_) => RegLatencySM75::RedirectedFP16, // not in docs
+            // let in for documentation purposes
+//            Op::Hmma(h) => {
+//              match h.mat_size {
+//                  HmmaSize::M16N8K4 => match h.dst_type {
+//                      FloatType::F16 => RegLatencySM75::RedirectedHMMA_884_F16,
+//                      _ => RegLatencySM75::RedirectedHMMA_884_F32
+//                  }
+//                  HmmaSize::M16N8K8 => RegLatencySM75::RedirectedHMMA_1688,
+//                  HmmaSize::M16N8K16 => RegLatencySM75::RedirectedHMMA_16816,
+//                }
+//           }
+
+            Op::Ipa(_) => RegLatencySM75::Decoupled,
+            Op::MuFu(_) => RegLatencySM75::Decoupled,
+
+            // Conversion functions all decoupled
+            Op::F2F(_) => RegLatencySM75::Decoupled,
+            Op::F2I(_) => RegLatencySM75::Decoupled,
+            Op::I2F(_) => RegLatencySM75::Decoupled,
+            Op::FRnd(_) => RegLatencySM75::Decoupled,
+            Op::AL2P(_) => RegLatencySM75::Decoupled,
+
+            Op::Mov(_) => RegLatencySM75::CoupledAlu,
+            Op::Sel(_) => RegLatencySM75::CoupledAlu,
+            Op::BRev(_) => RegLatencySM75::Decoupled,
+            // P2R => RegLatencySM75::CoupledAlu,
+            // R2P => RegLatencySM75::CoupledAlu,
+            Op::PLop3(_) => RegLatencySM75::CoupledAlu,
+            Op::Prmt(_) => RegLatencySM75::CoupledAlu,
+            Op::Nop(_) => RegLatencySM75::CoupledDisp,
+            Op::Vote(_) => RegLatencySM75::CoupledDisp,
+            // VoteU => RegLatencySM75::CoupledDisp,
+            Op::S2R(_) => RegLatencySM75::Decoupled,
+            // S2UR  => RegLatencySM75::Decoupled,
+            Op::R2UR(_) => RegLatencySM75::Decoupled,
+            Op::CS2R(cs2r) => if cs2r.dst.as_reg().unwrap().comps() == 2 { RegLatencySM75::CoupledDisp64 } else { RegLatencySM75::CoupledAlu },
+            // B2R => RegLatencySM75::Decoupled,
+            // LEPC => RegLatencySM75::CoupledDisp64
+            Op::BMov(bmov) => match bmov.dst {
+                Dst::Reg(reg) => if reg.is_gpr() { RegLatencySM75::BMov } else { RegLatencySM75::Decoupled },
+                _ => RegLatencySM75::Decoupled
+            },
+            // RPCMOV.32 => RegLatencySM75::CoupledAlu,
+            // RPCMOV.64 => RegLatencySM75::CoupledDisp64
+            // PMTRIG => RegLatencySM75::CoupledDisp64
+            // CSMTEST =>  RegLatencySM75::CoupledAlu,
+            // BAR =>
+            // Remove when Imma added
+            //Op::Imma(_) => RegLatencySM75::IMMA,
+
+            Op::IDp4(_) => RegLatencySM75::CoupledFMA,
+            Op::Atom(_) => RegLatencySM75::Decoupled,
+            Op::BClear(_) => RegLatencySM75::Decoupled,
+            Op::Bra(_) => RegLatencySM75::Decoupled,
+            Op::BSSy(_) => RegLatencySM75::Decoupled,
+            Op::BSync(_) => RegLatencySM75::Decoupled,
+            //CCtl.i,c are coupled
+            Op::CCtl(_) => RegLatencySM75::DecoupledOther,
+            Op::Exit(_) => RegLatencySM75::Decoupled,
+            Op::Ldc(_) => RegLatencySM75::Decoupled,
+            Op::ALd(_) => RegLatencySM75::Decoupled,
+            Op::ASt(_) => RegLatencySM75::Decoupled,
+            Op::Ld(_) => RegLatencySM75::Decoupled,
+            Op::St(_) => RegLatencySM75::Decoupled,
+            x => { panic!("Illegal instuction in reg category {}", x); }
+        }
+    }
+
+    pub fn get_ureg_latency_category_sm75(&self, reader: bool) -> URegLatencySM75 {
+        match self {
+            Op::BMsk(_) => URegLatencySM75::Udp,
+            Op::BRev(_) => URegLatencySM75::Udp,
+            // uclea?
+            Op::Flo(_) => URegLatencySM75::Udp,
+            Op::IAdd3(_) => URegLatencySM75::Udp,
+            Op::IAdd3X(_) => URegLatencySM75::Udp,
+            Op::IMad(_) => URegLatencySM75::Udp,
+            Op::ISetP(_) => URegLatencySM75::Udp,
+            Op::Ldc(ldc) => match ldc.dst {
+                Dst::Reg(reg) => if !reader && reg.is_gpr() && !reg.is_uniform() { URegLatencySM75::VectorCoupled } else { URegLatencySM75::Uldc },
+                _ => URegLatencySM75::Uldc,
+            }
+            // Lea => URegLatencySM75::Udp,
+            Op::Lop2(_) => URegLatencySM75::Udp,
+            Op::Lop3(_) => URegLatencySM75::Udp,
+            Op::Mov(mov) => match mov.dst {
+                Dst::Reg(reg) => if !reader && reg.is_gpr() && !reg.is_uniform() { URegLatencySM75::VectorCoupled } else { URegLatencySM75::Uldc },
+                _ => URegLatencySM75::Uldc,
+            }
+            // mov32i => URegLatency::Uldc,
+            // p2ur => URegLatencySM75::Udp,
+            Op::PLop3(_) => URegLatencySM75::Udp,
+            Op::PopC(_) => URegLatencySM75::Udp,
+            Op::Prmt(_) => URegLatencySM75::Udp,
+            Op::PSetP(_) => URegLatencySM75::Udp,
+            // UR2UP
+            Op::Sel(_) => URegLatencySM75::Udp,
+            // SGXT
+            Op::Shf(_) => URegLatencySM75::Udp,
+
+            Op::I2F(_) => URegLatencySM75::VectorDecoupled,
+            Op::F2I(_) => URegLatencySM75::VectorDecoupled,
+            Op::F2F(_) => URegLatencySM75::VectorDecoupledBindless,//TODO
+            Op::R2UR(_) => URegLatencySM75::R2UR,
+
+            Op::HAdd2(_) => URegLatencySM75::VectorCoupled,
+            _ => { panic!("Illegal instuction in ureg category {}", self); }
+        }
+    }
+
+    pub fn get_pred_latency_category_sm75(&self) -> RegLatencySM75 {
+        match self {
+            Op::Vote(_) => RegLatencySM75::CoupledDisp,
+            Op::FFma(_) => RegLatencySM75::CoupledFMA,
+            Op::IMad(_) | Op::IMul(_) => RegLatencySM75::IMADLo,
+            // Double-precision float ALU
+            Op::DAdd(_)
+            | Op::DFma(_)
+            | Op::DMnMx(_)
+            | Op::DMul(_)
+            | Op::DSetP(_) => RegLatencySM75::RedirectedFP64,
+
+            Op::HAdd2(_)
+            | Op::HFma2(_)
+            | Op::HMul2(_)
+            | Op::HSet2(_)
+            | Op::HSetP2(_)
+            | Op::HMnMx2(_) => RegLatencySM75::RedirectedFP16,
+
+            _ => match self.has_fixed_latency(75) {
+                true => RegLatencySM75::CoupledAlu,
+                false => RegLatencySM75::Decoupled
+            }
+        }
+    }
+
+    pub fn get_upred_latency_category_sm75(&self) -> URegLatencySM75 {
+        match self {
+            Op::PLop3(_) => URegLatencySM75::VectorCoupled,
+            _ => URegLatencySM75::Udp,
+        }
+    }
+
+    pub fn needs_scoreboards(&self, sm: u8) -> bool {
+        if sm == 75 {
+            if self.is_uniform() {
+                match self {
+                    Op::R2UR(_) => true,
+                    _ => false,
+                }
+            } else {
+                match self.get_reg_latency_category_sm75() {
+                    RegLatencySM75::RedirectedFP64 |
+                    // We don't think fp16 needs scoreboarding on any known hw
+                    // Put this back if we figure out it does.
+                    //RegLatencySM75::RedirectedFP16 |
+                    RegLatencySM75::RedirectedHMMA_884_F16 |
+                    RegLatencySM75::RedirectedHMMA_884_F32 |
+                    RegLatencySM75::RedirectedHMMA_1688 |
+                    RegLatencySM75::RedirectedHMMA_16816 |
+                    RegLatencySM75::IMMA |
+                    RegLatencySM75::Decoupled => true,
+                    _ => false
+                }
+            }
+        } else {
+            match self.has_fixed_latency(sm) {
+                true => false,
+                false => true
             }
         }
     }

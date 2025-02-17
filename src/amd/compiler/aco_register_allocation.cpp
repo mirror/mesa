@@ -339,6 +339,12 @@ public:
 
    void block(PhysRegInterval interval) { fill(interval.lo(), interval.size, 0xFFFFFFFF); }
 
+   void block(const SparseRegisterSet& set)
+   {
+      for (const auto& interval : set.slices)
+         block(interval);
+   }
+
    void clear(PhysRegInterval interval) { fill(interval.lo(), interval.size, 0); }
 
    bool is_blocked(PhysReg start) const

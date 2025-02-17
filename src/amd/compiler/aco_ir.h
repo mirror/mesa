@@ -1176,6 +1176,403 @@ struct RegisterDemand {
    }
 };
 
+/* Helper class representing an arbitrary set of registers.
+ * The set consists of disjoint "slices", i.e. register intervals where
+ * all contained registers are part of the set. Slices are always stored sorted in ascending order.
+ */
+struct SparseRegisterSet {
+   aco::small_vec<PhysRegInterval, 2> slices;
+
+   struct iterator {
+      decltype(slices)::iterator slice_it;
+      PhysRegIterator reg_it;
+      /* For end(), the iterator points at the first "invalid" element, which is
+       * slices.end()->begin(). We cannot determine this value because actually dereferencing
+       * slices.end() is invalid. Therefore, when switching slices in operator++, don't dereference
+       * the new slice_it yet - only do that on further increments or when the iterator is
+       * dereferenced. reg_it_valid == false is equivalent to reg_it_valid == true,
+       * reg_it == slice_it->begin().
+       */
+      bool reg_it_valid;
+
+      PhysReg operator*() {
+         if (!reg_it_valid) {
+            reg_it = slice_it->begin();
+            reg_it_valid = true;
+         }
+         return *reg_it;
+      }
+
+      iterator& operator++() {
+         if (!reg_it_valid) {
+            reg_it = slice_it->begin();
+            reg_it_valid = true;
+         }
+         if (++reg_it == slice_it->end()) {
+            ++slice_it;
+            reg_it_valid = false;
+         }
+         return *this;
+      }
+
+      iterator& operator--() {
+         if (reg_it == slice_it->begin() || !reg_it_valid) {
+            --slice_it;
+            reg_it = std::prev(slice_it->end());
+            reg_it_valid = true;
+         } else {
+            --reg_it;
+         }
+         return *this;
+      }
+
+      bool operator==(iterator oth) const {
+         if (slice_it != oth.slice_it)
+            return false;
+         if (!reg_it_valid)
+            return !oth.reg_it_valid || oth.reg_it == slice_it->begin();
+         if (!oth.reg_it_valid)
+            return !reg_it_valid || reg_it == slice_it->begin();
+         return reg_it == oth.reg_it;
+      }
+
+      bool operator!=(iterator oth) const { return !(*this == oth); }
+
+      bool operator<(iterator oth) const {
+         if (slice_it != oth.slice_it)
+            return slice_it < oth.slice_it;
+         if (!oth.reg_it_valid) {
+            /* We're in the same slice, and oth refers to the slice's first register.
+             * Our register has to be equal or greater.
+             */
+            return false;
+         }
+         if (!reg_it_valid) {
+            /* Replace reg_it with slice_it->begin() - since
+             * oth.reg_it_valid && slice_it == oth.slice_it, we know this is safe
+             */
+            return slice_it->begin() < oth.reg_it;
+         }
+         return reg_it < oth.reg_it;
+      }
+   };
+
+   constexpr unsigned size() const
+   {
+      unsigned ret = 0;
+      for (const auto& slice : slices)
+         ret += slice.size;
+      return ret;
+   }
+
+   constexpr RegisterDemand demand() const
+   {
+      RegisterDemand ret = RegisterDemand();
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256})
+            ret.vgpr += slice.size;
+         else
+            ret.sgpr += slice.size;
+      }
+      return ret;
+   }
+
+   constexpr void add(PhysReg lo, PhysReg hi) { add(lo, hi - lo); }
+
+   constexpr void add(PhysReg base, uint16_t size) { add(PhysRegInterval{base, size}); }
+
+   constexpr void add(PhysRegInterval interval)
+   {
+      unsigned lower_bound = 0, upper_bound = slices.size() - 1;
+
+      for (; lower_bound < slices.size() && interval.lo() >= slices[lower_bound].hi();
+           ++lower_bound) {}
+      if (lower_bound == slices.size()) {
+         slices.push_back(interval);
+         return;
+      }
+
+      for (; upper_bound < slices.size() && interval.hi() <= slices[upper_bound].lo();
+           --upper_bound) {}
+
+      if (upper_bound < lower_bound) {
+         slices.insert(std::next(slices.begin(), lower_bound), interval);
+         return;
+      }
+
+      for (unsigned i = lower_bound + 1; i < upper_bound; ++i)
+         slices.erase(std::next(slices.begin(), lower_bound + 1));
+
+      PhysReg lo = std::min(interval.lo(), slices[lower_bound].lo());
+      PhysReg hi = std::max(interval.hi(), slices[lower_bound].hi());
+
+      slices[lower_bound] = PhysRegInterval::from_until(lo, hi);
+
+      for (ASSERTED unsigned i = 1; i < slices.size(); ++i) {
+         assert(!intersects(slices[i - 1], slices[i]));
+      }
+   }
+
+   constexpr void remove(PhysReg base, uint16_t size) {
+      remove(PhysRegInterval{base, size});
+   }
+
+   constexpr void remove(PhysRegInterval interval) {
+      for (auto it = slices.begin(); it != slices.end();) {
+         auto& slice = *it;
+
+         if (!intersects(interval, slice)) {
+            ++it;
+            continue;
+         }
+
+         if (interval.contains(slice)) {
+            slices.erase(it);
+            continue;
+         }
+
+         if (!slice.contains(interval)) {
+            PhysReg lo, hi;
+            if (interval.lo() < slice.lo())
+               lo = std::max(interval.hi(), slice.lo());
+            else
+               lo = slice.lo();
+
+            if (interval.hi() > slice.hi())
+               hi = std::min(interval.lo(), slice.hi());
+            else
+                  hi = slice.hi();
+            slice = PhysRegInterval::from_until(lo, hi);
+            ++it;
+            continue;
+         }
+
+         PhysRegInterval low_split = PhysRegInterval::from_until(slice.lo(), interval.lo());
+         PhysRegInterval high_split = PhysRegInterval::from_until(interval.hi(), slice.hi());
+
+         if (!low_split.size) {
+            slice = high_split;
+            continue;
+         } else if (!high_split.size) {
+            slice = low_split;
+            continue;
+         }
+
+         slice = high_split;
+         unsigned index = std::distance(slices.begin(), it);
+         slices.insert(it, low_split);
+         it = std::next(slices.begin(), index + 2);
+      }
+   }
+
+   constexpr bool contains(PhysReg reg) {
+      for (const auto& slice : slices) {
+         if (slice.contains(reg))
+            return true;
+         if (slice.lo() > reg)
+            return false;
+      }
+      return false;
+   }
+
+   SparseRegisterSet invert(uint16_t max_sgpr, uint16_t max_vgpr) const
+   {
+      SparseRegisterSet inverse;
+
+      PhysReg max_sgpr_reg = PhysReg{max_sgpr};
+      PhysReg max_vgpr_reg = PhysReg{256u + max_vgpr};
+
+      PhysReg gpr_cursor = PhysReg{0};
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256} && gpr_cursor < PhysReg{256}) {
+            if (gpr_cursor < max_sgpr_reg)
+               inverse.add(gpr_cursor, max_sgpr_reg);
+            else
+               assert(gpr_cursor == max_sgpr_reg);
+            gpr_cursor = PhysReg{256};
+         }
+
+         if (slice.lo() > gpr_cursor)
+            inverse.add(gpr_cursor, slice.lo());
+         gpr_cursor = slice.hi();
+      }
+      if (gpr_cursor < max_sgpr_reg) {
+         inverse.add(gpr_cursor, max_sgpr_reg);
+         gpr_cursor = PhysReg{256};
+      }
+      if (gpr_cursor < max_vgpr_reg)
+         inverse.add(gpr_cursor, max_vgpr_reg);
+      else
+         assert(gpr_cursor == max_vgpr_reg);
+
+      return inverse;
+   }
+
+   constexpr uint16_t sgpr_bound() const {
+      uint16_t ret = 0;
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256u})
+            return ret;
+         ret = slice.hi().reg();
+      }
+      return ret;
+   }
+
+   constexpr uint16_t vgpr_bound() const {
+      uint16_t ret = 0;
+      for (const auto& slice : slices) {
+         if (slice.lo() < PhysReg{256u})
+            continue;
+         ret = slice.hi().reg();
+      }
+      return ret;
+   }
+
+   iterator begin() {
+      if (slices.empty())
+         return iterator{
+            .slice_it = slices.begin(),
+            .reg_it_valid = false
+         };
+      return iterator{
+         .slice_it = slices.begin(),
+         .reg_it = slices[0].begin(),
+      };
+   }
+
+   iterator end() {
+      return iterator{
+         .slice_it = slices.end(),
+         .reg_it_valid = false,
+      };
+   }
+};
+
+static constexpr ABI rtRaygenABI = {
+   .parameterSpace =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 32,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 32,
+            },
+      },
+   .clobberedRegs =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 108,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 256,
+            },
+      },
+   .clobbersVCC = true,
+   .clobbersSCC = true,
+};
+
+static constexpr ABI rtTraversalABI = {
+   .parameterSpace =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 32,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 32,
+            },
+      },
+   .clobberedRegs =
+      {
+         /* TODO: maybe find better values */
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 108,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 256,
+            },
+      },
+   .clobbersVCC = true,
+   .clobbersSCC = true,
+};
+
+static constexpr ABI rtAnyHitABI = {
+   .parameterSpace =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 32,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 32,
+            },
+      },
+   .clobberedRegs =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(80),
+               .size = 16,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256 + 80),
+               .size = 256 - 80,
+            },
+      },
+   .clobbersVCC = true,
+   .clobbersSCC = true,
+};
+
+static constexpr ABI rtClosestHitMissABI = {
+   .parameterSpace =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 32,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 32,
+            },
+      },
+   .clobberedRegs =
+      {
+         .sgpr =
+            {
+               .lo_ = PhysReg(0),
+               .size = 108,
+            },
+         .vgpr =
+            {
+               .lo_ = PhysReg(256),
+               .size = 256,
+            },
+      },
+   .clobbersVCC = true,
+   .clobbersSCC = true,
+};
+
 struct Block;
 struct Instruction;
 struct Pseudo_instruction;

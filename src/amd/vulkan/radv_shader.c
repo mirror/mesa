@@ -143,6 +143,15 @@ radv_can_dump_shader_stats(struct radv_device *device, nir_shader *nir)
    return instance->debug_flags & RADV_DEBUG_DUMP_SHADER_STATS && !is_meta_shader(nir);
 }
 
+nir_function_impl *
+radv_get_rt_shader_entrypoint(nir_shader *shader)
+{
+   nir_foreach_function_impl (impl, shader)
+      if (impl->function->is_entrypoint || impl->function->is_exported)
+         return impl;
+   return NULL;
+}
+
 void
 radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively)
 {

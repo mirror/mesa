@@ -511,6 +511,8 @@ struct radv_shader_stage;
 void radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively);
 void radv_optimize_nir_algebraic(nir_shader *shader, bool opt_offsets, bool opt_mqsad);
 
+nir_function_impl *radv_get_rt_shader_entrypoint(nir_shader *shader);
+
 void radv_nir_lower_rt_io(nir_shader *shader, bool monolithic, uint32_t payload_offset);
 
 struct radv_ray_tracing_stage_info;

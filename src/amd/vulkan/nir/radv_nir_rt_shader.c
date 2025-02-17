@@ -1610,7 +1610,7 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
       radv_build_end_trace_token(b, vars, original_tmax, nir_load_var(b, trav_vars.hit),
                                  nir_load_var(b, iteration_instance_count));
 
-   nir_metadata_preserve(nir_shader_get_entrypoint(b->shader), nir_metadata_none);
+   nir_metadata_preserve(radv_get_rt_shader_entrypoint(b->shader), nir_metadata_none);
    radv_nir_lower_hit_attrib_derefs(b->shader);
 
    /* Register storage for hit attributes */

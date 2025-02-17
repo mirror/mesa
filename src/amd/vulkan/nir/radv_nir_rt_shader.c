@@ -966,6 +966,10 @@ radv_lower_rt_instruction(nir_builder *b, nir_instr *instr, void *_data)
       nir_pop_if(b, NULL);
       break;
    }
+   case nir_intrinsic_load_sbt_base_amd: {
+      ret = nir_load_var(b, vars->sbt_descriptors);
+      break;
+   }
    case nir_intrinsic_load_sbt_offset_amd: {
       ret = nir_load_var(b, vars->sbt_offset);
       break;
@@ -2078,6 +2082,7 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
    nir_store_var(&b, vars.cull_mask_and_flags, nir_load_cull_mask_and_flags_amd(&b), 0x1);
    nir_store_var(&b, vars.origin, nir_load_ray_world_origin(&b), 0x7);
    nir_store_var(&b, vars.direction, nir_load_ray_world_direction(&b), 0x7);
+   nir_store_var(&b, vars.sbt_descriptors, nir_load_sbt_base_amd(&b), 0x1);
    nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
 
    radv_build_traversal(device, pipeline, pCreateInfo, false, &b, &vars, false, info);

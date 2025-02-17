@@ -2014,7 +2014,7 @@ vtn_handle_type(struct vtn_builder *b, SpvOp opcode,
          }
 
          val->type->type = nir_address_format_to_glsl_type(
-            vtn_mode_to_address_format(b, mode));
+            vtn_mode_to_address_format_abi(b, mode));
       } else {
          vtn_fail_if(val->type->storage_class != storage_class,
                      "The storage classes of an OpTypePointer and any "

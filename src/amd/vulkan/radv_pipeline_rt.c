@@ -318,7 +318,6 @@ should_move_rt_instruction(nir_intrinsic_instr *instr)
    switch (instr->intrinsic) {
    case nir_intrinsic_load_hit_attrib_amd:
       return nir_intrinsic_base(instr) < RADV_MAX_HIT_ATTRIB_DWORDS;
-   case nir_intrinsic_load_rt_arg_scratch_offset_amd:
    case nir_intrinsic_load_ray_flags:
    case nir_intrinsic_load_ray_object_origin:
    case nir_intrinsic_load_ray_world_origin:

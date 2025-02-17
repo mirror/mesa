@@ -488,10 +488,6 @@ radv_lower_rt_instruction(nir_builder *b, nir_instr *instr, void *_data)
          nir_src_rewrite(&intr->src[1], nir_iadd_nuw(b, nir_load_var(b, vars->stack_ptr), intr->src[1].ssa));
       return true;
    }
-   case nir_intrinsic_load_rt_arg_scratch_offset_amd: {
-      ret = nir_load_var(b, vars->arg);
-      break;
-   }
    case nir_intrinsic_load_shader_record_ptr: {
       ret = nir_load_var(b, vars->shader_record_ptr);
       break;
@@ -1086,12 +1082,6 @@ lower_any_hit_for_intersection(nir_shader *any_hit)
                b->cursor = nir_before_instr(instr);
                nir_src_rewrite(&intrin->src[1], nir_iadd_nuw(b, scratch_offset, intrin->src[1].ssa));
                break;
-            case nir_intrinsic_load_rt_arg_scratch_offset_amd:
-               b->cursor = nir_after_instr(instr);
-               nir_def *arg_offset = nir_isub(b, &intrin->def, scratch_offset);
-               nir_def_rewrite_uses_after(&intrin->def, arg_offset, arg_offset->parent_instr);
-               break;
-
             default:
                break;
             }
@@ -1732,7 +1722,6 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
    nir_store_var(&b, vars.cull_mask_and_flags, nir_load_cull_mask_and_flags_amd(&b), 0x1);
    nir_store_var(&b, vars.origin, nir_load_ray_world_origin(&b), 0x7);
    nir_store_var(&b, vars.direction, nir_load_ray_world_direction(&b), 0x7);
-   nir_store_var(&b, vars.arg, nir_load_rt_arg_scratch_offset_amd(&b), 0x1);
    nir_store_var(&b, vars.stack_ptr, nir_imm_int(&b, 0), 0x1);
 
    radv_build_traversal(device, pipeline, pCreateInfo, false, &b, &vars, false, info);

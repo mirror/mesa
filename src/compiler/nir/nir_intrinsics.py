@@ -1751,9 +1751,6 @@ intrinsic("bvh64_intersect_ray_amd", [4, 2, 1, 3, 3, 3], 4, flags=[CAN_ELIMINATE
 # Return of a callable in raytracing pipelines
 intrinsic("rt_return_amd")
 
-# offset into scratch for the input callable data in a raytracing pipeline.
-system_value("rt_arg_scratch_offset_amd", 1)
-
 # Whether to call the anyhit shader for an intersection in an intersection shader.
 system_value("intersection_opaque_amd", 1, bit_sizes=[1])
 

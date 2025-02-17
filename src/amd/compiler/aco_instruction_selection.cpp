@@ -10352,6 +10352,136 @@ visit_debug_info(isel_context* ctx, nir_instr_debug_info* instr_info)
 }
 
 void
+visit_call(isel_context* ctx, nir_call_instr* instr)
+{
+   Builder bld(ctx->program, ctx->block);
+
+   ABI abi;
+   /* TODO: callable abi? */
+   switch (instr->callee->driver_attributes & ACO_NIR_FUNCTION_ATTRIB_ABI_MASK) {
+   case ACO_NIR_CALL_ABI_RT_RECURSIVE: abi = rtRaygenABI; break;
+   case ACO_NIR_CALL_ABI_TRAVERSAL: abi = rtTraversalABI; break;
+   case ACO_NIR_CALL_ABI_AHIT_ISEC: abi = rtAnyHitABI; break;
+   default: unreachable("invalid abi");
+   }
+
+   unsigned sgpr_limit = get_addr_sgpr_from_waves(ctx->program, ctx->program->min_waves);
+   unsigned vgpr_limit = get_addr_vgpr_from_waves(ctx->program, ctx->program->min_waves);
+
+   struct callee_info info = get_callee_info(abi, instr->callee->num_params, instr->callee->params,
+                                             nullptr, RegisterDemand(vgpr_limit, sgpr_limit));
+   std::vector<parameter_info> return_infos;
+
+   Instruction* stack_instr;
+   Definition stack_ptr;
+   if (info.stack_ptr.is_reg) {
+      stack_instr = bld.pseudo(aco_opcode::p_callee_stack_ptr, bld.def(s1),
+                               Operand::c32(info.scratch_param_size),
+                               Operand(ctx->callee_info.stack_ptr.def.getTemp()));
+      stack_ptr = ctx->callee_info.stack_ptr.def;
+   } else {
+      stack_instr = bld.pseudo(aco_opcode::p_callee_stack_ptr, bld.def(s1),
+                               Operand::c32(info.scratch_param_size));
+      stack_ptr = bld.pseudo(aco_opcode::p_parallelcopy, bld.def(s1), Operand::c32(0)).def(0);
+   }
+
+   for (unsigned i = 0; i < info.param_infos.size(); ++i) {
+      if (info.param_infos[i].is_reg)
+         continue;
+
+      store_scratch_param(ctx, bld, info.param_infos[i], stack_instr->definitions[0].getTemp(),
+                          info.scratch_param_size, get_ssa_temp(ctx, instr->params[i].ssa));
+   }
+
+   unsigned extra_def_count = 2;
+
+   Temp vcc_backup;
+   if (ctx->program->dev.sgpr_limit <= vcc_hi.reg()) {
+      vcc_backup = bld.copy(bld.def(bld.lm), Operand(vcc, bld.lm));
+      --extra_def_count;
+   }
+
+   unsigned extra_param_count = 2;
+   if (ctx->program->gfx_level < GFX9)
+      ++extra_param_count;
+
+   unsigned param_size = info.scratch_param_size;
+   if (ctx->program->gfx_level < GFX9)
+      param_size *= ctx->program->wave_size;
+
+   assert(info.param_infos[0].is_reg);
+   Instruction* call_instr = create_instruction(aco_opcode::p_call, Format::PSEUDO_CALL,
+                                                info.reg_param_count + extra_param_count,
+                                                info.reg_return_param_count + extra_def_count);
+   call_instr->call().abi = abi;
+   call_instr->operands[0] = Operand(stack_ptr.getTemp(), info.stack_ptr.def.physReg());
+   call_instr->operands[1] = Operand::c32(param_size);
+   if (ctx->program->gfx_level < GFX9) {
+      call_instr->operands[info.reg_param_count + extra_param_count] =
+         Operand(load_scratch_resource(ctx->program, bld, true, false));
+      call_instr->operands[info.reg_param_count + extra_param_count].setLateKill(true);
+   }
+
+   unsigned reg_param_idx = 0;
+   unsigned reg_return_param_idx = 0;
+   for (unsigned i = 0; i < info.param_infos.size(); ++i) {
+      if (!info.param_infos[i].is_reg) {
+         if (instr->callee->params[i].is_return) {
+            return_infos.emplace_back(parameter_info{
+               .is_reg = false,
+               .scratch_offset = info.param_infos[i].scratch_offset,
+            });
+         }
+         continue;
+      }
+
+      if (instr->callee->params[i].is_uniform)
+         call_instr->operands[reg_param_idx + extra_param_count] =
+            Operand(get_ssa_temp(ctx, instr->params[i].ssa));
+      else
+         call_instr->operands[reg_param_idx + extra_param_count] =
+            Operand(as_vgpr(ctx, get_ssa_temp(ctx, instr->params[i].ssa)));
+
+      if (instr->callee->params[i].is_return) {
+         assert(!instr->callee->params[i].is_uniform);
+         Definition def =
+            bld.def(RegClass(RegType::vgpr, DIV_ROUND_UP(instr->callee->params[i].bit_size, 32)),
+                    info.param_infos[i].def.physReg());
+         call_instr->definitions[extra_def_count + reg_return_param_idx++] = def;
+         return_infos.emplace_back(parameter_info{
+            .is_reg = true,
+            .def = def,
+         });
+      }
+
+      call_instr->operands[reg_param_idx + extra_param_count].setPrecolored(
+         info.param_infos[i].def.physReg());
+
+      if ((instr->callee->params[i].driver_attributes & ACO_NIR_PARAM_ATTRIB_DISCARDABLE) ||
+          instr->callee->params[i].is_return)
+         call_instr->operands[reg_param_idx + extra_param_count].setClobbered(true);
+      ++reg_param_idx;
+   }
+
+   call_instr->definitions[0] = Definition(bld.tmp(s2), info.return_address.def.physReg());
+   if (ctx->program->dev.sgpr_limit <= vcc_hi.reg())
+      bld.copy(bld.def(bld.lm, vcc), Operand(vcc_backup));
+   else
+      call_instr->definitions[1] = bld.def(s2, vcc);
+
+   ctx->block->instructions.emplace_back(static_cast<Instruction*>(call_instr));
+
+   ctx->call_infos.emplace_back(call_info{
+      .nir_instr = instr,
+      .aco_instr = call_instr,
+      .return_info = std::move(return_infos),
+      .scratch_param_size = info.scratch_param_size,
+   });
+   ctx->block->contains_call = true;
+   ctx->program->has_call = true;
+}
+
+void
 visit_block(isel_context* ctx, nir_block* block)
 {
    if (ctx->block->kind & block_kind_top_level) {
@@ -10383,6 +10513,7 @@ visit_block(isel_context* ctx, nir_block* block)
       case nir_instr_type_undef: visit_undef(ctx, nir_instr_as_undef(instr)); break;
       case nir_instr_type_deref: break;
       case nir_instr_type_jump: visit_jump(ctx, nir_instr_as_jump(instr)); break;
+      case nir_instr_type_call: visit_call(ctx, nir_instr_as_call(instr)); break;
       default: isel_err(instr, "Unknown NIR instr type");
       }
    }

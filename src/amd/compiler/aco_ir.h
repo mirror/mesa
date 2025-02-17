@@ -2467,6 +2467,7 @@ struct Block {
    uint16_t divergent_if_logical_depth = 0;
    uint16_t uniform_if_depth = 0;
 
+   bool contains_call = true;
    Block() : index(0) {}
 };
 
@@ -2640,6 +2641,7 @@ public:
    bool should_repair_ssa = false;
 
    bool is_callee = false;
+   bool has_call = false;
    ABI callee_abi = {};
    RegisterDemand callee_param_demand = RegisterDemand();
    unsigned short arg_sgpr_count;

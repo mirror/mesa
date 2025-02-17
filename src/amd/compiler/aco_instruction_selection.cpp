@@ -11,6 +11,7 @@
 #include "aco_interface.h"
 #include "aco_ir.h"
 #include "aco_nir_call_attribs.h"
+#include "aco_scratch_rsrc.h"
 
 #include "common/ac_descriptors.h"
 #include "common/ac_gpu_info.h"
@@ -7378,41 +7379,6 @@ visit_access_shared2_amd(isel_context* ctx, nir_intrinsic_instr* instr)
    }
 }
 
-Temp
-get_scratch_resource(isel_context* ctx)
-{
-   Builder bld(ctx->program, ctx->block);
-   Temp scratch_addr = ctx->program->private_segment_buffer;
-   if (!scratch_addr.bytes()) {
-      Temp addr_lo =
-         bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_lo));
-      Temp addr_hi =
-         bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_hi));
-      scratch_addr = bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
-   } else if (ctx->stage.hw != AC_HW_COMPUTE_SHADER) {
-      scratch_addr =
-         bld.smem(aco_opcode::s_load_dwordx2, bld.def(s2), scratch_addr, Operand::zero());
-   }
-
-   struct ac_buffer_state ac_state = {0};
-   uint32_t desc[4];
-
-   ac_state.size = 0xffffffff;
-   ac_state.format = PIPE_FORMAT_R32_FLOAT;
-   for (int i = 0; i < 4; i++)
-      ac_state.swizzle[i] = PIPE_SWIZZLE_0;
-   /* older generations need element size = 4 bytes. element size removed in GFX9 */
-   ac_state.element_size = ctx->program->gfx_level <= GFX8 ? 1u : 0u;
-   ac_state.index_stride = ctx->program->wave_size == 64 ? 3u : 2u;
-   ac_state.add_tid = true;
-   ac_state.gfx10_oob_select = V_008F0C_OOB_SELECT_RAW;
-
-   ac_build_buffer_descriptor(ctx->program->gfx_level, &ac_state, desc);
-
-   return bld.pseudo(aco_opcode::p_create_vector, bld.def(s4), scratch_addr, Operand::c32(desc[2]),
-                     Operand::c32(desc[3]));
-}
-
 void
 visit_load_scratch(isel_context* ctx, nir_intrinsic_instr* instr)
 {
@@ -7455,7 +7421,7 @@ visit_load_scratch(isel_context* ctx, nir_intrinsic_instr* instr)
       params.max_const_offset_plus_one = ctx->program->dev.scratch_global_offset_max + 1;
       emit_load(ctx, bld, info, params);
    } else {
-      info.resource = get_scratch_resource(ctx);
+      info.resource = load_scratch_resource(ctx->program, bld, false, true);
       info.offset = Operand(as_vgpr(ctx, get_ssa_temp(ctx, instr->src[0].ssa)));
       info.soffset = ctx->program->scratch_offset;
       emit_load(ctx, bld, info, scratch_mubuf_load_params);
@@ -7518,7 +7484,7 @@ visit_store_scratch(isel_context* ctx, nir_intrinsic_instr* instr)
                      memory_sync_info(storage_scratch, semantic_private));
       }
    } else {
-      Temp rsrc = get_scratch_resource(ctx);
+      Temp rsrc = load_scratch_resource(ctx->program, bld, false, true);
       offset = as_vgpr(ctx, offset);
       for (unsigned i = 0; i < write_count; i++) {
          aco_opcode op = get_buffer_store_op(write_datas[i].bytes());

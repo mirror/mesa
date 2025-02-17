@@ -447,6 +447,90 @@ static constexpr PhysReg exec_hi{127};
 static constexpr PhysReg pops_exiting_wave_id{239}; /* GFX9-GFX10.3 */
 static constexpr PhysReg scc{253};
 
+/* Iterator type for making PhysRegInterval compatible with range-based for */
+struct PhysRegIterator {
+   using difference_type = int;
+   using value_type = unsigned;
+   using reference = const unsigned&;
+   using pointer = const unsigned*;
+   using iterator_category = std::bidirectional_iterator_tag;
+
+   PhysReg reg;
+
+   PhysReg operator*() const { return reg; }
+
+   PhysRegIterator& operator++()
+   {
+      reg.reg_b += 4;
+      return *this;
+   }
+
+   PhysRegIterator& operator--()
+   {
+      reg.reg_b -= 4;
+      return *this;
+   }
+
+   bool operator==(PhysRegIterator oth) const { return reg == oth.reg; }
+
+   bool operator!=(PhysRegIterator oth) const { return reg != oth.reg; }
+
+   bool operator<(PhysRegIterator oth) const { return reg < oth.reg; }
+};
+
+/* Half-open register interval used in "sliding window"-style for-loops */
+struct PhysRegInterval {
+   PhysReg lo_;
+   unsigned size;
+
+   /* Inclusive lower bound */
+   constexpr PhysReg lo() const { return lo_; }
+
+   /* Exclusive upper bound */
+   constexpr PhysReg hi() const { return PhysReg{lo() + size}; }
+
+   PhysRegInterval& operator+=(uint32_t stride)
+   {
+      lo_ = PhysReg{lo_.reg() + stride};
+      return *this;
+   }
+
+   bool operator!=(const PhysRegInterval& oth) const { return lo_ != oth.lo_ || size != oth.size; }
+
+   /* Construct a half-open interval, excluding the end register */
+   static PhysRegInterval from_until(PhysReg first, PhysReg end) { return {first, end - first}; }
+
+   bool contains(PhysReg reg) const { return lo() <= reg && reg < hi(); }
+
+   bool contains(const PhysRegInterval& needle) const
+   {
+      return needle.lo() >= lo() && needle.hi() <= hi();
+   }
+
+   PhysRegIterator begin() const { return {lo_}; }
+
+   PhysRegIterator end() const { return {PhysReg{lo_ + size}}; }
+};
+
+inline bool
+intersects(const PhysRegInterval& a, const PhysRegInterval& b)
+{
+   return a.hi() > b.lo() && b.hi() > a.lo();
+}
+
+struct GPRInterval {
+   PhysRegInterval sgpr;
+   PhysRegInterval vgpr;
+};
+
+struct ABI {
+   GPRInterval parameterSpace;
+   GPRInterval clobberedRegs;
+
+   bool clobbersVCC;
+   bool clobbersSCC;
+};
+
 /**
  * Operand Class
  * Initially, each Operand refers to either

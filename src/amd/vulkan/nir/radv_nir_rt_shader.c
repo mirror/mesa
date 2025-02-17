@@ -17,6 +17,8 @@
 #include "radv_pipeline_rt.h"
 #include "radv_shader.h"
 
+#include "aco_nir_call_attribs.h"
+
 #include "vk_pipeline.h"
 
 /* Traversal stack size. This stack is put in LDS and experimentally 16 entries results in best
@@ -165,6 +167,243 @@ lower_rt_derefs(nir_shader *shader)
    return progress;
 }
 
+static void
+radv_nir_init_rt_function_params(nir_function *function, gl_shader_stage stage, unsigned payload_size)
+{
+   unsigned payload_base = -1u;
+
+   switch (stage) {
+   case MESA_SHADER_RAYGEN:
+      function->num_params = RAYGEN_ARG_COUNT;
+      function->params = rzalloc_array_size(function->shader, sizeof(nir_parameter), function->num_params);
+      function->params[RAYGEN_ARG_LAUNCH_ID].num_components = 3;
+      function->params[RAYGEN_ARG_LAUNCH_ID].bit_size = 32;
+      function->params[RAYGEN_ARG_LAUNCH_ID].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].num_components = 3;
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].bit_size = 32;
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].is_uniform = true;
+      function->params[RAYGEN_ARG_DESCRIPTORS].num_components = 1;
+      function->params[RAYGEN_ARG_DESCRIPTORS].bit_size = 32;
+      function->params[RAYGEN_ARG_DESCRIPTORS].type = glsl_uint_type();
+      function->params[RAYGEN_ARG_DESCRIPTORS].is_uniform = true;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].num_components = 1;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].bit_size = 32;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].type = glsl_uint_type();
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].is_uniform = true;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].num_components = 1;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].bit_size = 64;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].type = glsl_uint64_t_type();
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].is_uniform = true;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].num_components = 1;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].bit_size = 64;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].type = glsl_uint64_t_type();
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].is_uniform = true;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].num_components = 1;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].bit_size = 64;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].type = glsl_uint64_t_type();
+      function->driver_attributes = ACO_NIR_CALL_ABI_RT_RECURSIVE | ACO_NIR_FUNCTION_ATTRIB_NORETURN;
+      break;
+   case MESA_SHADER_CALLABLE:
+      function->num_params = RAYGEN_ARG_COUNT + DIV_ROUND_UP(payload_size, 4);
+      function->params = rzalloc_array_size(function->shader, sizeof(nir_parameter), function->num_params);
+      function->params[RAYGEN_ARG_LAUNCH_ID].num_components = 3;
+      function->params[RAYGEN_ARG_LAUNCH_ID].bit_size = 32;
+      function->params[RAYGEN_ARG_LAUNCH_ID].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].num_components = 3;
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].bit_size = 32;
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[RAYGEN_ARG_LAUNCH_SIZE].is_uniform = true;
+      function->params[RAYGEN_ARG_DESCRIPTORS].num_components = 1;
+      function->params[RAYGEN_ARG_DESCRIPTORS].bit_size = 32;
+      function->params[RAYGEN_ARG_DESCRIPTORS].type = glsl_uint_type();
+      function->params[RAYGEN_ARG_DESCRIPTORS].is_uniform = true;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].num_components = 1;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].bit_size = 32;
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].type = glsl_uint_type();
+      function->params[RAYGEN_ARG_PUSH_CONSTANTS].is_uniform = true;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].num_components = 1;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].bit_size = 64;
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].type = glsl_uint64_t_type();
+      function->params[RAYGEN_ARG_SBT_DESCRIPTORS].is_uniform = true;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].num_components = 1;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].bit_size = 64;
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].type = glsl_uint64_t_type();
+      function->params[RAYGEN_ARG_TRAVERSAL_ADDR].is_uniform = true;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].num_components = 1;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].bit_size = 64;
+      function->params[RAYGEN_ARG_SHADER_RECORD_PTR].type = glsl_uint64_t_type();
+
+      function->driver_attributes = ACO_NIR_CALL_ABI_RT_RECURSIVE | ACO_NIR_FUNCTION_ATTRIB_DIVERGENT_CALL;
+      payload_base = RAYGEN_ARG_COUNT;
+      break;
+   case MESA_SHADER_INTERSECTION:
+      function->num_params = TRAVERSAL_ARG_PAYLOAD_BASE + DIV_ROUND_UP(payload_size, 4);
+      function->params = rzalloc_array_size(function->shader, sizeof(nir_parameter), function->num_params);
+      function->params[TRAVERSAL_ARG_LAUNCH_ID].num_components = 3;
+      function->params[TRAVERSAL_ARG_LAUNCH_ID].bit_size = 32;
+      function->params[TRAVERSAL_ARG_LAUNCH_ID].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[TRAVERSAL_ARG_LAUNCH_SIZE].num_components = 3;
+      function->params[TRAVERSAL_ARG_LAUNCH_SIZE].bit_size = 32;
+      function->params[TRAVERSAL_ARG_LAUNCH_SIZE].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[TRAVERSAL_ARG_LAUNCH_SIZE].is_uniform = true;
+      function->params[TRAVERSAL_ARG_DESCRIPTORS].num_components = 1;
+      function->params[TRAVERSAL_ARG_DESCRIPTORS].bit_size = 32;
+      function->params[TRAVERSAL_ARG_DESCRIPTORS].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_DESCRIPTORS].is_uniform = true;
+      function->params[TRAVERSAL_ARG_PUSH_CONSTANTS].num_components = 1;
+      function->params[TRAVERSAL_ARG_PUSH_CONSTANTS].bit_size = 32;
+      function->params[TRAVERSAL_ARG_PUSH_CONSTANTS].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_PUSH_CONSTANTS].is_uniform = true;
+      function->params[TRAVERSAL_ARG_SBT_DESCRIPTORS].num_components = 1;
+      function->params[TRAVERSAL_ARG_SBT_DESCRIPTORS].bit_size = 64;
+      function->params[TRAVERSAL_ARG_SBT_DESCRIPTORS].type = glsl_uint64_t_type();
+      function->params[TRAVERSAL_ARG_SBT_DESCRIPTORS].is_uniform = true;
+      function->params[TRAVERSAL_ARG_TRAVERSAL_ADDR].num_components = 1;
+      function->params[TRAVERSAL_ARG_TRAVERSAL_ADDR].bit_size = 64;
+      function->params[TRAVERSAL_ARG_TRAVERSAL_ADDR].type = glsl_uint64_t_type();
+      function->params[TRAVERSAL_ARG_TRAVERSAL_ADDR].is_uniform = true;
+      function->params[TRAVERSAL_ARG_SHADER_RECORD_PTR].num_components = 1;
+      function->params[TRAVERSAL_ARG_SHADER_RECORD_PTR].bit_size = 64;
+      function->params[TRAVERSAL_ARG_SHADER_RECORD_PTR].type = glsl_uint64_t_type();
+      function->params[TRAVERSAL_ARG_ACCEL_STRUCT].num_components = 1;
+      function->params[TRAVERSAL_ARG_ACCEL_STRUCT].bit_size = 64;
+      function->params[TRAVERSAL_ARG_ACCEL_STRUCT].type = glsl_uint64_t_type();
+      function->params[TRAVERSAL_ARG_CULL_MASK_AND_FLAGS].num_components = 1;
+      function->params[TRAVERSAL_ARG_CULL_MASK_AND_FLAGS].bit_size = 32;
+      function->params[TRAVERSAL_ARG_CULL_MASK_AND_FLAGS].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_SBT_OFFSET].num_components = 1;
+      function->params[TRAVERSAL_ARG_SBT_OFFSET].bit_size = 32;
+      function->params[TRAVERSAL_ARG_SBT_OFFSET].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_SBT_STRIDE].num_components = 1;
+      function->params[TRAVERSAL_ARG_SBT_STRIDE].bit_size = 32;
+      function->params[TRAVERSAL_ARG_SBT_STRIDE].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_MISS_INDEX].num_components = 1;
+      function->params[TRAVERSAL_ARG_MISS_INDEX].bit_size = 32;
+      function->params[TRAVERSAL_ARG_MISS_INDEX].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_RAY_ORIGIN].num_components = 3;
+      function->params[TRAVERSAL_ARG_RAY_ORIGIN].bit_size = 32;
+      function->params[TRAVERSAL_ARG_RAY_ORIGIN].type = glsl_vector_type(GLSL_TYPE_FLOAT, 3);
+      function->params[TRAVERSAL_ARG_RAY_TMIN].num_components = 1;
+      function->params[TRAVERSAL_ARG_RAY_TMIN].bit_size = 32;
+      function->params[TRAVERSAL_ARG_RAY_TMIN].type = glsl_float_type();
+      function->params[TRAVERSAL_ARG_RAY_DIRECTION].num_components = 3;
+      function->params[TRAVERSAL_ARG_RAY_DIRECTION].bit_size = 32;
+      function->params[TRAVERSAL_ARG_RAY_DIRECTION].type = glsl_vector_type(GLSL_TYPE_FLOAT, 3);
+      function->params[TRAVERSAL_ARG_RAY_TMAX].num_components = 1;
+      function->params[TRAVERSAL_ARG_RAY_TMAX].bit_size = 32;
+      function->params[TRAVERSAL_ARG_RAY_TMAX].type = glsl_float_type();
+      function->params[TRAVERSAL_ARG_PRIMITIVE_ID].num_components = 1;
+      function->params[TRAVERSAL_ARG_PRIMITIVE_ID].bit_size = 32;
+      function->params[TRAVERSAL_ARG_PRIMITIVE_ID].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_INSTANCE_ADDR].num_components = 1;
+      function->params[TRAVERSAL_ARG_INSTANCE_ADDR].bit_size = 64;
+      function->params[TRAVERSAL_ARG_INSTANCE_ADDR].type = glsl_uint64_t_type();
+      function->params[TRAVERSAL_ARG_GEOMETRY_ID_AND_FLAGS].num_components = 1;
+      function->params[TRAVERSAL_ARG_GEOMETRY_ID_AND_FLAGS].bit_size = 32;
+      function->params[TRAVERSAL_ARG_GEOMETRY_ID_AND_FLAGS].type = glsl_uint_type();
+      function->params[TRAVERSAL_ARG_HIT_KIND].num_components = 1;
+      function->params[TRAVERSAL_ARG_HIT_KIND].bit_size = 32;
+      function->params[TRAVERSAL_ARG_HIT_KIND].type = glsl_uint_type();
+
+      function->driver_attributes = ACO_NIR_CALL_ABI_TRAVERSAL;
+      payload_base = TRAVERSAL_ARG_PAYLOAD_BASE;
+      break;
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+      function->num_params = CHIT_MISS_ARG_PAYLOAD_BASE + DIV_ROUND_UP(payload_size, 4);
+      function->params = rzalloc_array_size(function->shader, sizeof(nir_parameter), function->num_params);
+      function->params[CHIT_MISS_ARG_LAUNCH_ID].num_components = 3;
+      function->params[CHIT_MISS_ARG_LAUNCH_ID].bit_size = 32;
+      function->params[CHIT_MISS_ARG_LAUNCH_ID].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[CHIT_MISS_ARG_LAUNCH_SIZE].num_components = 3;
+      function->params[CHIT_MISS_ARG_LAUNCH_SIZE].bit_size = 32;
+      function->params[CHIT_MISS_ARG_LAUNCH_SIZE].type = glsl_vector_type(GLSL_TYPE_UINT, 3);
+      function->params[CHIT_MISS_ARG_LAUNCH_SIZE].is_uniform = true;
+      function->params[CHIT_MISS_ARG_DESCRIPTORS].num_components = 1;
+      function->params[CHIT_MISS_ARG_DESCRIPTORS].bit_size = 32;
+      function->params[CHIT_MISS_ARG_DESCRIPTORS].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_DESCRIPTORS].is_uniform = true;
+      function->params[CHIT_MISS_ARG_PUSH_CONSTANTS].num_components = 1;
+      function->params[CHIT_MISS_ARG_PUSH_CONSTANTS].bit_size = 32;
+      function->params[CHIT_MISS_ARG_PUSH_CONSTANTS].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_PUSH_CONSTANTS].is_uniform = true;
+      function->params[CHIT_MISS_ARG_SBT_DESCRIPTORS].num_components = 1;
+      function->params[CHIT_MISS_ARG_SBT_DESCRIPTORS].bit_size = 64;
+      function->params[CHIT_MISS_ARG_SBT_DESCRIPTORS].type = glsl_uint64_t_type();
+      function->params[CHIT_MISS_ARG_SBT_DESCRIPTORS].is_uniform = true;
+      function->params[CHIT_MISS_ARG_TRAVERSAL_ADDR].num_components = 1;
+      function->params[CHIT_MISS_ARG_TRAVERSAL_ADDR].bit_size = 64;
+      function->params[CHIT_MISS_ARG_TRAVERSAL_ADDR].type = glsl_uint64_t_type();
+      function->params[CHIT_MISS_ARG_TRAVERSAL_ADDR].is_uniform = true;
+      function->params[CHIT_MISS_ARG_SHADER_RECORD_PTR].num_components = 1;
+      function->params[CHIT_MISS_ARG_SHADER_RECORD_PTR].bit_size = 64;
+      function->params[CHIT_MISS_ARG_SHADER_RECORD_PTR].type = glsl_uint64_t_type();
+      function->params[CHIT_MISS_ARG_ACCEL_STRUCT].num_components = 1;
+      function->params[CHIT_MISS_ARG_ACCEL_STRUCT].bit_size = 64;
+      function->params[CHIT_MISS_ARG_ACCEL_STRUCT].driver_attributes = ACO_NIR_PARAM_ATTRIB_DISCARDABLE;
+      function->params[CHIT_MISS_ARG_ACCEL_STRUCT].type = glsl_uint64_t_type();
+      function->params[CHIT_MISS_ARG_CULL_MASK_AND_FLAGS].num_components = 1;
+      function->params[CHIT_MISS_ARG_CULL_MASK_AND_FLAGS].bit_size = 32;
+      function->params[CHIT_MISS_ARG_CULL_MASK_AND_FLAGS].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_SBT_OFFSET].num_components = 1;
+      function->params[CHIT_MISS_ARG_SBT_OFFSET].bit_size = 32;
+      function->params[CHIT_MISS_ARG_SBT_OFFSET].driver_attributes = ACO_NIR_PARAM_ATTRIB_DISCARDABLE;
+      function->params[CHIT_MISS_ARG_SBT_OFFSET].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_SBT_STRIDE].num_components = 1;
+      function->params[CHIT_MISS_ARG_SBT_STRIDE].bit_size = 32;
+      function->params[CHIT_MISS_ARG_SBT_STRIDE].driver_attributes = ACO_NIR_PARAM_ATTRIB_DISCARDABLE;
+      function->params[CHIT_MISS_ARG_SBT_STRIDE].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_MISS_INDEX].num_components = 1;
+      function->params[CHIT_MISS_ARG_MISS_INDEX].bit_size = 32;
+      function->params[CHIT_MISS_ARG_MISS_INDEX].driver_attributes = ACO_NIR_PARAM_ATTRIB_DISCARDABLE;
+      function->params[CHIT_MISS_ARG_MISS_INDEX].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_RAY_ORIGIN].num_components = 3;
+      function->params[CHIT_MISS_ARG_RAY_ORIGIN].bit_size = 32;
+      function->params[CHIT_MISS_ARG_RAY_ORIGIN].type = glsl_vector_type(GLSL_TYPE_FLOAT, 3);
+      function->params[CHIT_MISS_ARG_RAY_TMIN].num_components = 1;
+      function->params[CHIT_MISS_ARG_RAY_TMIN].bit_size = 32;
+      function->params[CHIT_MISS_ARG_RAY_TMIN].type = glsl_float_type();
+      function->params[CHIT_MISS_ARG_RAY_DIRECTION].num_components = 3;
+      function->params[CHIT_MISS_ARG_RAY_DIRECTION].bit_size = 32;
+      function->params[CHIT_MISS_ARG_RAY_DIRECTION].type = glsl_vector_type(GLSL_TYPE_FLOAT, 3);
+      function->params[CHIT_MISS_ARG_RAY_TMAX].num_components = 1;
+      function->params[CHIT_MISS_ARG_RAY_TMAX].bit_size = 32;
+      function->params[CHIT_MISS_ARG_RAY_TMAX].type = glsl_float_type();
+      function->params[CHIT_MISS_ARG_PRIMITIVE_ID].num_components = 1;
+      function->params[CHIT_MISS_ARG_PRIMITIVE_ID].bit_size = 32;
+      function->params[CHIT_MISS_ARG_PRIMITIVE_ID].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_INSTANCE_ADDR].num_components = 1;
+      function->params[CHIT_MISS_ARG_INSTANCE_ADDR].bit_size = 64;
+      function->params[CHIT_MISS_ARG_INSTANCE_ADDR].type = glsl_uint64_t_type();
+      function->params[CHIT_MISS_ARG_GEOMETRY_ID_AND_FLAGS].num_components = 1;
+      function->params[CHIT_MISS_ARG_GEOMETRY_ID_AND_FLAGS].bit_size = 32;
+      function->params[CHIT_MISS_ARG_GEOMETRY_ID_AND_FLAGS].type = glsl_uint_type();
+      function->params[CHIT_MISS_ARG_HIT_KIND].num_components = 1;
+      function->params[CHIT_MISS_ARG_HIT_KIND].bit_size = 32;
+      function->params[CHIT_MISS_ARG_HIT_KIND].type = glsl_uint_type();
+
+      function->driver_attributes = ACO_NIR_CALL_ABI_RT_RECURSIVE | ACO_NIR_FUNCTION_ATTRIB_DIVERGENT_CALL;
+      payload_base = CHIT_MISS_ARG_PAYLOAD_BASE;
+      break;
+   default:
+      unreachable("invalid RT stage");
+   }
+
+   if (payload_base != -1u) {
+      for (unsigned i = 0; i < DIV_ROUND_UP(payload_size, 4); ++i) {
+         function->params[payload_base + i].num_components = 1;
+         function->params[payload_base + i].bit_size = 32;
+         function->params[payload_base + i].is_return = true;
+         function->params[payload_base + i].type = glsl_uint_type();
+      }
+   }
+
+   /* Entrypoints can't have parameters. Consider RT stages as callable functions */
+   function->is_exported = true;
+   function->is_entrypoint = false;
+}
+
 /*
  * Global variables for an RT pipeline
  */
@@ -180,6 +419,8 @@ struct rt_variables {
    nir_variable *idx;
    nir_variable *shader_addr;
    nir_variable *traversal_addr;
+
+   nir_variable *sbt_descriptors;
 
    /* scratch offset of the argument area relative to stack_ptr */
    nir_variable *arg;
@@ -218,11 +459,19 @@ struct rt_variables {
    nir_variable *ahit_terminate;
    nir_variable *terminated;
 
+   nir_variable **out_payload_storage;
+   unsigned payload_size;
+
+   nir_function *trace_ray_func;
+   nir_function *chit_miss_func;
+   nir_function *callable_func;
+
    unsigned stack_size;
 };
 
 static struct rt_variables
-create_rt_variables(nir_shader *shader, struct radv_device *device, const VkPipelineCreateFlags2 flags, bool monolithic)
+create_rt_variables(nir_shader *shader, struct radv_device *device, const VkPipelineCreateFlags2 flags,
+                    unsigned max_payload_size, bool monolithic)
 {
    struct rt_variables vars = {
       .device = device,
@@ -235,6 +484,8 @@ create_rt_variables(nir_shader *shader, struct radv_device *device, const VkPipe
    vars.arg = nir_variable_create(shader, nir_var_shader_temp, glsl_uint_type(), "arg");
    vars.stack_ptr = nir_variable_create(shader, nir_var_shader_temp, glsl_uint_type(), "stack_ptr");
    vars.shader_record_ptr = nir_variable_create(shader, nir_var_shader_temp, glsl_uint64_t_type(), "shader_record_ptr");
+
+   vars.sbt_descriptors = nir_variable_create(shader, nir_var_shader_temp, glsl_uint64_t_type(), "sbt_descriptors");
 
    vars.launch_sizes[0] = nir_variable_create(shader, nir_var_shader_temp, glsl_uint_type(), "launch_size_x");
    vars.launch_sizes[1] = nir_variable_create(shader, nir_var_shader_temp, glsl_uint_type(), "launch_size_y");
@@ -269,6 +520,23 @@ create_rt_variables(nir_shader *shader, struct radv_device *device, const VkPipe
    vars.ahit_terminate = nir_variable_create(shader, nir_var_shader_temp, glsl_bool_type(), "ahit_terminate");
    vars.terminated = nir_variable_create(shader, nir_var_shader_temp, glsl_bool_type(), "terminated");
 
+   if (max_payload_size)
+      vars.out_payload_storage = rzalloc_array_size(shader, DIV_ROUND_UP(max_payload_size, 4), sizeof(nir_variable *));
+   vars.payload_size = max_payload_size;
+   for (unsigned i = 0; i < DIV_ROUND_UP(max_payload_size, 4); ++i) {
+      vars.out_payload_storage[i] =
+         nir_variable_create(shader, nir_var_shader_temp, glsl_uint_type(), "out_payload_storage");
+   }
+
+   nir_function *trace_ray_func = nir_function_create(shader, "trace_ray_func");
+   radv_nir_init_function_params(trace_ray_func, MESA_SHADER_INTERSECTION, max_payload_size);
+   vars.trace_ray_func = trace_ray_func;
+   nir_function *chit_miss_func = nir_function_create(shader, "chit_miss_func");
+   radv_nir_init_function_params(chit_miss_func, MESA_SHADER_CLOSEST_HIT, max_payload_size);
+   vars.chit_miss_func = chit_miss_func;
+   nir_function *callable_func = nir_function_create(shader, "callable_func");
+   radv_nir_init_function_params(callable_func, MESA_SHADER_CALLABLE, max_payload_size);
+   vars.callable_func = callable_func;
    return vars;
 }
 
@@ -850,7 +1118,8 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
 
    nir_opt_dead_cf(shader);
 
-   struct rt_variables src_vars = create_rt_variables(shader, vars->device, vars->flags, vars->monolithic);
+   struct rt_variables src_vars =
+      create_rt_variables(shader, vars->device, vars->flags, vars->payload_size, vars->monolithic);
    map_rt_variables(var_remap, &src_vars, vars);
 
    NIR_PASS_V(shader, lower_rt_instructions, &src_vars, false, NULL);
@@ -1723,7 +1992,7 @@ radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_
    b.shader->info.workgroup_size[0] = 8;
    b.shader->info.workgroup_size[1] = pdev->rt_wave_size == 64 ? 8 : 4;
    b.shader->info.shared_size = pdev->rt_wave_size * MAX_STACK_ENTRY_COUNT * sizeof(uint32_t);
-   struct rt_variables vars = create_rt_variables(b.shader, device, create_flags, false);
+   struct rt_variables vars = create_rt_variables(b.shader, device, create_flags, false, 0);
 
    if (info->tmin.state == RADV_RT_CONST_ARG_STATE_VALID)
       nir_store_var(&b, vars.tmin, nir_imm_int(&b, info->tmin.value), 0x1);
@@ -1907,7 +2176,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
 
    const VkPipelineCreateFlagBits2 create_flags = vk_rt_pipeline_create_flags(pCreateInfo);
 
-   struct rt_variables vars = create_rt_variables(shader, device, create_flags, monolithic);
+   struct rt_variables vars = create_rt_variables(shader, device, create_flags, payload_size, monolithic);
 
    if (monolithic)
       lower_rt_instructions_monolithic(shader, device, pipeline, info, pCreateInfo, payload_size, &vars);

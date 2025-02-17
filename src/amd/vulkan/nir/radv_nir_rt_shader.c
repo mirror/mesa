@@ -685,7 +685,7 @@ enum sbt_entry {
    SBT_ANY_HIT_IDX = offsetof(struct radv_pipeline_group_handle, any_hit_index),
 };
 
-static void
+static nir_def *
 load_sbt_entry(nir_builder *b, const struct rt_variables *vars, nir_def *idx, enum sbt_type binding,
                enum sbt_entry offset)
 {
@@ -705,7 +705,7 @@ load_sbt_entry(nir_builder *b, const struct rt_variables *vars, nir_def *idx, en
    }
 
    nir_def *record_addr = nir_iadd_imm(b, addr, RADV_RT_HANDLE_SIZE - offset);
-   nir_store_var(b, vars->shader_record_ptr, record_addr, 1);
+   return record_addr;
 }
 
 struct radv_rt_shader_info {
@@ -988,7 +988,7 @@ radv_lower_rt_instruction(nir_builder *b, nir_instr *instr, void *_data)
       nir_store_var(b, vars->instance_addr, intr->src[3].ssa, 0x1);
       nir_store_var(b, vars->geometry_id_and_flags, intr->src[4].ssa, 0x1);
       nir_store_var(b, vars->hit_kind, intr->src[5].ssa, 0x1);
-      load_sbt_entry(b, vars, intr->src[0].ssa, SBT_HIT, SBT_RECURSIVE_PTR);
+      nir_def *record = load_sbt_entry(b, vars, intr->src[0].ssa, SBT_HIT, SBT_RECURSIVE_PTR);
 
       nir_def *should_return =
          nir_test_mask(b, nir_load_var(b, vars->cull_mask_and_flags), SpvRayFlagsSkipClosestHitShaderKHRMask);
@@ -1012,7 +1012,7 @@ radv_lower_rt_instruction(nir_builder *b, nir_instr *instr, void *_data)
       nir_store_var(b, vars->geometry_id_and_flags, undef, 0x1);
       nir_store_var(b, vars->hit_kind, undef, 0x1);
       nir_def *miss_index = nir_load_var(b, vars->miss_index);
-      load_sbt_entry(b, vars, miss_index, SBT_MISS, SBT_RECURSIVE_PTR);
+      nir_def *record = load_sbt_entry(b, vars, miss_index, SBT_MISS, SBT_RECURSIVE_PTR);
 
       if (!(vars->flags & VK_PIPELINE_CREATE_2_RAY_TRACING_NO_NULL_MISS_SHADERS_BIT_KHR)) {
          /* In case of a NULL miss shader, do nothing and just return. */
@@ -1742,7 +1742,8 @@ handle_candidate_triangle(nir_builder *b, struct radv_triangle_intersection *int
       nir_store_var(b, inner_vars.instance_addr, nir_load_var(b, data->trav_vars->instance_addr), 0x1);
       nir_store_var(b, inner_vars.hit_kind, hit_kind, 0x1);
 
-      load_sbt_entry(b, &inner_vars, sbt_idx, SBT_HIT, SBT_ANY_HIT_IDX);
+      nir_def *record = load_sbt_entry(b, &inner_vars, sbt_idx, SBT_HIT, SBT_ANY_HIT_IDX);
+      nir_store_var(b, inner_vars.shader_record_ptr, record, 0x1);
 
       struct radv_rt_case_data case_data = {
          .device = data->device,
@@ -1806,7 +1807,8 @@ handle_candidate_aabb(nir_builder *b, struct radv_leaf_intersection *intersectio
    nir_store_var(b, inner_vars.instance_addr, nir_load_var(b, data->trav_vars->instance_addr), 0x1);
    nir_store_var(b, inner_vars.opaque, intersection->opaque, 1);
 
-   load_sbt_entry(b, &inner_vars, sbt_idx, SBT_HIT, SBT_INTERSECTION_IDX);
+   nir_def *record = load_sbt_entry(b, &inner_vars, sbt_idx, SBT_HIT, SBT_INTERSECTION_IDX);
+   nir_store_var(b, inner_vars.shader_record_ptr, record, 0x1);
 
    nir_store_var(b, data->vars->ahit_accept, nir_imm_false(b), 0x1);
    nir_store_var(b, data->vars->ahit_terminate, nir_imm_false(b), 0x1);
@@ -1980,7 +1982,8 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
    nir_push_if(b, nir_load_var(b, trav_vars.hit));
    {
       if (monolithic) {
-         load_sbt_entry(b, vars, nir_load_var(b, vars->idx), SBT_HIT, SBT_CLOSEST_HIT_IDX);
+         nir_def *record = load_sbt_entry(b, vars, nir_load_var(b, vars->idx), SBT_HIT, SBT_CLOSEST_HIT_IDX);
+         nir_store_var(b, vars->shader_record_ptr, record, 0x1);
 
          nir_def *should_return =
             nir_test_mask(b, nir_load_var(b, vars->cull_mask_and_flags), SpvRayFlagsSkipClosestHitShaderKHRMask);
@@ -2012,7 +2015,8 @@ radv_build_traversal(struct radv_device *device, struct radv_ray_tracing_pipelin
    nir_push_else(b, NULL);
    {
       if (monolithic) {
-         load_sbt_entry(b, vars, nir_load_var(b, vars->miss_index), SBT_MISS, SBT_GENERAL_IDX);
+         nir_def *record = load_sbt_entry(b, vars, nir_load_var(b, vars->miss_index), SBT_MISS, SBT_GENERAL_IDX);
+         nir_store_var(b, vars->shader_record_ptr, record, 0x1);
 
          struct radv_rt_case_data case_data = {
             .device = device,

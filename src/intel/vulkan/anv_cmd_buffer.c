@@ -213,6 +213,9 @@ destroy_cmd_buffer(struct anv_cmd_buffer *cmd_buffer)
       anv_bo_pool_free((*bo)->map != NULL ?
                        &cmd_buffer->device->batch_bo_pool :
                        &cmd_buffer->device->bvh_bo_pool, *bo);
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   (*bo)->gem_handle, (*bo)->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
    }
    u_vector_finish(&cmd_buffer->dynamic_bos);
 

@@ -307,9 +307,20 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
       /* check how many live-through variables should be spilled */
       RegisterDemand reg_pressure = block->live_in_demand;
       RegisterDemand loop_demand = reg_pressure;
+      RegisterDemand loop_call_spills = RegisterDemand();
       unsigned i = block_idx;
-      while (ctx.program->blocks[i].loop_nest_depth >= block->loop_nest_depth)
-         loop_demand.update(ctx.program->blocks[i++].register_demand);
+      while (ctx.program->blocks[i].loop_nest_depth >= block->loop_nest_depth) {
+         loop_demand.update(ctx.program->blocks[i].register_demand);
+         if (ctx.program->blocks[i].contains_call) {
+            for (auto& instr : ctx.program->blocks[i].instructions) {
+               if (!instr->isCall())
+                  continue;
+               loop_call_spills.update(instr->call().caller_preserved_demand -
+                                       instr->call().callee_preserved_limit);
+            }
+         }
+         ++i;
+      }
 
       for (auto spilled : ctx.spills_exit[block_idx - 1]) {
          /* variable is not live at loop entry: probably a phi operand */
@@ -337,12 +348,15 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
 
       /* select more live-through variables and constants */
       RegType type = RegType::vgpr;
-      while (loop_demand.exceeds(ctx.target_pressure)) {
+      while (loop_demand.exceeds(ctx.target_pressure) ||
+             loop_call_spills.exceeds(spilled_registers)) {
          /* if VGPR demand is low enough, select SGPRs */
-         if (type == RegType::vgpr && loop_demand.vgpr <= ctx.target_pressure.vgpr)
+         if (type == RegType::vgpr && loop_demand.vgpr <= ctx.target_pressure.vgpr &&
+             loop_call_spills.vgpr <= spilled_registers.vgpr)
             type = RegType::sgpr;
          /* if SGPR demand is low enough, break */
-         if (type == RegType::sgpr && loop_demand.sgpr <= ctx.target_pressure.sgpr)
+         if (type == RegType::sgpr && loop_demand.sgpr <= ctx.target_pressure.sgpr &&
+             loop_call_spills.sgpr <= spilled_registers.sgpr)
             break;
 
          float score = 0.0;
@@ -921,12 +935,19 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
       }
 
       /* check if register demand is low enough during and after the current instruction */
-      if (block->register_demand.exceeds(ctx.target_pressure)) {
+      if (block->register_demand.exceeds(ctx.target_pressure) || instr->isCall()) {
          RegisterDemand new_demand = instr->register_demand;
          std::optional<RegisterDemand> live_changes;
 
          /* if reg pressure is too high, spill variable with furthest next use */
-         while ((new_demand - spilled_registers).exceeds(ctx.target_pressure)) {
+         while (true) {
+            bool needs_spill = (new_demand - spilled_registers).exceeds(ctx.target_pressure);
+            if (instr->isCall())
+               needs_spill |= (instr->call().caller_preserved_demand - spilled_registers)
+                                 .exceeds(instr->call().callee_preserved_limit);
+            if (!needs_spill)
+               break;
+
             float score = 0.0;
             Temp to_spill = Temp();
             bool spill_is_operand = false;
@@ -935,7 +956,11 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
             unsigned avoid_respill = 0;
 
             RegType type = RegType::sgpr;
-            if (new_demand.vgpr - spilled_registers.vgpr > ctx.target_pressure.vgpr)
+            bool spill_vgpr = new_demand.vgpr - spilled_registers.vgpr > ctx.target_pressure.vgpr;
+            if (instr->isCall())
+               spill_vgpr |= instr->call().caller_preserved_demand.vgpr - spilled_registers.vgpr >
+                             instr->call().callee_preserved_limit.vgpr;
+            if (spill_vgpr)
                type = RegType::vgpr;
 
             for (unsigned t : ctx.program->live.live_in[block_idx]) {
@@ -969,7 +994,11 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
                         live_changes = get_temp_reg_changes(instr.get());
 
                      /* Don't spill operands if killing operands won't help with register pressure */
-                     if (RegisterDemand(op.getTemp()).exceeds(*live_changes)) {
+                     if (!instr->isCall() && RegisterDemand(op.getTemp()).exceeds(*live_changes)) {
+                        can_spill = false;
+                        break;
+                     }
+                     if (instr->isCall() && !op.isClobbered()) {
                         can_spill = false;
                         break;
                      }
@@ -1612,39 +1641,84 @@ spill(Program* program)
 
    program->progress = CompilationProgress::after_spilling;
 
+   const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
+   const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+
    /* no spilling when register pressure is low enough */
-   if (program->num_waves > 0)
+   if (program->has_call) {
+      bool call_needs_spill = false;
+      for (auto& block : program->blocks) {
+         if (!block.contains_call)
+            continue;
+         for (auto& instr : block.instructions) {
+            if (!instr->isCall())
+               continue;
+            call_needs_spill |=
+               instr->call().caller_preserved_demand.exceeds(instr->call().callee_preserved_limit);
+         }
+      }
+
+      if (!call_needs_spill)
+         return;
+   } else if (program->num_waves > 0) {
       return;
+   }
 
    /* lower to CSSA before spilling to ensure correctness w.r.t. phis */
    lower_to_cssa(program);
 
    /* calculate target register demand */
    const RegisterDemand demand = program->max_reg_demand; /* current max */
-   const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
-   const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+   RegisterDemand target(vgpr_limit, sgpr_limit);
+   if (program->is_callee)
+      target = program->callee_abi.callee_register_limit(target, program->callee_param_demand);
+
    uint16_t extra_vgprs = 0;
    uint16_t extra_sgprs = 0;
 
    /* calculate extra VGPRs required for spilling SGPRs */
-   if (demand.sgpr > sgpr_limit) {
-      unsigned sgpr_spills = demand.sgpr - sgpr_limit;
-      extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
+   unsigned sgpr_call_spills = 0;
+   unsigned vgpr_call_spills = 0;
+   if (program->has_call) {
+      for (auto& block : program->blocks) {
+         if (!block.contains_call)
+            continue;
+         for (auto& instr : block.instructions) {
+            if (!instr->isCall())
+               continue;
+            RegisterDemand spills =
+               instr->call().caller_preserved_demand - instr->call().callee_preserved_limit;
+            if (spills.sgpr > 0)
+               sgpr_call_spills = std::max((unsigned)spills.sgpr, sgpr_call_spills);
+            if (spills.vgpr > 0)
+               vgpr_call_spills = std::max((unsigned)spills.vgpr, vgpr_call_spills);
+         }
+      }
    }
+
+   unsigned sgpr_spills = sgpr_call_spills;
+   if (demand.sgpr > sgpr_limit)
+      sgpr_spills += demand.sgpr - sgpr_limit;
+
+   if (sgpr_spills)
+      extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
    /* add extra SGPRs required for spilling VGPRs */
-   if (demand.vgpr + extra_vgprs > vgpr_limit) {
+   if (demand.vgpr + extra_vgprs > vgpr_limit || vgpr_call_spills) {
       if (program->gfx_level >= GFX9)
          extra_sgprs = 1; /* SADDR */
       else
          extra_sgprs = 5; /* scratch_resource (s4) + scratch_offset (s1) */
-      if (demand.sgpr + extra_sgprs > sgpr_limit) {
+      if (demand.sgpr + extra_sgprs > sgpr_limit || sgpr_call_spills) {
          /* re-calculate in case something has changed */
-         unsigned sgpr_spills = demand.sgpr + extra_sgprs - sgpr_limit;
+         sgpr_spills = sgpr_call_spills;
+         if (demand.sgpr + extra_sgprs > sgpr_limit)
+            sgpr_spills += demand.sgpr + extra_sgprs - sgpr_limit;
          extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
       }
    }
    /* the spiller has to target the following register demand */
-   const RegisterDemand target(vgpr_limit - extra_vgprs, sgpr_limit - extra_sgprs);
+   target.vgpr -= extra_vgprs;
+   target.sgpr -= extra_sgprs;
 
    /* initialize ctx */
    spill_ctx ctx(target, program);

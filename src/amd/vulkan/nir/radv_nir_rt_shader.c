@@ -851,6 +851,8 @@ radv_nir_lower_rt_io(nir_shader *nir, bool monolithic, uint32_t payload_offset)
 
       NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_function_temp, nir_address_format_32bit_offset);
    } else {
+      NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_function_temp, glsl_get_natural_size_align_bytes);
+      NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_shader_temp, glsl_get_natural_size_align_bytes);
       NIR_PASS(_, nir, radv_nir_lower_ray_payload_derefs, payload_offset);
    }
 }

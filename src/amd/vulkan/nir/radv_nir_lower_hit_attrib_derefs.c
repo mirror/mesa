@@ -133,8 +133,6 @@ radv_nir_lower_rt_vars(nir_shader *shader, nir_variable_mode mode, load_intrin_c
 
    progress |= nir_lower_indirect_derefs(shader, mode, UINT32_MAX);
 
-   NIR_PASS(_, shader, nir_lower_vars_to_explicit_types, mode, glsl_get_natural_size_align_bytes);
-
    if (shader->info.stage == MESA_SHADER_RAYGEN && mode == nir_var_function_temp)
       progress |= nir_shader_intrinsics_pass(shader, radv_lower_payload_arg_to_offset, nir_metadata_control_flow, NULL);
 

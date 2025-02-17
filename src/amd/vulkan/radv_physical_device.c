@@ -117,16 +117,13 @@ radv_cooperative_matrix_enabled(const struct radv_physical_device *pdev)
 bool
 radv_enable_rt(const struct radv_physical_device *pdev)
 {
-   /* Temporarily under construction! */
-   return false;
-
    if (!pdev->info.has_image_bvh_intersect_ray && !radv_emulate_rt(pdev))
       return false;
 
    if (pdev->use_llvm)
       return false;
 
-   return true;
+   return pdev->info.gfx_level >= GFX9;
 }
 
 bool

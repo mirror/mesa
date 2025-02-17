@@ -519,7 +519,7 @@ struct radv_ray_tracing_stage_info;
 
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
-                           uint32_t *stack_size, bool resume_shader, struct radv_device *device,
+                           uint32_t *stack_size, bool resume_shader, uint32_t payload_size, struct radv_device *device,
                            struct radv_ray_tracing_pipeline *pipeline, bool monolithic,
                            const struct radv_ray_tracing_stage_info *traversal_info);
 

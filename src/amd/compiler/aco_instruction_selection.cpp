@@ -11105,8 +11105,12 @@ create_fs_end_for_epilog(isel_context* ctx)
 }
 
 Instruction*
-add_startpgm(struct isel_context* ctx)
+add_startpgm(struct isel_context* ctx, bool is_callee = false)
 {
+   ctx->program->arg_sgpr_count = ctx->args->num_sgprs_used;
+   ctx->program->arg_vgpr_count = ctx->args->num_vgprs_used;
+   ctx->program->scratch_arg_size += ctx->callee_info.scratch_param_size;
+
    unsigned def_count = 0;
    for (unsigned i = 0; i < ctx->args->arg_count; i++) {
       if (ctx->args->args[i].skip)
@@ -11116,6 +11120,13 @@ add_startpgm(struct isel_context* ctx)
          def_count += ctx->args->args[i].size;
       else
          def_count++;
+   }
+   unsigned used_arg_count = def_count;
+   if (is_callee) {
+      def_count += ctx->callee_info.reg_param_count;
+      /* Add system parameters separately - they aren't counted by reg_param_count */
+      assert(ctx->callee_info.stack_ptr.is_reg && ctx->callee_info.return_address.is_reg);
+      def_count += 2;
    }
 
    if (ctx->stage.hw == AC_HW_COMPUTE_SHADER && ctx->program->gfx_level >= GFX12)
@@ -11180,6 +11191,20 @@ add_startpgm(struct isel_context* ctx)
       const struct ac_arg* ids = ctx->args->workgroup_ids;
       for (unsigned i = 0; i < 3; i++)
          ctx->workgroup_id[i] = ids[i].used ? Operand(get_arg(ctx, ids[i])) : Operand::zero();
+   }
+
+   if (is_callee) {
+      unsigned def_idx = used_arg_count;
+
+      ctx->program->stack_ptr = ctx->callee_info.stack_ptr.def.getTemp();
+      startpgm->definitions[def_idx++] = ctx->callee_info.stack_ptr.def;
+      startpgm->definitions[def_idx++] = ctx->callee_info.return_address.def;
+
+      for (auto& info : ctx->callee_info.param_infos) {
+         if (!info.is_reg)
+            continue;
+         startpgm->definitions[def_idx++] = info.def;
+      }
    }
 
    /* epilog has no scratch */

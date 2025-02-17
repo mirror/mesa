@@ -1800,7 +1800,8 @@ emit_program(Program* program, std::vector<uint32_t>& code, std::vector<struct a
                (uint32_t*)(program->constant_data.data() + program->constant_data.size()));
 
    program->config->scratch_bytes_per_wave =
-      align(program->config->scratch_bytes_per_wave, program->dev.scratch_alloc_granule);
+      align(program->config->scratch_bytes_per_wave + program->scratch_arg_size,
+            program->dev.scratch_alloc_granule);
 
    return exec_size;
 }

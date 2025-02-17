@@ -101,6 +101,8 @@ struct ra_ctx {
    aco_ptr<Instruction> phi_dummy;
    uint16_t max_used_sgpr = 0;
    uint16_t max_used_vgpr = 0;
+   uint16_t max_blocked_sgpr = 0;
+   uint16_t max_blocked_vgpr = 0;
    uint16_t sgpr_limit;
    uint16_t vgpr_limit;
    std::bitset<512> war_hint;
@@ -779,6 +781,21 @@ adjust_max_used_regs(ra_ctx& ctx, RegClass rc, unsigned reg)
    } else if (reg + rc.size() <= max_addressible_sgpr) {
       uint16_t hi = reg + size - 1;
       ctx.max_used_sgpr = std::max(ctx.max_used_sgpr, std::min(hi, max_addressible_sgpr));
+   }
+}
+
+void
+adjust_max_blocked_regs(ra_ctx& ctx, RegType type, unsigned reg)
+{
+   uint16_t max_addressible_sgpr = ctx.sgpr_limit;
+   if (type == RegType::vgpr) {
+      assert(reg >= 256);
+      uint16_t hi = reg - 256 - 1;
+      assert(hi <= 255);
+      ctx.max_blocked_vgpr = std::max(ctx.max_blocked_vgpr, hi);
+   } else if (reg <= max_addressible_sgpr) {
+      uint16_t hi = reg - 1;
+      ctx.max_blocked_sgpr = std::max(ctx.max_blocked_sgpr, std::min(hi, max_addressible_sgpr));
    }
 }
 
@@ -3246,10 +3263,8 @@ register_allocation(Program* program, ra_test_policy policy)
             tmp_file.fill_killed_operands(instr.get());
             tmp_file.block(instr->call().clobbered_regs);
 
-            adjust_max_used_regs(ctx, RegClass::s1,
-                                 instr->call().abi.clobberedRegs.sgpr.hi().reg() - 1);
-            adjust_max_used_regs(ctx, RegClass::v1,
-                                 instr->call().abi.clobberedRegs.vgpr.hi().reg() - 1);
+            adjust_max_blocked_regs(ctx, RegType::sgpr, instr->call().clobbered_regs.sgpr_bound());
+            adjust_max_blocked_regs(ctx, RegType::vgpr, instr->call().clobbered_regs.vgpr_bound());
 
             ASSERTED bool success = false;
             success =

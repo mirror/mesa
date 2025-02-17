@@ -2465,4 +2465,5 @@ intrinsic("enqueue_node_payloads", src_comp=[-1])
 # Returns true if it has been called for every payload.
 intrinsic("finalize_incoming_node_payload", src_comp=[-1], dest_comp=1)
 
+system_value("call_return_address_amd", 1, bit_sizes=[64])
 intrinsic("set_next_call_pc_amd", src_comp=[1, 1], bit_sizes=[64])

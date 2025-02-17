@@ -1848,43 +1848,6 @@ lower_rt_instructions_monolithic(nir_shader *shader, struct radv_device *device,
    lower_hit_attribs(shader, hit_attribs, 0);
 }
 
-/** Select the next shader based on priorities:
- *
- * Detect the priority of the shader stage by the lowest bits in the address (low to high):
- *  - Raygen              - idx 0
- *  - Traversal           - idx 1
- *  - Closest Hit / Miss  - idx 2
- *  - Callable            - idx 3
- *
- *
- * This gives us the following priorities:
- * Raygen       :  Callable  >               >  Traversal  >  Raygen
- * Traversal    :            >  Chit / Miss  >             >  Raygen
- * CHit / Miss  :  Callable  >  Chit / Miss  >  Traversal  >  Raygen
- * Callable     :  Callable  >  Chit / Miss  >             >  Raygen
- */
-static nir_def *
-select_next_shader(nir_builder *b, nir_def *shader_addr, unsigned wave_size)
-{
-   gl_shader_stage stage = b->shader->info.stage;
-   nir_def *prio = nir_iand_imm(b, shader_addr, radv_rt_priority_mask);
-   nir_def *ballot = nir_ballot(b, 1, wave_size, nir_imm_bool(b, true));
-   nir_def *ballot_traversal = nir_ballot(b, 1, wave_size, nir_ieq_imm(b, prio, radv_rt_priority_traversal));
-   nir_def *ballot_hit_miss = nir_ballot(b, 1, wave_size, nir_ieq_imm(b, prio, radv_rt_priority_hit_miss));
-   nir_def *ballot_callable = nir_ballot(b, 1, wave_size, nir_ieq_imm(b, prio, radv_rt_priority_callable));
-
-   if (stage != MESA_SHADER_CALLABLE && stage != MESA_SHADER_INTERSECTION)
-      ballot = nir_bcsel(b, nir_ine_imm(b, ballot_traversal, 0), ballot_traversal, ballot);
-   if (stage != MESA_SHADER_RAYGEN)
-      ballot = nir_bcsel(b, nir_ine_imm(b, ballot_hit_miss, 0), ballot_hit_miss, ballot);
-   if (stage != MESA_SHADER_INTERSECTION)
-      ballot = nir_bcsel(b, nir_ine_imm(b, ballot_callable, 0), ballot_callable, ballot);
-
-   nir_def *lsb = nir_find_lsb(b, ballot);
-   nir_def *next = nir_read_invocation(b, shader_addr, lsb);
-   return nir_iand_imm(b, next, ~radv_rt_priority_mask);
-}
-
 static void
 radv_store_arg(nir_builder *b, const struct radv_shader_args *args, const struct radv_ray_tracing_stage_info *info,
                struct ac_arg arg, nir_def *value)

@@ -1145,7 +1145,7 @@ radv_rt_pipeline_create(VkDevice _device, VkPipelineCache _cache, const VkRayTra
       if (pipeline->groups[i].recursive_shader != VK_SHADER_UNUSED_KHR) {
          struct radv_shader *shader = pipeline->stages[pipeline->groups[i].recursive_shader].shader;
          if (shader)
-            pipeline->groups[i].handle.recursive_shader_ptr = shader->va | radv_get_rt_priority(shader->info.stage);
+            pipeline->groups[i].handle.recursive_shader_ptr = shader->va;
       }
    }
 

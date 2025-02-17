@@ -176,6 +176,8 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       validate(program.get());
    }
 
+   spill_preserved(program.get());
+
    /* Lower to HW Instructions */
    ssa_elimination(program.get());
    lower_to_hw_instr(program.get());

@@ -314,7 +314,8 @@ can_eliminate(aco_ptr<Instruction>& instr)
        instr->opcode == aco_opcode::p_linear_phi ||
        instr->opcode == aco_opcode::p_pops_gfx9_add_exiting_wave_id ||
        instr->opcode == aco_opcode::p_shader_cycles_hi_lo_hi ||
-       instr->definitions[0].isNoCSE())
+       instr->definitions[0].isNoCSE() || instr->opcode == aco_opcode::p_spill_preserved ||
+       instr->opcode == aco_opcode::p_reload_preserved)
       return false;
 
    return true;

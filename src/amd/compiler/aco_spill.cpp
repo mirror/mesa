@@ -1537,7 +1537,7 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr, unsigned abi_sgpr_sp
       /* initialize linear vgprs for spilling preserved SGPRs */
       auto insert_it = std::next(std::find_if(
          ctx.program->blocks[0].instructions.begin(), ctx.program->blocks[0].instructions.end(),
-         [](const auto& instr) { return instr->opcode == aco_opcode::p_spill_preserved_vgpr; }));
+         [](const auto& instr) { return instr->opcode == aco_opcode::p_spill_preserved; }));
       for (unsigned vgpr_idx = first_abi_spill_temp_idx; vgpr_idx < vgpr_spill_temps.size();
            ++vgpr_idx) {
          Temp linear_vgpr = ctx.program->allocateTmp(v1.as_linear());

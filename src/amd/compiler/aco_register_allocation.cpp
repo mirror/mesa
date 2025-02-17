@@ -18,12 +18,6 @@
 #include <unordered_set>
 #include <vector>
 
-namespace std {
-template <> struct hash<aco::PhysReg> {
-   size_t operator()(aco::PhysReg temp) const noexcept { return std::hash<uint32_t>{}(temp.reg_b); }
-};
-} // namespace std
-
 namespace aco {
 namespace {
 
@@ -2563,6 +2557,14 @@ init_reg_file(ra_ctx& ctx, const std::vector<IDSet>& live_out_per_block, Block& 
    const IDSet& live_in = live_out_per_block[block.index];
    assert(block.index != 0 || live_in.empty());
 
+   /* Callee shaders only get a chance to spill preserved registers after p_startpgm.
+    * To make sure nothing uses these regs until we can spill them, block them here.
+    */
+   if (block.index == 0 && ctx.program->is_callee) {
+      register_file.block(
+         ctx.program->callee_abi.preservedRegisters(0, ctx.program->max_reg_demand.vgpr));
+   }
+
    if (block.kind & block_kind_loop_header) {
       ctx.loop_header.emplace_back(block.index, PhysReg{scc});
       /* already rename phis incoming value */
@@ -3176,6 +3178,25 @@ register_allocation(Program* program, ra_test_policy policy)
          std::vector<parallelcopy> parallelcopy;
          assert(!is_phi(instr));
 
+         if (instr->opcode == aco_opcode::p_reload_preserved && block.linear_succs.empty()) {
+            SparseRegisterSet preserved_regs = ctx.program->callee_abi.preservedRegisters(
+               ctx.program->max_reg_demand.sgpr, ctx.program->max_reg_demand.vgpr);
+            std::vector<unsigned> vars, vars2;
+            for (auto& slice : preserved_regs.slices) {
+               vars2 = collect_vars(ctx, register_file, slice);
+               vars.insert(vars.end(), vars2.begin(), vars2.end());
+            }
+
+            register_file.block(preserved_regs);
+
+            ASSERTED bool success = false;
+            success = get_regs_for_copies(ctx, register_file, parallelcopy, vars, instr,
+                                          PhysRegInterval{});
+            assert(success);
+
+            update_renames(ctx, register_file, parallelcopy, instr);
+         }
+
          /* handle operands */
          bool fixed = false;
          for (unsigned i = 0; i < instr->operands.size(); ++i) {
@@ -3248,7 +3269,7 @@ register_allocation(Program* program, ra_test_policy policy)
             }
 
             /* Allow linear VGPRs and the stack pointer in the clobbered range.
-             * Linear VGPRs are spilled in spill_preserved, and the stack pointer is always
+             * Linear VGPRs are spilled in add_preserved_vgpr_spill, and the stack pointer is always
              * guaranteed to be preserved.
              */
             for (auto it = vars.begin(); it != vars.end();) {
@@ -3480,6 +3501,12 @@ register_allocation(Program* program, ra_test_policy policy)
             instr->format = asVOP3(instr->format);
          }
 
+         if (instr->opcode == aco_opcode::p_spill_preserved) {
+            for (auto reg : ctx.program->callee_abi.preservedRegisters(0, ctx.vgpr_bounds)) {
+               if (register_file.is_blocked(reg))
+                  register_file.clear(PhysRegInterval{reg, 1});
+            }
+         }
          instructions.emplace_back(std::move(*instr_it));
 
       } /* end for Instr */

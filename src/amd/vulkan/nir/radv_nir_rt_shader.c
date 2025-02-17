@@ -1192,7 +1192,7 @@ insert_rt_case(nir_builder *b, nir_shader *shader, struct rt_variables *vars, ni
 }
 
 void
-radv_nir_lower_rt_io(nir_shader *nir, bool monolithic, uint32_t payload_offset)
+radv_nir_lower_rt_io(nir_shader *nir, bool monolithic, uint32_t payload_offset, uint32_t *payload_size)
 {
    if (!monolithic) {
       NIR_PASS(_, nir, lower_rt_derefs);
@@ -1626,7 +1626,7 @@ radv_build_ahit_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_tracing_g
       radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[group->any_hit_shader].nir);
    assert(nir_stage);
 
-   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset);
+   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset, NULL);
 
    insert_rt_case(b, nir_stage, data->vars, sbt_idx, group->handle.any_hit_index);
    ralloc_free(nir_stage);
@@ -1650,7 +1650,7 @@ radv_build_isec_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_tracing_g
       radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[group->intersection_shader].nir);
    assert(nir_stage);
 
-   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset);
+   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset, NULL);
 
    nir_shader *any_hit_stage = NULL;
    if (group->any_hit_shader != VK_SHADER_UNUSED_KHR) {
@@ -1658,7 +1658,7 @@ radv_build_isec_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_tracing_g
          radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[group->any_hit_shader].nir);
       assert(any_hit_stage);
 
-      radv_nir_lower_rt_io(any_hit_stage, data->vars->monolithic, data->vars->payload_offset);
+      radv_nir_lower_rt_io(any_hit_stage, data->vars->monolithic, data->vars->payload_offset, NULL);
 
       /* reserve stack size for any_hit before it is inlined */
       data->pipeline->stages[group->any_hit_shader].stack_size = any_hit_stage->scratch_size;
@@ -1702,7 +1702,7 @@ radv_build_recursive_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_trac
       radv_pipeline_cache_handle_to_nir(data->device, data->pipeline->stages[group->recursive_shader].nir);
    assert(nir_stage);
 
-   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset);
+   radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset, NULL);
 
    insert_rt_case(b, nir_stage, data->vars, sbt_idx, group->handle.general_index);
    ralloc_free(nir_stage);

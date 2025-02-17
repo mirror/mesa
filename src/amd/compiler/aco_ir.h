@@ -21,6 +21,7 @@
 #include <algorithm>
 #include <bitset>
 #include <memory>
+#include <optional>
 #include <vector>
 
 typedef struct nir_shader nir_shader;
@@ -517,19 +518,6 @@ intersects(const PhysRegInterval& a, const PhysRegInterval& b)
 {
    return a.hi() > b.lo() && b.hi() > a.lo();
 }
-
-struct GPRInterval {
-   PhysRegInterval sgpr;
-   PhysRegInterval vgpr;
-};
-
-struct ABI {
-   GPRInterval parameterSpace;
-   GPRInterval clobberedRegs;
-
-   bool clobbersVCC;
-   bool clobbersSCC;
-};
 
 /**
  * Operand Class
@@ -1114,6 +1102,11 @@ struct RegisterDemand {
       return a.vgpr == b.vgpr && a.sgpr == b.sgpr;
    }
 
+   constexpr friend bool operator!=(const RegisterDemand a, const RegisterDemand b) noexcept
+   {
+      return a.vgpr != b.vgpr || a.sgpr != b.sgpr;
+   }
+
    constexpr bool exceeds(const RegisterDemand other) const noexcept
    {
       return vgpr > other.vgpr || sgpr > other.sgpr;
@@ -1184,6 +1177,8 @@ struct SparseRegisterSet {
    aco::small_vec<PhysRegInterval, 2> slices;
 
    struct iterator {
+      using difference_type = ptrdiff_t;
+
       decltype(slices)::iterator slice_it;
       PhysRegIterator reg_it;
       /* For end(), the iterator points at the first "invalid" element, which is
@@ -1295,7 +1290,8 @@ struct SparseRegisterSet {
       for (; upper_bound < slices.size() && interval.hi() <= slices[upper_bound].lo();
            --upper_bound) {}
 
-      if (upper_bound < lower_bound) {
+      /* If upper_bound > slices.size(), upper_bound is -1u and we overflowed. */
+      if (upper_bound < lower_bound || upper_bound > slices.size()) {
          slices.insert(std::next(slices.begin(), lower_bound), interval);
          return;
       }
@@ -1341,7 +1337,7 @@ struct SparseRegisterSet {
             if (interval.hi() > slice.hi())
                hi = std::min(interval.lo(), slice.hi());
             else
-                  hi = slice.hi();
+               hi = slice.hi();
             slice = PhysRegInterval::from_until(lo, hi);
             ++it;
             continue;
@@ -1408,7 +1404,8 @@ struct SparseRegisterSet {
       return inverse;
    }
 
-   constexpr uint16_t sgpr_bound() const {
+   constexpr uint16_t sgpr_bound() const
+   {
       uint16_t ret = 0;
       for (const auto& slice : slices) {
          if (slice.lo() >= PhysReg{256u})
@@ -1428,19 +1425,18 @@ struct SparseRegisterSet {
       return ret;
    }
 
-   iterator begin() {
+   iterator begin()
+   {
       if (slices.empty())
-         return iterator{
-            .slice_it = slices.begin(),
-            .reg_it_valid = false
-         };
+         return iterator{.slice_it = slices.begin(), .reg_it_valid = false};
       return iterator{
          .slice_it = slices.begin(),
          .reg_it = slices[0].begin(),
       };
    }
 
-   iterator end() {
+   iterator end()
+   {
       return iterator{
          .slice_it = slices.end(),
          .reg_it_valid = false,
@@ -1448,129 +1444,83 @@ struct SparseRegisterSet {
    }
 };
 
+struct ABI {
+   struct GPRRange {
+      uint16_t sgpr;
+      uint16_t vgpr;
+   };
+
+   struct RegisterBlock {
+      GPRRange clobbered_size;
+      GPRRange preserved_size;
+      bool clobbered_first;
+   };
+
+   std::optional<RegisterBlock> block_size;
+   /* Maximum number of registers allowed to be used by parameters */
+   RegisterDemand max_param_demand;
+
+   SparseRegisterSet preservedRegisters(uint16_t max_sgpr, uint16_t max_vgpr) const
+   {
+      if (!block_size)
+         return {};
+
+      SparseRegisterSet preserved_set;
+      uint16_t gpr_offset;
+
+      /* Fill out preserved ranges by repeating the register block across the register file */
+
+      /* SGPR ranges */
+      for (gpr_offset = 0; gpr_offset < max_sgpr; gpr_offset += block_size->preserved_size.sgpr) {
+         if (block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.sgpr;
+         if (gpr_offset >= max_sgpr)
+            break;
+         preserved_set.add(PhysReg{gpr_offset}, std::min((uint16_t)(max_sgpr - gpr_offset),
+                                                         block_size->preserved_size.sgpr));
+         if (!block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.sgpr;
+      }
+      /* VGPR ranges */
+      for (gpr_offset = 0; gpr_offset < max_vgpr; gpr_offset += block_size->preserved_size.vgpr) {
+         if (block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.vgpr;
+         if (gpr_offset >= max_vgpr)
+            break;
+         preserved_set.add(PhysReg{256u + gpr_offset}, std::min((uint16_t)(max_vgpr - gpr_offset),
+                                                                block_size->preserved_size.vgpr));
+         if (!block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.vgpr;
+      }
+
+      return preserved_set;
+   }
+};
+
 static constexpr ABI rtRaygenABI = {
-   .parameterSpace =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 32,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 32,
-            },
-      },
-   .clobberedRegs =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 108,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 256,
-            },
-      },
-   .clobbersVCC = true,
-   .clobbersSCC = true,
+   .max_param_demand = RegisterDemand(32, 32),
 };
 
 static constexpr ABI rtTraversalABI = {
-   .parameterSpace =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 32,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 32,
-            },
-      },
-   .clobberedRegs =
-      {
-         /* TODO: maybe find better values */
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 108,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 256,
-            },
-      },
-   .clobbersVCC = true,
-   .clobbersSCC = true,
+   .max_param_demand = RegisterDemand(32, 32),
 };
 
 static constexpr ABI rtAnyHitABI = {
-   .parameterSpace =
-      {
-         .sgpr =
+   .block_size =
+      ABI::RegisterBlock{
+         .clobbered_size =
             {
-               .lo_ = PhysReg(0),
-               .size = 32,
+               .sgpr = 128,
+               .vgpr = 256,
             },
-         .vgpr =
+         .preserved_size =
             {
-               .lo_ = PhysReg(256),
-               .size = 32,
+               .sgpr = 80,
+               .vgpr = 80,
             },
+         .clobbered_first = false,
       },
-   .clobberedRegs =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(80),
-               .size = 16,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256 + 80),
-               .size = 256 - 80,
-            },
-      },
-   .clobbersVCC = true,
-   .clobbersSCC = true,
-};
-
-static constexpr ABI rtClosestHitMissABI = {
-   .parameterSpace =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 32,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 32,
-            },
-      },
-   .clobberedRegs =
-      {
-         .sgpr =
-            {
-               .lo_ = PhysReg(0),
-               .size = 108,
-            },
-         .vgpr =
-            {
-               .lo_ = PhysReg(256),
-               .size = 256,
-            },
-      },
-   .clobbersVCC = true,
-   .clobbersSCC = true,
+   .max_param_demand = RegisterDemand(32, 32),
 };
 
 struct Block;
@@ -1588,6 +1538,7 @@ struct FLAT_instruction;
 struct Pseudo_branch_instruction;
 struct Pseudo_barrier_instruction;
 struct Pseudo_reduction_instruction;
+struct Pseudo_call_instruction;
 struct VALU_instruction;
 struct VINTERP_inreg_instruction;
 struct VINTRP_instruction;
@@ -1788,6 +1739,17 @@ struct Instruction {
       return *(Pseudo_reduction_instruction*)this;
    }
    constexpr bool isReduction() const noexcept { return format == Format::PSEUDO_REDUCTION; }
+   Pseudo_call_instruction& call() noexcept
+   {
+      assert(isCall());
+      return *(Pseudo_call_instruction*)this;
+   }
+   const Pseudo_call_instruction& call() const noexcept
+   {
+      assert(isCall());
+      return *(Pseudo_call_instruction*)this;
+   }
+   constexpr bool isCall() const noexcept { return format == Format::PSEUDO_CALL; }
    constexpr bool isVOP3P() const noexcept { return (uint16_t)format & (uint16_t)Format::VOP3P; }
    VINTERP_inreg_instruction& vinterp_inreg() noexcept
    {
@@ -2265,6 +2227,36 @@ struct Pseudo_reduction_instruction : public Instruction {
 static_assert(sizeof(Pseudo_reduction_instruction) == sizeof(Instruction) + 4,
               "Unexpected padding");
 
+struct Pseudo_call_instruction : public Instruction {
+   /* The set of registers preserved by this instruction. In case of ABIs defining clobbered and
+    * preserved ranges, this corresponds to just the preserved ranges. In case of ABIs clobbering
+    * all registers by default and only some operands being preserved, this set consists of the
+    * registers these preserved operands occupy.
+    */
+   SparseRegisterSet preserved_regs;
+   /* Result of preserved_regs.invert(), to avoid recalculating it all the time */
+   SparseRegisterSet clobbered_regs;
+   /* The amount of "free" preserved registers we can use to stash caller-owned temporaries instead
+    * of needing to spill them. This is equal to the amount of preserved registers given by the ABI,
+    * minus the amount of preserved registers already occupied by call parameters.
+    */
+   RegisterDemand callee_preserved_limit;
+   /* Register demand of caller-owned temporaries we need to preserve a copy of throughout the
+    * callee. This includes all live variables not used by the call instruction as well as clobbered
+    * Operand temporaries (unless the call kills the operand - we don't need to preserve a copy in
+    * that case). Non-clobbered Operand temporaries are not included in this demand - they occupy a
+    * preserved register, which is accounted for in the calculation of callee_preserved_limit
+    * already.
+    *
+    * Iff this demand is higher than callee_preserved_limit, some of the temporaries need to be
+    * spilled to scratch.
+    */
+   RegisterDemand caller_preserved_demand;
+
+   ABI abi;
+};
+static_assert(sizeof(Pseudo_call_instruction) == sizeof(Instruction) + 72, "Unexpected padding");
+
 inline bool
 Instruction::accessesLDS() const noexcept
 {
@@ -2337,8 +2329,8 @@ memory_sync_info get_sync_info(const Instruction* instr);
 inline bool
 is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
 {
-   if (instr->definitions.empty() || instr->isBranch() || instr->opcode == aco_opcode::p_startpgm ||
-       instr->opcode == aco_opcode::p_init_scratch ||
+   if (instr->definitions.empty() || instr->isBranch() || instr->isCall() ||
+       instr->opcode == aco_opcode::p_startpgm || instr->opcode == aco_opcode::p_init_scratch ||
        instr->opcode == aco_opcode::p_dual_src_export_gfx11)
       return false;
 

@@ -5,12 +5,13 @@
  */
 
 #include "aco_instruction_selection.h"
+#include "aco_nir_call_attribs.h"
 
 #include "common/nir/ac_nir.h"
 #include "common/sid.h"
 
-#include "nir_control_flow.h"
 #include "nir_builder.h"
+#include "nir_control_flow.h"
 
 #include <vector>
 
@@ -601,22 +602,32 @@ init_context(isel_context* ctx, nir_shader* shader)
                case nir_intrinsic_ddy_fine:
                case nir_intrinsic_ddx_coarse:
                case nir_intrinsic_ddy_coarse: type = RegType::vgpr; break;
-               default:
-                  for (unsigned i = 0; i < nir_intrinsic_infos[intrinsic->intrinsic].num_srcs;
-                       i++) {
-                     if (regclasses[intrinsic->src[i].ssa->index].type() == RegType::vgpr)
-                        type = RegType::vgpr;
+               case nir_intrinsic_load_return_param_amd: {
+                     type = RegType::vgpr;
+                     break;
                   }
+                  case nir_intrinsic_load_param: {
+                     nir_parameter* param =
+                        &impl->function->params[nir_intrinsic_param_idx(intrinsic)];
+                     type = param->is_uniform ? RegType::sgpr : RegType::vgpr;
+                     break;
+                  }
+                  default:
+                     for (unsigned i = 0; i < nir_intrinsic_infos[intrinsic->intrinsic].num_srcs;
+                          i++) {
+                        if (regclasses[intrinsic->src[i].ssa->index].type() == RegType::vgpr)
+                           type = RegType::vgpr;
+                     }
+                     break;
+                  }
+                  RegClass rc = get_reg_class(ctx, type, intrinsic->def.num_components,
+                                              intrinsic->def.bit_size);
+                  regclasses[intrinsic->def.index] = rc;
                   break;
                }
-               RegClass rc =
-                  get_reg_class(ctx, type, intrinsic->def.num_components, intrinsic->def.bit_size);
-               regclasses[intrinsic->def.index] = rc;
-               break;
-            }
-            case nir_instr_type_tex: {
-               nir_tex_instr* tex = nir_instr_as_tex(instr);
-               RegType type = tex->def.divergent ? RegType::vgpr : RegType::sgpr;
+               case nir_instr_type_tex: {
+                  nir_tex_instr* tex = nir_instr_as_tex(instr);
+                  RegType type = tex->def.divergent ? RegType::vgpr : RegType::sgpr;
 
                   if (tex->op == nir_texop_texture_samples) {
                      assert(!tex->def.divergent);

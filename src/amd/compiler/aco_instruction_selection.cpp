@@ -7962,6 +7962,107 @@ static void begin_empty_exec_skip(isel_context* ctx, nir_instr* instr, nir_block
 static void end_empty_exec_skip(isel_context* ctx);
 
 void
+load_scratch_param(isel_context* ctx, Builder& bld, const parameter_info& param, Temp stack_ptr,
+                   unsigned scratch_param_size, Temp dst)
+{
+   int32_t const_offset = param.scratch_offset - scratch_param_size;
+   unsigned byte_size = dst.bytes();
+   if (ctx->program->gfx_level < GFX9) {
+      Temp scratch_rsrc = load_scratch_resource(ctx->program, bld, true, false);
+
+      Temp soffset = bld.sop2(aco_opcode::s_sub_i32, bld.def(s1), bld.def(s1, scc),
+                              stack_ptr == Temp() ? Operand::c32(0) : Operand(stack_ptr),
+                              Operand::c32(-const_offset * ctx->program->wave_size));
+
+      aco_opcode op;
+      switch (byte_size) {
+      case 4: op = aco_opcode::buffer_load_dword; break;
+      case 8: op = aco_opcode::buffer_load_dwordx2; break;
+      case 12: op = aco_opcode::buffer_load_dwordx3; break;
+      case 16: op = aco_opcode::buffer_load_dwordx4; break;
+      default: unreachable("Unexpected param size");
+      }
+
+      Instruction* instr =
+         bld.mubuf(op, Definition(dst), scratch_rsrc, Operand(v1), soffset, 0, false);
+      instr->mubuf().sync = memory_sync_info(storage_scratch);
+      instr->mubuf().cache.value = ac_swizzled;
+      return;
+   }
+
+   if (const_offset < ctx->program->dev.scratch_global_offset_min) {
+      stack_ptr = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),
+                           stack_ptr == Temp() ? Operand::c32(0) : Operand(stack_ptr),
+                           Operand::c32(const_offset));
+      const_offset = 0;
+   }
+
+   aco_opcode op;
+   switch (byte_size) {
+   case 4: op = aco_opcode::scratch_load_dword; break;
+   case 8: op = aco_opcode::scratch_load_dwordx2; break;
+   case 12: op = aco_opcode::scratch_load_dwordx3; break;
+   case 16: op = aco_opcode::scratch_load_dwordx4; break;
+   default: unreachable("Unexpected param size");
+   }
+
+   bld.scratch(op, Definition(dst), Operand(v1),
+               stack_ptr == Temp() ? Operand(s1) : Operand(stack_ptr), (int16_t)const_offset,
+               memory_sync_info(storage_scratch));
+}
+
+void
+store_scratch_param(isel_context* ctx, Builder& bld, const parameter_info& param, Temp stack_ptr,
+                    unsigned scratch_param_size, Temp data)
+{
+   int32_t const_offset = param.scratch_offset - scratch_param_size;
+   unsigned byte_size = data.bytes();
+   if (ctx->program->gfx_level < GFX9) {
+      Temp scratch_rsrc = load_scratch_resource(ctx->program, bld, true, false);
+
+      Temp soffset = bld.sop2(aco_opcode::s_sub_i32, bld.def(s1), bld.def(s1, scc),
+                              stack_ptr == Temp() ? Operand::c32(0) : Operand(stack_ptr),
+                              Operand::c32(-const_offset * ctx->program->wave_size));
+
+      assert(-const_offset * ctx->program->wave_size < 0x1ff00);
+
+      aco_opcode op;
+      switch (byte_size) {
+      case 4: op = aco_opcode::buffer_store_dword; break;
+      case 8: op = aco_opcode::buffer_store_dwordx2; break;
+      case 12: op = aco_opcode::buffer_store_dwordx3; break;
+      case 16: op = aco_opcode::buffer_store_dwordx4; break;
+      default: unreachable("Unexpected param size");
+      }
+
+      Instruction* instr =
+         bld.mubuf(op, scratch_rsrc, Operand(v1), Operand(soffset), as_vgpr(bld, data), 0, false);
+      instr->mubuf().sync = memory_sync_info(storage_scratch);
+      instr->mubuf().cache.value = ac_swizzled;
+      return;
+   }
+
+   if (const_offset < ctx->program->dev.scratch_global_offset_min) {
+      stack_ptr = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),
+                           stack_ptr == Temp() ? Operand::c32(0) : Operand(stack_ptr),
+                           Operand::c32(const_offset));
+      const_offset = 0;
+   }
+
+   aco_opcode op;
+   switch (byte_size) {
+   case 4: op = aco_opcode::scratch_store_dword; break;
+   case 8: op = aco_opcode::scratch_store_dwordx2; break;
+   case 12: op = aco_opcode::scratch_store_dwordx3; break;
+   case 16: op = aco_opcode::scratch_store_dwordx4; break;
+   default: unreachable("Unexpected param size");
+   }
+
+   bld.scratch(op, Operand(v1), stack_ptr == Temp() ? Operand(s1) : Operand(stack_ptr),
+               as_vgpr(bld, data), (int16_t)const_offset, memory_sync_info(storage_scratch));
+}
+
+void
 visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
 {
    Builder bld(ctx->program, ctx->block);
@@ -9024,6 +9125,63 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       bld.pseudo(aco_opcode::p_unit_test, Definition(get_ssa_temp(ctx, &instr->def)),
                  Operand::c32(nir_intrinsic_base(instr)));
       break;
+   case nir_intrinsic_load_return_param_amd: {
+      call_info& info = ctx->call_infos[nir_intrinsic_call_idx(instr)];
+
+      assert(nir_intrinsic_param_idx(instr) < info.nir_instr->callee->num_params);
+
+      unsigned index_in_return_params = 0u;
+      for (unsigned i = 0; i < info.nir_instr->callee->num_params; ++i) {
+         if (nir_intrinsic_param_idx(instr) == i) {
+            assert(info.nir_instr->callee->params[i].is_return);
+            break;
+         }
+         if (info.nir_instr->callee->params[i].is_return) {
+            ++index_in_return_params;
+         }
+      }
+
+      if (info.return_info[index_in_return_params].is_reg) {
+         bld.copy(Definition(get_ssa_temp(ctx, &instr->def)),
+                  Operand(info.return_info[index_in_return_params].def.getTemp()));
+      } else {
+         Temp stack_ptr;
+         if (ctx->callee_info.stack_ptr.is_reg)
+            stack_ptr = bld.pseudo(aco_opcode::p_callee_stack_ptr, bld.def(s1),
+                                   Operand::c32(info.scratch_param_size),
+                                   Operand(ctx->callee_info.stack_ptr.def.getTemp()));
+         else
+            stack_ptr = bld.pseudo(aco_opcode::p_callee_stack_ptr, bld.def(s1),
+                                   Operand::c32(info.scratch_param_size));
+         load_scratch_param(ctx, bld, info.return_info[index_in_return_params], stack_ptr,
+                            info.scratch_param_size, get_ssa_temp(ctx, &instr->def));
+      }
+      break;
+   }
+   case nir_intrinsic_load_param: {
+      const auto& param = ctx->callee_info.param_infos[nir_intrinsic_param_idx(instr)];
+      if (param.is_reg)
+         bld.copy(Definition(get_ssa_temp(ctx, &instr->def)), Operand(param.def.getTemp()));
+      else
+         load_scratch_param(
+            ctx, bld, param,
+            ctx->callee_info.stack_ptr.is_reg ? ctx->callee_info.stack_ptr.def.getTemp() : Temp(),
+            ctx->callee_info.scratch_param_size, get_ssa_temp(ctx, &instr->def));
+      break;
+   }
+   case nir_intrinsic_store_param_amd: {
+      auto& param = ctx->callee_info.param_infos[nir_intrinsic_param_idx(instr)];
+      if (param.is_reg)
+         param.def.setTemp(param.def.regClass().type() == RegType::vgpr
+                              ? as_vgpr(ctx, get_ssa_temp(ctx, instr->src[0].ssa))
+                              : bld.as_uniform(get_ssa_temp(ctx, instr->src[0].ssa)));
+      else
+         store_scratch_param(
+            ctx, bld, param,
+            ctx->callee_info.stack_ptr.is_reg ? ctx->callee_info.stack_ptr.def.getTemp() : Temp(),
+            ctx->callee_info.scratch_param_size, get_ssa_temp(ctx, instr->src[0].ssa));
+      break;
+   }
    case nir_intrinsic_load_call_return_address_amd: {
       bld.copy(Definition(get_ssa_temp(ctx, &instr->def)),
                Operand(ctx->callee_info.return_address.def.getTemp()));

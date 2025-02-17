@@ -513,15 +513,14 @@ void radv_optimize_nir_algebraic(nir_shader *shader, bool opt_offsets, bool opt_
 
 nir_function_impl *radv_get_rt_shader_entrypoint(nir_shader *shader);
 
-void radv_nir_lower_rt_io(nir_shader *shader, bool monolithic, uint32_t payload_offset, uint32_t *payload_size);
+void radv_nir_lower_rt_io(nir_shader *shader, bool monolithic, uint32_t payload_offset);
 
 struct radv_ray_tracing_stage_info;
 
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
-                           uint32_t *stack_size, bool resume_shader, uint32_t payload_size, struct radv_device *device,
-                           struct radv_ray_tracing_pipeline *pipeline, bool monolithic,
-                           const struct radv_ray_tracing_stage_info *traversal_info);
+                           uint32_t *payload_size, uint32_t *stack_size, struct radv_device *device,
+                           struct radv_ray_tracing_pipeline *pipeline, bool monolithic);
 
 void radv_gather_unused_args(struct radv_ray_tracing_stage_info *info, nir_shader *nir);
 

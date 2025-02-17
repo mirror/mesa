@@ -68,6 +68,7 @@ libaco_files = files(
   'aco_statistics.cpp',
   'aco_util.h',
   'aco_validate.cpp',
+  'aco_vectorize_spills.cpp',
 )
 
 cpp_args_aco = cpp.get_supported_arguments(['-fno-exceptions', '-fno-rtti', '-Wimplicit-fallthrough', '-Wshadow'])

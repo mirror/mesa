@@ -98,6 +98,7 @@ struct tu_render_pass_attachment
    bool gmem;
    int32_t gmem_offset[TU_GMEM_LAYOUT_COUNT];
    bool will_be_resolved;
+   bool is_downsampling_resolve_dst;
    /* for D32S8 separate stencil: */
    bool load_stencil;
    bool store_stencil;

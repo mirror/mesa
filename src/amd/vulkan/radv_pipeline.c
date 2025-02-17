@@ -538,6 +538,10 @@ radv_postprocess_nir(struct radv_device *device, const struct radv_graphics_stat
       stage->nir, io_to_mem || lowered_ngg || stage->stage == MESA_SHADER_COMPUTE || stage->stage == MESA_SHADER_TASK,
       gfx_level >= GFX8);
 
+   NIR_PASS(_, stage->nir, radv_nir_lower_call_abi, stage->info.wave_size);
+   NIR_PASS(_, stage->nir, nir_lower_global_vars_to_local);
+   NIR_PASS(_, stage->nir, nir_lower_vars_to_ssa);
+
    NIR_PASS(_, stage->nir, nir_lower_fp16_casts, nir_lower_fp16_split_fp64);
 
    if (ac_nir_might_lower_bit_size(stage->nir)) {

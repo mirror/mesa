@@ -1026,18 +1026,23 @@ validate_live_vars(Program* program)
    std::vector<RegisterDemand> block_demands(program->blocks.size());
    std::vector<RegisterDemand> live_in_demands(program->blocks.size());
    std::vector<std::vector<RegisterDemand>> register_demands(program->blocks.size());
+   std::vector<RegisterDemand> call_preserved_demands;
 
    for (unsigned i = 0; i < program->blocks.size(); i++) {
       Block& b = program->blocks[i];
       block_demands[i] = b.register_demand;
       live_in_demands[i] = b.live_in_demand;
       register_demands[i].reserve(b.instructions.size());
-      for (unsigned j = 0; j < b.instructions.size(); j++)
+      for (unsigned j = 0; j < b.instructions.size(); j++) {
          register_demands[i].emplace_back(b.instructions[j]->register_demand);
+         if (b.instructions[j]->isCall())
+            call_preserved_demands.push_back(b.instructions[j]->call().caller_preserved_demand);
+      }
    }
 
    aco::live_var_analysis(program);
 
+   unsigned call_instr_idx = 0;
    /* Validate RegisterDemand calculation */
    for (unsigned i = 0; i < program->blocks.size(); i++) {
       Block& b = program->blocks[i];
@@ -1060,7 +1065,9 @@ validate_live_vars(Program* program)
       }
 
       for (unsigned j = 0; j < b.instructions.size(); j++) {
-         if (b.instructions[j]->register_demand == register_demands[i][j])
+         if (b.instructions[j]->register_demand == register_demands[i][j] &&
+             (!b.instructions[j]->isCall() || b.instructions[j]->call().caller_preserved_demand ==
+                                                 call_preserved_demands[call_instr_idx++]))
             continue;
 
          char* out;
@@ -1069,11 +1076,21 @@ validate_live_vars(Program* program)
          u_memstream_open(&mem, &out, &outsize);
          FILE* const memf = u_memstream_get(&mem);
 
-         fprintf(memf,
-                 "Register Demand not updated correctly: got (%3u vgpr, %3u sgpr), but should be "
-                 "(%3u vgpr, %3u sgpr): \n\t",
-                 register_demands[i][j].vgpr, register_demands[i][j].sgpr,
-                 b.instructions[j]->register_demand.vgpr, b.instructions[j]->register_demand.sgpr);
+         if (b.instructions[j]->register_demand == register_demands[i][j]) {
+            fprintf(
+               memf,
+               "Caller-Preserved Register Demand not updated correctly: got (%3u vgpr, %3u sgpr), but should be "
+               "(%3u vgpr, %3u sgpr): \n\t",
+               call_preserved_demands[call_instr_idx - 1].vgpr, call_preserved_demands[call_instr_idx - 1].sgpr,
+               b.instructions[j]->call().caller_preserved_demand.vgpr, b.instructions[j]->call().caller_preserved_demand.sgpr);
+         } else {
+            fprintf(
+               memf,
+               "Register Demand not updated correctly: got (%3u vgpr, %3u sgpr), but should be "
+               "(%3u vgpr, %3u sgpr): \n\t",
+               register_demands[i][j].vgpr, register_demands[i][j].sgpr,
+               b.instructions[j]->register_demand.vgpr, b.instructions[j]->register_demand.sgpr);
+         }
          aco_print_instr(program->gfx_level, b.instructions[j].get(), memf, print_kill);
          u_memstream_close(&mem);
 

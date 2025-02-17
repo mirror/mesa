@@ -11412,30 +11412,35 @@ void
 select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* const* shaders,
                   const struct ac_shader_args* args)
 {
+   bool first_block = true;
    for (unsigned i = 0; i < shader_count; i++) {
-      if (i) {
-         ctx.block = ctx.program->create_and_insert_block();
-         ctx.block->kind = block_kind_top_level | block_kind_resume;
+      nir_foreach_function_impl (impl, shaders[i]) {
+         if (!first_block) {
+            ctx.block = ctx.program->create_and_insert_block();
+            ctx.block->kind = block_kind_top_level | block_kind_resume;
+         }
+         nir_shader* nir = shaders[i];
+
+         init_context(&ctx, nir);
+         setup_fp_mode(&ctx, nir);
+
+         Instruction* startpgm = add_startpgm(&ctx);
+         append_logical_start(ctx.block);
+         split_arguments(&ctx, startpgm);
+         visit_cf_list(&ctx, &impl->body);
+         append_logical_end(ctx.block);
+         ctx.block->kind |= block_kind_uniform;
+
+         /* Fix output registers and jump to next shader. We can skip this when dealing with a
+          * raygen shader without shader calls.
+          */
+         if ((shader_count > 1 || shaders[i]->info.stage != MESA_SHADER_RAYGEN) &&
+             impl == nir_shader_get_entrypoint(nir))
+            insert_rt_jump_next(ctx, args);
+
+         cleanup_context(&ctx);
+         first_block = false;
       }
-
-      nir_shader* nir = shaders[i];
-      init_context(&ctx, nir);
-      setup_fp_mode(&ctx, nir);
-
-      Instruction* startpgm = add_startpgm(&ctx);
-      append_logical_start(ctx.block);
-      split_arguments(&ctx, startpgm);
-      visit_cf_list(&ctx, &nir_shader_get_entrypoint(nir)->body);
-      append_logical_end(ctx.block);
-      ctx.block->kind |= block_kind_uniform;
-
-      /* Fix output registers and jump to next shader. We can skip this when dealing with a raygen
-       * shader without shader calls.
-       */
-      if (shader_count > 1 || shaders[i]->info.stage != MESA_SHADER_RAYGEN)
-         insert_rt_jump_next(ctx, args);
-
-      cleanup_context(&ctx);
    }
 
    ctx.program->config->float_mode = ctx.program->blocks[0].fp_mode.val;

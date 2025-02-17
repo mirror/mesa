@@ -257,8 +257,8 @@ setup_nir(isel_context* ctx, nir_shader* nir)
       nir_opt_dce(nir);
    }
 
-   nir_function_impl* func = nir_shader_get_entrypoint(nir);
-   nir_index_ssa_defs(func);
+   nir_foreach_function_impl (impl, nir)
+      nir_index_ssa_defs(impl);
 }
 
 /* Returns true if we can skip uniformization of a merge phi. This makes the destination divergent,
@@ -349,7 +349,6 @@ skip_uniformize_merge_phi(nir_def* ssa, unsigned depth)
 void
 init_context(isel_context* ctx, nir_shader* shader)
 {
-   nir_function_impl* impl = nir_shader_get_entrypoint(shader);
    ctx->shader = shader;
 
    /* Init NIR range analysis. */
@@ -364,134 +363,135 @@ init_context(isel_context* ctx, nir_shader* shader)
    ctx->ub_config.max_workgroup_size[1] = 1024;
    ctx->ub_config.max_workgroup_size[2] = 1024;
 
-   uint32_t options =
-      shader->options->divergence_analysis_options | nir_divergence_ignore_undef_if_phi_srcs;
-   nir_divergence_analysis_impl(impl, (nir_divergence_options)options);
+   nir_foreach_function_impl (impl, shader) {
+      uint32_t options =
+         shader->options->divergence_analysis_options | nir_divergence_ignore_undef_if_phi_srcs;
+      nir_divergence_analysis_impl(impl, (nir_divergence_options)options);
 
-   apply_nuw_to_offsets(ctx, impl);
-   ac_nir_flag_smem_for_loads(shader, ctx->program->gfx_level, false, true);
+      apply_nuw_to_offsets(ctx, impl);
+      ac_nir_flag_smem_for_loads(shader, ctx->program->gfx_level, false, true);
 
-   /* sanitize control flow */
-   sanitize_cf_list(impl, &impl->body);
-   nir_metadata_preserve(impl, nir_metadata_none);
+      /* sanitize control flow */
+      sanitize_cf_list(impl, &impl->body);
+      nir_metadata_preserve(impl, nir_metadata_none);
 
-   /* we'll need these for isel */
-   nir_metadata_require(impl, nir_metadata_block_index);
+      /* we'll need these for isel */
+      nir_metadata_require(impl, nir_metadata_block_index);
 
-   if (ctx->options->dump_preoptir) {
-      fprintf(stderr, "NIR shader before instruction selection:\n");
-      nir_print_shader(shader, stderr);
-   }
+      if (ctx->options->dump_preoptir) {
+         fprintf(stderr, "NIR shader before instruction selection:\n");
+         nir_print_shader(shader, stderr);
+      }
 
-   ctx->first_temp_id = ctx->program->peekAllocationId();
-   ctx->program->allocateRange(impl->ssa_alloc);
-   RegClass* regclasses = ctx->program->temp_rc.data() + ctx->first_temp_id;
+      ctx->first_temp_id = ctx->program->peekAllocationId();
+      ctx->program->allocateRange(impl->ssa_alloc);
+      RegClass* regclasses = ctx->program->temp_rc.data() + ctx->first_temp_id;
 
-   unsigned call_count = 0;
+      unsigned call_count = 0;
 
-   /* TODO: make this recursive to improve compile times */
-   bool done = false;
-   while (!done) {
-      done = true;
-      nir_foreach_block (block, impl) {
-         nir_foreach_instr (instr, block) {
-            switch (instr->type) {
-            case nir_instr_type_alu: {
-               nir_alu_instr* alu_instr = nir_instr_as_alu(instr);
-               RegType type = RegType::sgpr;
+      /* TODO: make this recursive to improve compile times */
+      bool done = false;
+      while (!done) {
+         done = true;
+         nir_foreach_block (block, impl) {
+            nir_foreach_instr (instr, block) {
+               switch (instr->type) {
+               case nir_instr_type_alu: {
+                  nir_alu_instr* alu_instr = nir_instr_as_alu(instr);
+                  RegType type = RegType::sgpr;
 
-               /* packed 16bit instructions have to be VGPR */
-               if (alu_instr->def.num_components == 2 &&
-                   nir_op_infos[alu_instr->op].output_size == 0)
+                  /* packed 16bit instructions have to be VGPR */
+                  if (alu_instr->def.num_components == 2 &&
+                  nir_op_infos[alu_instr->op].output_size == 0)
                   type = RegType::vgpr;
 
-               switch (alu_instr->op) {
-               case nir_op_f2i16:
-               case nir_op_f2u16:
-               case nir_op_f2i32:
-               case nir_op_f2u32:
-               case nir_op_mov:
-                  if (alu_instr->def.divergent &&
-                      regclasses[alu_instr->src[0].src.ssa->index].type() == RegType::vgpr)
-                     type = RegType::vgpr;
-                  break;
-               case nir_op_fmulz:
-               case nir_op_ffmaz:
-               case nir_op_f2f64:
-               case nir_op_u2f64:
-               case nir_op_i2f64:
-               case nir_op_pack_unorm_2x16:
-               case nir_op_pack_snorm_2x16:
-               case nir_op_pack_uint_2x16:
-               case nir_op_pack_sint_2x16:
-               case nir_op_ldexp:
-               case nir_op_frexp_sig:
-               case nir_op_frexp_exp:
-               case nir_op_cube_amd:
-               case nir_op_msad_4x8:
-               case nir_op_mqsad_4x8:
-               case nir_op_udot_4x8_uadd:
-               case nir_op_sdot_4x8_iadd:
-               case nir_op_sudot_4x8_iadd:
-               case nir_op_udot_4x8_uadd_sat:
-               case nir_op_sdot_4x8_iadd_sat:
-               case nir_op_sudot_4x8_iadd_sat:
-               case nir_op_udot_2x16_uadd:
-               case nir_op_sdot_2x16_iadd:
-               case nir_op_udot_2x16_uadd_sat:
-               case nir_op_sdot_2x16_iadd_sat:
-               case nir_op_alignbyte_amd: type = RegType::vgpr; break;
-               case nir_op_fmul:
-               case nir_op_ffma:
-               case nir_op_fadd:
-               case nir_op_fsub:
-               case nir_op_fmax:
-               case nir_op_fmin:
-               case nir_op_fsat:
-               case nir_op_fneg:
-               case nir_op_fabs:
-               case nir_op_fsign:
-               case nir_op_i2f16:
-               case nir_op_i2f32:
-               case nir_op_u2f16:
-               case nir_op_u2f32:
-               case nir_op_f2f16:
-               case nir_op_f2f16_rtz:
-               case nir_op_f2f16_rtne:
-               case nir_op_f2f32:
-               case nir_op_fquantize2f16:
-               case nir_op_ffract:
-               case nir_op_ffloor:
-               case nir_op_fceil:
-               case nir_op_ftrunc:
-               case nir_op_fround_even:
-               case nir_op_frcp:
-               case nir_op_frsq:
-               case nir_op_fsqrt:
-               case nir_op_fexp2:
-               case nir_op_flog2:
-               case nir_op_fsin_amd:
-               case nir_op_fcos_amd:
-               case nir_op_pack_half_2x16_rtz_split:
-               case nir_op_pack_half_2x16_split:
-               case nir_op_unpack_half_2x16_split_x:
-               case nir_op_unpack_half_2x16_split_y: {
-                  if (ctx->program->gfx_level < GFX11_5 ||
-                      alu_instr->src[0].src.ssa->bit_size > 32) {
-                     type = RegType::vgpr;
-                     break;
+                  switch (alu_instr->op) {
+                  case nir_op_f2i16:
+                  case nir_op_f2u16:
+                  case nir_op_f2i32:
+                  case nir_op_f2u32:
+                  case nir_op_mov:
+                     if (alu_instr->def.divergent &&
+                         regclasses[alu_instr->src[0].src.ssa->index].type() == RegType::vgpr)
+                        type = RegType::vgpr;
+                   break;
+                  case nir_op_fmulz:
+                  case nir_op_ffmaz:
+                  case nir_op_f2f64:
+                  case nir_op_u2f64:
+                  case nir_op_i2f64:
+                  case nir_op_pack_unorm_2x16:
+                  case nir_op_pack_snorm_2x16:
+                  case nir_op_pack_uint_2x16:
+                  case nir_op_pack_sint_2x16:
+                  case nir_op_ldexp:
+                  case nir_op_frexp_sig:
+                  case nir_op_frexp_exp:
+                  case nir_op_cube_amd:
+                  case nir_op_msad_4x8:
+                  case nir_op_mqsad_4x8:
+                  case nir_op_udot_4x8_uadd:
+                  case nir_op_sdot_4x8_iadd:
+                  case nir_op_sudot_4x8_iadd:
+                  case nir_op_udot_4x8_uadd_sat:
+                  case nir_op_sdot_4x8_iadd_sat:
+                  case nir_op_sudot_4x8_iadd_sat:
+                  case nir_op_udot_2x16_uadd:
+                  case nir_op_sdot_2x16_iadd:
+                  case nir_op_udot_2x16_uadd_sat:
+                  case nir_op_sdot_2x16_iadd_sat:
+                  case nir_op_alignbyte_amd: type = RegType::vgpr; break;
+                  case nir_op_fmul:
+                  case nir_op_ffma:
+                  case nir_op_fadd:
+                  case nir_op_fsub:
+                  case nir_op_fmax:
+                  case nir_op_fmin:
+                  case nir_op_fsat:
+                  case nir_op_fneg:
+                  case nir_op_fabs:
+                  case nir_op_fsign:
+                  case nir_op_i2f16:
+                  case nir_op_i2f32:
+                  case nir_op_u2f16:
+                  case nir_op_u2f32:
+                  case nir_op_f2f16:
+                  case nir_op_f2f16_rtz:
+                  case nir_op_f2f16_rtne:
+                  case nir_op_f2f32:
+                  case nir_op_fquantize2f16:
+                  case nir_op_ffract:
+                  case nir_op_ffloor:
+                  case nir_op_fceil:
+                  case nir_op_ftrunc:
+                  case nir_op_fround_even:
+                  case nir_op_frcp:
+                  case nir_op_frsq:
+                  case nir_op_fsqrt:
+                  case nir_op_fexp2:
+                  case nir_op_flog2:
+                  case nir_op_fsin_amd:
+                  case nir_op_fcos_amd:
+                  case nir_op_pack_half_2x16_rtz_split:
+                  case nir_op_pack_half_2x16_split:
+                  case nir_op_unpack_half_2x16_split_x:
+                  case nir_op_unpack_half_2x16_split_y: {
+                     if (ctx->program->gfx_level < GFX11_5 ||
+                         alu_instr->src[0].src.ssa->bit_size > 32) {
+                        type = RegType::vgpr;
+                        break;
+                     }
+                     FALLTHROUGH;
                   }
-                  FALLTHROUGH;
-               }
-               default:
-                  for (unsigned i = 0; i < nir_op_infos[alu_instr->op].num_inputs; i++) {
-                     if (alu_instr->src[i].src.ssa->bit_size == 1
+                  default:
+                     for (unsigned i = 0; i < nir_op_infos[alu_instr->op].num_inputs; i++) {
+                        if (alu_instr->src[i].src.ssa->bit_size == 1
                             ? nir_src_is_divergent(&alu_instr->src[i].src)
                             : regclasses[alu_instr->src[i].src.ssa->index].type() == RegType::vgpr)
-                        type = RegType::vgpr;
+                           type = RegType::vgpr;
+                     }
+                     break;
                   }
-                  break;
-               }
 
                RegClass rc =
                   get_reg_class(ctx, type, alu_instr->def.num_components, alu_instr->def.bit_size);
@@ -618,75 +618,76 @@ init_context(isel_context* ctx, nir_shader* shader)
                nir_tex_instr* tex = nir_instr_as_tex(instr);
                RegType type = tex->def.divergent ? RegType::vgpr : RegType::sgpr;
 
-               if (tex->op == nir_texop_texture_samples) {
-                  assert(!tex->def.divergent);
-               }
-
-               RegClass rc = get_reg_class(ctx, type, tex->def.num_components, tex->def.bit_size);
-               regclasses[tex->def.index] = rc;
-               break;
-            }
-            case nir_instr_type_undef: {
-               unsigned num_components = nir_instr_as_undef(instr)->def.num_components;
-               unsigned bit_size = nir_instr_as_undef(instr)->def.bit_size;
-               RegClass rc = get_reg_class(ctx, RegType::sgpr, num_components, bit_size);
-               regclasses[nir_instr_as_undef(instr)->def.index] = rc;
-               break;
-            }
-            case nir_instr_type_phi: {
-               nir_phi_instr* phi = nir_instr_as_phi(instr);
-               RegType type = RegType::sgpr;
-               unsigned num_components = phi->def.num_components;
-               assert((phi->def.bit_size != 1 || num_components == 1) &&
-                      "Multiple components not supported on boolean phis.");
-
-               if (phi->def.divergent) {
-                  type = RegType::vgpr;
-               } else {
-                  bool vgpr_src = false;
-                  nir_foreach_phi_src (src, phi)
-                     vgpr_src |= regclasses[src->src.ssa->index].type() == RegType::vgpr;
-
-                  if (vgpr_src) {
-                     type = RegType::vgpr;
-
-                     /* This might be the case because of nir_divergence_ignore_undef_if_phi_srcs. */
-                     bool divergent_merge = false;
-                     if (nir_cf_node_prev(&block->cf_node) &&
-                         nir_cf_node_prev(&block->cf_node)->type == nir_cf_node_if) {
-                        nir_if* nif = nir_cf_node_as_if(nir_cf_node_prev(&block->cf_node));
-                        divergent_merge = nir_src_is_divergent(&nif->condition);
-                     }
-
-                     /* In case of uniform phis after divergent merges, ensure that the dst is an
-                      * SGPR and does not contain undefined values for some invocations.
-                      */
-                     if (divergent_merge && !skip_uniformize_merge_phi(&phi->def, 0))
-                        type = RegType::sgpr;
+                  if (tex->op == nir_texop_texture_samples) {
+                     assert(!tex->def.divergent);
                   }
-               }
 
-               RegClass rc = get_reg_class(ctx, type, num_components, phi->def.bit_size);
-               if (rc != regclasses[phi->def.index])
-                  done = false;
-               regclasses[phi->def.index] = rc;
-               break;
-            }
-            case nir_instr_type_call: {
-               ++call_count;
-               break;
-            }
-            default: break;
+                  RegClass rc =
+                     get_reg_class(ctx, type, tex->def.num_components, tex->def.bit_size);
+                  regclasses[tex->def.index] = rc;
+                  break;
+               }
+               case nir_instr_type_undef: {
+                  unsigned num_components = nir_instr_as_undef(instr)->def.num_components;
+                  unsigned bit_size = nir_instr_as_undef(instr)->def.bit_size;
+                  RegClass rc = get_reg_class(ctx, RegType::sgpr, num_components, bit_size);
+                  regclasses[nir_instr_as_undef(instr)->def.index] = rc;
+                  break;
+               }
+               case nir_instr_type_phi: {
+                  nir_phi_instr* phi = nir_instr_as_phi(instr);
+                  RegType type = RegType::sgpr;
+                  unsigned num_components = phi->def.num_components;
+                  assert((phi->def.bit_size != 1 || num_components == 1) &&
+                         "Multiple components not supported on boolean phis.");
+
+                  if (phi->def.divergent) {
+                     type = RegType::vgpr;
+                  } else {
+                     bool vgpr_src = false;
+                     nir_foreach_phi_src (src, phi)
+                        vgpr_src |= regclasses[src->src.ssa->index].type() == RegType::vgpr;
+
+                     if (vgpr_src) {
+                        type = RegType::vgpr;
+
+                        /* This might be the case because of nir_divergence_ignore_undef_if_phi_srcs. */
+                        bool divergent_merge = false;
+                        if (nir_cf_node_prev(&block->cf_node) &&
+                            nir_cf_node_prev(&block->cf_node)->type == nir_cf_node_if) {
+                           nir_if* nif = nir_cf_node_as_if(nir_cf_node_prev(&block->cf_node));
+                           divergent_merge = nir_src_is_divergent(&nif->condition);
+                        }
+
+                        /* In case of uniform phis after divergent merges, ensure that the dst is an
+                         * SGPR and does not contain undefined values for some invocations.
+                         */
+                        if (divergent_merge && !skip_uniformize_merge_phi(&phi->def, 0))
+                           type = RegType::sgpr;
+                     }
+                  }
+
+                  RegClass rc = get_reg_class(ctx, type, num_components, phi->def.bit_size);
+                  if (rc != regclasses[phi->def.index])
+                     done = false;
+                  regclasses[phi->def.index] = rc;
+                  break;
+               }
+               case nir_instr_type_call: {
+                  ++call_count;
+                  break;
+               }
+               default: break;
+               }
             }
          }
       }
+
+      ctx->call_infos.reserve(call_count);
+
+      ctx->program->config->spi_ps_input_ena = ctx->program->info.ps.spi_ps_input_ena;
+      ctx->program->config->spi_ps_input_addr = ctx->program->info.ps.spi_ps_input_addr;
    }
-
-   ctx->call_infos.reserve(call_count);
-
-   ctx->program->config->spi_ps_input_ena = ctx->program->info.ps.spi_ps_input_ena;
-   ctx->program->config->spi_ps_input_addr = ctx->program->info.ps.spi_ps_input_addr;
-
    /* align and copy constant data */
    while (ctx->program->constant_data.size() % 4u)
       ctx->program->constant_data.push_back(0);
@@ -765,7 +766,8 @@ setup_isel_context(Program* program, unsigned shader_count, struct nir_shader* c
 
    unsigned nir_num_blocks = 0;
    for (unsigned i = 0; i < shader_count; i++)
-      nir_num_blocks += nir_shader_get_entrypoint(shaders[i])->num_blocks;
+      nir_foreach_function_impl (impl, shaders[i])
+         nir_num_blocks += impl->num_blocks;
    ctx.program->blocks.reserve(nir_num_blocks * 2);
    ctx.block = ctx.program->create_and_insert_block();
    ctx.block->kind = block_kind_top_level;

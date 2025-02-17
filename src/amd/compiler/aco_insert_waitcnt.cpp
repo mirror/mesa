@@ -357,6 +357,10 @@ kill(wait_imm& imm, Instruction* instr, wait_ctx& ctx, memory_sync_info sync_inf
       imm.combine(ctx.barrier_imm[ffs(storage_vgpr_spill) - 1]);
    }
 
+   if (instr->opcode == aco_opcode::s_swappc_b64)
+      u_foreach_bit (i, (~counter_vs) & ctx.nonzero)
+         imm[i] = 0;
+
    /* Make sure POPS coherent memory accesses have reached the L2 cache before letting the
     * overlapping waves proceed into the ordered section.
     */

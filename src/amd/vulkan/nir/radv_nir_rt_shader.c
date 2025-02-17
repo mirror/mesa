@@ -127,6 +127,62 @@ radv_visit_inlined_shaders(nir_builder *b, nir_def *sbt_idx, bool can_have_null_
    free(cases);
 }
 
+static void
+lower_rt_deref_var(nir_shader *shader, nir_function_impl *impl, nir_instr *instr, struct hash_table *cloned_vars)
+{
+   nir_deref_instr *deref = nir_instr_as_deref(instr);
+   nir_variable *var = deref->var;
+   struct hash_entry *entry = _mesa_hash_table_search(cloned_vars, var);
+   if (!(var->data.mode & nir_var_function_temp) && !entry)
+      return;
+
+   hash_table_foreach (cloned_vars, cloned_entry) {
+      if (var == cloned_entry->data)
+         return;
+   }
+
+   nir_variable *new_var;
+   if (entry) {
+      new_var = entry->data;
+   } else {
+      new_var = nir_variable_clone(var, shader);
+      _mesa_hash_table_insert(cloned_vars, var, new_var);
+
+      exec_node_remove(&var->node);
+      var->data.mode = nir_var_shader_temp;
+      exec_list_push_tail(&shader->variables, &var->node);
+
+      exec_list_push_tail(&impl->locals, &new_var->node);
+   }
+
+   deref->modes = nir_var_shader_temp;
+
+   nir_foreach_use_safe (use, nir_instr_def(instr)) {
+      if (nir_src_is_if(use))
+         continue;
+
+      nir_instr *parent = nir_src_parent_instr(use);
+      if (parent->type != nir_instr_type_intrinsic)
+         continue;
+
+      nir_intrinsic_instr *intrin = nir_instr_as_intrinsic(parent);
+      if (intrin->intrinsic != nir_intrinsic_trace_ray && intrin->intrinsic != nir_intrinsic_execute_callable &&
+          intrin->intrinsic != nir_intrinsic_execute_closest_hit_amd &&
+          intrin->intrinsic != nir_intrinsic_execute_miss_amd)
+         continue;
+
+      nir_builder b = nir_builder_at(nir_before_instr(parent));
+      nir_deref_instr *old_deref = nir_build_deref_var(&b, var);
+      nir_deref_instr *new_deref = nir_build_deref_var(&b, new_var);
+
+      nir_copy_deref(&b, new_deref, old_deref);
+      b.cursor = nir_after_instr(parent);
+      nir_copy_deref(&b, old_deref, new_deref);
+
+      nir_src_rewrite(use, nir_instr_def(&new_deref->instr));
+   }
+}
+
 static bool
 lower_rt_derefs(nir_shader *shader)
 {
@@ -134,9 +190,7 @@ lower_rt_derefs(nir_shader *shader)
 
    bool progress = false;
 
-   nir_builder b = nir_builder_at(nir_before_impl(impl));
-
-   nir_def *arg_offset = nir_load_rt_arg_scratch_offset_amd(&b);
+   struct hash_table *cloned_vars = _mesa_pointer_hash_table_create(shader);
 
    nir_foreach_block (block, impl) {
       nir_foreach_instr_safe (instr, block) {
@@ -144,17 +198,18 @@ lower_rt_derefs(nir_shader *shader)
             continue;
 
          nir_deref_instr *deref = nir_instr_as_deref(instr);
-         if (!nir_deref_mode_is(deref, nir_var_shader_call_data))
+         if (!nir_deref_mode_is(deref, nir_var_function_temp))
             continue;
 
-         deref->modes = nir_var_function_temp;
-         progress = true;
-
          if (deref->deref_type == nir_deref_type_var) {
-            b.cursor = nir_before_instr(&deref->instr);
-            nir_deref_instr *replacement =
-               nir_build_deref_cast(&b, arg_offset, nir_var_function_temp, deref->var->type, 0);
-            nir_def_replace(&deref->def, &replacement->def);
+            lower_rt_deref_var(shader, impl, instr, cloned_vars);
+            progress = true;
+         } else {
+            assert(deref->deref_type != nir_deref_type_cast);
+            /* Parent modes might have changed, propagate change */
+            nir_deref_instr *parent = nir_src_as_deref(deref->parent);
+            if (parent->modes != deref->modes)
+               deref->modes = parent->modes;
          }
       }
    }
@@ -1140,12 +1195,9 @@ void
 radv_nir_lower_rt_io(nir_shader *nir, bool monolithic, uint32_t payload_offset)
 {
    if (!monolithic) {
-      NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_function_temp | nir_var_shader_call_data,
-               glsl_get_natural_size_align_bytes);
-
       NIR_PASS(_, nir, lower_rt_derefs);
-
-      NIR_PASS(_, nir, nir_lower_explicit_io, nir_var_function_temp, nir_address_format_32bit_offset);
+      NIR_PASS(_, nir, nir_split_var_copies);
+      NIR_PASS(_, nir, nir_lower_var_copies);
    } else {
       NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_function_temp, glsl_get_natural_size_align_bytes);
       NIR_PASS(_, nir, nir_lower_vars_to_explicit_types, nir_var_shader_temp, glsl_get_natural_size_align_bytes);

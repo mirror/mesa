@@ -1231,7 +1231,12 @@ setup_vgpr_spill_reload(spill_ctx& ctx, Block& block,
          }
 
          /* GFX9+ uses scratch_* instructions, which don't use a resource. */
-         ctx.scratch_rsrc = offset_bld.copy(offset_bld.def(s1), Operand::c32(saddr));
+         if (ctx.program->stack_ptr.id())
+            ctx.scratch_rsrc =
+               offset_bld.sop2(aco_opcode::s_add_u32, offset_bld.def(s1), Definition(scc, s1),
+                               Operand(ctx.program->stack_ptr), Operand::c32(saddr));
+         else
+            ctx.scratch_rsrc = offset_bld.copy(offset_bld.def(s1), Operand::c32(saddr));
       }
    } else {
       if (ctx.scratch_rsrc == Temp())

@@ -27,6 +27,7 @@ struct radv_ray_tracing_pipeline {
    unsigned group_count;
 
    uint32_t stack_size;
+   uint32_t traversal_stack_size;
 
    /* set if any shaders from this pipeline require robustness2 in the merged traversal shader */
    bool traversal_storage_robustness2 : 1;

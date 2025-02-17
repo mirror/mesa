@@ -756,9 +756,9 @@ radv_rt_compile_shaders(struct radv_device *device, struct vk_pipeline_cache *ca
       .key = stage_keys[MESA_SHADER_INTERSECTION],
    };
    radv_shader_layout_init(pipeline_layout, MESA_SHADER_INTERSECTION, &traversal_stage.layout);
-   result =
-      radv_rt_nir_to_asm(device, cache, pCreateInfo, pipeline, false, &traversal_stage, &payload_size, NULL, NULL, &traversal_info,
-                         NULL, skip_shaders_cache, &pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
+   result = radv_rt_nir_to_asm(device, cache, pCreateInfo, pipeline, false, &traversal_stage, &payload_size,
+                               &pipeline->traversal_stack_size, NULL, &traversal_info, NULL, skip_shaders_cache,
+                               &pipeline->base.base.shaders[MESA_SHADER_INTERSECTION]);
    ralloc_free(traversal_nir);
 
 cleanup:
@@ -819,10 +819,11 @@ compute_rt_stack_size(const VkRayTracingPipelineCreateInfoKHR *pCreateInfo, stru
          unreachable("Invalid stage type in RT shader");
       }
    }
-   pipeline->stack_size =
-      raygen_size +
-      MIN2(pCreateInfo->maxPipelineRayRecursionDepth, 1) * MAX2(chit_miss_size, intersection_size + any_hit_size) +
-      MAX2(0, (int)(pCreateInfo->maxPipelineRayRecursionDepth) - 1) * chit_miss_size + 2 * callable_size;
+   pipeline->stack_size = raygen_size +
+                          MIN2(pCreateInfo->maxPipelineRayRecursionDepth, 1) *
+                             (chit_miss_size + intersection_size + any_hit_size + pipeline->traversal_stack_size) +
+                          MAX2(0, (int)(pCreateInfo->maxPipelineRayRecursionDepth) - 1) * chit_miss_size +
+                          2 * callable_size;
 }
 
 static void

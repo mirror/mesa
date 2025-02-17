@@ -2612,6 +2612,7 @@ public:
    std::vector<uint8_t> constant_data;
    Temp private_segment_buffer;
    Temp scratch_offset;
+   Temp stack_ptr = {};
 
    uint16_t num_waves = 0;
    uint16_t min_waves = 0;

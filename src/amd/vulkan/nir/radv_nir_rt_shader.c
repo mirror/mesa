@@ -1627,6 +1627,7 @@ radv_build_ahit_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_tracing_g
    assert(nir_stage);
 
    radv_nir_lower_rt_io(nir_stage, data->vars->monolithic, data->vars->payload_offset, NULL);
+   b->shader->scratch_size = MAX2(nir_stage->scratch_size, b->shader->scratch_size);
 
    insert_rt_case(b, nir_stage, data->vars, sbt_idx, group->handle.any_hit_index);
    ralloc_free(nir_stage);
@@ -1662,10 +1663,12 @@ radv_build_isec_case(nir_builder *b, nir_def *sbt_idx, struct radv_ray_tracing_g
 
       /* reserve stack size for any_hit before it is inlined */
       data->pipeline->stages[group->any_hit_shader].stack_size = any_hit_stage->scratch_size;
+      b->shader->scratch_size = MAX2(any_hit_stage->scratch_size, b->shader->scratch_size);
 
       nir_lower_intersection_shader(nir_stage, any_hit_stage);
       ralloc_free(any_hit_stage);
    }
+   b->shader->scratch_size = MAX2(nir_stage->scratch_size, b->shader->scratch_size);
 
    insert_rt_case(b, nir_stage, data->vars, sbt_idx, group->handle.intersection_index);
    ralloc_free(nir_stage);

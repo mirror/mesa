@@ -2642,6 +2642,7 @@ public:
 
    bool is_callee = false;
    bool has_call = false;
+   bool bypass_reg_preservation = false;
    ABI callee_abi = {};
    RegisterDemand callee_param_demand = RegisterDemand();
    unsigned short arg_sgpr_count;

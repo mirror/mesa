@@ -11744,6 +11744,7 @@ select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* c
 
             Builder(ctx.program, ctx.block).sop1(aco_opcode::s_setpc_b64, Operand(ctx.next_pc));
          } else {
+            ctx.program->bypass_reg_preservation = true;
             Builder(ctx.program, ctx.block).sopp(aco_opcode::s_endpgm);
          }
 

@@ -2638,6 +2638,7 @@ public:
 
    bool should_repair_ssa = false;
 
+   bool is_callee = false;
    ABI callee_abi = {};
    RegisterDemand callee_param_demand = RegisterDemand();
    unsigned short arg_sgpr_count;

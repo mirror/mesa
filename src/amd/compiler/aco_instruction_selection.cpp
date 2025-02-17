@@ -11573,6 +11573,8 @@ select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* c
          init_context(&ctx, nir);
          setup_fp_mode(&ctx, nir);
 
+         ctx.program->is_callee = true;
+
          Instruction* startpgm = add_startpgm(&ctx);
          append_logical_start(ctx.block);
          split_arguments(&ctx, startpgm);

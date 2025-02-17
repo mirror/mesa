@@ -1371,7 +1371,7 @@ get_reg_impl(ra_ctx& ctx, const RegisterFile& reg_file, std::vector<parallelcopy
             continue;
          }
 
-         if (reg_file[j] == 0 || reg_file[j] == last_var)
+         if (reg_file[j] == 0 || reg_file[j] == 0xFFFFFFFF || reg_file[j] == last_var)
             continue;
 
          if (reg_file[j] == 0xF0000000) {

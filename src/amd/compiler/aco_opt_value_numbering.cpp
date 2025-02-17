@@ -43,6 +43,8 @@ struct InstrHash {
       for (const Operand& op : instr->operands)
          hash = murmur_32_scramble(hash, op.constantValue());
 
+      hash = murmur_32_scramble(hash, instr->pass_flags >> 16);
+
       size_t data_size = get_instr_data_size(instr->format);
 
       /* skip format, opcode and pass_flags and op/def spans */
@@ -240,6 +242,9 @@ struct vn_ctx {
    expr_set expr_values;
    aco::unordered_map<uint32_t, Temp> renames;
 
+   /* For each block, a counter of how many calls were encountered in the linear/logical CFG. */
+   std::vector<std::pair<uint32_t, uint32_t>> call_indices;
+
    /* The exec id should be the same on the same level of control flow depth.
     * Together with the check for dominator relations, it is safe to assume
     * that the same exec_id also means the same execution mask.
@@ -254,6 +259,7 @@ struct vn_ctx {
       for (Block& block : program->blocks)
          size += block.instructions.size();
       expr_values.reserve(size);
+      call_indices.resize(program->blocks.size(), {0, 0});
    }
 };
 
@@ -342,6 +348,13 @@ process_block(vn_ctx& ctx, Block& block)
    std::vector<aco_ptr<Instruction>> new_instructions;
    new_instructions.reserve(block.instructions.size());
 
+   uint32_t linear_call_idx = 0;
+   uint32_t logical_call_idx = 0;
+   for (auto index : block.linear_preds)
+      linear_call_idx = std::max(linear_call_idx, ctx.call_indices[index].first);
+   for (auto index : block.logical_preds)
+      logical_call_idx = std::max(logical_call_idx, ctx.call_indices[index].second);
+
    for (aco_ptr<Instruction>& instr : block.instructions) {
       /* first, rename operands */
       for (Operand& op : instr->operands) {
@@ -355,6 +368,10 @@ process_block(vn_ctx& ctx, Block& block)
       if (instr->opcode == aco_opcode::p_discard_if ||
           instr->opcode == aco_opcode::p_demote_to_helper || instr->opcode == aco_opcode::p_end_wqm)
          ctx.exec_id++;
+      if (instr->isCall()) {
+         ++linear_call_idx;
+         ++logical_call_idx;
+      }
 
       /* simple copy-propagation through renaming */
       bool copy_instr =
@@ -371,7 +388,12 @@ process_block(vn_ctx& ctx, Block& block)
          continue;
       }
 
+      bool use_linear_call_idx =
+         std::any_of(instr->definitions.begin(), instr->definitions.end(),
+                     [](const auto& def) { return def.regClass().is_linear(); });
+
       instr->pass_flags = ctx.exec_id;
+      instr->pass_flags |= (use_linear_call_idx ? linear_call_idx : logical_call_idx) << 16;
       std::pair<expr_set::iterator, bool> res = ctx.expr_values.emplace(instr.get(), block.index);
 
       /* if there was already an expression with the same value number */
@@ -409,6 +431,8 @@ process_block(vn_ctx& ctx, Block& block)
          new_instructions.emplace_back(std::move(instr));
       }
    }
+
+   ctx.call_indices[block.index] = {linear_call_idx, logical_call_idx};
 
    block.instructions = std::move(new_instructions);
 }

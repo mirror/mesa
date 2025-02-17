@@ -4992,6 +4992,9 @@ nir_address_format_to_glsl_type(nir_address_format addr_format)
 
 const nir_const_value *nir_address_format_null_value(nir_address_format addr_format);
 
+nir_def *nir_build_addr_convert(nir_builder *b, nir_def *addr,
+                                nir_address_format from, nir_address_format to);
+
 nir_def *nir_build_addr_iadd(nir_builder *b, nir_def *addr,
                              nir_address_format addr_format,
                              nir_variable_mode modes,

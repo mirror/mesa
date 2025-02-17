@@ -11528,33 +11528,39 @@ merged_wave_info_to_mask(isel_context* ctx, unsigned i)
    return lanecount_to_mask(ctx, count, i * 8u);
 }
 
-static void
-insert_rt_jump_next(isel_context& ctx, const struct ac_shader_args* args)
+void
+insert_return(isel_context& ctx)
 {
-   unsigned src_count = 0;
-   for (unsigned i = 0; i < ctx.args->arg_count; i++)
-      src_count += !!BITSET_TEST(ctx.output_args, i);
-
+   unsigned return_param_count = 0;
+   for (auto& param_def : ctx.callee_info.param_infos) {
+      if (!param_def.is_reg || param_def.discardable)
+         continue;
+      ++return_param_count;
+   }
+   unsigned src_count = return_param_count + 2;
    Instruction* ret = create_instruction(aco_opcode::p_return, Format::PSEUDO, src_count, 0);
    ctx.block->instructions.emplace_back(ret);
 
-   src_count = 0;
-   for (unsigned i = 0; i < ctx.args->arg_count; i++) {
-      if (!BITSET_TEST(ctx.output_args, i))
+   unsigned def_idx = 0;
+   for (unsigned i = 0; i < ctx.callee_info.param_infos.size(); ++i) {
+      const auto& param_info = ctx.callee_info.param_infos[i];
+      if (!param_info.is_reg || param_info.discardable)
          continue;
-
-      enum ac_arg_regfile file = ctx.args->args[i].file;
-      unsigned size = ctx.args->args[i].size;
-      unsigned reg = ctx.args->args[i].offset + (file == AC_ARG_SGPR ? 0 : 256);
-      RegClass type = RegClass(file == AC_ARG_SGPR ? RegType::sgpr : RegType::vgpr, size);
-      Operand op = ctx.arg_temps[i].id() ? Operand(ctx.arg_temps[i], PhysReg{reg})
-                                         : Operand(PhysReg{reg}, type);
-      ret->operands[src_count] = op;
-      src_count++;
+      Temp param_temp = param_info.def.getTemp();
+      if (i == 0 && ctx.next_pc != Temp())
+         param_temp = ctx.next_divergent_pc;
+      else if (i == 1 && ctx.next_pc != Temp())
+         param_temp = ctx.next_pc;
+      Operand op = Operand(param_temp);
+      op.setPrecolored(param_info.def.physReg());
+      ret->operands[def_idx++] = op;
    }
-
-   Builder bld(ctx.program, ctx.block);
-   bld.sop1(aco_opcode::s_setpc_b64, get_arg(&ctx, ctx.args->rt.uniform_shader_addr));
+   Operand op = Operand(ctx.callee_info.return_address.def.getTemp());
+   op.setPrecolored(ctx.callee_info.return_address.def.physReg());
+   ret->operands[def_idx++] = op;
+   Operand stack_op = Operand(ctx.callee_info.stack_ptr.def.getTemp());
+   stack_op.setPrecolored(ctx.callee_info.stack_ptr.def.physReg());
+   ret->operands[def_idx++] = stack_op;
 }
 
 void
@@ -11573,21 +11579,42 @@ select_program_rt(isel_context& ctx, unsigned shader_count, struct nir_shader* c
          init_context(&ctx, nir);
          setup_fp_mode(&ctx, nir);
 
+         ABI abi;
+         /* TODO: callable abi? */
+         switch (shaders[i]->info.stage) {
+         case MESA_SHADER_RAYGEN:
+         case MESA_SHADER_CALLABLE: abi = rtRaygenABI; break;
+         case MESA_SHADER_CLOSEST_HIT:
+         case MESA_SHADER_MISS:
+         case MESA_SHADER_INTERSECTION: abi = rtTraversalABI; break;
+         case MESA_SHADER_ANY_HIT: abi = rtAnyHitABI; break;
+         default: unreachable("invalid RT shader stage");
+         }
+
+         unsigned sgpr_limit = get_addr_sgpr_from_waves(ctx.program, ctx.program->min_waves);
+         unsigned vgpr_limit = get_addr_vgpr_from_waves(ctx.program, ctx.program->min_waves);
+
+         ctx.callee_abi = abi;
+         ctx.program->callee_abi = ctx.callee_abi;
+         ctx.callee_info =
+            get_callee_info(ctx.callee_abi, impl->function->num_params, impl->function->params,
+                            ctx.program, RegisterDemand(vgpr_limit, sgpr_limit));
          ctx.program->is_callee = true;
 
-         Instruction* startpgm = add_startpgm(&ctx);
+         Instruction* startpgm = add_startpgm(&ctx, true);
          append_logical_start(ctx.block);
          split_arguments(&ctx, startpgm);
          visit_cf_list(&ctx, &impl->body);
          append_logical_end(ctx.block);
          ctx.block->kind |= block_kind_uniform;
 
-         /* Fix output registers and jump to next shader. We can skip this when dealing with a
-          * raygen shader without shader calls.
-          */
-         if ((shader_count > 1 || shaders[i]->info.stage != MESA_SHADER_RAYGEN) &&
-             impl == nir_shader_get_entrypoint(nir))
-            insert_rt_jump_next(ctx, args);
+         if (ctx.next_pc != Temp()) {
+            insert_return(ctx);
+
+            Builder(ctx.program, ctx.block).sop1(aco_opcode::s_setpc_b64, Operand(ctx.next_pc));
+         } else {
+            Builder(ctx.program, ctx.block).sopp(aco_opcode::s_endpgm);
+         }
 
          cleanup_context(&ctx);
          first_block = false;
@@ -12832,7 +12859,8 @@ calc_nontrivial_instance_id(Builder& bld, const struct ac_shader_args* args,
 void
 select_rt_prolog(Program* program, ac_shader_config* config,
                  const struct aco_compiler_options* options, const struct aco_shader_info* info,
-                 const struct ac_shader_args* in_args, const struct ac_shader_args* out_args)
+                 const struct ac_shader_args* in_args, const struct ac_arg* descriptors,
+                 unsigned raygen_param_count, nir_parameter* raygen_params)
 {
    init_program(program, compute_cs, info, options->gfx_level, options->family, options->wgp_mode,
                 config);
@@ -12843,8 +12871,14 @@ select_rt_prolog(Program* program, ac_shader_config* config,
    calc_min_waves(program);
    Builder bld(program, block);
    block->instructions.reserve(32);
-   unsigned num_sgprs = MAX2(in_args->num_sgprs_used, out_args->num_sgprs_used);
-   unsigned num_vgprs = MAX2(in_args->num_vgprs_used, out_args->num_vgprs_used);
+   unsigned num_sgprs = in_args->num_sgprs_used;
+   unsigned num_vgprs = in_args->num_vgprs_used;
+
+   unsigned sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
+   unsigned vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+
+   struct callee_info raygen_info = get_callee_info(rtRaygenABI, raygen_param_count, raygen_params,
+                                                    NULL, RegisterDemand(vgpr_limit, sgpr_limit));
 
    /* Inputs:
     * Ring offsets:                s[0-1]
@@ -12859,9 +12893,11 @@ select_rt_prolog(Program* program, ac_shader_config* config,
     * Local invocation IDs:        v[0-2]
     */
    PhysReg in_ring_offsets = get_arg_reg(in_args, in_args->ring_offsets);
+   PhysReg in_descriptors = get_arg_reg(in_args, *descriptors);
+   PhysReg in_push_constants = get_arg_reg(in_args, in_args->push_constants);
    PhysReg in_sbt_desc = get_arg_reg(in_args, in_args->rt.sbt_descriptors);
+   PhysReg in_traversal_addr = get_arg_reg(in_args, in_args->rt.traversal_shader_addr);
    PhysReg in_launch_size_addr = get_arg_reg(in_args, in_args->rt.launch_size_addr);
-   PhysReg in_stack_base = get_arg_reg(in_args, in_args->rt.dynamic_callable_stack_base);
    PhysReg in_wg_id_x;
    PhysReg in_wg_id_y;
    PhysReg in_wg_id_z;
@@ -12897,45 +12933,99 @@ select_rt_prolog(Program* program, ac_shader_config* config,
     * Shader VA:                   v[4-5]
     * Shader Record Ptr:           v[6-7]
     */
-   PhysReg out_uniform_shader_addr = get_arg_reg(out_args, out_args->rt.uniform_shader_addr);
-   PhysReg out_launch_size_x = get_arg_reg(out_args, out_args->rt.launch_sizes[0]);
-   PhysReg out_launch_size_y = get_arg_reg(out_args, out_args->rt.launch_sizes[1]);
-   PhysReg out_launch_size_z = get_arg_reg(out_args, out_args->rt.launch_sizes[2]);
+   assert(raygen_info.stack_ptr.is_reg);
+   assert(raygen_info.return_address.is_reg);
+   assert(raygen_info.param_infos[0].is_reg);
+   assert(raygen_info.param_infos[1].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_LAUNCH_ID + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_LAUNCH_SIZE + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_DESCRIPTORS + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_PUSH_CONSTANTS + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_SBT_DESCRIPTORS + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_TRAVERSAL_ADDR + 2].is_reg);
+   assert(raygen_info.param_infos[RAYGEN_ARG_SHADER_RECORD_PTR + 2].is_reg);
+   PhysReg out_stack_ptr_param = raygen_info.stack_ptr.def.physReg();
+   PhysReg out_return_shader_addr = raygen_info.return_address.def.physReg();
+   PhysReg out_divergent_shader_addr = raygen_info.param_infos[0].def.physReg();
+   PhysReg out_uniform_shader_addr = raygen_info.param_infos[1].def.physReg();
+   PhysReg out_launch_size_x = raygen_info.param_infos[RAYGEN_ARG_LAUNCH_SIZE + 2].def.physReg();
+   PhysReg out_launch_size_y = out_launch_size_x.advance(4);
+   PhysReg out_launch_size_z = out_launch_size_y.advance(4);
    PhysReg out_launch_ids[3];
-   for (unsigned i = 0; i < 3; i++)
-      out_launch_ids[i] = get_arg_reg(out_args, out_args->rt.launch_ids[i]);
-   PhysReg out_stack_ptr = get_arg_reg(out_args, out_args->rt.dynamic_callable_stack_base);
-   PhysReg out_record_ptr = get_arg_reg(out_args, out_args->rt.shader_record);
+   out_launch_ids[0] = raygen_info.param_infos[RAYGEN_ARG_LAUNCH_ID + 2].def.physReg();
+   for (unsigned i = 1; i < 3; i++)
+      out_launch_ids[i] = out_launch_ids[i - 1].advance(4);
+   PhysReg out_descriptors = raygen_info.param_infos[RAYGEN_ARG_DESCRIPTORS + 2].def.physReg();
+   PhysReg out_push_constants =
+      raygen_info.param_infos[RAYGEN_ARG_PUSH_CONSTANTS + 2].def.physReg();
+   PhysReg out_sbt_descriptors =
+      raygen_info.param_infos[RAYGEN_ARG_SBT_DESCRIPTORS + 2].def.physReg();
+   PhysReg out_traversal_addr =
+      raygen_info.param_infos[RAYGEN_ARG_TRAVERSAL_ADDR + 2].def.physReg();
+   PhysReg out_record_ptr = raygen_info.param_infos[RAYGEN_ARG_SHADER_RECORD_PTR + 2].def.physReg();
+
+   unsigned param_idx = 0;
+   for (auto& param_info : raygen_info.param_infos) {
+      unsigned byte_size =
+         align(raygen_params[param_idx].bit_size, 32) / 8 * raygen_params[param_idx].num_components;
+      if (raygen_params[param_idx].is_uniform)
+         num_sgprs = std::max(num_sgprs, param_info.def.physReg().reg() + byte_size / 4);
+      else
+         num_vgprs = std::max(num_vgprs, param_info.def.physReg().reg() - 256 + byte_size / 4);
+      ++param_idx;
+   }
 
    /* Temporaries: */
    num_sgprs = align(num_sgprs, 2);
+   num_sgprs += 2;
    PhysReg tmp_raygen_sbt = PhysReg{num_sgprs};
+   num_sgprs += 2;
+   PhysReg tmp_launch_size_addr = PhysReg{num_sgprs};
    num_sgprs += 2;
    PhysReg tmp_ring_offsets = PhysReg{num_sgprs};
    num_sgprs += 2;
+   PhysReg tmp_traversal_addr = PhysReg{num_sgprs};
+   num_sgprs += 2;
+   PhysReg tmp_wg_id_z = PhysReg{num_sgprs};
+   /* tmp_wg_id_z is not used on GFX12+. */
+   if (program->gfx_level < GFX12)
+      num_sgprs++;
    PhysReg tmp_wg_id_x_times_size = PhysReg{num_sgprs};
    num_sgprs++;
 
    PhysReg tmp_invocation_idx = PhysReg{256 + num_vgprs++};
 
    /* Confirm some assumptions about register aliasing */
-   assert(in_ring_offsets == out_uniform_shader_addr);
-   assert(get_arg_reg(in_args, in_args->push_constants) ==
-          get_arg_reg(out_args, out_args->push_constants));
-   assert(get_arg_reg(in_args, in_args->rt.sbt_descriptors) ==
-          get_arg_reg(out_args, out_args->rt.sbt_descriptors));
-   assert(in_launch_size_addr == out_launch_size_x);
-   assert(in_stack_base == out_launch_size_z);
-   assert(in_local_ids[0] == out_launch_ids[0]);
+   if (program->gfx_level < GFX12) {
+      assert(in_wg_id_z == out_push_constants);
+      assert(in_wg_id_x == out_launch_size_y);
+   }
+   assert(in_sbt_desc == out_uniform_shader_addr);
+   assert(in_traversal_addr == out_sbt_descriptors);
 
    /* <gfx9 reads in_scratch_offset at the end of the prolog to write out the scratch_offset
     * arg. Make sure no other outputs have overwritten it by then.
     */
-   assert(options->gfx_level >= GFX9 || in_scratch_offset.reg() >= out_args->num_sgprs_used);
+   assert(options->gfx_level >= GFX9 ||
+          in_scratch_offset.reg() >=
+             raygen_info.param_infos[RAYGEN_ARG_TRAVERSAL_ADDR].def.physReg());
 
    /* load raygen sbt */
    bld.smem(aco_opcode::s_load_dwordx2, Definition(tmp_raygen_sbt, s2), Operand(in_sbt_desc, s2),
             Operand::c32(0u));
+
+   bld.sop1(aco_opcode::s_mov_b64, Definition(tmp_launch_size_addr, s2),
+            Operand(in_launch_size_addr, s2));
+   bld.sop1(aco_opcode::s_mov_b64, Definition(tmp_traversal_addr, s2),
+            Operand(in_traversal_addr, s2));
+   if (program->gfx_level < GFX12)
+      bld.sop1(aco_opcode::s_mov_b32, Definition(tmp_wg_id_z, s1), Operand(in_wg_id_z, s1));
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_push_constants, s1),
+            Operand(in_push_constants, s1));
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_descriptors, s1), Operand(in_descriptors, s1));
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_sbt_descriptors, s1), Operand(in_sbt_desc, s1));
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_sbt_descriptors.advance(4), s1),
+            Operand(in_sbt_desc.advance(4), s1));
 
    /* init scratch */
    if (options->gfx_level < GFX9) {
@@ -12947,18 +13037,9 @@ select_rt_prolog(Program* program, ac_shader_config* config,
                       Operand(in_scratch_offset, s1));
    }
 
-   /* set stack ptr */
-   bld.vop1(aco_opcode::v_mov_b32, Definition(out_stack_ptr, v1), Operand(in_stack_base, s1));
-
    /* load raygen address */
    bld.smem(aco_opcode::s_load_dwordx2, Definition(out_uniform_shader_addr, s2),
             Operand(tmp_raygen_sbt, s2), Operand::c32(0u));
-
-   /* load ray launch sizes */
-   bld.smem(aco_opcode::s_load_dword, Definition(out_launch_size_z, s1),
-            Operand(in_launch_size_addr, s2), Operand::c32(8u));
-   bld.smem(aco_opcode::s_load_dwordx2, Definition(out_launch_size_x, s2),
-            Operand(in_launch_size_addr, s2), Operand::c32(0u));
 
    /* calculate ray launch ids */
    if (options->gfx_level >= GFX11) {
@@ -12976,7 +13057,7 @@ select_rt_prolog(Program* program, ac_shader_config* config,
                Operand(in_wg_id_y, s1), Operand::c32(program->workgroup_size == 32 ? 4 : 8),
                Operand(in_local_ids[1], v1));
    } else {
-      bld.vop1(aco_opcode::v_mov_b32, Definition(out_launch_ids[2], v1), Operand(in_wg_id_z, s1));
+      bld.vop1(aco_opcode::v_mov_b32, Definition(out_launch_ids[2], v1), Operand(tmp_wg_id_z, s1));
       bld.vop3(aco_opcode::v_mad_u32_u24, Definition(out_launch_ids[1], v1),
                Operand(in_wg_id_y, s1), Operand::c32(program->workgroup_size == 32 ? 4 : 8),
                Operand(in_local_ids[1], v1));
@@ -13002,6 +13083,12 @@ select_rt_prolog(Program* program, ac_shader_config* config,
    bld.sop2(aco_opcode::s_lshl_b32, Definition(tmp_wg_id_x_times_size, s1), Definition(scc, s1),
             Operand(in_wg_id_x, s1), Operand::c32(program->workgroup_size == 32 ? 5 : 6));
 
+   /* load ray launch sizes */
+   bld.smem(aco_opcode::s_load_dword, Definition(out_launch_size_z, s1),
+            Operand(tmp_launch_size_addr, s2), Operand::c32(8u));
+   bld.smem(aco_opcode::s_load_dwordx2, Definition(out_launch_size_x, s2),
+            Operand(tmp_launch_size_addr, s2), Operand::c32(0u));
+
    /* Calculate and add local_invocation_index */
    bld.vop3(aco_opcode::v_mbcnt_lo_u32_b32, Definition(tmp_invocation_idx, v1), Operand::c32(-1u),
             Operand(tmp_wg_id_x_times_size, s1));
@@ -13014,6 +13101,11 @@ select_rt_prolog(Program* program, ac_shader_config* config,
                   Operand::c32(-1u), Operand(tmp_invocation_idx, v1));
    }
 
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_traversal_addr, s1),
+            Operand(tmp_traversal_addr, s1));
+   bld.sop1(aco_opcode::s_mov_b32, Definition(out_traversal_addr.advance(4), s1),
+            Operand(tmp_traversal_addr.advance(4), s1));
+
    /* Make fixup operations a no-op if this is not a converted 2D dispatch. */
    bld.sopc(aco_opcode::s_cmp_lg_u32, Definition(scc, s1),
             Operand::c32(ACO_RT_CONVERTED_2D_LAUNCH_SIZE), Operand(out_launch_size_y, s1));
@@ -13025,14 +13117,15 @@ select_rt_prolog(Program* program, ac_shader_config* config,
    bld.vop2(aco_opcode::v_cndmask_b32, Definition(out_launch_ids[1], v1), Operand::zero(),
             Operand(out_launch_ids[1], v1), Operand(vcc, bld.lm));
 
-   if (options->gfx_level < GFX9) {
-      /* write scratch/ring offsets to outputs, if needed */
-      bld.sop1(aco_opcode::s_mov_b32,
-               Definition(get_arg_reg(out_args, out_args->scratch_offset), s1),
-               Operand(in_scratch_offset, s1));
-      bld.sop1(aco_opcode::s_mov_b64, Definition(get_arg_reg(out_args, out_args->ring_offsets), s2),
-               Operand(tmp_ring_offsets, s2));
-   }
+   if (program->gfx_level < GFX8)
+      bld.vop3(aco_opcode::v_lshr_b64, Definition(out_divergent_shader_addr, v2),
+               Operand(out_uniform_shader_addr, s2), Operand::c32(0));
+   else
+      bld.vop3(aco_opcode::v_lshrrev_b64, Definition(out_divergent_shader_addr, v2),
+               Operand::c32(0), Operand(out_uniform_shader_addr, s2));
+   bld.sop1(aco_opcode::s_mov_b64, Definition(out_return_shader_addr, s2), Operand::c32(0));
+
+   bld.sopk(aco_opcode::s_movk_i32, Definition(out_stack_ptr_param, s1), 0);
 
    /* jump to raygen */
    bld.sop1(aco_opcode::s_setpc_b64, Operand(out_uniform_shader_addr, s2));

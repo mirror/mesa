@@ -818,8 +818,12 @@ static void
 compile_rt_prolog(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline)
 {
    const struct radv_physical_device *pdev = radv_device_physical(device);
+   struct nir_function raygen_stub = {};
 
-   pipeline->prolog = radv_create_rt_prolog(device);
+   /* Create a dummy function signature for raygen shaders in order to pass parameter info to the prolog */
+   radv_nir_init_rt_function_params(&raygen_stub, MESA_SHADER_RAYGEN, 0);
+   radv_nir_lower_callee_signature(&raygen_stub, NULL);
+   pipeline->prolog = radv_create_rt_prolog(device, raygen_stub.num_params, raygen_stub.params);
 
    /* create combined config */
    struct ac_shader_config *config = &pipeline->prolog->config;

@@ -3212,13 +3212,12 @@ radv_aco_build_shader_part(void **bin, uint32_t num_sgprs, uint32_t num_vgprs, c
 }
 
 struct radv_shader *
-radv_create_rt_prolog(struct radv_device *device)
+radv_create_rt_prolog(struct radv_device *device, unsigned raygen_param_count, nir_parameter *raygen_params)
 {
    const struct radv_physical_device *pdev = radv_device_physical(device);
    const struct radv_instance *instance = radv_physical_device_instance(pdev);
    struct radv_shader *prolog;
    struct radv_shader_args in_args = {0};
-   struct radv_shader_args out_args = {0};
    struct radv_nir_compiler_options options = {0};
    radv_fill_nir_compiler_options(&options, device, NULL, false, instance->debug_flags & RADV_DEBUG_DUMP_PROLOGS,
                                   radv_device_fault_detection_enabled(device), false);
@@ -3239,7 +3238,6 @@ radv_create_rt_prolog(struct radv_device *device)
       info.cs.uses_block_id[i] = true;
 
    radv_declare_shader_args(device, NULL, &info, MESA_SHADER_COMPUTE, MESA_SHADER_NONE, &in_args);
-   radv_declare_rt_shader_args(options.info->gfx_level, &out_args);
    info.user_sgprs_locs = in_args.user_sgprs_locs;
 
 #if AMD_LLVM_AVAILABLE
@@ -3253,8 +3251,8 @@ radv_create_rt_prolog(struct radv_device *device)
    struct aco_compiler_options ac_opts;
    radv_aco_convert_shader_info(&ac_info, &info, &in_args, &device->cache_key, options.info->gfx_level);
    radv_aco_convert_opts(&ac_opts, &options, &in_args, &stage_key);
-   aco_compile_rt_prolog(&ac_opts, &ac_info, &in_args.ac, &out_args.ac, &radv_aco_build_shader_binary,
-                         (void **)&binary);
+   aco_compile_rt_prolog(&ac_opts, &ac_info, &in_args.ac, &in_args.descriptor_sets[0], raygen_param_count, raygen_params,
+                         &radv_aco_build_shader_binary, (void **)&binary);
    binary->info = info;
 
    radv_postprocess_binary_config(device, binary, &in_args);

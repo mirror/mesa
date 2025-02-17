@@ -222,7 +222,7 @@ lower_rt_derefs(nir_shader *shader)
    return progress;
 }
 
-static void
+void
 radv_nir_init_rt_function_params(nir_function *function, gl_shader_stage stage, unsigned payload_size)
 {
    unsigned payload_base = -1u;
@@ -584,13 +584,13 @@ create_rt_variables(nir_shader *shader, struct radv_device *device, const VkPipe
    }
 
    nir_function *trace_ray_func = nir_function_create(shader, "trace_ray_func");
-   radv_nir_init_function_params(trace_ray_func, MESA_SHADER_INTERSECTION, max_payload_size);
+   radv_nir_init_rt_function_params(trace_ray_func, MESA_SHADER_INTERSECTION, max_payload_size);
    vars.trace_ray_func = trace_ray_func;
    nir_function *chit_miss_func = nir_function_create(shader, "chit_miss_func");
-   radv_nir_init_function_params(chit_miss_func, MESA_SHADER_CLOSEST_HIT, max_payload_size);
+   radv_nir_init_rt_function_params(chit_miss_func, MESA_SHADER_CLOSEST_HIT, max_payload_size);
    vars.chit_miss_func = chit_miss_func;
    nir_function *callable_func = nir_function_create(shader, "callable_func");
-   radv_nir_init_function_params(callable_func, MESA_SHADER_CALLABLE, max_payload_size);
+   radv_nir_init_rt_function_params(callable_func, MESA_SHADER_CALLABLE, max_payload_size);
    vars.callable_func = callable_func;
    return vars;
 }
@@ -2293,7 +2293,7 @@ radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKH
    nir_function_impl *impl = nir_shader_get_entrypoint(shader);
    nir_function *entrypoint_function = impl->function;
 
-   radv_nir_init_function_params(entrypoint_function, shader->info.stage, *payload_size);
+   radv_nir_init_rt_function_params(entrypoint_function, shader->info.stage, *payload_size);
 
    const VkPipelineCreateFlagBits2 create_flags = vk_rt_pipeline_create_flags(pCreateInfo);
 

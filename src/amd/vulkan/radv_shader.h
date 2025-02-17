@@ -517,6 +517,7 @@ void radv_nir_lower_rt_io(nir_shader *shader, bool monolithic, uint32_t payload_
 
 struct radv_ray_tracing_stage_info;
 
+void radv_nir_init_rt_function_params(nir_function *function, gl_shader_stage stage, unsigned payload_size);
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
                            uint32_t *payload_size, uint32_t *stack_size, struct radv_device *device,

@@ -901,6 +901,8 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
 
    auto& current_spills = ctx.spills_exit[block_idx];
 
+   std::vector<Temp> call_spills;
+
    while (idx < block->instructions.size()) {
       aco_ptr<Instruction>& instr = block->instructions[idx];
 
@@ -914,6 +916,22 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
       }
 
       std::map<Temp, std::pair<Temp, uint32_t>> reloads;
+
+      if (!call_spills.empty()) {
+         RegisterDemand demand = instr->register_demand;
+         while (!(demand - spilled_registers).exceeds(ctx.target_pressure) &&
+                !call_spills.empty()) {
+            Temp old_tmp = call_spills.back();
+            call_spills.pop_back();
+
+            Temp new_tmp = ctx.program->allocateTmp(ctx.program->temp_rc[old_tmp.id()]);
+            ctx.renames[block_idx][old_tmp] = new_tmp;
+            reloads[old_tmp] = std::make_pair(new_tmp, current_spills[old_tmp]);
+            current_spills.erase(old_tmp);
+            spilled_registers -= new_tmp;
+         }
+         call_spills.clear();
+      }
 
       /* rename and reload operands */
       for (Operand& op : instr->operands) {
@@ -1043,6 +1061,9 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
             }
 
             uint32_t spill_id = ctx.add_to_spills(to_spill, current_spills);
+            if (instr->isCall())
+               call_spills.emplace_back(to_spill);
+
             /* add interferences with reloads */
             for (std::pair<const Temp, std::pair<Temp, uint32_t>>& pair : reloads)
                ctx.add_interference(spill_id, pair.second.second);

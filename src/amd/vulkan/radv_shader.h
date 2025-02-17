@@ -522,8 +522,6 @@ void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateI
                            uint32_t *payload_size, uint32_t *stack_size, struct radv_device *device,
                            struct radv_ray_tracing_pipeline *pipeline, bool monolithic);
 
-void radv_gather_unused_args(struct radv_ray_tracing_stage_info *info, nir_shader *nir);
-
 struct radv_shader_stage;
 
 nir_shader *radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_stage *stage,

@@ -2638,6 +2638,11 @@ public:
 
    bool should_repair_ssa = false;
 
+   ABI callee_abi = {};
+   RegisterDemand callee_param_demand = RegisterDemand();
+   unsigned short arg_sgpr_count;
+   unsigned short arg_vgpr_count;
+
    struct {
       monotonic_buffer_resource memory;
       /* live-in temps per block */

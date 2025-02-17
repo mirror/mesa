@@ -10,6 +10,7 @@
 #include "aco_builder.h"
 #include "aco_interface.h"
 #include "aco_ir.h"
+#include "aco_nir_call_attribs.h"
 
 #include "common/ac_descriptors.h"
 #include "common/ac_gpu_info.h"
@@ -9908,6 +9909,267 @@ visit_jump(isel_context* ctx, nir_jump_instr* instr)
    case nir_jump_continue: emit_loop_continue(ctx); break;
    default: isel_err(&instr->instr, "Unknown NIR jump instr"); abort();
    }
+}
+
+struct param_assignment_info {
+   uint16_t required_alignment;
+   uint16_t provided_alignment;
+   RegClass rc;
+   parameter_info* dst_info;
+   bool is_return_param;
+   /* If true, this parameter shouldn't count toward the callee info's reg_param_count because it
+    * receives special handling (e.g. the call return address being a definition instead of an
+    * operand).
+    */
+   bool is_system_param;
+   /* This parameter must reside in a register. Used for stack pointers as well as s_swappc
+    * operands.
+    */
+   bool force_reg;
+};
+
+std::optional<PhysReg>
+find_reg(SparseRegisterSet* regs, RegClass rc)
+{
+   auto reg_it = regs->begin();
+   if (reg_it == regs->end())
+      return {};
+
+   /* If reg_it is in the VGPR range, there are no more SGPRs to assign */
+   if (rc.type() == RegType::sgpr && *reg_it >= PhysReg{256})
+      return {};
+
+   if (rc.type() == RegType::vgpr) {
+      /* Skip all SGPRs until we enter the VGPR range */
+      while (reg_it != regs->end() && *reg_it < PhysReg{256})
+         ++reg_it;
+      if (reg_it == regs->end())
+         return {};
+   }
+
+   auto interval = PhysRegInterval{*reg_it, rc.size()};
+   unsigned contiguous_size = 1;
+   auto reg_it2 = reg_it;
+   ++reg_it2;
+   for (; reg_it2 != regs->end() && contiguous_size < rc.size(); ++reg_it2) {
+      if (!interval.contains(*reg_it2)) {
+         reg_it = reg_it2;
+         contiguous_size = 1;
+         interval = PhysRegInterval{*reg_it, rc.size()};
+         if (rc.type() == RegType::sgpr && *reg_it >= PhysReg{256})
+            return {};
+         continue;
+      }
+      ++contiguous_size;
+   }
+   if (contiguous_size < rc.size())
+      return {};
+   return *reg_it;
+}
+
+void
+find_param_regs(Program* program, const ABI& abi, callee_info& info,
+                std::vector<struct param_assignment_info>& params, RegisterDemand reg_limit)
+{
+   unsigned scratch_param_bytes = 0;
+   RegisterDemand param_demand = RegisterDemand();
+
+   SparseRegisterSet preserved_regs = abi.preservedRegisters(reg_limit.sgpr, reg_limit.vgpr);
+   SparseRegisterSet clobbered_regs = preserved_regs.invert(reg_limit.sgpr, reg_limit.vgpr);
+   bool has_preserved_regs = preserved_regs.size() != 0;
+
+   std::stable_sort(params.begin(), params.end(),
+                    [](const param_assignment_info& first, const param_assignment_info& second)
+                    {
+                       /* Assign parameters with larger alignments first so we can use parameters
+                        * with smaller alignments as padding
+                        */
+                       return first.provided_alignment > second.provided_alignment;
+                    });
+   std::stable_sort(params.begin(), params.end(),
+                    [](const param_assignment_info& first, const param_assignment_info& second)
+                    {
+                      /* Move parameters forced into registers to the very front so we assign
+                       * them first.
+                       */
+                      return first.force_reg && !second.force_reg;
+                    });
+   for (size_t i = 1; i < params.size(); ++i) {
+      assert(!params[i].force_reg || params[i - 1].force_reg);
+   }
+   /* Reverse parameters and start from the end, to make erasing elements cheap */
+   std::reverse(params.begin(), params.end());
+
+   while (!params.empty()) {
+      RegClass rc = params.back().rc;
+      bool discardable = params.back().dst_info->discardable || params.back().is_return_param;
+
+      SparseRegisterSet* regs;
+      if (has_preserved_regs && !discardable)
+         regs = &preserved_regs;
+      else
+         regs = &clobbered_regs;
+
+      auto next_reg = find_reg(regs, rc);
+      /* Force parameter into scratch if it exceeds the ABI's maximum parameter demand */
+      if (abi.max_param_demand != RegisterDemand() &&
+          (param_demand + Temp(0, rc)).exceeds(abi.max_param_demand))
+         next_reg = {};
+
+      if (next_reg && next_reg->reg() % params.back().required_alignment) {
+         /* We found a register, but it's not aligned properly. Check if we can add some padding
+          * (and ideally stuff a different parameter in there).
+          */
+         uint16_t required_padding =
+            params.back().required_alignment - (next_reg->reg() % params.back().required_alignment);
+         uint16_t aligned_size = rc.size() + required_padding;
+         for (unsigned i = 0; i < aligned_size; ++i) {
+            /* The added padding exceeds the size of the register range. Just bail out at this
+             * point.
+             * TODO: we could probably try finding a new register, but then we'd need to reevaluate
+             * alignment etc...
+             */
+            if (!regs->contains(next_reg->advance(i * 4))) {
+               next_reg = {};
+               break;
+            }
+         }
+
+         /* Try finding a small parameter to put inside the padding space */
+         for (auto it2 = std::next(params.rbegin()); next_reg && it2 != params.rend(); ++it2) {
+            if (it2->rc.type() != params.back().rc.type() ||
+                it2->dst_info->discardable != discardable)
+               continue;
+            if (it2->rc.size() > required_padding || (it2->required_alignment % next_reg->reg()))
+               continue;
+
+            if (it2->rc.type() == RegType::sgpr)
+               param_demand.sgpr += it2->rc.size();
+            else
+               param_demand.vgpr += it2->rc.size();
+
+            it2->dst_info->def.setPrecolored(*next_reg);
+            regs->remove(*next_reg, it2->rc.size());
+            if (!it2->is_system_param) {
+               ++info.reg_param_count;
+               if (params.back().is_return_param)
+                  ++info.reg_return_param_count;
+            }
+            params.erase(std::prev(it2.base()));
+            break;
+         }
+         if (next_reg)
+            next_reg = next_reg->advance(required_padding * 4);
+      }
+      if (next_reg) {
+         if (params.back().rc.type() == RegType::sgpr)
+            param_demand.sgpr += params.back().rc.size();
+         else
+            param_demand.vgpr += params.back().rc.size();
+         params.back().dst_info->def.setPrecolored(*next_reg);
+         regs->remove(*next_reg, params.back().rc.size());
+         if (!params.back().is_system_param) {
+            ++info.reg_param_count;
+            if (params.back().is_return_param)
+               ++info.reg_return_param_count;
+         }
+      } else {
+         assert(!params.back().force_reg);
+         params.back().dst_info->is_reg = false;
+         params.back().dst_info->scratch_offset = scratch_param_bytes;
+         scratch_param_bytes += rc.size() * 4;
+      }
+      params.pop_back();
+   }
+
+   info.scratch_param_size = scratch_param_bytes;
+   if (program)
+      program->callee_param_demand = param_demand;
+}
+
+struct callee_info
+get_callee_info(const ABI& abi, unsigned param_count, const nir_parameter* parameters,
+                Program* program, RegisterDemand reg_limit)
+{
+   struct callee_info info = {};
+   info.param_infos.reserve(param_count);
+
+   std::vector<param_assignment_info> assignment_infos;
+   assignment_infos.reserve(param_count + 2);
+
+   Temp return_addr = program ? program->allocateTmp(s2) : Temp();
+   Definition return_def = Definition(return_addr);
+   info.return_address = parameter_info{
+      .discardable = false,
+      .is_reg = true,
+      .def = return_def,
+   };
+   assignment_infos.push_back({
+      .required_alignment = 2,
+      .provided_alignment = 2,
+      .rc = s2,
+      .dst_info = &info.return_address,
+      .is_return_param = false,
+      .is_system_param = true,
+      .force_reg = true,
+   });
+
+   Temp stack_ptr = program ? program->allocateTmp(s1) : Temp();
+   Definition stack_def = Definition(stack_ptr);
+   info.stack_ptr = parameter_info{
+      .discardable = false,
+      .is_reg = true,
+      .def = stack_def,
+   };
+   assignment_infos.push_back({
+      .required_alignment = 1,
+      .provided_alignment = 1,
+      .rc = s1,
+      .dst_info = &info.stack_ptr,
+      .is_return_param = false,
+      .is_system_param = true,
+      .force_reg = true,
+   });
+
+   for (unsigned i = 0; i < param_count; ++i) {
+      RegType type = parameters[i].is_uniform ? RegType::sgpr : RegType::vgpr;
+      unsigned byte_size = align(parameters[i].bit_size, 32) / 8 * parameters[i].num_components;
+      RegClass rc = RegClass(type, byte_size / 4);
+
+      Temp dst = program ? program->allocateTmp(rc) : Temp();
+      Definition def = Definition(dst);
+      info.param_infos.push_back(parameter_info{
+         .discardable = !!(parameters[i].driver_attributes & ACO_NIR_PARAM_ATTRIB_DISCARDABLE),
+         .is_reg = true,
+         .def = def,
+      });
+
+      uint16_t required_alignment = 1;
+      uint16_t provided_alignment = 1;
+
+      if (rc.type() == RegType::sgpr && rc.size() > 1)
+         required_alignment = 2;
+      if (rc.size() % 2 == 0)
+         provided_alignment = 2;
+
+      assignment_infos.push_back({
+         .required_alignment = required_alignment,
+         .provided_alignment = provided_alignment,
+         .rc = rc,
+         .is_return_param = parameters[i].is_return,
+         /* Force the first parameter (uniform callee address) into registers - it's a swappc
+          * operand.
+          */
+         .force_reg = i == 0,
+      });
+   }
+
+   for (unsigned i = 0; i < param_count; ++i)
+      assignment_infos[i + 2].dst_info = &info.param_infos[i];
+
+   find_param_regs(program, abi, info, assignment_infos, reg_limit);
+
+   return info;
 }
 
 void

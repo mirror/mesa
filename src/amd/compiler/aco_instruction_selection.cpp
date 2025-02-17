@@ -7428,11 +7428,28 @@ visit_load_scratch(isel_context* ctx, nir_intrinsic_instr* instr)
    if (ctx->program->gfx_level >= GFX9) {
       if (nir_src_is_const(instr->src[0])) {
          uint32_t max = ctx->program->dev.scratch_global_offset_max + 1;
-         info.offset =
-            bld.copy(bld.def(s1), Operand::c32(ROUND_DOWN_TO(nir_src_as_uint(instr->src[0]), max)));
+         if (ctx->callee_info.stack_ptr.is_reg)
+            info.offset =
+               bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),
+                        Operand(ctx->callee_info.stack_ptr.def.getTemp()),
+                        Operand::c32(ROUND_DOWN_TO(nir_src_as_uint(instr->src[0]), max)));
+         else
+            info.offset = bld.copy(
+               bld.def(s1), Operand::c32(ROUND_DOWN_TO(nir_src_as_uint(instr->src[0]), max)));
          info.const_offset = nir_src_as_uint(instr->src[0]) % max;
       } else {
-         info.offset = Operand(get_ssa_temp(ctx, instr->src[0].ssa));
+         if (ctx->callee_info.stack_ptr.is_reg) {
+            Temp store_offset = get_ssa_temp(ctx, instr->src[0].ssa);
+            if (store_offset.type() == RegType::sgpr)
+               info.offset = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),
+                                      Operand(ctx->callee_info.stack_ptr.def.getTemp()),
+                                      Operand(store_offset));
+            else
+               info.offset = bld.vop2(aco_opcode::v_add_u32, bld.def(v1),
+                                      Operand(ctx->callee_info.stack_ptr.def.getTemp()),
+                                      Operand(store_offset));
+         } else
+            info.offset = Operand(get_ssa_temp(ctx, instr->src[0].ssa));
       }
       EmitLoadParameters params = scratch_flat_load_params;
       params.max_const_offset_plus_one = ctx->program->dev.scratch_global_offset_max + 1;
@@ -7451,6 +7468,15 @@ visit_store_scratch(isel_context* ctx, nir_intrinsic_instr* instr)
    Builder bld(ctx->program, ctx->block);
    Temp data = as_vgpr(ctx, get_ssa_temp(ctx, instr->src[0].ssa));
    Temp offset = get_ssa_temp(ctx, instr->src[1].ssa);
+
+   if (ctx->callee_info.stack_ptr.is_reg && ctx->program->gfx_level >= GFX9) {
+      if (offset.type() == RegType::sgpr)
+         offset = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.def(s1, scc),
+                           Operand(ctx->callee_info.stack_ptr.def.getTemp()), Operand(offset));
+      else
+         offset = bld.vop2(aco_opcode::v_add_u32, bld.def(v1),
+                           Operand(ctx->callee_info.stack_ptr.def.getTemp()), Operand(offset));
+   }
 
    unsigned elem_size_bytes = instr->src[0].ssa->bit_size / 8;
    unsigned writemask = util_widen_mask(nir_intrinsic_write_mask(instr), elem_size_bytes);

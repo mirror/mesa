@@ -1445,12 +1445,20 @@ assign_spill_slots_helper(spill_ctx& ctx, RegType type, std::vector<bool>& is_as
 void
 end_unused_spill_vgprs(spill_ctx& ctx, Block& block, std::vector<Temp>& vgpr_spill_temps,
                        const std::vector<uint32_t>& slots,
-                       const aco::unordered_map<Temp, uint32_t>& spills)
+                       const aco::unordered_map<Temp, uint32_t>& spills,
+                       unsigned abi_sgpr_spill_slots)
 {
    std::vector<bool> is_used(vgpr_spill_temps.size());
    for (std::pair<Temp, uint32_t> pair : spills) {
       if (pair.first.type() == RegType::sgpr && ctx.is_reloaded[pair.second])
          is_used[slots[pair.second] / ctx.wave_size] = true;
+   }
+   /* Only end spill VGPRs used for spilling ABI temps in the last block of the program. */
+   if (!block.linear_succs.empty()) {
+      unsigned num_abi_spill_temps = (abi_sgpr_spill_slots + ctx.wave_size - 1) / ctx.wave_size;
+      for (unsigned i = vgpr_spill_temps.size() - num_abi_spill_temps; i < vgpr_spill_temps.size();
+           ++i)
+         is_used[i] = true;
    }
 
    std::vector<Temp> temps;
@@ -1475,7 +1483,7 @@ end_unused_spill_vgprs(spill_ctx& ctx, Block& block, std::vector<Temp>& vgpr_spi
 }
 
 void
-assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
+assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr, unsigned abi_sgpr_spills)
 {
    std::vector<uint32_t> slots(ctx.interferences.size());
    std::vector<bool> is_assigned(ctx.interferences.size());
@@ -1517,8 +1525,33 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
    }
 
    /* hope, we didn't mess up */
-   std::vector<Temp> vgpr_spill_temps((ctx.sgpr_spill_slots + ctx.wave_size - 1) / ctx.wave_size);
+   unsigned num_sgpr_slots = ctx.sgpr_spill_slots + abi_sgpr_spills;
+   std::vector<Temp> vgpr_spill_temps((num_sgpr_slots + ctx.wave_size - 1) / ctx.wave_size);
    assert(vgpr_spill_temps.size() <= spills_to_vgpr);
+
+   if (abi_sgpr_spills > 0) {
+      unsigned first_abi_spill_temp_idx = ctx.sgpr_spill_slots / ctx.wave_size;
+      unsigned first_abi_spill_lane =
+         ctx.sgpr_spill_slots - (first_abi_spill_temp_idx * ctx.wave_size);
+
+      /* initialize linear vgprs for spilling preserved SGPRs */
+      auto insert_it = std::next(std::find_if(
+         ctx.program->blocks[0].instructions.begin(), ctx.program->blocks[0].instructions.end(),
+         [](const auto& instr) { return instr->opcode == aco_opcode::p_spill_preserved_vgpr; }));
+      for (unsigned vgpr_idx = first_abi_spill_temp_idx; vgpr_idx < vgpr_spill_temps.size();
+           ++vgpr_idx) {
+         Temp linear_vgpr = ctx.program->allocateTmp(v1.as_linear());
+         vgpr_spill_temps[vgpr_idx] = linear_vgpr;
+         aco_ptr<Instruction> create{
+            create_instruction(aco_opcode::p_start_linear_vgpr, Format::PSEUDO, 0, 1)};
+         create->definitions[0] = Definition(linear_vgpr);
+         ctx.program->blocks[0].instructions.emplace(insert_it, std::move(create));
+      }
+      ctx.program->abi_sgpr_spill_temps.insert(
+         ctx.program->abi_sgpr_spill_temps.end(),
+         std::next(vgpr_spill_temps.begin(), first_abi_spill_temp_idx), vgpr_spill_temps.end());
+      ctx.program->first_abi_sgpr_spill_lane = first_abi_spill_lane;
+   }
 
    /* replace pseudo instructions with actual hardware instructions */
    unsigned last_top_level_block_idx = 0;
@@ -1543,7 +1576,8 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
       if (block.kind & block_kind_top_level) {
          last_top_level_block_idx = block.index;
 
-         end_unused_spill_vgprs(ctx, block, vgpr_spill_temps, slots, ctx.spills_entry[block.index]);
+         end_unused_spill_vgprs(ctx, block, vgpr_spill_temps, slots, ctx.spills_entry[block.index],
+                                abi_sgpr_spills);
 
          /* If the block has no predecessors (for example in RT resume shaders),
           * we cannot reuse the current scratch_rsrc temp because its definition is unreachable */
@@ -1675,6 +1709,11 @@ spill(Program* program)
 
    const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
    const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+   SparseRegisterSet clobberedSGPRs =
+      program->callee_abi.preservedRegisters(sgpr_limit, 0).invert(sgpr_limit, 0);
+   uint16_t abi_sgpr_limit = std::min((uint16_t)(clobberedSGPRs.size()), sgpr_limit);
+   if (!program->is_callee)
+      abi_sgpr_limit = sgpr_limit;
 
    /* no spilling when register pressure is low enough */
    if (program->has_call) {
@@ -1692,7 +1731,7 @@ spill(Program* program)
 
       if (!call_needs_spill)
          return;
-   } else if (program->num_waves > 0) {
+   } else if (program->num_waves > 0 && program->max_reg_demand.sgpr <= abi_sgpr_limit) {
       return;
    }
 
@@ -1703,7 +1742,9 @@ spill(Program* program)
    const RegisterDemand demand = program->max_reg_demand; /* current max */
    RegisterDemand target(vgpr_limit, sgpr_limit);
    if (program->is_callee)
-      target = program->callee_abi.callee_register_limit(target, program->callee_param_demand);
+      target = program->callee_abi.preservedRegisters(sgpr_limit, vgpr_limit)
+                  .invert(sgpr_limit, vgpr_limit)
+                  .demand();
 
    uint16_t extra_vgprs = 0;
    uint16_t extra_sgprs = 0;
@@ -1728,9 +1769,12 @@ spill(Program* program)
       }
    }
 
-   unsigned sgpr_spills = sgpr_call_spills;
-   if (demand.sgpr > sgpr_limit)
-      sgpr_spills += demand.sgpr - sgpr_limit;
+   unsigned abi_sgpr_spills = 0;
+   if (demand.sgpr > abi_sgpr_limit && sgpr_limit > abi_sgpr_limit)
+      abi_sgpr_spills = std::min((uint16_t)demand.sgpr, sgpr_limit) - abi_sgpr_limit;
+
+   unsigned sgpr_spills = demand.sgpr - std::min((uint16_t)demand.sgpr, sgpr_limit);
+   sgpr_spills += sgpr_call_spills + abi_sgpr_spills;
 
    if (sgpr_spills)
       extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
@@ -1740,7 +1784,7 @@ spill(Program* program)
          extra_sgprs = 1; /* SADDR */
       else
          extra_sgprs = 5; /* scratch_resource (s4) + scratch_offset (s1) */
-      if (demand.sgpr + extra_sgprs > sgpr_limit || sgpr_call_spills) {
+      if (demand.sgpr + extra_sgprs > std::min(sgpr_limit, abi_sgpr_limit) || sgpr_call_spills) {
          /* re-calculate in case something has changed */
          sgpr_spills = sgpr_call_spills;
          if (demand.sgpr + extra_sgprs > sgpr_limit)
@@ -1762,7 +1806,7 @@ spill(Program* program)
       spill_block(ctx, i);
 
    /* assign spill slots and DCE rematerialized code */
-   assign_spill_slots(ctx, extra_vgprs);
+   assign_spill_slots(ctx, extra_vgprs, abi_sgpr_spills);
 
    /* update live variable information */
    live_var_analysis(program);

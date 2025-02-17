@@ -2649,6 +2649,14 @@ public:
    unsigned short arg_vgpr_count;
    unsigned scratch_arg_size = 0;
 
+   /* Linear VGPRs we can use to spill preserved SGPR backups to. */
+   std::vector<Temp> abi_sgpr_spill_temps;
+   /* The first linear VGPR in abi_sgpr_spill_temps may include some lanes dedicated
+    * to regular SGPR spills. This denotes the first lane that is usable for preserved
+    * SGPR spilling.
+    */
+   unsigned first_abi_sgpr_spill_lane;
+
    struct {
       monotonic_buffer_resource memory;
       /* live-in temps per block */

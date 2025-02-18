@@ -172,7 +172,7 @@ Enum("intel_cooperative_matrix_component_type",
       "INTEL_CMAT_UINT8"])
 
 Enum("intel_engine_class",
-     ["INTEL_ENGINE_CLASS_RENDER",
+     [EnumValue("INTEL_ENGINE_CLASS_RENDER", value=0),
       "INTEL_ENGINE_CLASS_COPY",
       "INTEL_ENGINE_CLASS_VIDEO",
       "INTEL_ENGINE_CLASS_VIDEO_ENHANCE",
@@ -229,8 +229,11 @@ Struct("intel_device_info_pat_desc",
         Member("intel_device_info_pat_entry", "scanout",
                comment="scanout and external BOs"),
 
+        Member("intel_device_info_pat_entry", "compressed_scanout",
+               comment="Only supported in Xe2, compressed + WC for displayable resources"),
+
         Member("intel_device_info_pat_entry", "compressed",
-               comment="Only supported in Xe2, compressed + WC"),
+               comment="Only supported in Xe2, compressed + WC for non-displayable resources"),
 
         Member("intel_device_info_pat_entry", "writeback_incoherent",
                comment=("BOs without special needs, can be WB not coherent "

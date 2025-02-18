@@ -2707,6 +2707,16 @@ isl_calc_size(const struct isl_device *dev,
     */
    if (info->usage & ISL_SURF_USAGE_SPARSE_BIT)
       size_B = isl_align(size_B, 64 * 1024);
+   else if (dev->info->ver >= 20
+            && dev->info->has_local_mem
+            && (info->usage & ISL_SURF_USAGE_DISPLAY_BIT)
+            && !(info->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT)) {
+      /* Size of compressed buffers to display on Xe2+ platforms like BMG must be
+       * aligned to 64KB. This is one of the prerequisites for Xe kernel driver
+       * to allocate a continuous memory to scanout properly.
+       */
+      size_B = isl_align(size_B, 64 * 1024);
+   }
 
    /* Pre-gfx9: from the Broadwell PRM Vol 5, Surface Layout:
     *    "In addition to restrictions on maximum height, width, and depth,

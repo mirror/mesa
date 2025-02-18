@@ -412,6 +412,13 @@ formats_ccs_e_compatible(const struct anv_physical_device *physical_device,
    if (!(create_flags & VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT))
       return true;
 
+   /* Starting with Xe2, CCS can support format re-interpretation between
+    * renderable and non-renderable formats. So, we don't need to check the
+    * format list.
+    */
+   if (devinfo->ver >= 20)
+      return true;
+
    if (!fmt_list || fmt_list->viewFormatCount == 0)
       return false;
 
@@ -464,7 +471,8 @@ anv_formats_ccs_e_compatible(const struct anv_physical_device *physical_device,
 
    if ((vk_usage & VK_IMAGE_USAGE_STORAGE_BIT) &&
        vk_tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
-      assert(vk_format_aspects(vk_format) == VK_IMAGE_ASPECT_COLOR_BIT);
+      if (devinfo->ver < 20)
+         assert(vk_format_aspects(vk_format) == VK_IMAGE_ASPECT_COLOR_BIT);
       if (devinfo->ver == 12) {
          /* From the TGL Bspec 44930 (r47128):
           *
@@ -1716,19 +1724,114 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
        image->vk.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
       isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
 
-   if (device->queue_count > 1) {
+   /* Deal with access from multiple types of engines. */
+   const uint32_t qf_idx_num =
+      create_info->vk_info->queueFamilyIndexCount;
+   uint32_t used_eng_classes = 0;
+   bool *eng_types = vk_zalloc(&device->vk.alloc,
+                               INTEL_ENGINE_CLASS_INVALID * sizeof(bool),
+                               8,
+                               VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+
+   for (uint32_t i = 0; i < qf_idx_num; i++) {
+      const uint32_t qf_idx =
+         create_info->vk_info->pQueueFamilyIndices[i];
+
+      /* VUID-VkImageCreateInfo-sharingMode-01420
+       * If sharingMode is VK_SHARING_MODE_CONCURRENT, each element of
+       * pQueueFamilyIndices must be unique and must be less than
+       * pQueueFamilyPropertyCount returned by either
+       * vkGetPhysicalDeviceQueueFamilyProperties or
+       * vkGetPhysicalDeviceQueueFamilyProperties2 for the physicalDevice
+       * that was used to create device.
+       *
+       * Uniqueness among queue families is not checked. We are more
+       * interested in kinds (classes) of engines behind these families.
+       */
+      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT &&
+          qf_idx >= device->physical->queue.family_count) {
+         r = VK_ERROR_UNKNOWN;
+         vk_free(&device->vk.alloc, eng_types);
+         goto fail;
+      }
+
+      struct anv_queue_family *queue_family =
+            &device->physical->queue.families[qf_idx];
+
+      if (!eng_types[queue_family->engine_class]) {
+         eng_types[queue_family->engine_class] = true;
+         used_eng_classes++;
+      }
+   }
+
+   vk_free(&device->vk.alloc, eng_types);
+
+   if (used_eng_classes > 1) {
       /* Notify ISL that the app may access this image from different engines.
        * Note that parallel access to the surface will occur regardless of the
        * sharing mode.
        */
       isl_extra_usage_flags |= ISL_SURF_USAGE_MULTI_ENGINE_PAR_BIT;
 
-      /* If the resource is created with the CONCURRENT sharing mode, we can't
-       * support compression because we aren't allowed barriers in order to
-       * construct the main surface data with FULL_RESOLVE/PARTIAL_RESOLVE.
-       */
-      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT)
-         isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+      if (image->vk.sharing_mode == VK_SHARING_MODE_CONCURRENT) {
+         /* The VkSharingModes, either exclusive or concurrent, are defined in
+          * terms of queue families in the spec. It implies at least two queues
+          * (from different queue families) are needed in concurrent mode.
+          *
+          * (https://registry.khronos.org/vulkan/specs/latest/man/html/
+          * VkSharingMode.html)
+          */
+         assert(device->queue_count > 1);
+
+         /* VUID-VkImageCreateInfo-sharingMode-00942
+          * If sharingMode is VK_SHARING_MODE_CONCURRENT, queueFamilyIndexCount
+          * must be greater than 1.
+          */
+         if (qf_idx_num <= 1) {
+            r = VK_ERROR_UNKNOWN;
+            goto fail;
+         }
+
+         if (device->info->ver < 20) {
+            /* Pre-Xe2:
+             * If the resource is created with the CONCURRENT sharing mode,
+             * we can't support compression because we aren't allowed
+             * barriers in order to construct the main surface data with
+             * FULL_RESOLVE/PARTIAL_RESOLVE.
+             *
+             * Features like HiZ and MCS will also be disabled later once
+             * ISL_SURF_USAGE_DISABLE_AUX_BIT is set.
+             */
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         } else if (eng_types[INTEL_ENGINE_CLASS_VIDEO] &&
+                    !device->info->has_local_mem) {
+            /* Xe2+:
+             * The PAT-based CCS compression supports concurrent access across
+             * engines with an exception of media engine in integrated GPU
+             * platforms.
+             */
+            anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
+                          "Xe2+: Concurrent access from media engine, no "
+                          "compression");
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         } else if (image->vk.samples > 1 ||
+                    (image->vk.usage &
+                     VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT)) {
+            /* Xe2+:
+             * MCS and HiZ are supported only on render engine, so we have to
+             * disable them. Setting ISL_SURF_USAGE_DISABLE_AUX_BIT will also
+             * disable CCS compression that can support concurrent access on
+             * other engines, as a cost to simplify the implementation.
+             *
+             * TODO: Actually, should we keep the two features disabled in
+             * exclusive mode as well?
+             */
+            anv_perf_warn(VK_LOG_OBJS(&image->vk.base),
+                          "Xe2+: Concurrent access, no compression on depth "
+                          "and MCS");
+            isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
+         }
+      }
    }
 
    /* Aux is pointless if it will never be used as an attachment. */
@@ -2141,65 +2244,6 @@ resolve_anb_image(struct anv_device *device,
 #endif
 }
 
-static bool
-anv_image_is_pat_compressible(struct anv_device *device, struct anv_image *image)
-{
-   if (INTEL_DEBUG(DEBUG_NO_CCS))
-      return false;
-
-   if (device->info->ver < 20)
-      return false;
-
-   /*
-    * Be aware that Vulkan spec requires that Images with some properties
-    * always returns the same memory types, so this function also needs to
-    * have the same return for the same set of properties.
-    *
-    *    For images created with a color format, the memoryTypeBits member is
-    *    identical for all VkImage objects created with the same combination
-    *    of values for the tiling member, the
-    *    VK_IMAGE_CREATE_SPARSE_BINDING_BIT bit and
-    *    VK_IMAGE_CREATE_PROTECTED_BIT bit of the flags member, the
-    *    VK_IMAGE_CREATE_SPLIT_INSTANCE_BIND_REGIONS_BIT bit of the flags
-    *    member, the VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT bit of the usage
-    *    member if the
-    *    VkPhysicalDeviceHostImageCopyPropertiesEXT::identicalMemoryTypeRequirements
-    *    property is VK_FALSE, handleTypes member of
-    *    VkExternalMemoryImageCreateInfo, and the
-    *    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT of the usage member in the
-    *    VkImageCreateInfo structure passed to vkCreateImage.
-    *
-    *    For images created with a depth/stencil format, the memoryTypeBits
-    *    member is identical for all VkImage objects created with the same
-    *    combination of values for the format member, the tiling member, the
-    *    VK_IMAGE_CREATE_SPARSE_BINDING_BIT bit and
-    *    VK_IMAGE_CREATE_PROTECTED_BIT bit of the flags member, the
-    *    VK_IMAGE_CREATE_SPLIT_INSTANCE_BIND_REGIONS_BIT bit of the flags
-    *    member, the VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT bit of the usage
-    *    member if the
-    *    VkPhysicalDeviceHostImageCopyPropertiesEXT::identicalMemoryTypeRequirements
-    *    property is VK_FALSE, handleTypes member of
-    *    VkExternalMemoryImageCreateInfo, and the
-    *    VK_IMAGE_USAGE_TRANSIENT_ATTACHMENT_BIT of the usage member in the
-    *    VkImageCreateInfo structure passed to vkCreateImage.
-    */
-
-   /* There are no compression-enabled modifiers on Xe2, and all legacy
-    * modifiers are not defined with compression. We simply disable
-    * compression on all modifiers.
-    *
-    * We disable this in anv_AllocateMemory() as well.
-    */
-   if (image->vk.tiling == VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT)
-      return false;
-
-   /* Host accessed images cannot be compressed. */
-   if (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT)
-      return false;
-
-   return true;
-}
-
 void
 anv_image_get_memory_requirements(struct anv_device *device,
                                   struct anv_image *image,
@@ -2218,9 +2262,8 @@ anv_image_get_memory_requirements(struct anv_device *device,
    if (image->vk.create_flags & VK_IMAGE_CREATE_PROTECTED_BIT) {
       memory_types = device->physical->memory.protected_mem_types;
    } else {
-      memory_types = device->physical->memory.default_buffer_mem_types;
-      if (anv_image_is_pat_compressible(device, image))
-         memory_types |= device->physical->memory.compressed_mem_types;
+      memory_types = device->physical->memory.default_buffer_mem_types |
+                     device->physical->memory.compressed_mem_types;
    }
 
    if (image->vk.usage & VK_IMAGE_USAGE_HOST_TRANSFER_BIT_EXT) {
@@ -2243,9 +2286,20 @@ anv_image_get_memory_requirements(struct anv_device *device,
          if (image->vk.wsi_legacy_scanout ||
              image->from_ahb ||
              (isl_drm_modifier_has_aux(image->vk.drm_format_mod) &&
-              anv_image_uses_aux_map(device, image))) {
+              (anv_image_uses_aux_map(device, image) ||
+               (device->info->ver >= 20 && device->info->has_local_mem)))) {
             /* If we need to set the tiling for external consumers or the
              * modifier involves AUX tables, we need a dedicated allocation.
+             *
+             * Xe2+ discrete GPUs like BMG require some special treatments on
+             * compression modifiers. But in allocation (vkAllocateMemory()),
+             * the modifier is unavailable for us to tell this case. We
+             * require a dedicated allocation, and then applications should
+             * provide info of the image along with the modifier in allocation
+             * for us (VkMemoryDedicatedAllocateInfo). On the other hand,
+             * modifiers on integrated Xe2+ GPUs don't need these treatments,
+             * so we don't require dedicated allocation to preserve
+             * suballocation.
              *
              * See also anv_AllocateMemory.
              */

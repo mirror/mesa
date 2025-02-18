@@ -776,7 +776,9 @@ iris_slab_alloc(void *priv,
 
    switch (heap) {
    case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
+   case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT:
    case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED:
+   case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT:
       flags |= BO_ALLOC_COMPRESSED;
       break;
    case IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT:
@@ -851,9 +853,12 @@ flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
    const struct intel_device_info *devinfo = &bufmgr->devinfo;
 
    if (bufmgr->vram.size > 0) {
-      if (flags & BO_ALLOC_COMPRESSED)
-         return IRIS_HEAP_DEVICE_LOCAL_COMPRESSED;
+      if (flags & BO_ALLOC_COMPRESSED) {
+         if (flags & BO_ALLOC_SCANOUT)
+            return IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT;
 
+         return IRIS_HEAP_DEVICE_LOCAL_COMPRESSED;
+      }
       /* Discrete GPUs currently always snoop CPU caches. */
       if ((flags & BO_ALLOC_SMEM) || (flags & BO_ALLOC_CACHED_COHERENT))
          return IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT;
@@ -879,8 +884,12 @@ flags_to_heap(struct iris_bufmgr *bufmgr, unsigned flags)
       assert(!devinfo->has_llc);
       assert(!(flags & BO_ALLOC_LMEM));
 
-      if (flags & BO_ALLOC_COMPRESSED)
+      if (flags & BO_ALLOC_COMPRESSED) {
+         if (flags & BO_ALLOC_SCANOUT)
+            return IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT;
+
          return IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED;
+      }
 
       if (flags & (BO_ALLOC_SCANOUT | BO_ALLOC_SHARED))
             return IRIS_HEAP_SYSTEM_MEMORY_UNCACHED;
@@ -1130,15 +1139,15 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
       case IRIS_HEAP_DEVICE_LOCAL:
       case IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR:
       case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED:
+      case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT:
          regions[num_regions++] = bufmgr->vram.region;
          break;
       case IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT:
          regions[num_regions++] = bufmgr->sys.region;
          break;
       case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
-         /* not valid, compressed in discrete is always created with
-          * IRIS_HEAP_DEVICE_LOCAL_PREFERRED_COMPRESSED
-          */
+      case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT:
+         /* Discrete GPUs have dedicated compressed heaps. */
       case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED:
          /* not valid; discrete cards always enable snooping */
       case IRIS_HEAP_MAX:
@@ -1170,8 +1179,11 @@ iris_heap_to_string[IRIS_HEAP_MAX] = {
    [IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT] = "system-cached-coherent",
    [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED] = "system-uncached",
    [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED] = "system-uncached-compressed",
+   [IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT] =
+      "system-uncached-compressed-scanout",
    [IRIS_HEAP_DEVICE_LOCAL] = "local",
    [IRIS_HEAP_DEVICE_LOCAL_COMPRESSED] = "local-compressed",
+   [IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT] = "local-compressed-scanout",
    [IRIS_HEAP_DEVICE_LOCAL_PREFERRED] = "local-preferred",
    [IRIS_HEAP_DEVICE_LOCAL_CPU_VISIBLE_SMALL_BAR] = "local-cpu-visible-small-bar",
 };
@@ -1192,7 +1204,9 @@ heap_to_mmap_mode(struct iris_bufmgr *bufmgr, enum iris_heap heap)
    case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED:
       return IRIS_MMAP_WC;
    case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
+   case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT:
    case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED:
+   case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT:
       /* compressed bos are not mmaped */
       return IRIS_MMAP_NONE;
    default:
@@ -1965,9 +1979,42 @@ iris_bo_import_dmabuf(struct iris_bufmgr *bufmgr, int prime_fd,
    bo->index = -1;
    bo->real.reusable = false;
    bo->real.imported = true;
+   bo->real.mmap_mode = IRIS_MMAP_NONE;
    /* Xe KMD expects at least 1-way coherency for imports */
    bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY_CACHED_COHERENT;
-   bo->real.mmap_mode = IRIS_MMAP_NONE;
+   /* Xe2+: A bo's heap determines its PAT entry, being scanout or not in the
+    * vm_binding step later. Unlike allocation time, we don't know about if
+    * the imported bo will be used for scanout.
+    *
+    * We can simply assume the imported buffer will be to display and assign
+    * compressed + scanout heap to it.
+    */
+   if (modifier == I915_FORMAT_MOD_4_TILED_BMG_CCS) {
+      bo->real.heap = IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT;
+   } else if (bufmgr->devinfo.ver >= 20 && bufmgr->devinfo.has_local_mem) {
+      /* Xe2+:
+       * In anv driver, the exported resource should have compression
+       * disabled, and this is done with a special CMF value. But it seems
+       * the disabling doesn't happen on Xe2 DGs. As a result, we still get
+       * compressed resource. However, CMF approach in anv driver helps us
+       * to workaround compliance issue with the Vulkan spec on all Xe2
+       * platforms.
+       *
+       * We treat the imported buffers without modifiers as compressed in
+       * iris instead as a workaround. We can do so safely because
+       * uncompressed writes on Xe2 update CCS like compressed ops does:
+       *
+       * Bspec 70550 (r58127) MOCS and PAT Register Space
+       *    Table - Description of Field names
+       *       Lossless Compression Enable
+       */
+      bo->real.heap = IRIS_HEAP_DEVICE_LOCAL_COMPRESSED;
+   } else if (modifier == I915_FORMAT_MOD_4_TILED_LNL_CCS) {
+      bo->real.heap = IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT;
+   }  else {
+      assert(bufmgr->devinfo.ver <= 20 || !isl_drm_modifier_has_aux(modifier));
+   }
+
    if (INTEL_DEBUG(DEBUG_CAPTURE_ALL))
       bo->real.capture = true;
    bo->gem_handle = handle;
@@ -2685,6 +2732,9 @@ iris_heap_to_pat_entry(const struct intel_device_info *devinfo,
    case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED:
    case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED:
       return &devinfo->pat.compressed;
+   case IRIS_HEAP_SYSTEM_MEMORY_UNCACHED_COMPRESSED_SCANOUT:
+   case IRIS_HEAP_DEVICE_LOCAL_COMPRESSED_SCANOUT:
+      return &devinfo->pat.compressed_scanout;
    default:
       unreachable("invalid heap for platforms using PAT entries");
    }

@@ -202,7 +202,8 @@ isl_get_qpitch(const struct isl_surf *surf)
  * Returns compression format encoding for Unified Lossless Compression
  */
 UNUSED static uint8_t
-isl_get_render_compression_format(enum isl_format format)
+isl_get_render_compression_format(enum isl_format format,
+                                  enum isl_aux_usage aux_usage)
 {
    /* Bspec 63919 (r60413):
     *
@@ -210,6 +211,11 @@ isl_get_render_compression_format(enum isl_format format)
     *
     * These ISL formats have explicitly defined CMF values in the spec.
     */
+
+   if (!isl_aux_usage_has_ccs(aux_usage)) {
+      return CMF_DISABLE_WRITE_COMPRESSION;
+   }
+
    switch(format) {
    case ISL_FORMAT_R8_UNORM:
    case ISL_FORMAT_R8_UINT:
@@ -338,7 +344,8 @@ isl_get_render_compression_format(enum isl_format format)
  * Returns compression format encoding for Unified Lossless Compression
  */
 UNUSED static uint8_t
-isl_get_render_compression_format(enum isl_format format)
+isl_get_render_compression_format(enum isl_format format,
+                                  enum isl_aux_usage aux_usage)
 {
    /* From the Bspec, Enumeration_RenderCompressionFormat section (53726): */
    switch(format) {

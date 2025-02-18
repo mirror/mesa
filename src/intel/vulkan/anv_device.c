@@ -1489,6 +1489,9 @@ VkResult anv_AllocateMemory(
    if (mem_type->propertyFlags & VK_MEMORY_PROPERTY_PROTECTED_BIT)
       alloc_flags |= ANV_BO_ALLOC_PROTECTED;
 
+   if (mem_type->compressed)
+      alloc_flags |= ANV_BO_ALLOC_COMPRESSED;
+
    /* For now, always allocated AUX-TT aligned memory, regardless of dedicated
     * allocations. An application can for example, suballocate a large
     * VkDeviceMemory and try to bind an image created with a CCS modifier. In
@@ -1549,12 +1552,6 @@ VkResult anv_AllocateMemory(
       }
    }
 
-   /* TODO: Disabling compression on external bos will cause problems once we
-    * have a modifier that supports compression (Xe2+).
-    */
-   if (!(alloc_flags & ANV_BO_ALLOC_EXTERNAL) && mem_type->compressed)
-      alloc_flags |= ANV_BO_ALLOC_COMPRESSED;
-
    if (mem_type->dynamic_visible)
       alloc_flags |= ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL;
 
@@ -1575,6 +1572,26 @@ VkResult anv_AllocateMemory(
                VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT ||
              fd_info->handleType ==
                VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
+      if (alloc_flags & ANV_BO_ALLOC_COMPRESSED) {
+         /* First, when importing a compressed buffer on Xe2+, we are sure
+          * about that the buffer is from a resource created with modifiers
+          * supporting compression, even the info of modifier is not available
+          * on the path of allocation. (Buffers created with modifiers not
+          * supporting compression must be uncompressed or resolved first
+          * for sharing.)
+          *
+          * We assume the source of the sharing (a GL driver or this driver)
+          * would create the shared buffer for scanout usage as well by
+          * following the above reasons. As a result, configure the imported
+          * buffer for scanout.
+          *
+          * Such assumption could fit on pre-Xe2 platforms as well but become
+          * more relevant on Xe2+ because the alloc flags will determine bo's
+          * heap and then PAT entry in the later vm_bind stage.
+          */
+         assert(device->info->ver >= 20);
+         alloc_flags |= ANV_BO_ALLOC_SCANOUT;
+      }
 
       result = anv_device_import_bo(device, fd_info->fd, alloc_flags,
                                     client_address, &mem->bo);
@@ -1647,6 +1664,24 @@ VkResult anv_AllocateMemory(
    }
 
    /* Regular allocate (not importing memory). */
+
+   /* The I915_FORMAT_MOD_4_TILED_BMG_CCS modifier defined in drm_fourcc.h
+    * has a requirement on size:
+    *
+    *    The GEM object must be stored in contiguous memory with a size
+    *    aligned to 64KB.
+    *
+    * Xe kernel driver will provide continuous allocation on scanout buffers
+    * with CCS AND when the bo's size is a multiple of 64KB that is addressed
+    * in isl. Assuming this requirement will be on later discrete GPUs, set
+    * scanout flag on all Xe2+ modifiers.
+    */
+   if (dedicated_info) {
+      ANV_FROM_HANDLE(anv_image, image, dedicated_info->image);
+      if (device->info->ver >= 20 && device->info->has_local_mem &&
+          isl_drm_modifier_has_aux(image->vk.drm_format_mod))
+         alloc_flags |= ANV_BO_ALLOC_SCANOUT;
+   }
 
    result = anv_device_alloc_bo(device, "user", pAllocateInfo->allocationSize,
                                 alloc_flags, client_address, &mem->bo);
@@ -2131,8 +2166,13 @@ anv_device_get_pat_entry(struct anv_device *device,
    if (alloc_flags & ANV_BO_ALLOC_IMPORTED)
       return &device->info->pat.cached_coherent;
 
-   if (alloc_flags & ANV_BO_ALLOC_COMPRESSED)
-      return &device->info->pat.compressed;
+   if (alloc_flags & ANV_BO_ALLOC_COMPRESSED) {
+      /* Compressed PAT entries are available on Xe2+. */
+      assert(device->info->ver >= 20);
+      return alloc_flags & ANV_BO_ALLOC_SCANOUT ?
+             &device->info->pat.compressed_scanout :
+             &device->info->pat.compressed;
+   }
 
    if (alloc_flags & (ANV_BO_ALLOC_EXTERNAL | ANV_BO_ALLOC_SCANOUT))
       return &device->info->pat.scanout;

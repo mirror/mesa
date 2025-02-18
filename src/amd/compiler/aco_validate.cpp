@@ -1380,6 +1380,24 @@ validate_instr_defs(Program* program, std::array<unsigned, 2048>& regs,
    return err;
 }
 
+bool
+is_valid_sgpr(Program* program, PhysReg reg, unsigned size, uint16_t limit)
+{
+   /* tba, tma, ttmp, null, m0, exec, scc */
+   bool special_reg = reg.reg() >= 108;
+   /* flat_scr, xnack_mask */
+   special_reg |= program->gfx_level < GFX10 && (reg.reg() >= 102 && reg.reg() <= 105);
+   /* vcc */
+   special_reg |= (reg == vcc || reg == vcc_hi) && program->needs_vcc;
+   /* exec, flat_scr_lo, xnack_mask_lo, vcc_lo */
+   bool dual_special_reg = reg == exec || reg == flat_scr_lo || reg.reg() == 104 || reg == vcc;
+
+   if (special_reg && (size == 1 || (size == 2 && dual_special_reg)))
+      return true;
+
+   return reg.reg() < limit && (reg.reg() + size) <= limit;
+}
+
 } /* end namespace */
 
 bool
@@ -1391,7 +1409,10 @@ validate_ra(Program* program)
    bool err = false;
    aco::live_var_analysis(program);
    std::vector<std::vector<Temp>> phi_sgpr_ops(program->blocks.size());
-   uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->num_waves);
+   uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, MAX2(program->num_waves, 1));
+   sgpr_limit = MIN2(sgpr_limit, program->config->num_sgprs);
+   uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, MAX2(program->num_waves, 1));
+   vgpr_limit = MIN2(vgpr_limit, program->config->num_vgprs);
 
    std::vector<Assignment> assignments(program->peekAllocationId());
    for (Block& block : program->blocks) {
@@ -1419,10 +1440,9 @@ validate_ra(Program* program)
                   ra_fail(program, loc, assignments[op.tempId()].firstloc,
                           "Operand %d has an inconsistent register assignment with instruction", i);
             if ((op.getTemp().type() == RegType::vgpr &&
-                 op.physReg().reg_b + op.bytes() > (256 + program->config->num_vgprs) * 4) ||
+                 op.physReg().reg() + op.size() > (256u + vgpr_limit)) ||
                 (op.getTemp().type() == RegType::sgpr &&
-                 op.physReg() + op.size() > program->config->num_sgprs &&
-                 op.physReg() < sgpr_limit))
+                 !is_valid_sgpr(program, op.physReg(), op.size(), sgpr_limit)))
                err |= ra_fail(program, loc, assignments[op.tempId()].firstloc,
                               "Operand %d has an out-of-bounds register assignment", i);
             if (op.physReg() == vcc && !program->needs_vcc)
@@ -1450,10 +1470,9 @@ validate_ra(Program* program)
                err |= ra_fail(program, loc, assignments[def.tempId()].defloc,
                               "Temporary %%%d also defined by instruction", def.tempId());
             if ((def.getTemp().type() == RegType::vgpr &&
-                 def.physReg().reg_b + def.bytes() > (256 + program->config->num_vgprs) * 4) ||
+                 def.physReg().reg() + def.size() > (256u + vgpr_limit)) ||
                 (def.getTemp().type() == RegType::sgpr &&
-                 def.physReg() + def.size() > program->config->num_sgprs &&
-                 def.physReg() < sgpr_limit))
+                 !is_valid_sgpr(program, def.physReg(), def.size(), sgpr_limit)))
                err |= ra_fail(program, loc, assignments[def.tempId()].firstloc,
                               "Definition %d has an out-of-bounds register assignment", i);
             if (def.physReg() == vcc && !program->needs_vcc)

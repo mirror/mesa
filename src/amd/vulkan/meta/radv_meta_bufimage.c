@@ -666,15 +666,13 @@ fixup_gfx9_cs_copy(struct radv_cmd_buffer *cmd_buffer, const struct radv_meta_bl
          uint64_t addr = ac_surface_addr_from_coord(pdev->addrlib, gpu_info, surf, &surf_info, mip_level, coordX,
                                                     coordY, img_bsurf->layer, image->vk.image_type == VK_IMAGE_TYPE_3D);
          struct radeon_winsys_bo *img_bo = image->bindings[0].bo;
-         struct radeon_winsys_bo *mem_bo = buf_bsurf->buffer->bo;
          const uint64_t img_va = radv_buffer_get_va(img_bo) + image->bindings[0].offset + addr;
          /* buf_bsurf->offset already includes the layer offset */
-         const uint64_t mem_va =
-            buf_bsurf->buffer->addr + buf_bsurf->offset + y * buf_bsurf->pitch * surf->bpe + x * surf->bpe;
+         const uint64_t mem_va = buf_bsurf->addr + buf_bsurf->offset + y * buf_bsurf->pitch * surf->bpe + x * surf->bpe;
          if (to_image) {
-            radv_copy_buffer(cmd_buffer, mem_bo, img_bo, mem_va, img_va, surf->bpe);
+            radv_copy_memory(cmd_buffer, mem_va, img_va, surf->bpe);
          } else {
-            radv_copy_buffer(cmd_buffer, img_bo, mem_bo, img_va, mem_va, surf->bpe);
+            radv_copy_memory(cmd_buffer, img_va, mem_va, surf->bpe);
          }
       }
    }
@@ -714,8 +712,6 @@ radv_meta_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_b
 
    create_iview(cmd_buffer, src, &src_view, VK_FORMAT_UNDEFINED, src->aspect_mask);
 
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, dst->buffer->bo);
-
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,
       (VkDescriptorGetInfoEXT[]){{
@@ -734,8 +730,8 @@ radv_meta_image_to_buffer(struct radv_cmd_buffer *cmd_buffer, struct radv_meta_b
                                     .data.pStorageTexelBuffer =
                                        &(VkDescriptorAddressInfoEXT){
                                           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                                          .address = dst->buffer->addr + dst->offset,
-                                          .range = vk_buffer_range(&dst->buffer->vk, dst->offset, VK_WHOLE_SIZE),
+                                          .address = dst->addr + dst->offset,
+                                          .range = dst->size - dst->offset,
                                           .format = dst->format,
                                        },
                                  }});
@@ -768,9 +764,6 @@ radv_meta_buffer_to_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struc
       return;
    }
 
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, src->buffer->bo);
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, dst->image->bindings[0].bo);
-
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,
       (VkDescriptorGetInfoEXT[]){
@@ -780,8 +773,8 @@ radv_meta_buffer_to_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struc
             .data.pUniformTexelBuffer =
                &(VkDescriptorAddressInfoEXT){
                   .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = src->buffer->addr + src->offset,
-                  .range = vk_buffer_range(&src->buffer->vk, src->offset, VK_WHOLE_SIZE),
+                  .address = src->addr + src->offset,
+                  .range = src->size - src->offset,
                   .format = src->format,
                },
          },
@@ -838,8 +831,6 @@ radv_meta_buffer_to_image_cs(struct radv_cmd_buffer *cmd_buffer, struct radv_met
 
    create_iview(cmd_buffer, dst, &dst_view, VK_FORMAT_UNDEFINED, dst->aspect_mask);
 
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, src->buffer->bo);
-
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,
       (VkDescriptorGetInfoEXT[]){{
@@ -848,8 +839,8 @@ radv_meta_buffer_to_image_cs(struct radv_cmd_buffer *cmd_buffer, struct radv_met
                                     .data.pStorageTexelBuffer =
                                        &(VkDescriptorAddressInfoEXT){
                                           .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                                          .address = src->buffer->addr + src->offset,
-                                          .range = vk_buffer_range(&src->buffer->vk, src->offset, VK_WHOLE_SIZE),
+                                          .address = src->addr + src->offset,
+                                          .range = src->size - src->offset,
                                           .format = src->format,
                                        },
                                  },
@@ -899,9 +890,6 @@ radv_meta_image_to_image_cs_r32g32b32(struct radv_cmd_buffer *cmd_buffer, struct
    /* 96-bit formats are only compatible to themselves. */
    assert(dst->format == VK_FORMAT_R32G32B32_UINT || dst->format == VK_FORMAT_R32G32B32_SINT ||
           dst->format == VK_FORMAT_R32G32B32_SFLOAT);
-
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, src->image->bindings[0].bo);
-   radv_cs_add_buffer(device->ws, cmd_buffer->cs, dst->image->bindings[0].bo);
 
    radv_meta_bind_descriptors(
       cmd_buffer, VK_PIPELINE_BIND_POINT_COMPUTE, layout, 2,

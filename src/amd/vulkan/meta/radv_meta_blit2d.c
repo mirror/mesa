@@ -67,11 +67,7 @@ blit2d_bind_src(struct radv_cmd_buffer *cmd_buffer, VkPipelineLayout layout, str
                 struct radv_meta_blit2d_buffer *src_buf, struct blit2d_src_temps *tmp, enum blit2d_src_type src_type,
                 VkFormat depth_format, VkImageAspectFlagBits aspects, uint32_t log2_samples)
 {
-   struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
-
    if (src_type == BLIT2D_SRC_TYPE_BUFFER) {
-      radv_cs_add_buffer(device->ws, cmd_buffer->cs, src_buf->buffer->bo);
-
       radv_meta_bind_descriptors(
          cmd_buffer, VK_PIPELINE_BIND_POINT_GRAPHICS, layout, 1,
          (VkDescriptorGetInfoEXT[]){{
@@ -80,8 +76,8 @@ blit2d_bind_src(struct radv_cmd_buffer *cmd_buffer, VkPipelineLayout layout, str
             .data.pUniformTexelBuffer =
                &(VkDescriptorAddressInfoEXT){
                   .sType = VK_STRUCTURE_TYPE_DESCRIPTOR_ADDRESS_INFO_EXT,
-                  .address = src_buf->buffer->addr + src_buf->offset,
-                  .range = vk_buffer_range(&src_buf->buffer->vk, src_buf->offset, VK_WHOLE_SIZE),
+                  .address = src_buf->addr + src_buf->offset,
+                  .range = src_buf->size - src_buf->offset,
                   .format = depth_format ? depth_format : src_buf->format},
          }});
 

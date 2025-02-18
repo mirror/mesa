@@ -11,6 +11,7 @@
 #include "nvk_entrypoints.h"
 #include "nvk_format.h"
 #include "nvk_image_view.h"
+#include "nvk_instance.h"
 #include "nvk_physical_device.h"
 #include "nvk_sampler.h"
 #include "nvkmd/nvkmd.h"
@@ -222,12 +223,14 @@ write_dynamic_ubo_desc(const struct nvk_physical_device *pdev,
 }
 
 static union nvk_buffer_descriptor
-ssbo_desc(struct nvk_addr_range addr_range)
+ssbo_desc(const struct nvk_physical_device *pdev,
+          struct nvk_addr_range addr_range)
 {
-   assert(addr_range.addr % NVK_MIN_SSBO_ALIGNMENT == 0);
+   const struct nvk_instance *instance = nvk_physical_device_instance(pdev);
+   const uint32_t min_ssbo_alignment = nvk_min_ssbo_alignment(instance);
    assert(addr_range.range <= UINT32_MAX);
 
-   addr_range.addr = ROUND_DOWN_TO(addr_range.addr, NVK_MIN_SSBO_ALIGNMENT);
+   addr_range.addr = ROUND_DOWN_TO(addr_range.addr, min_ssbo_alignment);
    addr_range.range = align(addr_range.range, NVK_SSBO_BOUNDS_CHECK_ALIGNMENT);
 
    return (union nvk_buffer_descriptor) { .addr = {
@@ -237,7 +240,8 @@ ssbo_desc(struct nvk_addr_range addr_range)
 }
 
 static void
-write_ssbo_desc(struct nvk_descriptor_set *set,
+write_ssbo_desc(const struct nvk_physical_device *pdev,
+                struct nvk_descriptor_set *set,
                 const VkDescriptorBufferInfo *const info,
                 uint32_t binding, uint32_t elem)
 {
@@ -245,12 +249,13 @@ write_ssbo_desc(struct nvk_descriptor_set *set,
    struct nvk_addr_range addr_range =
       nvk_buffer_addr_range(buffer, info->offset, info->range);
 
-   const union nvk_buffer_descriptor desc = ssbo_desc(addr_range);
+   const union nvk_buffer_descriptor desc = ssbo_desc(pdev, addr_range);
    write_desc(set, binding, elem, &desc, sizeof(desc));
 }
 
 static void
-write_dynamic_ssbo_desc(struct nvk_descriptor_set *set,
+write_dynamic_ssbo_desc(const struct nvk_physical_device *pdev,
+                        struct nvk_descriptor_set *set,
                         const VkDescriptorBufferInfo *const info,
                         uint32_t binding, uint32_t elem)
 {
@@ -261,7 +266,7 @@ write_dynamic_ssbo_desc(struct nvk_descriptor_set *set,
    const struct nvk_descriptor_set_binding_layout *binding_layout =
       &set->layout->binding[binding];
    set->dynamic_buffers[binding_layout->dynamic_buffer_index + elem] =
-      ssbo_desc(addr_range);
+      ssbo_desc(pdev, addr_range);
 }
 
 static void
@@ -363,7 +368,7 @@ nvk_UpdateDescriptorSets(VkDevice device,
 
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
          for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            write_ssbo_desc(set, write->pBufferInfo + j,
+            write_ssbo_desc(pdev, set, write->pBufferInfo + j,
                             write->dstBinding,
                             write->dstArrayElement + j);
          }
@@ -379,7 +384,7 @@ nvk_UpdateDescriptorSets(VkDevice device,
 
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER_DYNAMIC:
          for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            write_dynamic_ssbo_desc(set, write->pBufferInfo + j,
+            write_dynamic_ssbo_desc(pdev, set, write->pBufferInfo + j,
                                     write->dstBinding,
                                     write->dstArrayElement + j);
          }
@@ -497,7 +502,7 @@ nvk_push_descriptor_set_update(struct nvk_device *dev,
 
       case VK_DESCRIPTOR_TYPE_STORAGE_BUFFER:
          for (uint32_t j = 0; j < write->descriptorCount; j++) {
-            write_ssbo_desc(&set, write->pBufferInfo + j,
+            write_ssbo_desc(pdev, &set, write->pBufferInfo + j,
                             write->dstBinding,
                             write->dstArrayElement + j);
          }
@@ -922,7 +927,7 @@ nvk_descriptor_set_write_template(struct nvk_device *dev,
             const VkDescriptorBufferInfo *info =
                data + entry->offset + j * entry->stride;
 
-            write_ssbo_desc(set, info,
+            write_ssbo_desc(pdev, set, info,
                             entry->binding,
                             entry->array_element + j);
          }
@@ -944,7 +949,7 @@ nvk_descriptor_set_write_template(struct nvk_device *dev,
             const VkDescriptorBufferInfo *info =
                data + entry->offset + j * entry->stride;
 
-            write_dynamic_ssbo_desc(set, info,
+            write_dynamic_ssbo_desc(pdev, set, info,
                                     entry->binding,
                                     entry->array_element + j);
          }
@@ -1063,7 +1068,7 @@ nvk_GetDescriptorEXT(VkDevice _device,
             .range = pDescriptorInfo->data.pUniformBuffer->range,
          };
       }
-      union nvk_buffer_descriptor desc = ssbo_desc(addr_range);
+      union nvk_buffer_descriptor desc = ssbo_desc(pdev, addr_range);
       assert(sizeof(desc) <= dataSize);
       memcpy(pDescriptor, &desc, sizeof(desc));
       break;

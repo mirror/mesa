@@ -130,6 +130,15 @@ nvk_init_dri_options(struct nvk_instance *instance)
 
    if (driQueryOptionb(&instance->dri_options, "vk_zero_vram"))
       instance->debug_flags |= NVK_DEBUG_ZERO_MEMORY;
+
+   /* VKD3D really wants a min SSBO alignment of 4B instead of 16B because
+    * it's required for structure buffers.  If we don't do this, it'll hack
+    * it behind our back and we don't really want that.  We just have to trust
+    * it to not misalign 64-bit atomics.
+    */
+   if (instance->vk.app_info.engine_name != NULL &&
+       strcmp(instance->vk.app_info.engine_name, "vkd3d") == 0)
+      instance->ssbo_align_4b = true;
 }
 
 VKAPI_ATTR VkResult VKAPI_CALL

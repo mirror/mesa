@@ -512,19 +512,20 @@ process_instructions(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instructio
          Definition def = state == Exact ? Definition(exec, bld.lm) : bld.def(bld.lm);
          Operand src = instr->operands[0].isConstant() ? Operand(exec, bld.lm) : instr->operands[0];
 
-         bld.sop2(Builder::s_andn2, def, bld.def(s1, scc), info.exec[0].op, src);
+         Temp cond =
+            bld.sop2(Builder::s_andn2, def, bld.def(s1, scc), info.exec[0].op, src).def(1).getTemp();
          info.exec[0].op = def.isTemp() ? Operand(def.getTemp()) : Operand(exec, bld.lm);
+
+         /* End shader if global mask is zero. */
+         instr->opcode = aco_opcode::p_exit_early_if_not;
+         instr->operands[0] = state == Exact ? Operand(exec, bld.lm) : Operand(cond, scc);
+         bld.insert(std::move(instr));
 
          /* Update global WQM mask and store in exec. */
          if (state == WQM) {
             assert(info.exec.size() > 1);
             bld.sop1(Builder::s_wqm, Definition(exec, bld.lm), bld.def(s1, scc), def.getTemp());
          }
-
-         /* End shader if global mask is zero. */
-         instr->opcode = aco_opcode::p_exit_early_if_not;
-         instr->operands[0] = Operand(exec, bld.lm);
-         bld.insert(std::move(instr));
 
          /* Update all other exec masks. */
          if (nested_cf) {

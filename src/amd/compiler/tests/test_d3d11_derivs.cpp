@@ -115,8 +115,9 @@ BEGIN_TEST(d3d11_derivs.discard)
    pbld.add_vsfs(vs, fs);
 
    /* The discard gets emitted as demote_if. */
-   //>> s2: %_:exec,  s1: (kill)%_:scc = s_wqm_b64 %_
-   //! p_exit_early_if_not %_:exec
+   //>> s2: %0:exec,  s1: (kill)%_:scc = s_wqm_b64 %0:exec
+   //>> s2: %_,  s1: %cond:scc = s_andn2_b64 (kill)%_, (kill)%_3
+   //! p_exit_early_if_not (kill)%cond:scc
    //>> v4: %_ = image_sample (kill)%_, (kill)%_, v1: undef, (kill)%_, (kill)%_ 2d
    pbld.print_ir(VK_SHADER_STAGE_FRAGMENT_BIT, "ACO IR");
 END_TEST

@@ -8639,11 +8639,11 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
 
       bld.pseudo(aco_opcode::p_demote_to_helper, cond);
 
-      /* Perform the demote in WQM so that it doesn't make exec empty. WQM should last until at
-       * least the next top-level block.
+      /* Perform the demote in WQM so that it doesn't make exec empty.
+       * WQM should last until at least the next top-level block.
        */
       if (ctx->cf_info.in_divergent_cf)
-         set_wqm(ctx);
+         set_wqm(ctx, true);
 
       ctx->block->kind |= block_kind_uses_discard;
       ctx->program->needs_exact = true;
@@ -8651,11 +8651,6 @@ visit_intrinsic(isel_context* ctx, nir_intrinsic_instr* instr)
       /* Enable WQM in order to prevent helper lanes from getting terminated. */
       if (ctx->shader->info.maximally_reconverges)
          ctx->program->needs_wqm = true;
-
-      if (ctx->cf_info.in_divergent_cf) {
-         ctx->cf_info.exec.potentially_empty_discard = true;
-         begin_empty_exec_skip(ctx, &instr->instr, instr->instr.block);
-      }
 
       break;
    }

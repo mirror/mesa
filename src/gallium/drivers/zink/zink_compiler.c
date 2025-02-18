@@ -6255,8 +6255,7 @@ zink_shader_init(struct zink_screen *screen, struct zink_shader *zs)
 
    optimize_nir(nir, NULL, true);
    NIR_PASS_V(nir, nir_remove_dead_variables, nir_var_function_temp, NULL);
-   NIR_PASS_V(nir, nir_lower_discard_if, (nir_lower_discard_if_to_cf |
-                                          nir_lower_demote_if_to_cf |
+   NIR_PASS_V(nir, nir_lower_discard_if, (nir_lower_demote_if_to_cf |
                                           nir_lower_terminate_if_to_cf));
 
    bool needs_size = analyze_io(zs, nir);

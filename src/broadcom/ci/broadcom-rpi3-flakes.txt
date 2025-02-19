@@ -67,3 +67,7 @@ dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.programs.link.19
 dEQP-GLES2.functional.texture.mipmap.cube.generate.la88_fastest
 
 spec@ext_framebuffer_multisample@accuracy all_samples stencil_draw small depthstencil
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+arm32-dEQP-GLES2.functional.texture.mipmap.cube.generate.la88_nicest
+

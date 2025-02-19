@@ -473,3 +473,12 @@ dEQP-VK.image.concurrent_copy.vk_format_r8g8b8a8_unorm.vk_image_tiling_optimal.v
 
 # This seems to be working with upstream
 program@execute@vector-conversion,Fail
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-VK.api.copy_and_blit.copy_commands2.blit_image.all_formats.color.2d.astc_10x5_srgb_block.a8b8g8r8_srgb_pack32.general_general_nearest,Fail
+dEQP-VK.api.image_clearing.core.clear_color_image.2d.optimal.remaining_array_layers.a8b8g8r8_unorm_pack32_200x180,Fail
+dEQP-VK.api.image_clearing.dedicated_allocation.clear_color_attachment.multiple_layers.a8b8g8r8_snorm_pack32_200x180_sample_count_16,Fail
+dEQP-VK.memory_model.write_after_read.ext.u32.noncoherent.atomic_atomic.atomicrmw.device.payload_local.buffer.guard_local.buffer.frag,Crash
+dEQP-VK.subgroups.ballot_broadcast.compute.subgroupbroadcast_nonconst_float_requiredsubgroupsize16,Fail
+dEQP-VK.texture.shadow.cube_array.linear_mipmap_linear.not_equal_d24_unorm_s8_uint,Fail
+

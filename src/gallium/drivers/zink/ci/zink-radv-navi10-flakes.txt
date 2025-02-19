@@ -48,3 +48,8 @@ spec@glsl-1.50@execution@redeclare-pervertex-out-subset-gs
 dEQP-GLES31.functional.synchronization.inter_call.without_memory_barrier.ssbo_atomic_counter_mixed_dispatch_100_calls_128_invocations
 
 spec@arb_shader_texture_lod@execution@glsl-fs-shadow2dgradarb-cumulative
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-GLES31.functional.copy_image.non_compressed.viewclass_32_bits.r32ui_rgba8ui.cubemap_to_texture2d_array
+dEQP-GLES31.functional.draw_base_vertex.draw_elements_base_vertex.triangle_fan.single_attribute
+

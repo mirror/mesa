@@ -147,3 +147,7 @@ dEQP-EGL.functional.sharing.gles2.multithread.random.programs.link.7
 
 # Fails in the pre-merge job and passes in the nightly
 KHR-GL46.shader_viewport_layer_array.ShaderViewportIndexTestCase
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-fs-getuniformdv
+

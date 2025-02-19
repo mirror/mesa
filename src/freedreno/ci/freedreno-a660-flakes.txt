@@ -94,3 +94,11 @@ angle-dEQP-GLES31.functional.tessellation.user_defined_io.per_patch.vertex_io_ar
 angle-dEQP-GLES31.functional.tessellation.user_defined_io.per_patch.vertex_io_array_size_implicit.isolines
 angle-dEQP-GLES31.functional.tessellation.user_defined_io.per_patch.vertex_io_array_size_shader_builtin.isolines
 angle-dEQP-GLES31.functional.tessellation.user_defined_io.per_vertex.vertex_io_array_size_shader_builtin.triangles_explicit_tcs_out_size
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind2.combined_image_sampler_immutable.tess_ctrl.single_descriptor.1d_base_mip
+dEQP-VK.binding_model.shader_access.primary_cmd_buf.bind2.with_template.sampler_mutable.tess_eval.multiple_discontiguous_descriptors.cube_base_mip
+dEQP-VK.binding_model.shader_access.secondary_cmd_buf.bind.with_template.uniform_buffer_dynamic.tess_eval.multiple_discontiguous_descriptor_sets.multiple_contiguous_descriptors.offset_view_zero_dynamic_zero
+dEQP-VK.renderpass2.fragment_density_map.2_views.render.non_divisible_density_size.2_samples.static_subsampled_2_2_multiviewport
+dEQP-VK.tessellation.invariance.primitive_set.quads_equal_spacing_ccw
+

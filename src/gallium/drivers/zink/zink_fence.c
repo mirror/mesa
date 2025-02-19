@@ -126,6 +126,40 @@ tc_fence_finish(struct zink_context *ctx, struct zink_tc_fence *mfence, uint64_t
    return true;
 }
 
+
+static bool
+wait_until_nonzero(volatile bool *var, uint64_t timeout)
+{
+   if (p_atomic_read(var))
+      return true;
+
+   if (!timeout)
+      return false;
+
+   if (timeout == OS_TIMEOUT_INFINITE) {
+      while (!p_atomic_read(var)) {
+#if DETECT_OS_POSIX_LITE
+         sched_yield();
+#endif
+      }
+      return true;
+   }
+   else {
+      int64_t start_time = os_time_get_nano();
+      int64_t end_time = start_time + timeout;
+
+      while (!p_atomic_read(var)) {
+         if (os_time_timeout(start_time, end_time, os_time_get_nano()))
+            return false;
+
+#if DETECT_OS_POSIX_LITE
+         sched_yield();
+#endif
+      }
+      return true;
+   }
+}
+
 static bool
 fence_wait(struct zink_screen *screen, struct zink_fence *fence, uint64_t timeout_ns)
 {
@@ -134,6 +168,14 @@ fence_wait(struct zink_screen *screen, struct zink_fence *fence, uint64_t timeou
    if (p_atomic_read(&fence->completed))
       return true;
 
+   if (!fence->submitted) {
+      /* it is legal to do a timeout=0 wait on an unflushed fence */
+      if (!timeout_ns)
+         return false;
+      /* avoid race condition with flush(ASYNC) -> wait */
+      if (!wait_until_nonzero(&fence->submitted, timeout_ns))
+         return false;
+   }
    assert(fence->batch_id);
    assert(fence->submitted);
 

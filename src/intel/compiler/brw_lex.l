@@ -398,7 +398,7 @@ sr[0-9]+ 	{ yylval.integer = atoi(yytext + 2); return STATEREG; }
 			}
 
  /* jump label target */
-[a-zA-Z_][0-9a-zA-Z_]*":" {
+[a-zA-Z_][0-9a-zA-Z_]*":"[ \t]*$ {
 	yylval.string = ralloc_strdup(p->mem_ctx, yytext);
 	/* Stomp the trailing ':' */
 	yylval.string[yyleng - 1] = '\0';

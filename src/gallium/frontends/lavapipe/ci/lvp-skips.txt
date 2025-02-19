@@ -76,3 +76,7 @@ dEQP-VK.synchronization2.timeline_semaphore.device_host.write_image_fragment_rea
 dEQP-VK.tessellation.invariance.outer_edge_symmetry.triangles_fractional_odd_spacing_ccw
 dEQP-VK.tessellation.misc_draw.fill_overlap_quads_equal_spacing_draw_indirect
 nir-stress=dEQP-VK.ray_query.builtin.instanceid.tese.triangles
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-VK.tessellation.invariance.one_minus_tess_coord_component.isolines_fractional_even_spacing_ccw_point_mode
+

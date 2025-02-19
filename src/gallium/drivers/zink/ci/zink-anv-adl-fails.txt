@@ -579,7 +579,6 @@ spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yuyv,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yvu420,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-sample_yvyu,Fail
 spec@ext_image_dma_buf_import@ext_image_dma_buf_import-transcode-nv12-as-r8-gr88,Fail
-spec@ext_packed_float@query-rgba-signed-components,Fail
 spec@ext_transform_feedback@tessellation quad_strip wireframe,Fail
 spec@ext_transform_feedback@tessellation quads wireframe,Fail
 spec@ext_transform_feedback@tessellation triangle_fan flat_first,Fail
@@ -645,7 +644,6 @@ wayland-dEQP-EGL.functional.create_context_ext.gl_43.rgba4444_no_depth_no_stenci
 wayland-dEQP-EGL.functional.create_context_ext.gl_31.rgba4444_no_depth_no_stencil,Crash
 spec@glsl-4.00@execution@built-in-functions@gs-inverse-dmat4,Crash
 spec@glsl-4.00@execution@built-in-functions@vs-inverse-dmat4,Crash
-spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-inverse-dmat4,Crash
 spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-inverse-dmat4,Crash
 wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1.rgba4444_window,Crash
 wayland-dEQP-EGL.functional.color_clears.multi_thread.gles1_gles2.rgba4444_window,Crash

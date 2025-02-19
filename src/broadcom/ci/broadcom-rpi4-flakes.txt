@@ -95,3 +95,8 @@ dEQP-VK.ssbo.layout.random.all_per_block_buffers.0
 dEQP-VK.draw.renderpass.multi_draw.mosaic.normal.max_draws.stride_extra_12.10_instances.vert_only.multiview.no_offset_no_draw_id
 dEQP-VK.glsl.texture_functions.query.texturequerylevels.usampler1darray_fragment
 dEQP-VK.synchronization.cross_instance.dedicated.write_ssbo_vertex_read_vertex_input.buffer_262144_binary_semaphore_fd
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-VK.draw.renderpass.multi_draw.mosaic.indexed_mixed.max_draws.stride_extra_12.10_instances.vert_only.multiview.no_offset_no_draw_id
+dEQP-VK.fragment_operations.occlusion_query.precise_test_scissors_depth_clear_depth_write_stencil_write
+

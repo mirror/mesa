@@ -3,3 +3,14 @@ spec@arb_query_buffer_object@qbo
 # Timed out after raising the iris-cml-deqp parallel number from 4 to 8.
 # https://gitlab.freedesktop.org/mesa/mesa/-/jobs/66875845
 KHR-Single-GL46.arrays_of_arrays_gl.ConstructorsAndUnsizedDeclConstructorSizing1
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+KHR-GLES31.core.arrays_of_arrays.SizedDeclarationsPrimitive
+KHR-GLES31.core.tessellation_shader.vertex.vertex_ordering
+KHR-Single-GL46.arrays_of_arrays_gl.AtomicDeclaration
+KHR-Single-GL46.arrays_of_arrays_gl.ConstructorsAndUnsizedDeclConstructors1
+KHR-Single-GL46.arrays_of_arrays_gl.ExpressionsDynamicIndexing2
+KHR-Single-GL46.arrays_of_arrays_gl.SubroutineArgumentAliasing1
+KHR-Single-GL46.arrays_of_arrays_gl.SubroutineArgumentAliasing2
+KHR-Single-GL46.arrays_of_arrays_gl.SubroutineArgumentAliasing4
+

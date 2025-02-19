@@ -2374,11 +2374,13 @@ static void emit_vote(struct lp_build_nir_context *bld_base, LLVMValueRef src,
 
 static void emit_ballot(struct lp_build_nir_context *bld_base, LLVMValueRef src, nir_intrinsic_instr *instr, LLVMValueRef result[4])
 {
+   struct lp_build_nir_soa_context * bld = (struct lp_build_nir_soa_context *)bld_base;
    struct gallivm_state * gallivm = bld_base->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
    LLVMValueRef exec_mask = mask_vec(bld_base);
    struct lp_build_loop_state loop_state;
-   src = LLVMBuildAnd(builder, src, exec_mask, "");
+   if (bld_base->shader->info.stage != MESA_SHADER_FRAGMENT || bld->exec_mask.has_mask)
+      src = LLVMBuildAnd(builder, src, exec_mask, "");
    LLVMValueRef res_store = lp_build_alloca(gallivm, bld_base->int_bld.elem_type, "");
    LLVMValueRef res;
    lp_build_loop_begin(&loop_state, gallivm, lp_build_const_int32(gallivm, 0));
@@ -2733,6 +2735,7 @@ static void emit_read_invocation(struct lp_build_nir_context *bld_base,
                                  LLVMValueRef invoc,
                                  LLVMValueRef result[4])
 {
+   struct lp_build_nir_soa_context * bld = (struct lp_build_nir_soa_context *)bld_base;
    struct gallivm_state *gallivm = bld_base->base.gallivm;
    LLVMValueRef idx = first_active_invocation(bld_base);
    struct lp_build_context *uint_bld = get_int_bld(bld_base, true, bit_size);
@@ -2743,6 +2746,8 @@ static void emit_read_invocation(struct lp_build_nir_context *bld_base,
     */
    if (invoc)
       idx = LLVMBuildExtractElement(gallivm->builder, invoc, idx, "");
+   else if (bld_base->shader->info.stage == MESA_SHADER_FRAGMENT && !bld->exec_mask.has_mask)
+      idx = lp_build_const_int32(gallivm, 0);
 
    LLVMValueRef value = LLVMBuildExtractElement(gallivm->builder,
                                                 src, idx, "");

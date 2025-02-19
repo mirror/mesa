@@ -922,8 +922,9 @@ st_screen_destroy(struct pipe_frontend_screen *fscreen)
 {
    struct st_screen *screen = fscreen->st_screen;
 
-   if (screen && screen->drawable_ht) {
-      _mesa_hash_table_destroy(screen->drawable_ht, NULL);
+   if (screen) {
+      if (screen->drawable_ht)
+         _mesa_hash_table_destroy(screen->drawable_ht, NULL);
       simple_mtx_destroy(&screen->st_mutex);
       FREE(screen);
       fscreen->st_screen = NULL;

@@ -64,7 +64,6 @@
 #include "util/pb_slab.h"
 #include "util/perf/u_trace.h"
 #include "util/set.h"
-#include "util/sparse_array.h"
 #include "util/u_atomic.h"
 #if DETECT_OS_ANDROID
 #include "util/u_gralloc/u_gralloc.h"
@@ -480,9 +479,6 @@ struct anv_bo {
     * in the validation list so that we can ensure uniqueness.
     */
    uint32_t exec_obj_index;
-
-   /* Index for use with util_sparse_array_free_list */
-   uint32_t free_index;
 
    /* Last known offset.  This value is provided by the kernel when we
     * execbuf and is used as the presumed offset for the next bunch of
@@ -912,6 +908,12 @@ anv_state_table_get(struct anv_state_table *table, uint32_t idx)
 {
    return &table->map[idx].state;
 }
+
+struct anv_bo_pool_bucket {
+   struct anv_bo *bos[8];
+   unsigned len;
+};
+
 /**
  * Implements a pool of re-usable BOs.  The interface is identical to that
  * of block_pool except that each block is its own BO.
@@ -923,7 +925,8 @@ struct anv_bo_pool {
 
    enum anv_bo_alloc_flags bo_alloc_flags;
 
-   struct util_sparse_array_free_list free_list[16];
+   simple_mtx_t mutex;
+   struct anv_bo_pool_bucket free_buckets[16];
 };
 
 void anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,

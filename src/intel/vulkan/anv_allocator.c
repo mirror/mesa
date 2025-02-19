@@ -1227,11 +1227,16 @@ anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
    pool->device = device;
    pool->bo_alloc_flags = alloc_flags;
 
-   for (unsigned i = 0; i < ARRAY_SIZE(pool->free_list); i++) {
-      util_sparse_array_free_list_init(&pool->free_list[i],
-                                       &device->bo_cache.bo_map, 0,
-                                       offsetof(struct anv_bo, free_index));
+   for (unsigned i = 0; i < ARRAY_SIZE(pool->free_buckets); i++) {
+      struct anv_bo_pool_bucket *bucket = &pool->free_buckets[i];
+
+      for (unsigned j = 0; j < ARRAY_SIZE(bucket->bos); j++)
+         bucket->bos[j] = NULL;
+
+      bucket->len = 0;
    }
+
+   simple_mtx_init(&pool->mutex, mtx_plain);
 
    VG(VALGRIND_CREATE_MEMPOOL(pool, 0, false));
 }
@@ -1239,19 +1244,21 @@ anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
 void
 anv_bo_pool_finish(struct anv_bo_pool *pool)
 {
-   for (unsigned i = 0; i < ARRAY_SIZE(pool->free_list); i++) {
-      while (1) {
-         struct anv_bo *bo =
-            util_sparse_array_free_list_pop_elem(&pool->free_list[i]);
-         if (bo == NULL)
-            break;
+   simple_mtx_lock(&pool->mutex);
+   for (unsigned i = 0; i < ARRAY_SIZE(pool->free_buckets); i++) {
+      struct anv_bo_pool_bucket *bucket = &pool->free_buckets[i];
+
+      for (unsigned j = 0; j < bucket->len; j++) {
+         struct anv_bo *bo = bucket->bos[j];
 
          /* anv_device_release_bo is going to "free" it */
          VG(VALGRIND_MALLOCLIKE_BLOCK(bo->map, bo->size, 0, 1));
          anv_device_release_bo(pool->device, bo);
       }
    }
+   simple_mtx_unlock(&pool->mutex);
 
+   simple_mtx_destroy(&pool->mutex);
    VG(VALGRIND_DESTROY_MEMPOOL(pool));
 }
 
@@ -1261,11 +1268,18 @@ anv_bo_pool_alloc(struct anv_bo_pool *pool, uint32_t size,
 {
    const unsigned size_log2 = size < 4096 ? 12 : util_logbase2_ceil(size);
    const unsigned pow2_size = 1 << size_log2;
-   const unsigned bucket = size_log2 - 12;
-   assert(bucket < ARRAY_SIZE(pool->free_list));
+   const unsigned bucket_idx = size_log2 - 12;
+   assert(bucket_idx < ARRAY_SIZE(pool->free_buckets));
+   struct anv_bo_pool_bucket *bucket = &pool->free_buckets[bucket_idx];
+   struct anv_bo *bo = NULL;
 
-   struct anv_bo *bo =
-      util_sparse_array_free_list_pop_elem(&pool->free_list[bucket]);
+   simple_mtx_lock(&pool->mutex);
+   if (bucket->len) {
+      bo = bucket->bos[bucket->len - 1];
+      bucket->len--;
+   }
+   simple_mtx_unlock(&pool->mutex);
+
    if (bo != NULL) {
       VG(VALGRIND_MEMPOOL_ALLOC(pool, bo->map, size));
       *bo_out = bo;
@@ -1298,13 +1312,24 @@ anv_bo_pool_free(struct anv_bo_pool *pool, struct anv_bo *bo)
 
    assert(util_is_power_of_two_or_zero(bo->size));
    const unsigned size_log2 = util_logbase2_ceil(bo->size);
-   const unsigned bucket = size_log2 - 12;
-   assert(bucket < ARRAY_SIZE(pool->free_list));
+   const unsigned bucket_idx = size_log2 - 12;
+   assert(bucket_idx < ARRAY_SIZE(pool->free_buckets));
+   struct anv_bo_pool_bucket *bucket = &pool->free_buckets[bucket_idx];
+   bool free_bo = false;
 
-   assert(util_sparse_array_get(&pool->device->bo_cache.bo_map,
-                                bo->gem_handle) == bo);
-   util_sparse_array_free_list_push(&pool->free_list[bucket],
-                                    &bo->gem_handle, 1);
+   simple_mtx_lock(&pool->mutex);
+   if (bucket->len < ARRAY_SIZE(bucket->bos)) {
+      bucket->bos[bucket->len] = bo;
+      bucket->len++;
+   } else {
+      free_bo = true;
+   }
+   simple_mtx_unlock(&pool->mutex);
+
+   if (free_bo) {
+      VG(VALGRIND_MALLOCLIKE_BLOCK(bo->map, bo->size, 0, 1));
+      anv_device_release_bo(pool->device, bo);
+   }
 }
 
 // Scratch pool

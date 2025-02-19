@@ -239,6 +239,20 @@ def define_tracepoints(args):
     begin_end_tp('as_encode', tp_args=rt_args, maybe_compute=True)
     begin_end_tp('as_copy', tp_args=rt_args, maybe_compute=True)
 
+    begin_end_tp('bvh_compute_aligned',
+                 tp_args=[Arg(type='uint32_t', var='group_x', c_format='%u'),
+                          Arg(type='uint32_t', var='group_y', c_format='%u'),
+                          Arg(type='uint32_t', var='group_z', c_format='%u'),
+                          Arg(type='uint32_t', var='cs_hash', c_format='%u')],
+                 compute=True)
+
+    begin_end_tp('bvh_compute_unaligned',
+                 tp_args=[Arg(type='uint32_t', var='group_x', c_format='%u'),
+                          Arg(type='uint32_t', var='group_y', c_format='%u'),
+                          Arg(type='uint32_t', var='group_z', c_format='%u'),
+                          Arg(type='uint32_t', var='cs_hash', c_format='%u')],
+                 compute=True)
+
     begin_end_tp('rays',
                  tp_args=[Arg(type='uint32_t', var='group_x', c_format='%u'),
                           Arg(type='uint32_t', var='group_y', c_format='%u'),

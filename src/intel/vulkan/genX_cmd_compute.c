@@ -740,8 +740,15 @@ genX(cmd_dispatch_unaligned)(
 
    /* Launch first CS walker with aligned group count X. */
    if (groupCountX) {
+
+      trace_intel_begin_bvh_compute_aligned(&cmd_buffer->trace);
       emit_unaligned_cs_walker(commandBuffer, 0, 0, 0, groupCountX,
                                groupCountY, groupCountZ, dispatch);
+      trace_intel_end_bvh_compute_aligned(&cmd_buffer->trace,
+                                          groupCountX,
+                                          groupCountY,
+                                          groupCountZ,
+                                          pipeline->source_hash);
    }
 
    uint32_t unaligned_invocations_x = invocations_x % prog_data->local_size[0];
@@ -763,8 +770,13 @@ genX(cmd_dispatch_unaligned)(
       }
 
       /* Launch second CS walker for unaligned part. */
+      trace_intel_begin_bvh_compute_unaligned(&cmd_buffer->trace);
       emit_unaligned_cs_walker(commandBuffer, groupCountX, 0, 0, 1, 1, 1,
                                dispatch);
+      trace_intel_end_bvh_compute_unaligned(&cmd_buffer->trace,
+                                            1, 1, 1,
+                                            pipeline->source_hash);
+
    }
 }
 

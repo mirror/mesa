@@ -453,6 +453,9 @@ enum anv_bo_alloc_flags {
 
    /** Compressed buffer, only supported in Xe2+ */
    ANV_BO_ALLOC_COMPRESSED =              (1 << 21),
+
+   /** This bo will be used as batch buffer */
+   ANV_BO_ALLOC_BATCH_BUFFER =            (1 << 22),
 };
 
 /** Specifies that the BO should be cached and coherent. */

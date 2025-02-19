@@ -78,7 +78,8 @@ anv_device_init_trivial_batch(struct anv_device *device)
                                          ANV_BO_ALLOC_MAPPED |
                                          ANV_BO_ALLOC_HOST_COHERENT |
                                          ANV_BO_ALLOC_INTERNAL |
-                                         ANV_BO_ALLOC_CAPTURE,
+                                         ANV_BO_ALLOC_CAPTURE |
+                                         ANV_BO_ALLOC_BATCH_BUFFER,
                                          0 /* explicit_address */,
                                          &device->trivial_batch_bo);
    if (result != VK_SUCCESS)
@@ -517,7 +518,8 @@ VkResult anv_CreateDevice(
    anv_bo_pool_init(&device->batch_bo_pool, device, "batch",
                     ANV_BO_ALLOC_MAPPED |
                     ANV_BO_ALLOC_HOST_CACHED_COHERENT |
-                    ANV_BO_ALLOC_CAPTURE);
+                    ANV_BO_ALLOC_CAPTURE |
+                    ANV_BO_ALLOC_BATCH_BUFFER);
    if (device->vk.enabled_extensions.KHR_acceleration_structure) {
       anv_bo_pool_init(&device->bvh_bo_pool, device, "bvh build",
                        0 /* alloc_flags */);

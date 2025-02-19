@@ -5,6 +5,7 @@
 #include "anv_slab_bo.h"
 
 enum anv_bo_slab_heap {
+   ANV_BO_SLAB_HEAP_BATCH_BUFFER,
    ANV_BO_SLAB_HEAP_SMEM_CACHED_COHERENT,
    ANV_BO_SLAB_HEAP_SMEM_CACHED_INCOHERENT,
    ANV_BO_SLAB_HEAP_SMEM_COHERENT,
@@ -47,6 +48,11 @@ anv_bo_alloc_flags_to_slab_heap(struct anv_device *device,
       not_supported |= (ANV_BO_ALLOC_IMPLICIT_SYNC |
                         ANV_BO_ALLOC_IMPLICIT_WRITE);
    }
+
+   /* TODO: add i915 support  */
+   if ((device->info->kmd_type == INTEL_KMD_TYPE_XE) &&
+       (alloc_flags & ANV_BO_ALLOC_BATCH_BUFFER))
+      return ANV_BO_SLAB_HEAP_BATCH_BUFFER;
 
    if (alloc_flags & not_supported)
       return ANV_BO_SLAB_NOT_SUPPORTED;
@@ -307,6 +313,14 @@ anv_slab_alloc(void *priv,
    case ANV_BO_SLAB_HEAP_LMEM_ONLY_COMPRESSED:
       alloc_flags = ANV_BO_ALLOC_COMPRESSED;
       regions[num_regions++] = device->physical->vram_non_mappable.region;
+      break;
+   case ANV_BO_SLAB_HEAP_BATCH_BUFFER:
+      alloc_flags = ANV_BO_ALLOC_MAPPED |
+                    ANV_BO_ALLOC_HOST_CACHED_COHERENT |
+                    ANV_BO_ALLOC_CAPTURE;
+      regions[num_regions++] = device->physical->sys.region;
+      if (anv_physical_device_has_vram(device->physical))
+         regions[num_regions++] = device->physical->vram_non_mappable.region;
       break;
    default:
       unreachable("Missing");

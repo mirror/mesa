@@ -19,6 +19,8 @@
 #include "vk_enum_defines.h"
 #include "vk_format.h"
 
+#include <vulkan/vulkan_android.h>
+
 #include "clb097.h"
 #include "clb197.h"
 #include "clc097.h"
@@ -547,6 +549,12 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
          ext_mem_props = &nvk_dma_buf_mem_props;
          break;
 
+#if DETECT_OS_ANDROID && ANDROID_API_LEVEL >= 26
+      case VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID:
+         ext_mem_props = &nvk_ahb_image_mem_props;
+         break;
+#endif
+
       default:
          /* From the Vulkan 1.3.256 spec:
           *
@@ -604,6 +612,8 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
       .maxResourceSize = UINT32_MAX, /* TODO */
    };
 
+   VkAndroidHardwareBufferUsageANDROID *android_usage = NULL;
+
    vk_foreach_struct(s, pImageFormatProperties->pNext) {
       switch (s->sType) {
       case VK_STRUCTURE_TYPE_EXTERNAL_IMAGE_FORMAT_PROPERTIES: {
@@ -621,6 +631,12 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
             p->externalMemoryProperties = *ext_mem_props;
          break;
       }
+#if DETECT_OS_ANDROID && ANDROID_API_LEVEL >= 26
+      case VK_STRUCTURE_TYPE_ANDROID_HARDWARE_BUFFER_USAGE_ANDROID: {
+         android_usage = (void *) s;
+         break;
+      }
+#endif
       case VK_STRUCTURE_TYPE_SAMPLER_YCBCR_CONVERSION_IMAGE_FORMAT_PROPERTIES: {
          VkSamplerYcbcrConversionImageFormatProperties *ycbcr_props = (void *) s;
          ycbcr_props->combinedImageSamplerDescriptorCount = plane_count;
@@ -636,6 +652,13 @@ nvk_GetPhysicalDeviceImageFormatProperties2(
          vk_debug_ignored_stype(s->sType);
          break;
       }
+   }
+
+   if (android_usage) {
+#if DETECT_OS_ANDROID && ANDROID_API_LEVEL >= 26
+      android_usage->androidHardwareBufferUsage =
+         vk_image_usage_to_ahb_usage(pImageFormatInfo->flags, pImageFormatInfo->usage);
+#endif
    }
 
    return VK_SUCCESS;
@@ -1061,6 +1084,15 @@ nvk_CreateImage(VkDevice _device,
       return result;
    }
 
+   /* At this time, an AHB handle is not yet provided.
+    * Image layout will be filled up by nvk_bind_image_memory()
+    * This section is removed by the optimizer for non-ANDROID builds
+    */
+   if (vk_image_is_android_hardware_buffer(&image->vk)) {
+      *pImage = nvk_image_to_handle(image);
+      return VK_SUCCESS;
+   }
+
    for (uint8_t plane = 0; plane < image->plane_count; plane++) {
       result = nvk_image_plane_alloc_va(dev, image, &image->planes[plane]);
       if (result != VK_SUCCESS) {
@@ -1469,6 +1501,26 @@ nvk_bind_image_memory(struct nvk_device *dev,
       assert(mem == NULL);
       return VK_SUCCESS;
    }
+#if ANDROID_API_LEVEL >= 26
+   if (vk_image_is_android_hardware_buffer(&image->vk)) {
+      VkImageDrmFormatModifierExplicitCreateInfoEXT eci;
+      VkSubresourceLayout a_plane_layouts[4];
+      result = vk_android_get_ahb_layout(mem->vk.ahardware_buffer,
+                                         &eci, a_plane_layouts,
+                                         4);
+      if (result != VK_SUCCESS)
+         return result;
+
+      /* TODO: image layout filling may require a new nvk_update_image_layout() function */
+
+/*    result = nvk_update_image_layout(device, image,
+ *                                      eci.drmFormatModifier,
+ *                                      |* disjoint = *| false, &eci);
+ *    if (result != VK_SUCCESS)
+ *       return result;
+ */
+      }
+#endif
 #endif
 
    /* Ignore this struct on Android, we cannot access swapchain structures there. */

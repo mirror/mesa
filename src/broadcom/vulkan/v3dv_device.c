@@ -206,7 +206,6 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_depth_clamp_zero_one             = device->devinfo.ver >= 71,
       .EXT_depth_clip_control               = true,
       .EXT_depth_clip_enable                = device->devinfo.ver >= 71,
-      .EXT_load_store_op_none               = true,
       .EXT_inline_uniform_block             = true,
       .EXT_extended_dynamic_state           = true,
       .EXT_extended_dynamic_state2          = true,
@@ -214,8 +213,6 @@ get_device_extensions(const struct v3dv_physical_device *device,
       .EXT_host_query_reset                 = true,
       .EXT_image_drm_format_modifier        = true,
       .EXT_image_robustness                 = true,
-      .EXT_index_type_uint8                 = true,
-      .EXT_line_rasterization               = true,
       .EXT_memory_budget                    = true,
       .EXT_multi_draw                       = true,
       .EXT_physical_device_drm              = true,
@@ -235,7 +232,6 @@ get_device_extensions(const struct v3dv_physical_device *device,
 #endif
       .EXT_texel_buffer_alignment           = true,
       .EXT_tooling_info                     = true,
-      .EXT_vertex_attribute_divisor         = true,
    };
 #if DETECT_OS_ANDROID
    if (vk_android_get_ugralloc() != NULL) {
@@ -406,10 +402,10 @@ get_features(const struct v3dv_physical_device *physical_device,
       .customBorderColors = true,
       .customBorderColorWithoutFormat = false,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
-      /* VK_EXT_line_rasterization */
+      /* VK_KHR_line_rasterization */
       .rectangularLines = true,
       .bresenhamLines = true,
       .smoothLines = true,

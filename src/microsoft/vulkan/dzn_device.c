@@ -144,6 +144,7 @@ dzn_physical_device_get_extensions(struct dzn_physical_device *pdev)
       .KHR_synchronization2                  = true,
       .KHR_timeline_semaphore                = true,
       .KHR_uniform_buffer_standard_layout    = true,
+      .KHR_vertex_attribute_divisor          = true,
       .EXT_buffer_device_address             = pdev->shader_model >= D3D_SHADER_MODEL_6_6,
       .EXT_descriptor_indexing               = pdev->shader_model >= D3D_SHADER_MODEL_6_6,
 #if defined(_WIN32)
@@ -155,7 +156,6 @@ dzn_physical_device_get_extensions(struct dzn_physical_device *pdev)
       .EXT_shader_subgroup_ballot            = true,
       .EXT_shader_subgroup_vote              = true,
       .EXT_subgroup_size_control             = true,
-      .EXT_vertex_attribute_divisor          = true,
       .MSFT_layered_driver                   = true,
    };
 }

@@ -254,7 +254,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_attachment_feedback_loop_dynamic_state = true,
       .EXT_border_color_swizzle              = true,
       .EXT_buffer_device_address             = true,
-      .EXT_calibrated_timestamps             = device->has_reg_timestamp,
       .EXT_color_write_enable                = true,
       .EXT_conditional_rendering             = true,
       .EXT_conservative_rasterization        = true,
@@ -277,10 +276,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_external_memory_dma_buf           = true,
       .EXT_external_memory_host              = true,
       .EXT_fragment_shader_interlock         = true,
-      .EXT_global_priority                   = device->max_context_priority >=
-                                               VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
-      .EXT_global_priority_query             = device->max_context_priority >=
-                                               VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR,
       .EXT_graphics_pipeline_library         = !debug_get_bool_option("ANV_NO_GPL", false),
       .EXT_host_image_copy                   = !device->emu_astc_ldr,
       .EXT_host_query_reset                  = true,
@@ -295,12 +290,9 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_image_robustness                  = true,
       .EXT_image_sliced_view_of_3d           = true,
       .EXT_image_view_min_lod                = true,
-      .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
       .EXT_legacy_dithering                  = true,
       .EXT_legacy_vertex_attributes          = true,
-      .EXT_line_rasterization                = true,
-      .EXT_load_store_op_none                = true,
       .EXT_map_memory_placed                 = device->info.has_mmap_offset,
       /* Enable the extension only if we have support on both the local &
        * system memory
@@ -347,7 +339,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_texel_buffer_alignment            = true,
       .EXT_tooling_info                      = true,
       .EXT_transform_feedback                = true,
-      .EXT_vertex_attribute_divisor          = true,
       .EXT_vertex_input_dynamic_state        = true,
       .EXT_ycbcr_2plane_444_formats          = true,
       .EXT_ycbcr_image_arrays                = true,
@@ -364,8 +355,6 @@ get_device_extensions(const struct anv_physical_device *device,
                                                intel_perf_has_hold_preemption(device->perf),
       .INTEL_shader_integer_functions2       = true,
       .MESA_image_alignment_control          = true,
-      .NV_compute_shader_derivatives         = true,
-      .VALVE_mutable_descriptor_type         = true,
    };
 }
 
@@ -581,7 +570,7 @@ get_features(const struct anv_physical_device *pdevice,
       .fragmentShaderPixelInterlock = true,
       .fragmentShaderShadingRateInterlock = false,
 
-      /* VK_EXT_global_priority_query */
+      /* VK_KHR_global_priority */
       .globalPriorityQuery = true,
 
       /* VK_EXT_graphics_pipeline_library */
@@ -598,10 +587,10 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_image_view_min_lod */
       .minLod = true,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
-      /* VK_EXT_line_rasterization */
+      /* VK_KHR_line_rasterization */
       /* Rectangular lines must use the strict algorithm, which is not
        * supported for wide lines prior to ICL.  See rasterization_mode for
        * details and how the HW states are programmed.
@@ -1668,7 +1657,7 @@ get_properties(const struct anv_physical_device *pdevice,
       props->nativeUnalignedPerformance = true;
    }
 
-   /* VK_EXT_line_rasterization */
+   /* VK_KHR_line_rasterization */
    {
       /* In the Skylake PRM Vol. 7, subsection titled "GIQ (Diamond) Sampling
        * Rules - Legacy Mode", it says the following:

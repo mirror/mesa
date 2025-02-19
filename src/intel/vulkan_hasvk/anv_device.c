@@ -203,6 +203,8 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_16bit_storage                     = device->info.ver >= 8 && !device->instance->no_16bit,
       .KHR_bind_memory2                      = true,
       .KHR_buffer_device_address             = device->has_a64_buffer_access,
+      .KHR_calibrated_timestamps             = device->has_reg_timestamp,
+      .KHR_compute_shader_derivatives        = true,
       .KHR_copy_commands2                    = true,
       .KHR_create_renderpass2                = true,
       .KHR_dedicated_allocation              = true,
@@ -221,11 +223,15 @@ get_device_extensions(const struct anv_physical_device *device,
       .KHR_external_semaphore_fd             = true,
       .KHR_format_feature_flags2             = true,
       .KHR_get_memory_requirements2          = true,
+      .KHR_global_priority                   = device->max_context_priority >=
+                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
       .KHR_image_format_list                 = true,
       .KHR_imageless_framebuffer             = true,
 #ifdef ANV_USE_WSI_PLATFORM
       .KHR_incremental_present               = true,
 #endif
+      .KHR_index_type_uint8                  = true,
+      .KHR_line_rasterization                = true,
       .KHR_maintenance1                      = true,
       .KHR_maintenance2                      = true,
       .KHR_maintenance3                      = true,
@@ -280,7 +286,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_4444_formats                      = true,
       .EXT_border_color_swizzle              = device->info.ver >= 8,
       .EXT_buffer_device_address             = device->has_a64_buffer_access,
-      .EXT_calibrated_timestamps             = device->has_reg_timestamp,
       .EXT_color_write_enable                = true,
       .EXT_conditional_rendering             = device->info.verx10 >= 75,
       .EXT_custom_border_color               = device->info.ver >= 8,
@@ -295,22 +300,17 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_extended_dynamic_state2           = true,
       .EXT_external_memory_dma_buf           = true,
       .EXT_external_memory_host              = true,
-      .EXT_global_priority                   = device->max_context_priority >=
-                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
-      .EXT_global_priority_query             = device->max_context_priority >=
-                                               INTEL_CONTEXT_MEDIUM_PRIORITY,
       .EXT_host_query_reset                  = true,
       .EXT_image_2d_view_of_3d               = true,
       .EXT_image_robustness                  = true,
       .EXT_image_drm_format_modifier         = true,
       .EXT_image_view_min_lod                = true,
-      .EXT_index_type_uint8                  = true,
       .EXT_inline_uniform_block              = true,
-      .EXT_line_rasterization                = true,
       /* Enable the extension only if we have support on both the local &
        * system memory
        */
       .EXT_memory_budget                     = device->sys.available,
+      .EXT_mutable_descriptor_type           = true,
       .EXT_non_seamless_cube_map             = true,
       .EXT_pci_bus_info                      = true,
       .EXT_physical_device_drm               = true,
@@ -336,7 +336,6 @@ get_device_extensions(const struct anv_physical_device *device,
       .EXT_texel_buffer_alignment            = true,
       .EXT_tooling_info                      = true,
       .EXT_transform_feedback                = true,
-      .EXT_vertex_attribute_divisor          = true,
       .EXT_ycbcr_image_arrays                = true,
 #if DETECT_OS_ANDROID
       .ANDROID_external_memory_android_hardware_buffer = true,
@@ -349,8 +348,6 @@ get_device_extensions(const struct anv_physical_device *device,
                                                intel_perf_has_hold_preemption(device->perf),
       .INTEL_shader_integer_functions2       = device->info.ver >= 8,
       .EXT_multi_draw                        = true,
-      .NV_compute_shader_derivatives         = true,
-      .VALVE_mutable_descriptor_type         = true,
    };
 }
 
@@ -509,7 +506,7 @@ get_features(const struct anv_physical_device *pdevice,
       .image2DViewOf3D = true,
       .sampler2DViewOf3D = false,
 
-      /* VK_NV_compute_shader_derivatives */
+      /* VK_KHR_compute_shader_derivatives */
       .computeDerivativeGroupQuads = true,
       .computeDerivativeGroupLinear = true,
 
@@ -533,10 +530,10 @@ get_features(const struct anv_physical_device *pdevice,
       /* VK_EXT_image_view_min_lod */
       .minLod = true,
 
-      /* VK_EXT_index_type_uint8 */
+      /* VK_KHR_index_type_uint8 */
       .indexTypeUint8 = true,
 
-      /* VK_EXT_line_rasterization */
+      /* VK_KHR_line_rasterization */
       /* Rectangular lines must use the strict algorithm, which is not
        * supported for wide lines prior to ICL.  See rasterization_mode for
        * details and how the HW states are programmed.
@@ -619,7 +616,7 @@ get_features(const struct anv_physical_device *pdevice,
       .transformFeedback = true,
       .geometryStreams = true,
 
-      /* VK_EXT_vertex_attribute_divisor */
+      /* VK_KHR_vertex_attribute_divisor */
       .vertexAttributeInstanceRateDivisor = true,
       .vertexAttributeInstanceRateZeroDivisor = true,
 
@@ -1158,7 +1155,7 @@ get_properties(const struct anv_physical_device *pdevice,
       props->minImportedHostPointerAlignment = 4096;
    }
 
-   /* VK_EXT_line_rasterization */
+   /* VK_KHR_line_rasterization */
    {
       /* In the Skylake PRM Vol. 7, subsection titled "GIQ (Diamond) Sampling
        * Rules - Legacy Mode", it says the following:

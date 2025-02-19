@@ -653,7 +653,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_attachment_feedback_loop_layout = true,
       .EXT_border_color_swizzle = pdev->info.gfx_level >= GFX10,
       .EXT_buffer_device_address = true,
-      .EXT_calibrated_timestamps = radv_calibrated_timestamps_enabled(pdev),
       .EXT_color_write_enable = true,
       .EXT_conditional_rendering = true,
       .EXT_conservative_rasterization = pdev->info.gfx_level >= GFX9,
@@ -682,8 +681,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_external_memory_dma_buf = true,
       .EXT_external_memory_host = pdev->info.has_userptr,
       .EXT_fragment_shader_interlock = radv_has_pops(pdev),
-      .EXT_global_priority = true,
-      .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = !pdev->use_llvm && !(instance->debug_flags & RADV_DEBUG_NO_GPL),
       .EXT_host_query_reset = true,
       .EXT_image_2d_view_of_3d = true,
@@ -692,17 +689,14 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_image_robustness = true,
       .EXT_image_sliced_view_of_3d = pdev->info.gfx_level >= GFX10,
       .EXT_image_view_min_lod = true,
-      .EXT_index_type_uint8 = pdev->info.gfx_level >= GFX8,
       .EXT_inline_uniform_block = true,
       .EXT_legacy_vertex_attributes = !pdev->use_llvm,
-      .EXT_line_rasterization = true,
-      .EXT_load_store_op_none = true,
       .EXT_map_memory_placed = true,
       .EXT_memory_budget = true,
       .EXT_memory_priority = true,
       .EXT_mesh_shader = radv_taskmesh_enabled(pdev),
       .EXT_multi_draw = true,
-      .EXT_mutable_descriptor_type = true, /* Trivial promotion from VALVE. */
+      .EXT_mutable_descriptor_type = true,
       .EXT_nested_command_buffer = true,
       .EXT_non_seamless_cube_map = true,
       .EXT_pci_bus_info = true,
@@ -742,12 +736,10 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_texel_buffer_alignment = true,
       .EXT_tooling_info = true,
       .EXT_transform_feedback = true,
-      .EXT_vertex_attribute_divisor = true,
       .EXT_vertex_input_dynamic_state = !pdev->use_llvm,
       .EXT_ycbcr_image_arrays = true,
       .AMD_buffer_marker = true,
       .AMD_device_coherent_memory = true,
-      .AMD_draw_indirect_count = true,
       .AMD_gcn_shader = true,
       .AMD_gpu_shader_half_float = pdev->info.has_packed_math_16bit,
       .AMD_gpu_shader_int16 = pdev->info.has_packed_math_16bit,
@@ -772,8 +764,6 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .GOOGLE_user_type = true,
       .INTEL_shader_integer_functions2 = true,
       .MESA_image_alignment_control = pdev->info.gfx_level >= GFX9,
-      .NV_compute_shader_derivatives = true,
-      .VALVE_mutable_descriptor_type = true,
    };
    *out_ext = ext;
 }
@@ -1053,7 +1043,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdev, struc
       .extendedDynamicState2LogicOp = true,
       .extendedDynamicState2PatchControlPoints = true,
 
-      /* VK_EXT_global_priority_query */
+      /* VK_KHR_global_priority */
       .globalPriorityQuery = true,
 
       /* VK_KHR_acceleration_structure */

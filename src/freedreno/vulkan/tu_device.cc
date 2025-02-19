@@ -251,7 +251,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_attachment_feedback_loop_dynamic_state = true,
       .EXT_attachment_feedback_loop_layout = true,
       .EXT_border_color_swizzle = true,
-      .EXT_calibrated_timestamps = device->info->a7xx.has_persistent_counter,
       .EXT_color_write_enable = true,
       .EXT_conditional_rendering = true,
       .EXT_conservative_rasterization = device->info->chip >= 7,
@@ -271,8 +270,6 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_external_memory_dma_buf = true,
       .EXT_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
       .EXT_fragment_density_map = true,
-      .EXT_global_priority = true,
-      .EXT_global_priority_query = true,
       .EXT_graphics_pipeline_library = true,
       .EXT_host_image_copy = true,
       .EXT_host_query_reset = true,
@@ -280,12 +277,9 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_image_drm_format_modifier = true,
       .EXT_image_robustness = true,
       .EXT_image_view_min_lod = true,
-      .EXT_index_type_uint8 = true,
       .EXT_inline_uniform_block = true,
       .EXT_legacy_dithering = true,
       .EXT_legacy_vertex_attributes = true,
-      .EXT_line_rasterization = true,
-      .EXT_load_store_op_none = true,
       .EXT_map_memory_placed = true,
       .EXT_memory_budget = true,
       .EXT_multi_draw = true,
@@ -319,18 +313,14 @@ get_device_extensions(const struct tu_physical_device *device,
       .EXT_texel_buffer_alignment = true,
       .EXT_tooling_info = true,
       .EXT_transform_feedback = true,
-      .EXT_vertex_attribute_divisor = true,
       .EXT_vertex_input_dynamic_state = true,
 
       /* For Graphics Flight Recorder (GFR) */
       .AMD_buffer_marker = true,
-      .ARM_rasterization_order_attachment_access = true,
       .GOOGLE_decorate_string = true,
       .GOOGLE_hlsl_functionality1 = true,
       .GOOGLE_user_type = true,
       .IMG_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
-      .NV_compute_shader_derivatives = device->info->chip >= 7,
-      .VALVE_mutable_descriptor_type = true,
    } };
 
 #if DETECT_OS_ANDROID
@@ -639,7 +629,7 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->fragmentDensityMapDynamic = false;
    features->fragmentDensityMapNonSubsampledImages = true;
 
-   /* VK_EXT_global_priority_query */
+   /* VK_KHR_global_priority */
    features->globalPriorityQuery = true;
 
    /* VK_EXT_graphics_pipeline_library */

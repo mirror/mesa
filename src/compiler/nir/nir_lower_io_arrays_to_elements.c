@@ -363,6 +363,11 @@ bool
 nir_lower_io_arrays_to_elements_no_indirects(nir_shader *shader,
                                              bool outputs_only)
 {
+   if (shader->info.stage == MESA_SHADER_TESS_CTRL ||
+       shader->info.stage == MESA_SHADER_TASK ||
+       shader->info.stage == MESA_SHADER_MESH)
+      return;
+
    struct hash_table *split_inputs = _mesa_pointer_hash_table_create(NULL);
    struct hash_table *split_outputs = _mesa_pointer_hash_table_create(NULL);
 

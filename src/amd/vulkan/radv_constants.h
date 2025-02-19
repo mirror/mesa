@@ -47,7 +47,7 @@
  * This is the point we switch from using CP to compute shader
  * for certain buffer operations.
  */
-#define RADV_BUFFER_OPS_CS_THRESHOLD 4096
+#define RADV_BUFFER_OPS_CS_THRESHOLD (1024 * 1024 * 2)
 
 #define RADV_BUFFER_UPDATE_THRESHOLD 1024
 

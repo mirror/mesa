@@ -6058,8 +6058,15 @@ typedef struct nir_opt_offsets_options {
 
 bool nir_opt_offsets(nir_shader *shader, const nir_opt_offsets_options *options);
 
-bool nir_opt_peephole_select(nir_shader *shader, unsigned limit,
-                             bool indirect_load_ok, bool expensive_alu_ok);
+typedef struct nir_opt_peephole_select_options {
+   unsigned limit; /* Set to max to flatten all control flow. */
+   bool indirect_load_ok;
+   bool expensive_alu_ok;
+   bool discard_ok;
+} nir_opt_peephole_select_options;
+
+bool nir_opt_peephole_select(nir_shader *shader,
+                             const nir_opt_peephole_select_options *options);
 
 bool nir_opt_reassociate_bfi(nir_shader *shader);
 
@@ -6087,7 +6094,6 @@ bool nir_opt_vectorize(nir_shader *shader, nir_vectorize_cb filter,
                        void *data);
 bool nir_opt_vectorize_io(nir_shader *shader, nir_variable_mode modes);
 
-bool nir_opt_conditional_discard(nir_shader *shader);
 bool nir_opt_move_discards_to_top(nir_shader *shader);
 
 bool nir_opt_ray_queries(nir_shader *shader);

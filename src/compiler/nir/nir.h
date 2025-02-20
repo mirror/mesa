@@ -3903,6 +3903,16 @@ void nir_shader_preserve_all_metadata(nir_shader *shader);
 /** dirties all metadata and fills it with obviously wrong information */
 void nir_metadata_invalidate(nir_shader *shader);
 
+/** Preserve only the given metadata if a condition holds, else preserve
+ * everything. This implements the usual "if (progress) preserve" pattern that
+ * many passes want.
+ */
+static inline void
+nir_metadata_preserve_if(bool cond, nir_function_impl *impl, nir_metadata preserved)
+{
+   nir_metadata_preserve(impl, cond ? preserved : nir_metadata_all);
+}
+
 /** creates an instruction with default swizzle/writemask/etc. with NULL registers */
 nir_alu_instr *nir_alu_instr_create(nir_shader *shader, nir_op op);
 

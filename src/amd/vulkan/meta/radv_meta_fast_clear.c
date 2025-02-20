@@ -441,22 +441,12 @@ void
 radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
                                     const VkImageSubresourceRange *subresourceRange)
 {
-   if (radv_image_has_fmask(image) && !image->tc_compatible_cmask) {
-      if (radv_image_has_dcc(image) && radv_image_has_cmask(image) && !image->support_comp_to_single) {
-         /* MSAA images with DCC and CMASK might have been fast-cleared and might require a FCE but
-          * FMASK_DECOMPRESS can't eliminate DCC fast clears.
-          */
-         radv_fast_clear_eliminate(cmd_buffer, image, subresourceRange);
-      }
-
-      radv_fmask_decompress(cmd_buffer, image, subresourceRange);
-   } else {
-      /* Skip fast clear eliminate for images that support comp-to-single fast clears. */
-      if (image->support_comp_to_single)
-         return;
-
+   /* FCE is only required for color images that don't support comp-to-single fast clears. */
+   if (!image->support_comp_to_single)
       radv_fast_clear_eliminate(cmd_buffer, image, subresourceRange);
-   }
+
+   if (radv_image_has_fmask(image) && !image->tc_compatible_cmask)
+      radv_fmask_decompress(cmd_buffer, image, subresourceRange);
 }
 
 static void

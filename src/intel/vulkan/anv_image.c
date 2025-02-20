@@ -1707,7 +1707,6 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
       image->vk.usage |=
          VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_STORAGE_BIT;
 
-      /* TODO: enable compression on emulation plane */
       isl_extra_usage_flags |= ISL_SURF_USAGE_DISABLE_AUX_BIT;
    }
 
@@ -1856,14 +1855,34 @@ anv_image_init(struct anv_device *device, struct anv_image *image,
       const struct anv_format_plane plane_format = anv_get_format_plane(
             device->physical, image->emu_plane_format, 0, image->vk.tiling);
 
+      enum isl_format isl_fmt = plane_format.isl_format;
+      assert(isl_fmt != ISL_FORMAT_UNSUPPORTED);
+      uint32_t plane_stride = create_info->stride * isl_format_get_layout(isl_fmt)->bpb / 8;
+      uint32_t emu_plane_extra_usage_flags = isl_extra_usage_flags;
+
+      if (device->info->ver >= 12 &&
+          !anv_formats_ccs_e_compatible(device->info, image->vk.create_flags,
+                                        image->emu_plane_format, image->vk.tiling,
+                                        image->vk.usage, fmt_list)) {
+         emu_plane_extra_usage_flags &= ~(ISL_SURF_USAGE_DISABLE_AUX_BIT);
+
+      }
+
       isl_surf_usage_flags_t isl_usage = anv_image_choose_isl_surf_usage(
          device->physical, image->vk.create_flags, image->vk.usage,
-         isl_extra_usage_flags, VK_IMAGE_ASPECT_COLOR_BIT,
+         emu_plane_extra_usage_flags, VK_IMAGE_ASPECT_COLOR_BIT,
          image->vk.compr_flags);
 
       r = add_primary_surface(device, image, plane, plane_format,
                               ANV_OFFSET_IMPLICIT, 0,
                               isl_tiling_flags, isl_usage);
+      if (r != VK_SUCCESS)
+         goto fail;
+
+      r = add_aux_surface_if_supported(device, image, plane, plane_format,
+                                       fmt_list,
+                                       ANV_OFFSET_IMPLICIT, plane_stride,
+                                       ANV_OFFSET_IMPLICIT);
       if (r != VK_SUCCESS)
          goto fail;
    }

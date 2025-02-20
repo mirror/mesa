@@ -385,7 +385,6 @@ nir_opt_comparison_pre_impl(nir_function_impl *impl)
    block_queue_finish(&bq);
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

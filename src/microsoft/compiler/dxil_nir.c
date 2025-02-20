@@ -901,7 +901,6 @@ upcast_phi_impl(nir_function_impl *impl, unsigned min_bit_size)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

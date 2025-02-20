@@ -45,6 +45,5 @@ radv_nir_lower_view_index(nir_shader *nir)
    }
 
    nir_metadata_preserve_if(progress, entry, nir_metadata_control_flow);
-
    return progress;
 }

@@ -118,6 +118,5 @@ agx_nir_lower_alpha_to_one(nir_shader *shader)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }

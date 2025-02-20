@@ -50,6 +50,5 @@ radv_nir_lower_intrinsics_early(nir_shader *nir, bool lower_view_index_to_zero)
    }
 
    nir_metadata_preserve_if(progress, entry, nir_metadata_control_flow);
-
    return progress;
 }

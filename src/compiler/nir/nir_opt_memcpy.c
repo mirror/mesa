@@ -275,7 +275,6 @@ opt_memcpy_impl(nir_function_impl *impl)
    _mesa_set_destroy(complex_vars, NULL);
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

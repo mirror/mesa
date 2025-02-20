@@ -232,7 +232,6 @@ lower_kernel_intrinsics(nir_shader *nir)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

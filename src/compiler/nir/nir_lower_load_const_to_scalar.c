@@ -75,7 +75,6 @@ nir_lower_load_const_to_scalar_impl(nir_function_impl *impl)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

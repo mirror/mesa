@@ -268,7 +268,6 @@ remove_dead_write_vars_impl(void *mem_ctx, nir_shader *shader, nir_function_impl
       progress |= remove_dead_write_vars_local(mem_ctx, shader, block);
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

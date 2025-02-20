@@ -106,7 +106,6 @@ nir_function_instructions_pass(nir_function_impl *impl,
    }
 
    nir_metadata_preserve_if(progress, impl, preserved);
-
    return progress;
 }
 

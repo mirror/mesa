@@ -203,7 +203,6 @@ nir_opt_rematerialize_compares_impl(nir_shader *shader, nir_function_impl *impl)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 
@@ -298,7 +297,6 @@ nir_opt_rematerialize_alu_impl(nir_shader *shader, nir_function_impl *impl)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

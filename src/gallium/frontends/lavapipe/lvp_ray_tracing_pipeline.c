@@ -131,7 +131,6 @@ lvp_lower_ray_tracing_derefs(nir_shader *shader)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

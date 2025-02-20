@@ -130,7 +130,6 @@ agx_nir_lower_zs_emit(nir_shader *s)
       }
 
       nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
       any_progress |= progress;
    }
 

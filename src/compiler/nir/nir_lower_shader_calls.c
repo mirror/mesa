@@ -58,7 +58,6 @@ move_system_values_to_top(nir_shader *shader)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

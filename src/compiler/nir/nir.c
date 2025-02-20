@@ -2238,7 +2238,6 @@ nir_function_impl_lower_instructions(nir_function_impl *impl,
    }
 
    nir_metadata_preserve_if(progress, impl, preserved);
-
    return progress;
 }
 

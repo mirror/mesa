@@ -202,7 +202,6 @@ lower_indirects_impl(nir_function_impl *impl, nir_variable_mode modes,
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_none);
-
    return progress;
 }
 

@@ -1720,7 +1720,6 @@ static bool si_nir_kill_outputs(nir_shader *nir, const union si_shader_key *key)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
-
    return progress;
 }
 

@@ -124,7 +124,6 @@ static bool lower_impl(nir_function_impl *impl)
    }
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_none);
-
    return progress;
 }
 

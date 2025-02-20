@@ -86,7 +86,6 @@ nir_lower_terminate_impl(nir_function_impl *impl)
    bool progress = nir_lower_terminate_cf_list(&b, &impl->body);
 
    nir_metadata_preserve_if(progress, impl, nir_metadata_none);
-
    return progress;
 }
 

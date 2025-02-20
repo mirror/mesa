@@ -12634,7 +12634,12 @@ radv_handle_color_image_transition(struct radv_cmd_buffer *cmd_buffer, struct ra
    if (needs_dcc_decompress) {
       radv_decompress_dcc(cmd_buffer, image, range);
    } else if (needs_fast_clear_flush) {
-      radv_fast_clear_flush_image_inplace(cmd_buffer, image, range);
+      /* FCE is only required for color images that don't support comp-to-single fast clears. */
+      if (!image->support_comp_to_single)
+         radv_fast_clear_eliminate(cmd_buffer, image, range);
+
+      if (radv_image_has_fmask(image) && !image->tc_compatible_cmask)
+         radv_fmask_decompress(cmd_buffer, image, range);
    }
 
    if (needs_fmask_color_expand)

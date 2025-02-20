@@ -705,7 +705,10 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
    case nir_intrinsic_load_frag_size_ir3:
    case nir_intrinsic_load_frag_offset_ir3:
    case nir_intrinsic_bindless_resource_ir3:
-   case nir_intrinsic_ray_intersection_ir3: {
+   case nir_intrinsic_ray_intersection_ir3:
+   case nir_intrinsic_image_format_intel:
+   case nir_intrinsic_image_deref_format_intel:
+   case nir_intrinsic_bindless_image_format_intel: {
       unsigned num_srcs = nir_intrinsic_infos[instr->intrinsic].num_srcs;
       for (unsigned i = 0; i < num_srcs; i++) {
          if (src_divergent(instr->src[i], state)) {

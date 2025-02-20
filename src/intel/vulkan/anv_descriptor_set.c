@@ -274,13 +274,13 @@ anv_descriptor_data_size(enum anv_descriptor_data data,
    unsigned sampler_size = 0;
 
    if (data & ANV_DESCRIPTOR_INDIRECT_SAMPLED_IMAGE)
-      surface_size += sizeof(struct anv_sampled_image_descriptor);
+      surface_size += align(sizeof(struct anv_sampled_image_descriptor), 8);
 
    if (data & ANV_DESCRIPTOR_INDIRECT_STORAGE_IMAGE)
-      surface_size += sizeof(struct anv_storage_image_descriptor);
+      surface_size += align(sizeof(struct anv_storage_image_descriptor), 8);
 
    if (data & ANV_DESCRIPTOR_INDIRECT_ADDRESS_RANGE)
-      surface_size += sizeof(struct anv_address_range_descriptor);
+      surface_size += align(sizeof(struct anv_address_range_descriptor), 8);
 
    if (data & ANV_DESCRIPTOR_SURFACE)
       surface_size += ANV_SURFACE_STATE_SIZE;
@@ -2258,6 +2258,7 @@ anv_descriptor_set_write_image_view(struct anv_device *device,
                device->physical,
                anv_image_view_storage_surface_state(image_view)->state),
             .image_depth = image_view->vk.storage.z_slice_count,
+            .format  = image_view->planes[0].isl.format,
          };
          memcpy(desc_surface_map, &desc_data, sizeof(desc_data));
       } else {
@@ -2392,6 +2393,7 @@ anv_descriptor_set_write_buffer_view(struct anv_device *device,
       struct anv_storage_image_descriptor desc_data = {
          .vanilla = anv_surface_state_to_handle(
             device->physical, buffer_view->storage.state),
+         .format  = buffer_view->format,
       };
       memcpy(desc_map, &desc_data, sizeof(desc_data));
    }

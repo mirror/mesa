@@ -263,6 +263,7 @@ get_used_bindings(UNUSED nir_builder *_b, nir_instr *instr, void *_state)
       case nir_intrinsic_image_deref_load_raw_intel:
       case nir_intrinsic_image_deref_store_raw_intel:
       case nir_intrinsic_image_deref_sparse_load:
+      case nir_intrinsic_image_deref_format_intel:
          add_deref_src_binding(state, intrin->src[0]);
          break;
 
@@ -1731,6 +1732,65 @@ lower_image_size_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
 }
 
 static bool
+lower_image_format_intrinsic(nir_builder *b, nir_intrinsic_instr *intrin,
+                             struct apply_pipeline_layout_state *state)
+{
+   nir_deref_instr *deref = nir_src_as_deref(intrin->src[0]);
+
+   b->cursor = nir_before_instr(&intrin->instr);
+
+   bool non_uniform = nir_intrinsic_access(intrin) & ACCESS_NON_UNIFORM;
+   bool is_bindless;
+   nir_def *handle =
+      build_load_var_deref_surface_handle(b, deref, non_uniform,
+                                          &is_bindless, state);
+   nir_rewrite_image_intrinsic(intrin, handle, is_bindless);
+
+   nir_variable *var = nir_deref_instr_get_variable(deref);
+   const uint32_t set = var->data.descriptor_set;
+   const uint32_t binding = var->data.binding;
+
+   nir_def *array_index;
+   if (deref->deref_type != nir_deref_type_var) {
+      assert(deref->deref_type == nir_deref_type_array);
+      assert(nir_deref_instr_parent(deref)->deref_type == nir_deref_type_var);
+      array_index = deref->arr.index.ssa;
+   } else {
+      array_index = nir_imm_int(b, 0);
+   }
+
+   nir_def *desc_addr = build_desc_addr_for_binding(
+      b, set, binding, array_index, 0 /* plane */, state);
+
+   nir_def *format;
+   if (state->layout->type == ANV_PIPELINE_DESCRIPTOR_SET_LAYOUT_TYPE_INDIRECT) {
+      format = build_load_descriptor_mem(
+         b, desc_addr,
+         offsetof(struct anv_storage_image_descriptor, format),
+         1, 32, state);
+   } else {
+      const struct intel_device_info *devinfo = &state->pdevice->info;
+
+      nir_def *data = build_load_descriptor_mem(
+         b, desc_addr,
+         ROUND_DOWN_TO(RENDER_SURFACE_STATE_SurfaceFormat_start(devinfo), 32),
+         1, 32, state);
+      format =
+         nir_ushr_imm(
+            b, data,
+            RENDER_SURFACE_STATE_SurfaceFormat_start(devinfo) % 32);
+      format = nir_iand_imm(
+         b, format,
+         (1u << RENDER_SURFACE_STATE_SurfaceFormat_bits(devinfo)) - 1);
+   }
+
+   nir_def_rewrite_uses(&intrin->def, format);
+   nir_instr_remove(&intrin->instr);
+
+   return true;
+}
+
+static bool
 lower_load_constant(nir_builder *b, nir_intrinsic_instr *intrin,
                     struct apply_pipeline_layout_state *state)
 {
@@ -1962,6 +2022,8 @@ apply_pipeline_layout(nir_builder *b, nir_instr *instr, void *_state)
          return lower_image_intrinsic(b, intrin, state);
       case nir_intrinsic_image_deref_size:
          return lower_image_size_intrinsic(b, intrin, state);
+      case nir_intrinsic_image_deref_format_intel:
+         return lower_image_format_intrinsic(b, intrin, state);
       case nir_intrinsic_load_constant:
          return lower_load_constant(b, intrin, state);
       case nir_intrinsic_load_base_workgroup_id:

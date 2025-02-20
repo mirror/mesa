@@ -603,11 +603,9 @@ _eglCreateExtensionsString(_EGLDisplay *disp)
    _EGL_CHECK_EXTENSION(MESA_query_driver);
    _EGL_CHECK_EXTENSION(MESA_x11_native_visual_id);
 
-   _EGL_CHECK_EXTENSION(NOK_swap_region);
    _EGL_CHECK_EXTENSION(NOK_texture_from_pixmap);
 
    _EGL_CHECK_EXTENSION(NV_context_priority_realtime);
-   _EGL_CHECK_EXTENSION(NV_post_sub_buffer);
 
    _EGL_CHECK_EXTENSION(WL_bind_wayland_display);
    _EGL_CHECK_EXTENSION(WL_create_wayland_buffer_from_image);
@@ -2250,33 +2248,6 @@ eglDupNativeFenceFDANDROID(EGLDisplay dpy, EGLSync sync)
    RETURN_EGL_SUCCESS(disp, ret);
 }
 
-static EGLBoolean EGLAPIENTRY
-eglSwapBuffersRegionNOK(EGLDisplay dpy, EGLSurface surface, EGLint numRects,
-                        const EGLint *rects)
-{
-   _EGLContext *ctx = _eglGetCurrentContext();
-   _EGLDisplay *disp = _eglLockDisplay(dpy);
-   _EGLSurface *surf = _eglLookupSurface(surface, disp);
-   EGLBoolean ret = EGL_FALSE;
-
-   _EGL_FUNC_START(disp, EGL_OBJECT_SURFACE_KHR, surf);
-
-   _EGL_CHECK_SURFACE(disp, surf, EGL_FALSE);
-
-   if (!disp->Extensions.NOK_swap_region)
-      RETURN_EGL_EVAL(disp, EGL_FALSE);
-
-   /* surface must be bound to current context in EGL 1.4 */
-   if (_eglGetContextHandle(ctx) == EGL_NO_CONTEXT || surf != ctx->DrawSurface)
-      RETURN_EGL_ERROR(disp, EGL_BAD_SURFACE, EGL_FALSE);
-
-   egl_relax (disp, &surf->Resource) {
-      ret = disp->Driver->SwapBuffersRegionNOK(disp, surf, numRects, rects);
-   }
-
-   RETURN_EGL_EVAL(disp, ret);
-}
-
 static EGLImage EGLAPIENTRY
 eglCreateDRMImageMESA(EGLDisplay dpy, const EGLint *attr_list)
 {
@@ -2404,28 +2375,6 @@ eglCreateWaylandBufferFromImageWL(EGLDisplay dpy, EGLImage image)
       RETURN_EGL_ERROR(disp, EGL_BAD_PARAMETER, NULL);
 
    ret = disp->Driver->CreateWaylandBufferFromImageWL(disp, img);
-
-   RETURN_EGL_EVAL(disp, ret);
-}
-
-static EGLBoolean EGLAPIENTRY
-eglPostSubBufferNV(EGLDisplay dpy, EGLSurface surface, EGLint x, EGLint y,
-                   EGLint width, EGLint height)
-{
-   _EGLDisplay *disp = _eglLockDisplay(dpy);
-   _EGLSurface *surf = _eglLookupSurface(surface, disp);
-   EGLBoolean ret = EGL_FALSE;
-
-   _EGL_FUNC_START(disp, EGL_OBJECT_SURFACE_KHR, surf);
-
-   _EGL_CHECK_SURFACE(disp, surf, EGL_FALSE);
-
-   if (!disp->Extensions.NV_post_sub_buffer)
-      RETURN_EGL_EVAL(disp, EGL_FALSE);
-
-   egl_relax (disp, &surf->Resource) {
-      ret = disp->Driver->PostSubBufferNV(disp, surf, x, y, width, height);
-   }
 
    RETURN_EGL_EVAL(disp, ret);
 }

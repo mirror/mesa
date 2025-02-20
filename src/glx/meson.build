@@ -59,16 +59,6 @@ extra_libs_libglx = []
 extra_deps_libgl = []
 extra_ld_args_libgl = []
 
-# dri2
-if with_x11_dri2
-  files_libglx += files(
-    'dri2.c',
-    'dri2_glx.c',
-    'dri2.h',
-    'dri2_priv.h',
-  )
-endif
-
 if with_dri_platform == 'drm'
   files_libglx += files('dri3_glx.c', 'dri3_priv.h')
 endif
@@ -126,7 +116,7 @@ libglx = static_library(
   ],
   dependencies : [
     idep_mesautil, idep_xmlconfig,
-    dep_libdrm, dep_dri2proto, dep_glproto, dep_x11, dep_xext, dep_glvnd, dep_xxf86vm, dep_xshmfence, dep_xfixes,
+    dep_libdrm, dep_glproto, dep_x11, dep_xext, dep_glvnd, dep_xxf86vm, dep_xshmfence, dep_xfixes,
   ],
 )
 

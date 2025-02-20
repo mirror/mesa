@@ -2103,7 +2103,6 @@ dep_xcb_keysyms = null_dep
 dep_xcb_glx = null_dep
 dep_xcb_dri2 = null_dep
 dep_xcb_dri3 = null_dep
-dep_dri2proto = null_dep
 dep_glproto = null_dep
 dep_xxf86vm = null_dep
 dep_xcb_present = null_dep
@@ -2114,7 +2113,6 @@ dep_xcb_xrandr = null_dep
 dep_xcb_shm = null_dep
 dep_xlib_xrandr = null_dep
 
-dep_dri2proto_version = '>= 2.8'
 dep_glproto_version = '>= 1.4.14'
 dep_xcb_dri2_version = '>= 1.8'
 dep_xcb_dri3_version = '>= 1.13'
@@ -2151,13 +2149,11 @@ if with_platform_x11
       pre_args += '-DXCB_KEYSYMS_AVAILABLE'
     endif
     dep_x11_xcb = dependency('x11-xcb')
-    dep_xcb_dri2 = dependency('xcb-dri2', version : dep_xcb_dri2_version, required : with_x11_dri2)
     if with_dri_platform == 'drm' and not dep_libdrm.found()
       error('libdrm required for gallium video statetrackers when using x11')
     endif
   endif
   if with_dri_platform == 'drm'
-    dep_xcb_dri2 = dependency('xcb-dri2', version : dep_xcb_dri2_version, required : with_x11_dri2)
 
     dep_xcb_dri3 = dependency('xcb-dri3', version : dep_xcb_dri3_version)
     dep_xcb_present = dependency('xcb-present', version : dep_xcb_present_version)
@@ -2175,7 +2171,6 @@ if with_platform_x11
   endif
   if with_glx == 'dri'
     if with_dri_platform == 'drm'
-      dep_dri2proto = dependency('dri2proto', version : dep_dri2proto_version)
       if with_glx_direct
         dep_xxf86vm = dependency('xxf86vm')
       endif
@@ -2198,6 +2193,9 @@ if with_platform_x11
   endif
   if with_xlib_lease
     dep_xlib_xrandr = dependency('xrandr', version : dep_xlib_xrandr_version)
+  endif
+  if with_gallium_va or with_gallium_vdpau or with_gallium_omx != 'disabled'
+    dep_xcb_dri2 = dependency('xcb-dri2', version : dep_xcb_dri2_version, required : with_x11_dri2)
   endif
 endif
 

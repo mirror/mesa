@@ -24,3 +24,7 @@ dEQP-GLES31.functional.primitive_bounding_box.clear.scissored_clear_with_triangl
 # Nightly run expectations update
 KHR-Single-GL46.arrays_of_arrays_gl.ConstructorsAndUnsizedDeclConstructorSizing1
 
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+KHR-Single-GL46.arrays_of_arrays_gl.ExpressionsDynamicIndexing2
+KHR-Single-GL46.arrays_of_arrays_gl.SubroutineArgumentAliasing3
+

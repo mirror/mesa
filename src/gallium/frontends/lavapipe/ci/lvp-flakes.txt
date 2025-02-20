@@ -186,3 +186,13 @@ dEQP-VK.sparse_resources.image_sparse_binding.multiple_sparse_memory_bind.1d.rgb
 dEQP-VK.sparse_resources.shader_intrinsics.2d_array_sparse_gather.rgba8_snorm.512_256_6
 dEQP-VK.synchronization.implicit.timeline_semaphore.write_copy_buffer_read_copy_buffer.buffer_16384.0300
 dEQP-VK.synchronization.implicit.timeline_semaphore.write_copy_buffer_read_ssbo_vertex.buffer_16384.1120
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+dEQP-VK.synchronization.implicit.timeline_semaphore.write_copy_buffer_read_ssbo_vertex.buffer_16384.1132
+dEQP-VK.synchronization.implicit.timeline_semaphore.write_ssbo_vertex_read_copy_buffer.buffer_16384.2303
+dEQP-VK.synchronization2.implicit.timeline_semaphore.write_copy_buffer_read_ssbo_vertex.buffer_16384.1311
+dEQP-VK.synchronization2.implicit.timeline_semaphore.write_ssbo_vertex_read_ssbo_vertex.buffer_16384.3212
+
+# Crash in 1364513 pipeline on Feb 14th, pass in 1367933 on Feb 19th
+dEQP-VK.sparse_resources.image_sparse_binding.multiple_sparse_image_opaque_memory_bind_info.2d.r12x4_unorm_pack16.1024_128_1
+dEQP-VK.synchronization.implicit.timeline_semaphore.write_ssbo_vertex_read_ssbo_vertex.buffer_16384.3033

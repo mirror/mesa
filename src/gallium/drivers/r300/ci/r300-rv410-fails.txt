@@ -527,7 +527,6 @@ spec@!opengl 1.1@depthstencil-default_fb-readpixels-float-and-ushort samples=4,F
 spec@!opengl 1.1@depthstencil-default_fb-readpixels-float-and-ushort samples=6,Fail
 spec@!opengl 1.1@draw-pixel-with-texture,Fail
 spec@!opengl 1.1@getteximage-formats,Fail
-spec@!opengl 1.1@getteximage-simple,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_line_loop,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_polygon,Fail
 spec@!opengl 1.1@gl-1.1-drawarrays-vertex-count 100000 varray gl_triangle_fan,Fail

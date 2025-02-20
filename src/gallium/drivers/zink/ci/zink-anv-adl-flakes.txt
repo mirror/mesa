@@ -844,3 +844,36 @@ spec@arb_tessellation_shader@execution@variable-indexing@tcs-patch-vec4-index-wr
 
 # Fails in the pre-merge job and passes in the nightly
 KHR-GL46.shader_viewport_layer_array.ShaderViewportIndexTestCase
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+spec@arb_gpu_shader_fp64@execution@arb_gpu_shader_fp64-gs-getuniformdv
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-inverse-dmat4
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-div-dmat4-double
+spec@arb_gpu_shader_fp64@execution@built-in-functions@fs-op-div-dmat4x2-double
+spec@arb_gpu_shader_fp64@execution@built-in-functions@gs-op-div-dmat3x4-double
+spec@arb_gpu_shader_fp64@execution@built-in-functions@vs-op-div-double-dmat4
+spec@glsl-4.00@execution@built-in-functions@fs-op-div-dmat3x4-dmat3x4
+spec@glsl-4.00@execution@built-in-functions@fs-op-div-dmat4-dmat4
+spec@glsl-4.00@execution@built-in-functions@fs-op-div-double-dmat3x4
+spec@glsl-4.00@execution@built-in-functions@fs-op-div-double-dmat4
+spec@glsl-4.00@execution@built-in-functions@fs-smoothstep-double-double-dvec4
+spec@glsl-4.00@execution@built-in-functions@gs-op-div-dmat4-double
+spec@glsl-4.00@execution@built-in-functions@vs-op-div-double-dmat4
+spec@glsl-4.10@execution@conversion@frag-conversion-implicit-mat3-dmat3-zero-sign
+spec@glsl-4.10@execution@conversion@frag-conversion-implicit-mat3x4-dmat3x4-zero-sign
+wayland-dEQP-EGL.functional.get_frame_timestamps.rgb565_depth_no_stencil
+wayland-dEQP-EGL.functional.get_frame_timestamps.rgb565_depth_stencil
+wayland-dEQP-EGL.functional.get_frame_timestamps.rgba8888_no_depth_no_stencil
+wayland-dEQP-EGL.functional.hdr_metadata.cta861_3
+wayland-dEQP-EGL.functional.multicontext.non_shared_clear
+wayland-dEQP-EGL.functional.mutable_render_buffer.basic
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds.reset_status.reads.shader_storage_block.compute
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds.reset_status.reads.shader_storage_block.vertex
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds.reset_status.writes.shader_storage_block.compute
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds.reset_status.writes.uniform_block.fragment
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds.reset_status.writes.uniform_block.vertex
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds_non_robust.reset_status.reads.local_array.vertex
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds_non_robust.reset_status.reads.shader_storage_block.fragment
+wayland-dEQP-EGL.functional.robustness.reset_context.shaders.out_of_bounds_non_robust.reset_status.writes.uniform_block.vertex_and_fragment
+wayland-dEQP-EGL.functional.wide_color.pbuffer_1010102_colorspace_bt2020_pq
+

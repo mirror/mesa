@@ -209,3 +209,8 @@ KHR-GL46.texture_swizzle.functional_format_idx_1_target_idx_1
 KHR-GL46.texture_swizzle.smoke_access_idx_11_channel_idx_2
 spec@ext_texture_compression_s3tc@texwrap formats
 spec@ext_texture_compression_s3tc@texwrap formats@GL_COMPRESSED_RGBA_S3TC_DXT1_EXT
+
+# Seen in https://gitlab.freedesktop.org/mesa/mesa/-/pipelines/1367933 (nightly run, 2025/02/19)
+spec@arb_shader_image_load_store@coherency@Tessellation evaluation-Fragment shader/'volatile' qualifier coherency test/256x256
+spec@arb_shader_image_load_store@coherency@Vertex-Geometry shader/'coherent' qualifier coherency test/256x256
+

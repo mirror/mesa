@@ -1238,9 +1238,6 @@ vk_cmd_build_acceleration_structures(VkCommandBuffer commandBuffer,
    if (args->emit_markers)
       device->as_build_ops->end_debug_marker(commandBuffer);
 
-   if (args->emit_markers)
-      device->as_build_ops->end_debug_marker(commandBuffer);
-
    free(bvh_states);
 }
 

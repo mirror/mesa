@@ -2326,7 +2326,7 @@ impl<'a> ShaderFromNir<'a> {
                     atom_op: atom_op,
                     atom_type: atom_type,
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: MemOrder::Strong(MemScope::GPU),
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                 });
@@ -2338,13 +2338,16 @@ impl<'a> ShaderFromNir<'a> {
                 let coord = self.get_image_coord(intrin, dim);
                 // let sample = self.get_src(&srcs[2]);
 
-                let mem_order = if intrin.intrinsic
-                    == nir_intrinsic_load_global_constant
-                    || (intrin.access() & ACCESS_CAN_REORDER) != 0
-                {
-                    MemOrder::Constant
+                let mem_order = if (intrin.access() & ACCESS_CAN_REORDER) != 0 {
+                    if self.sm.sm() >= 80 {
+                        MemOrder::Constant
+                    } else {
+                        MemOrder::Weak
+                    }
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
 
                 let comps = intrin.num_components;
@@ -2372,13 +2375,16 @@ impl<'a> ShaderFromNir<'a> {
                 let coord = self.get_image_coord(intrin, dim);
                 // let sample = self.get_src(&srcs[2]);
 
-                let mem_order = if intrin.intrinsic
-                    == nir_intrinsic_load_global_constant
-                    || (intrin.access() & ACCESS_CAN_REORDER) != 0
-                {
-                    MemOrder::Constant
+                let mem_order = if (intrin.access() & ACCESS_CAN_REORDER) != 0 {
+                    if self.sm.sm() >= 80 {
+                        MemOrder::Constant
+                    } else {
+                        MemOrder::Weak
+                    }
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
 
                 let comps = intrin.num_components;
@@ -2415,13 +2421,19 @@ impl<'a> ShaderFromNir<'a> {
                 // let sample = self.get_src(&srcs[2]);
                 let data = self.get_src(&srcs[3]);
 
+                let mem_order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
+
                 let comps = intrin.num_components;
                 assert!(srcs[3].bit_size() == 32);
                 assert!(comps == 1 || comps == 2 || comps == 4);
 
                 b.push_op(OpSuSt {
                     image_dim: dim,
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order,
                     mem_eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                     mask: (1 << comps) - 1,
@@ -2516,7 +2528,7 @@ impl<'a> ShaderFromNir<'a> {
                     atom_type: atom_type,
                     addr_offset: offset,
                     mem_space: MemSpace::Global(MemAddrType::A64),
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: MemOrder::Strong(MemScope::GPU),
                     mem_eviction_priority: MemEvictionPriority::Normal, // Note: no intrinic access
                 });
                 self.set_dst(&intrin.def, dst);
@@ -2541,7 +2553,7 @@ impl<'a> ShaderFromNir<'a> {
                     atom_type: atom_type,
                     addr_offset: offset,
                     mem_space: MemSpace::Global(MemAddrType::A64),
-                    mem_order: MemOrder::Strong(MemScope::System),
+                    mem_order: MemOrder::Strong(MemScope::GPU),
                     mem_eviction_priority: MemEvictionPriority::Normal, // Note: no intrinic access
                 });
                 self.set_dst(&intrin.def, dst);
@@ -2620,14 +2632,18 @@ impl<'a> ShaderFromNir<'a> {
                 let size_B =
                     (intrin.def.bit_size() / 8) * intrin.def.num_components();
                 assert!(u32::from(size_B) <= intrin.align());
+
                 let order = if intrin.intrinsic
                     == nir_intrinsic_load_global_constant
                     || (intrin.access() & ACCESS_CAN_REORDER) != 0
                 {
                     MemOrder::Constant
+                } else if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
                 } else {
-                    MemOrder::Strong(MemScope::System)
+                    MemOrder::Strong(MemScope::CTA)
                 };
+
                 let access = MemAccess {
                     mem_type: MemType::from_size(size_B, false),
                     space: MemSpace::Global(MemAddrType::A64),
@@ -3067,10 +3083,15 @@ impl<'a> ShaderFromNir<'a> {
                 let size_B =
                     (srcs[0].bit_size() / 8) * srcs[0].num_components();
                 assert!(u32::from(size_B) <= intrin.align());
+                let order = if intrin.access() & ACCESS_VOLATILE != 0 {
+                    MemOrder::Strong(MemScope::GPU)
+                } else {
+                    MemOrder::Strong(MemScope::CTA)
+                };
                 let access = MemAccess {
                     mem_type: MemType::from_size(size_B, false),
                     space: MemSpace::Global(MemAddrType::A64),
-                    order: MemOrder::Strong(MemScope::System),
+                    order,
                     eviction_priority: self
                         .get_eviction_priority(intrin.access()),
                 };

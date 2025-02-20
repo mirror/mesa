@@ -207,6 +207,24 @@ st_update_framebuffer_state( struct st_context *st )
 
    framebuffer.viewmask = BITFIELD_MASK(num_multiview_layer);
 
+   /* ensure this is the currently bound vs, not the last-used one */
+   struct gl_program *vp = st->ctx->_Shader->CurrentProgram[MESA_SHADER_VERTEX];
+   /* maybe mesh shaders... ? */
+   if (vp) {
+      /**
+       * OVR_multiview
+
+         INVALID_OPERATION is generated if a rendering command is issued and the the
+         number of views in the current draw framebuffer is not equal to the number
+         of views declared in the currently bound program.
+       */
+      unsigned num_views = util_bitcount(vp->info.view_mask);
+      if (num_multiview_layer != num_views) {
+         _mesa_error(st->ctx, GL_INVALID_OPERATION,
+                     "bound vertex shader num_views does not match framebuffer state");
+      }
+   }
+
 #ifndef NDEBUG
    /* Make sure the resource binding flags were set properly */
    for (i = 0; i < framebuffer.nr_cbufs; i++) {

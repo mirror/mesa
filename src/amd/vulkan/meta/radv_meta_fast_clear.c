@@ -413,7 +413,7 @@ radv_process_color_image(struct radv_cmd_buffer *cmd_buffer, struct radv_image *
       radv_update_dcc_metadata(cmd_buffer, image, subresourceRange, false);
 }
 
-static void
+void
 radv_fast_clear_eliminate(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
                           const VkImageSubresourceRange *subresourceRange)
 {
@@ -425,7 +425,7 @@ radv_fast_clear_eliminate(struct radv_cmd_buffer *cmd_buffer, struct radv_image 
    radv_process_color_image(cmd_buffer, image, subresourceRange, FAST_CLEAR_ELIMINATE);
 }
 
-static void
+void
 radv_fmask_decompress(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
                       const VkImageSubresourceRange *subresourceRange)
 {
@@ -435,18 +435,6 @@ radv_fmask_decompress(struct radv_cmd_buffer *cmd_buffer, struct radv_image *ima
    radv_describe_layout_transition(cmd_buffer, &barrier);
 
    radv_process_color_image(cmd_buffer, image, subresourceRange, FMASK_DECOMPRESS);
-}
-
-void
-radv_fast_clear_flush_image_inplace(struct radv_cmd_buffer *cmd_buffer, struct radv_image *image,
-                                    const VkImageSubresourceRange *subresourceRange)
-{
-   /* FCE is only required for color images that don't support comp-to-single fast clears. */
-   if (!image->support_comp_to_single)
-      radv_fast_clear_eliminate(cmd_buffer, image, subresourceRange);
-
-   if (radv_image_has_fmask(image) && !image->tc_compatible_cmask)
-      radv_fmask_decompress(cmd_buffer, image, subresourceRange);
 }
 
 static void

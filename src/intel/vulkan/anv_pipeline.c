@@ -1508,7 +1508,8 @@ anv_pipeline_compile_fs(const struct brw_compiler *compiler,
                         char **error_str)
 {
    NIR_PASS_V(fs_stage->nir, anv_nir_lower_conservative_rasterization,
-              &fs_stage->key.wm);
+              &fs_stage->key.wm,
+              compiler->devinfo);
 
    /* When using Primitive Replication for multiview, each view gets its own
     * position slot.

@@ -38,7 +38,8 @@ extern "C" {
 
 bool
 anv_nir_lower_conservative_rasterization(nir_shader *nir,
-                                         const struct brw_wm_prog_key *key);
+                                         const struct brw_wm_prog_key *key,
+                                         const struct intel_device_info *devinfo);
 
 #define anv_load_driver_uniform(b, components, field)                   \
    nir_load_push_constant(b, components,                                \

@@ -24,11 +24,21 @@
 #include "anv_nir.h"
 #include "nir_builder.h"
 
+struct lower_crast_instr_key {
+   const struct brw_wm_prog_key *wm;
+   const struct intel_device_info *devinfo;
+};
+
 static nir_def *
-build_fully_covered(nir_builder *b, const struct brw_wm_prog_key *key)
+build_fully_covered(nir_builder *b, const struct lower_crast_instr_key *key)
 {
    assert(b->shader->info.fs.inner_coverage);
-   const unsigned sample_mask = key->conservative_sample_mask;
+
+   /* TODO: Switch this over to the WA framework */
+   if (key->devinfo->ver > 11)
+      return nir_imm_true(b);
+
+   const unsigned sample_mask = key->wm->conservative_sample_mask;
 
    /* We use SAMPLE_MASK_IN for both sample_mask_in and coverage_mask */
    BITSET_SET(b->shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN);
@@ -56,7 +66,7 @@ build_fully_covered(nir_builder *b, const struct brw_wm_prog_key *key)
 static bool
 lower_crast_instr(nir_builder *b, nir_instr *instr, void *_key)
 {
-   const struct brw_wm_prog_key *key = _key;
+   const struct lower_crast_instr_key *key = _key;
    if (instr->type != nir_instr_type_intrinsic)
       return false;
 
@@ -74,18 +84,18 @@ lower_crast_instr(nir_builder *b, nir_instr *instr, void *_key)
        * shader instructions because these expressions area always simpler
        * than the ones we use without conservative rasterization.
        */
-      if (key->persample_interp) {
+      if (key->wm->persample_interp) {
          nir_def_rewrite_uses(&intrin->def,
                               nir_ishl(b, nir_imm_int(b, 1),
                               nir_load_sample_id(b)));
       } else {
-         const unsigned sample_mask = key->conservative_sample_mask;
+         const unsigned sample_mask = key->wm->conservative_sample_mask;
          nir_def_rewrite_uses(&intrin->def, nir_imm_int(b, sample_mask));
       }
       return true;
 
    case nir_intrinsic_load_fully_covered:
-      switch (key->vk_conservative) {
+      switch (key->wm->vk_conservative) {
       case VK_CONSERVATIVE_RASTERIZATION_MODE_OVERESTIMATE_EXT:
          nir_def_rewrite_uses(&intrin->def, build_fully_covered(b, key));
          return true;
@@ -109,12 +119,18 @@ lower_crast_instr(nir_builder *b, nir_instr *instr, void *_key)
 
 bool
 anv_nir_lower_conservative_rasterization(nir_shader *nir,
-                                         const struct brw_wm_prog_key *key)
+                                         const struct brw_wm_prog_key *key,
+                                         const struct intel_device_info *devinfo)
 {
    assert(nir->info.stage == MESA_SHADER_FRAGMENT);
 
    /* Vulkan doesn't have a concept of inner coverage. */
    assert(!nir->info.fs.inner_coverage);
+
+   const struct lower_crast_instr_key _key = {
+      .wm = key,
+      .devinfo = devinfo,
+   };
 
    bool shader_progress = false;
    switch (key->vk_conservative) {
@@ -133,7 +149,7 @@ anv_nir_lower_conservative_rasterization(nir_shader *nir,
       nir->info.fs.inner_coverage = true;
       nir->info.fs.uses_discard = true;
       b.cursor = nir_before_cf_list(&b.impl->body);
-      nir_terminate_if(&b, nir_inot(&b, build_fully_covered(&b, key)));
+      nir_terminate_if(&b, nir_inot(&b, build_fully_covered(&b, &_key)));
       shader_progress = true;
       break;
    }
@@ -143,6 +159,6 @@ anv_nir_lower_conservative_rasterization(nir_shader *nir,
    }
 
    return nir_shader_instructions_pass(nir, lower_crast_instr,
-                                       nir_metadata_none, (void *)key) ||
+                                       nir_metadata_none, (void *)&_key) ||
           shader_progress;
 }

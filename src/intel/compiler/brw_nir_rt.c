@@ -144,11 +144,7 @@ lower_rt_io_derefs(nir_shader *shader)
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
 
    return progress;
 }
@@ -331,11 +327,7 @@ lower_ray_walk_intrinsics(nir_shader *shader,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_none);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_none);
 
    return progress;
 }

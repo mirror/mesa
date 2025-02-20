@@ -551,11 +551,7 @@ nir_opt_peephole_select_impl(nir_function_impl *impl, unsigned limit,
                                                 expensive_alu_ok);
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_none);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_none);
 
    return progress;
 }

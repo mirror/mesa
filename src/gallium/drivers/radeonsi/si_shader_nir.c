@@ -401,10 +401,8 @@ static bool si_mark_divergent_texture_non_uniform(struct nir_shader *nir)
       }
    }
 
-   if (divergence_changed)
-      nir_metadata_preserve(impl, nir_metadata_all & ~nir_metadata_divergence);
-   else
-      nir_metadata_preserve(impl, nir_metadata_all);
+   nir_metadata_preserve_if(divergence_changed, impl,
+                            nir_metadata_all & ~nir_metadata_divergence);
    return divergence_changed;
 }
 

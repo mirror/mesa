@@ -2473,11 +2473,7 @@ nir_lower_explicit_io_impl(nir_function_impl *impl, nir_variable_mode modes,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_none);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_none);
 
    return progress;
 }
@@ -2564,13 +2560,8 @@ nir_lower_vars_to_explicit_types_impl(nir_function_impl *impl,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow |
-                                     nir_metadata_live_defs |
-                                     nir_metadata_loop_analysis);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl,
+                            nir_metadata_control_flow | nir_metadata_live_defs | nir_metadata_loop_analysis);
 
    return progress;
 }
@@ -3131,10 +3122,7 @@ nir_io_add_const_offset_to_base(nir_shader *nir, nir_variable_mode modes)
          impl_progress |= add_const_offset_to_base_block(block, &b, modes);
       }
       progress |= impl_progress;
-      if (impl_progress)
-         nir_metadata_preserve(impl, nir_metadata_control_flow);
-      else
-         nir_metadata_preserve(impl, nir_metadata_all);
+      nir_metadata_preserve_if(impl_progress, impl, nir_metadata_control_flow);
    }
 
    return progress;
@@ -3211,11 +3199,7 @@ nir_lower_color_inputs(nir_shader *nir)
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
    return progress;
 }
 

@@ -147,11 +147,7 @@ nir_recompute_io_bases(nir_shader *nir, nir_variable_mode modes)
       }
    }
 
-   if (changed) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(changed, impl, nir_metadata_control_flow);
 
    if (modes & nir_var_shader_in)
       nir->num_inputs = BITSET_COUNT(inputs);
@@ -285,11 +281,7 @@ nir_lower_mediump_io(nir_shader *nir, nir_variable_mode modes,
    if (changed && use_16bit_slots)
       nir_recompute_io_bases(nir, modes);
 
-   if (changed) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(changed, impl, nir_metadata_control_flow);
 
    return changed;
 }
@@ -346,11 +338,7 @@ nir_force_mediump_io(nir_shader *nir, nir_variable_mode modes,
       }
    }
 
-   if (changed) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(changed, impl, nir_metadata_control_flow);
 
    return changed;
 }
@@ -391,11 +379,7 @@ nir_unpack_16bit_varying_slots(nir_shader *nir, nir_variable_mode modes)
    if (changed)
       nir_recompute_io_bases(nir, modes);
 
-   if (changed) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(changed, impl, nir_metadata_control_flow);
 
    return changed;
 }
@@ -557,11 +541,7 @@ nir_lower_mediump_vars_impl(nir_function_impl *impl, nir_variable_mode modes,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
 
    return progress;
 }

@@ -157,10 +157,7 @@ lower_rt_derefs(nir_shader *shader)
       }
    }
 
-   if (progress)
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   else
-      nir_metadata_preserve(impl, nir_metadata_all);
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
 
    return progress;
 }

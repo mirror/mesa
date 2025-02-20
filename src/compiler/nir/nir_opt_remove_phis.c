@@ -190,11 +190,7 @@ nir_opt_remove_phis_impl(nir_function_impl *impl)
       progress |= remove_phis_block(block, &bld);
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
 
    return progress;
 }

@@ -1629,7 +1629,6 @@ zink_program_num_bindings(const struct zink_program *pg)
 static void
 deinit_program(struct zink_screen *screen, struct zink_program *pg)
 {
-   util_queue_fence_wait(&pg->cache_fence);
    if (pg->layout)
       VKSCR(DestroyPipelineLayout)(screen->dev, pg->layout, NULL);
 
@@ -1670,6 +1669,7 @@ zink_destroy_gfx_program(struct zink_screen *screen,
       }
    }
 
+   util_queue_fence_wait(&prog->base.cache_fence);
    deinit_program(screen, &prog->base);
 
    for (int i = 0; i < ZINK_GFX_SHADER_COUNT; ++i) {
@@ -1700,6 +1700,7 @@ zink_destroy_compute_program(struct zink_screen *screen,
    assert(comp->shader);
    assert(!comp->shader->spirv);
 
+   util_queue_fence_wait(&comp->base.cache_fence);
    zink_shader_free(screen, comp->shader);
 
    destroy_shader_cache(screen, &comp->shader_cache[0]);

@@ -743,6 +743,13 @@ impl Dst {
         }
     }
 
+    pub fn prev_ssa(&self) -> Option<&SSARef> {
+        match self {
+            Dst::SSA(SSADst { prev, .. }) => prev.as_ref(),
+            _ => None,
+        }
+    }
+
     pub fn iter_ssa_uses(&self) -> slice::Iter<'_, SSAValue> {
         match self {
             Dst::None | Dst::Reg(_) => &[],

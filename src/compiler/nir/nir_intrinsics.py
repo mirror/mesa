@@ -2370,6 +2370,10 @@ intrinsic("dpas_intel", dest_comp=0, src_comp=[0, -1, 0],
 intrinsic("ldc_nv", dest_comp=0, src_comp=[1, 1],
           indices=[ACCESS, ALIGN_MUL, ALIGN_OFFSET],
           flags=[CAN_ELIMINATE, CAN_REORDER])
+# src[] = { addr, pred, default }.
+intrinsic("pred_ldg_nv", dest_comp=0, src_comp=[1, 1, 0],
+          indices=[ACCESS, ALIGN_MUL, ALIGN_OFFSET],
+          flags=[CAN_ELIMINATE, CAN_REORDER])
 # [Un]pins an LDCX handle around non-uniform control-flow sections
 # src[] = { handle }.
 intrinsic("pin_cx_handle_nv", src_comp=[1])

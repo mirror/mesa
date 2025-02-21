@@ -412,8 +412,28 @@ vk_common_GetDeviceQueue2(VkDevice _device,
 
    struct vk_queue *queue = NULL;
    vk_foreach_queue(iter, device) {
-      if (iter->queue_family_index == pQueueInfo->queueFamilyIndex &&
-          iter->index_in_family == pQueueInfo->queueIndex) {
+      /* From the Vulkan 1.3.204 spec:
+       *
+       *    VUID-VkDeviceQueueInfo2-flags-06225
+       *
+       *    "flags must be equal to VkDeviceQueueCreateInfo::flags for a
+       *    VkDeviceQueueCreateInfo structure for the queue family indicated
+       *    by queueFamilyIndex when device was created"
+       *
+       *    VUID-VkDeviceQueueInfo2-queueIndex-01843
+       *
+       *    "queueIndex must be less than VkDeviceQueueCreateInfo::queueCount
+       *    for the corresponding queue family and flags indicated by
+       *    queueFamilyIndex and flags when device was created"
+       *
+       * In other words, queueFamilyIndex and flags form a tuple to describe
+       * the "real" queue family.  The index is chosen within that.
+       */
+      if (iter->queue_family_index != pQueueInfo->queueFamilyIndex ||
+          queue->flags != pQueueInfo->flags)
+         continue;
+
+      if (iter->index_in_family == pQueueInfo->queueIndex) {
          queue = iter;
          break;
       }
@@ -425,8 +445,12 @@ vk_common_GetDeviceQueue2(VkDevice _device,
     *    value from this structure as that used at device creation time in a
     *    VkDeviceQueueCreateInfo instance. If no matching flags were specified
     *    at device creation time then pQueue will return VK_NULL_HANDLE."
+    *
+    * This should be caught by the loop above.
     */
-   if (queue && queue->flags == pQueueInfo->flags)
+   assert(queue == NULL || queue->flags == pQueueInfo->flags);
+
+   if (queue)
       *pQueue = vk_queue_to_handle(queue);
    else
       *pQueue = VK_NULL_HANDLE;

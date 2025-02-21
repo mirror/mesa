@@ -2600,7 +2600,8 @@ pub struct AttrAccess {
 }
 
 #[repr(C)]
-#[derive(SrcsAsSlice, DstsAsSlice)]
+#[derive(SrcsAsSlice, DstsAsSlice, DisplayOp)]
+#[display_op(format="fadd")]
 pub struct OpFAdd {
     #[dst_type(F32)]
     pub dst: Dst,
@@ -2608,12 +2609,15 @@ pub struct OpFAdd {
     #[src_type(F32)]
     pub srcs: [Src; 2],
 
+    #[modifier(".sat")]
     pub saturate: bool,
+    #[modifier(def = FRndMode::NearestEven)]
     pub rnd_mode: FRndMode,
+    #[modifier]
     pub ftz: bool,
 }
 
-impl DisplayOp for OpFAdd {
+/*impl DisplayOp for OpFAdd {
     fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sat = if self.saturate { ".sat" } else { "" };
         write!(f, "fadd{sat}")?;
@@ -2625,11 +2629,12 @@ impl DisplayOp for OpFAdd {
         }
         write!(f, " {} {}", self.srcs[0], self.srcs[1],)
     }
-}
+}*/
 impl_display_for_op!(OpFAdd);
 
 #[repr(C)]
-#[derive(SrcsAsSlice, DstsAsSlice)]
+#[derive(SrcsAsSlice, DstsAsSlice, DisplayOp)]
+#[display_op(format="fadd")]
 pub struct OpFFma {
     #[dst_type(F32)]
     pub dst: Dst,
@@ -2637,13 +2642,17 @@ pub struct OpFFma {
     #[src_type(F32)]
     pub srcs: [Src; 3],
 
+    #[modifier(".sat")]
     pub saturate: bool,
+    #[modifier(def = FRndMode::NearestEven)]
     pub rnd_mode: FRndMode,
+    #[modifier]
     pub ftz: bool,
+    #[modifier]
     pub dnz: bool,
 }
 
-impl DisplayOp for OpFFma {
+/*impl DisplayOp for OpFFma {
     fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sat = if self.saturate { ".sat" } else { "" };
         write!(f, "ffma{sat}")?;
@@ -2657,11 +2666,12 @@ impl DisplayOp for OpFFma {
         }
         write!(f, " {} {} {}", self.srcs[0], self.srcs[1], self.srcs[2])
     }
-}
+}*/
 impl_display_for_op!(OpFFma);
 
 #[repr(C)]
-#[derive(SrcsAsSlice, DstsAsSlice)]
+#[derive(SrcsAsSlice, DstsAsSlice, DisplayOp)]
+#[display_op(format="fmnmx")]
 pub struct OpFMnMx {
     #[dst_type(F32)]
     pub dst: Dst,
@@ -2672,10 +2682,11 @@ pub struct OpFMnMx {
     #[src_type(Pred)]
     pub min: Src,
 
+    #[modifier]
     pub ftz: bool,
 }
 
-impl DisplayOp for OpFMnMx {
+/*impl DisplayOp for OpFMnMx {
     fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let ftz = if self.ftz { ".ftz" } else { "" };
         write!(
@@ -2684,11 +2695,12 @@ impl DisplayOp for OpFMnMx {
             self.srcs[0], self.srcs[1], self.min
         )
     }
-}
+}*/
 impl_display_for_op!(OpFMnMx);
 
 #[repr(C)]
-#[derive(SrcsAsSlice, DstsAsSlice)]
+#[derive(SrcsAsSlice, DstsAsSlice, DisplayOp)]
+#[display_op(format="fmul")]
 pub struct OpFMul {
     #[dst_type(F32)]
     pub dst: Dst,
@@ -2696,13 +2708,17 @@ pub struct OpFMul {
     #[src_type(F32)]
     pub srcs: [Src; 2],
 
+    #[modifier(".sat")]
     pub saturate: bool,
+    #[modifier(def = FRndMode::NearestEven)]
     pub rnd_mode: FRndMode,
+    #[modifier]
     pub ftz: bool,
+    #[modifier]
     pub dnz: bool,
 }
 
-impl DisplayOp for OpFMul {
+/*impl DisplayOp for OpFMul {
     fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let sat = if self.saturate { ".sat" } else { "" };
         write!(f, "fmul{sat}")?;
@@ -2716,7 +2732,7 @@ impl DisplayOp for OpFMul {
         }
         write!(f, " {} {}", self.srcs[0], self.srcs[1],)
     }
-}
+}*/
 impl_display_for_op!(OpFMul);
 
 #[repr(C)]

@@ -1647,7 +1647,13 @@ endif
 dep_m = cc.find_library('m', required : false)
 
 if host_machine.system() == 'windows'
-  dep_regex = meson.get_compiler('c').find_library('regex', required : false)
+# In MSYS2 at least, regex has dependencies of its own
+  dep_part_regex = dependency('regex', required : false)
+  if dep_part_regex.found()
+    dep_regex = declare_dependency(dependencies : [dep_part_regex], link_args : ['-liconv'])
+  else
+    dep_regex = meson.get_compiler('c').find_library('regex', required : false)
+  endif
   if not dep_regex.found()
     dep_regex = declare_dependency(compile_args : ['-DNO_REGEX'])
   endif

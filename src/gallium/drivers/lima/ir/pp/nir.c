@@ -98,7 +98,7 @@ static void ppir_node_add_src(ppir_compiler *comp, ppir_node *node,
    nir_intrinsic_instr *load = nir_load_reg_for_def(ns->ssa);
 
    if (!load) { /* is ssa */
-      child = comp->var_nodes[ns->ssa->index];
+      child = comp->var_nodes[ns->ssa->index << 2];
       if (child->op != ppir_op_undef)
          ppir_node_add_dep(node, child, ppir_dep_src);
    }
@@ -120,6 +120,7 @@ static void ppir_node_add_src(ppir_compiler *comp, ppir_node *node,
    }
 
    assert(child);
+   ps->mask = mask;
    ppir_node_target_assign(ps, child);
 }
 
@@ -444,7 +445,7 @@ static bool ppir_emit_intrinsic(ppir_block *block, nir_instr *ni)
       }
 
       if (!block->comp->uses_discard) {
-         node = block->comp->var_nodes[instr->src->ssa->index];
+         node = block->comp->var_nodes[instr->src->ssa->index << 2];
          assert(node);
          switch (node->op) {
          case ppir_op_load_uniform:
@@ -594,7 +595,7 @@ static bool ppir_emit_tex(ppir_block *block, nir_instr *ni)
          FALLTHROUGH;
       case nir_tex_src_coord: {
          nir_src *ns = &instr->src[i].src;
-         ppir_node *child = block->comp->var_nodes[ns->ssa->index];
+         ppir_node *child = block->comp->var_nodes[ns->ssa->index << 2];
          if (child->op == ppir_op_load_varying) {
             /* If the successor is load_texture, promote it to load_coords */
             nir_tex_src *nts = (nir_tex_src *)ns;
@@ -978,21 +979,31 @@ static void ppir_add_write_after_read_deps(ppir_compiler *comp)
 {
    list_for_each_entry(ppir_block, block, &comp->block_list, list) {
       list_for_each_entry(ppir_reg, reg, &comp->reg_list, list) {
-         ppir_node *write = NULL;
+         ppir_node *write[4] = { NULL, NULL, NULL, NULL };
          list_for_each_entry_rev(ppir_node, node, &block->node_list, list) {
             for (int i = 0; i < ppir_node_get_src_num(node); i++) {
                ppir_src *src = ppir_node_get_src(node, i);
                if (src && src->type == ppir_target_register &&
-                   src->reg == reg &&
-                   write) {
-                  ppir_debug("Adding dep %d for write %d\n", node->index, write->index);
-                  ppir_node_add_dep(write, node, ppir_dep_write_after_read);
+                   src->reg == reg) {
+                  for (int i = 0; i < 4; i++) {
+                     if ((src->mask & (1 << i)) && write[src->swizzle[i]]) {
+                        ppir_debug("Adding dep %d for write %d component %d\n",
+                                   node->index,
+                                   write[src->swizzle[i]]->index,
+                                   src->swizzle[i]);
+                        ppir_node_add_dep(write[src->swizzle[i]], node, ppir_dep_write_after_read);
+                     }
+                  }
                }
             }
             ppir_dest *dest = ppir_node_get_dest(node);
             if (dest && dest->type == ppir_target_register &&
-                dest->reg == reg)
-               write = node;
+                dest->reg == reg) {
+               for (int i = 0; i < 4; i++) {
+                  if (dest->write_mask & (1 << i))
+                     write[i] = node;
+               }
+            }
          }
       }
    }

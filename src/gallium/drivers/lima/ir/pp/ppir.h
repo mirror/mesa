@@ -265,6 +265,7 @@ typedef enum {
 typedef struct ppir_src {
    ppir_target type;
    ppir_node *node;
+   unsigned mask;
 
    union {
       ppir_reg *ssa;
@@ -615,6 +616,8 @@ static inline void ppir_node_target_assign(ppir_src *src, ppir_node *node)
 {
    ppir_dest *dest = ppir_node_get_dest(node);
    src->type = dest->type;
+   if (!src->mask)
+      src->mask = dest->write_mask;
    switch (src->type) {
    case ppir_target_ssa:
       src->ssa = &dest->ssa;

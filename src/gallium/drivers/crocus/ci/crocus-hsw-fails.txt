@@ -30,9 +30,6 @@ spec@arb_indirect_parameters@conditional-render@Query result: Pass. Inverted mod
 spec@arb_indirect_parameters@conditional-render@Query result: Fail. Inverted mode: Yes.  Points drawn: 0,Fail
 spec@arb_indirect_parameters@conditional-render@Query result: Pass. Inverted mode: No.  Points drawn: 0,Fail
 
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex,Fail
-spec@arb_program_interface_query@arb_program_interface_query-getprogramresourceindex@'vs_input2[1][0]' on GL_PROGRAM_INPUT,Fail
-
 spec@arb_query_buffer_object@qbo,Fail
 spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-ASYNC_CPU_READ_BEFORE-GL_INT,Fail
 spec@arb_query_buffer_object@qbo@query-GL_TIMESTAMP-ASYNC_CPU_READ_BEFORE-GL_UNSIGNED_INT,Fail

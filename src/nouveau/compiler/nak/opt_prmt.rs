@@ -93,7 +93,7 @@ impl PrmtPass {
     }
 
     fn add_prmt(&mut self, op: &OpPrmt) {
-        let Dst::SSA(dst_ssa) = op.dst else {
+        let Some(dst_ssa) = op.dst.as_ssa() else {
             return;
         };
         debug_assert!(dst_ssa.comps() == 1);

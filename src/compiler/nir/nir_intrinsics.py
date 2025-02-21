@@ -1751,9 +1751,6 @@ intrinsic("bvh64_intersect_ray_amd", [4, 2, 1, 3, 3, 3], 4, flags=[CAN_ELIMINATE
 # Return of a callable in raytracing pipelines
 intrinsic("rt_return_amd")
 
-# offset into scratch for the input callable data in a raytracing pipeline.
-system_value("rt_arg_scratch_offset_amd", 1)
-
 # Whether to call the anyhit shader for an intersection in an intersection shader.
 system_value("intersection_opaque_amd", 1, bit_sizes=[1])
 
@@ -1781,6 +1778,10 @@ intrinsic("execute_miss_amd", src_comp=[1])
 # BASE=dword index
 intrinsic("load_hit_attrib_amd", dest_comp=1, bit_sizes=[32], indices=[BASE])
 intrinsic("store_hit_attrib_amd", src_comp=[1], indices=[BASE])
+intrinsic("load_incoming_ray_payload_amd", dest_comp=1, bit_sizes=[32], indices=[BASE])
+intrinsic("store_incoming_ray_payload_amd", src_comp=[1], indices=[BASE])
+intrinsic("load_outgoing_ray_payload_amd", dest_comp=1, bit_sizes=[32], indices=[BASE])
+intrinsic("store_outgoing_ray_payload_amd", src_comp=[1], indices=[BASE])
 
 # Load forced VRS rates.
 intrinsic("load_force_vrs_rates_amd", dest_comp=1, bit_sizes=[32], flags=[CAN_ELIMINATE, CAN_REORDER])
@@ -2463,3 +2464,9 @@ intrinsic("enqueue_node_payloads", src_comp=[-1])
 
 # Returns true if it has been called for every payload.
 intrinsic("finalize_incoming_node_payload", src_comp=[-1], dest_comp=1)
+
+intrinsic("store_param_amd", src_comp=[-1], indices=[PARAM_IDX])
+intrinsic("load_return_param_amd", dest_comp=0, indices=[CALL_IDX, PARAM_IDX])
+
+system_value("call_return_address_amd", 1, bit_sizes=[64])
+intrinsic("set_next_call_pc_amd", src_comp=[1, 1], bit_sizes=[64])

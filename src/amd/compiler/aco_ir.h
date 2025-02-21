@@ -21,9 +21,11 @@
 #include <algorithm>
 #include <bitset>
 #include <memory>
+#include <optional>
 #include <vector>
 
 typedef struct nir_shader nir_shader;
+typedef struct nir_parameter nir_parameter;
 
 namespace aco {
 
@@ -446,6 +448,77 @@ static constexpr PhysReg exec_lo{126};
 static constexpr PhysReg exec_hi{127};
 static constexpr PhysReg pops_exiting_wave_id{239}; /* GFX9-GFX10.3 */
 static constexpr PhysReg scc{253};
+
+/* Iterator type for making PhysRegInterval compatible with range-based for */
+struct PhysRegIterator {
+   using difference_type = int;
+   using value_type = unsigned;
+   using reference = const unsigned&;
+   using pointer = const unsigned*;
+   using iterator_category = std::bidirectional_iterator_tag;
+
+   PhysReg reg;
+
+   PhysReg operator*() const { return reg; }
+
+   PhysRegIterator& operator++()
+   {
+      reg.reg_b += 4;
+      return *this;
+   }
+
+   PhysRegIterator& operator--()
+   {
+      reg.reg_b -= 4;
+      return *this;
+   }
+
+   bool operator==(PhysRegIterator oth) const { return reg == oth.reg; }
+
+   bool operator!=(PhysRegIterator oth) const { return reg != oth.reg; }
+
+   bool operator<(PhysRegIterator oth) const { return reg < oth.reg; }
+};
+
+/* Half-open register interval used in "sliding window"-style for-loops */
+struct PhysRegInterval {
+   PhysReg lo_;
+   unsigned size;
+
+   /* Inclusive lower bound */
+   constexpr PhysReg lo() const { return lo_; }
+
+   /* Exclusive upper bound */
+   constexpr PhysReg hi() const { return PhysReg{lo() + size}; }
+
+   PhysRegInterval& operator+=(uint32_t stride)
+   {
+      lo_ = PhysReg{lo_.reg() + stride};
+      return *this;
+   }
+
+   bool operator!=(const PhysRegInterval& oth) const { return lo_ != oth.lo_ || size != oth.size; }
+
+   /* Construct a half-open interval, excluding the end register */
+   static PhysRegInterval from_until(PhysReg first, PhysReg end) { return {first, end - first}; }
+
+   bool contains(PhysReg reg) const { return lo() <= reg && reg < hi(); }
+
+   bool contains(const PhysRegInterval& needle) const
+   {
+      return needle.lo() >= lo() && needle.hi() <= hi();
+   }
+
+   PhysRegIterator begin() const { return {lo_}; }
+
+   PhysRegIterator end() const { return {PhysReg{lo_ + size}}; }
+};
+
+inline bool
+intersects(const PhysRegInterval& a, const PhysRegInterval& b)
+{
+   return a.hi() > b.lo() && b.hi() > a.lo();
+}
 
 /**
  * Operand Class
@@ -1015,12 +1088,24 @@ private:
 struct RegisterDemand {
    constexpr RegisterDemand() = default;
    constexpr RegisterDemand(const int16_t v, const int16_t s) noexcept : vgpr{v}, sgpr{s} {}
+   constexpr RegisterDemand(Temp t) noexcept
+   {
+      if (t.regClass().type() == RegType::sgpr)
+         sgpr = t.size();
+      else
+         vgpr = t.size();
+   }
    int16_t vgpr = 0;
    int16_t sgpr = 0;
 
    constexpr friend bool operator==(const RegisterDemand a, const RegisterDemand b) noexcept
    {
       return a.vgpr == b.vgpr && a.sgpr == b.sgpr;
+   }
+
+   constexpr friend bool operator!=(const RegisterDemand a, const RegisterDemand b) noexcept
+   {
+      return a.vgpr != b.vgpr || a.sgpr != b.sgpr;
    }
 
    constexpr bool exceeds(const RegisterDemand other) const noexcept
@@ -1085,6 +1170,360 @@ struct RegisterDemand {
    }
 };
 
+/* Helper class representing an arbitrary set of registers.
+ * The set consists of disjoint "slices", i.e. register intervals where
+ * all contained registers are part of the set. Slices are always stored sorted in ascending order.
+ */
+struct SparseRegisterSet {
+   aco::small_vec<PhysRegInterval, 2> slices;
+
+   struct iterator {
+      using difference_type = ptrdiff_t;
+
+      decltype(slices)::iterator slice_it;
+      PhysRegIterator reg_it;
+      /* For end(), the iterator points at the first "invalid" element, which is
+       * slices.end()->begin(). We cannot determine this value because actually dereferencing
+       * slices.end() is invalid. Therefore, when switching slices in operator++, don't dereference
+       * the new slice_it yet - only do that on further increments or when the iterator is
+       * dereferenced. reg_it_valid == false is equivalent to reg_it_valid == true,
+       * reg_it == slice_it->begin().
+       */
+      bool reg_it_valid;
+
+      PhysReg operator*() {
+         if (!reg_it_valid) {
+            reg_it = slice_it->begin();
+            reg_it_valid = true;
+         }
+         return *reg_it;
+      }
+
+      iterator& operator++() {
+         if (!reg_it_valid) {
+            reg_it = slice_it->begin();
+            reg_it_valid = true;
+         }
+         if (++reg_it == slice_it->end()) {
+            ++slice_it;
+            reg_it_valid = false;
+         }
+         return *this;
+      }
+
+      iterator& operator--() {
+         if (reg_it == slice_it->begin() || !reg_it_valid) {
+            --slice_it;
+            reg_it = std::prev(slice_it->end());
+            reg_it_valid = true;
+         } else {
+            --reg_it;
+         }
+         return *this;
+      }
+
+      bool operator==(iterator oth) const {
+         if (slice_it != oth.slice_it)
+            return false;
+         if (!reg_it_valid)
+            return !oth.reg_it_valid || oth.reg_it == slice_it->begin();
+         if (!oth.reg_it_valid)
+            return !reg_it_valid || reg_it == slice_it->begin();
+         return reg_it == oth.reg_it;
+      }
+
+      bool operator!=(iterator oth) const { return !(*this == oth); }
+
+      bool operator<(iterator oth) const {
+         if (slice_it != oth.slice_it)
+            return slice_it < oth.slice_it;
+         if (!oth.reg_it_valid) {
+            /* We're in the same slice, and oth refers to the slice's first register.
+             * Our register has to be equal or greater.
+             */
+            return false;
+         }
+         if (!reg_it_valid) {
+            /* Replace reg_it with slice_it->begin() - since
+             * oth.reg_it_valid && slice_it == oth.slice_it, we know this is safe
+             */
+            return slice_it->begin() < oth.reg_it;
+         }
+         return reg_it < oth.reg_it;
+      }
+   };
+
+   constexpr unsigned size() const
+   {
+      unsigned ret = 0;
+      for (const auto& slice : slices)
+         ret += slice.size;
+      return ret;
+   }
+
+   constexpr RegisterDemand demand() const
+   {
+      RegisterDemand ret = RegisterDemand();
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256})
+            ret.vgpr += slice.size;
+         else
+            ret.sgpr += slice.size;
+      }
+      return ret;
+   }
+
+   constexpr void add(PhysReg lo, PhysReg hi) { add(lo, hi - lo); }
+
+   constexpr void add(PhysReg base, uint16_t size) { add(PhysRegInterval{base, size}); }
+
+   constexpr void add(PhysRegInterval interval)
+   {
+      unsigned lower_bound = 0, upper_bound = slices.size() - 1;
+
+      for (; lower_bound < slices.size() && interval.lo() >= slices[lower_bound].hi();
+           ++lower_bound) {}
+      if (lower_bound == slices.size()) {
+         slices.push_back(interval);
+         return;
+      }
+
+      for (; upper_bound < slices.size() && interval.hi() <= slices[upper_bound].lo();
+           --upper_bound) {}
+
+      /* If upper_bound > slices.size(), upper_bound is -1u and we overflowed. */
+      if (upper_bound < lower_bound || upper_bound > slices.size()) {
+         slices.insert(std::next(slices.begin(), lower_bound), interval);
+         return;
+      }
+
+      for (unsigned i = lower_bound + 1; i < upper_bound; ++i)
+         slices.erase(std::next(slices.begin(), lower_bound + 1));
+
+      PhysReg lo = std::min(interval.lo(), slices[lower_bound].lo());
+      PhysReg hi = std::max(interval.hi(), slices[lower_bound].hi());
+
+      slices[lower_bound] = PhysRegInterval::from_until(lo, hi);
+
+      for (ASSERTED unsigned i = 1; i < slices.size(); ++i) {
+         assert(!intersects(slices[i - 1], slices[i]));
+      }
+   }
+
+   constexpr void remove(PhysReg base, uint16_t size) {
+      remove(PhysRegInterval{base, size});
+   }
+
+   constexpr void remove(PhysRegInterval interval) {
+      for (auto it = slices.begin(); it != slices.end();) {
+         auto& slice = *it;
+
+         if (!intersects(interval, slice)) {
+            ++it;
+            continue;
+         }
+
+         if (interval.contains(slice)) {
+            slices.erase(it);
+            continue;
+         }
+
+         if (!slice.contains(interval)) {
+            PhysReg lo, hi;
+            if (interval.lo() < slice.lo())
+               lo = std::max(interval.hi(), slice.lo());
+            else
+               lo = slice.lo();
+
+            if (interval.hi() > slice.hi())
+               hi = std::min(interval.lo(), slice.hi());
+            else
+               hi = slice.hi();
+            slice = PhysRegInterval::from_until(lo, hi);
+            ++it;
+            continue;
+         }
+
+         PhysRegInterval low_split = PhysRegInterval::from_until(slice.lo(), interval.lo());
+         PhysRegInterval high_split = PhysRegInterval::from_until(interval.hi(), slice.hi());
+
+         if (!low_split.size) {
+            slice = high_split;
+            continue;
+         } else if (!high_split.size) {
+            slice = low_split;
+            continue;
+         }
+
+         slice = high_split;
+         unsigned index = std::distance(slices.begin(), it);
+         slices.insert(it, low_split);
+         it = std::next(slices.begin(), index + 2);
+      }
+   }
+
+   constexpr bool contains(PhysReg reg) {
+      for (const auto& slice : slices) {
+         if (slice.contains(reg))
+            return true;
+         if (slice.lo() > reg)
+            return false;
+      }
+      return false;
+   }
+
+   SparseRegisterSet invert(uint16_t max_sgpr, uint16_t max_vgpr) const
+   {
+      SparseRegisterSet inverse;
+
+      PhysReg max_sgpr_reg = PhysReg{max_sgpr};
+      PhysReg max_vgpr_reg = PhysReg{256u + max_vgpr};
+
+      PhysReg gpr_cursor = PhysReg{0};
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256} && gpr_cursor < PhysReg{256}) {
+            if (gpr_cursor < max_sgpr_reg)
+               inverse.add(gpr_cursor, max_sgpr_reg);
+            else
+               assert(gpr_cursor == max_sgpr_reg);
+            gpr_cursor = PhysReg{256};
+         }
+
+         if (slice.lo() > gpr_cursor)
+            inverse.add(gpr_cursor, slice.lo());
+         gpr_cursor = slice.hi();
+      }
+      if (gpr_cursor < max_sgpr_reg) {
+         inverse.add(gpr_cursor, max_sgpr_reg);
+         gpr_cursor = PhysReg{256};
+      }
+      if (gpr_cursor < max_vgpr_reg)
+         inverse.add(gpr_cursor, max_vgpr_reg);
+      else
+         assert(gpr_cursor == max_vgpr_reg);
+
+      return inverse;
+   }
+
+   constexpr uint16_t sgpr_bound() const
+   {
+      uint16_t ret = 0;
+      for (const auto& slice : slices) {
+         if (slice.lo() >= PhysReg{256u})
+            return ret;
+         ret = slice.hi().reg();
+      }
+      return ret;
+   }
+
+   constexpr uint16_t vgpr_bound() const {
+      uint16_t ret = 0;
+      for (const auto& slice : slices) {
+         if (slice.lo() < PhysReg{256u})
+            continue;
+         ret = slice.hi().reg();
+      }
+      return ret;
+   }
+
+   iterator begin()
+   {
+      if (slices.empty())
+         return iterator{.slice_it = slices.begin(), .reg_it_valid = false};
+      return iterator{
+         .slice_it = slices.begin(),
+         .reg_it = slices[0].begin(),
+      };
+   }
+
+   iterator end()
+   {
+      return iterator{
+         .slice_it = slices.end(),
+         .reg_it_valid = false,
+      };
+   }
+};
+
+struct ABI {
+   struct GPRRange {
+      uint16_t sgpr;
+      uint16_t vgpr;
+   };
+
+   struct RegisterBlock {
+      GPRRange clobbered_size;
+      GPRRange preserved_size;
+      bool clobbered_first;
+   };
+
+   std::optional<RegisterBlock> block_size;
+   /* Maximum number of registers allowed to be used by parameters */
+   RegisterDemand max_param_demand;
+
+   SparseRegisterSet preservedRegisters(uint16_t max_sgpr, uint16_t max_vgpr) const
+   {
+      if (!block_size)
+         return {};
+
+      SparseRegisterSet preserved_set;
+      uint16_t gpr_offset;
+
+      /* Fill out preserved ranges by repeating the register block across the register file */
+
+      /* SGPR ranges */
+      for (gpr_offset = 0; gpr_offset < max_sgpr; gpr_offset += block_size->preserved_size.sgpr) {
+         if (block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.sgpr;
+         if (gpr_offset >= max_sgpr)
+            break;
+         preserved_set.add(PhysReg{gpr_offset}, std::min((uint16_t)(max_sgpr - gpr_offset),
+                                                         block_size->preserved_size.sgpr));
+         if (!block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.sgpr;
+      }
+      /* VGPR ranges */
+      for (gpr_offset = 0; gpr_offset < max_vgpr; gpr_offset += block_size->preserved_size.vgpr) {
+         if (block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.vgpr;
+         if (gpr_offset >= max_vgpr)
+            break;
+         preserved_set.add(PhysReg{256u + gpr_offset}, std::min((uint16_t)(max_vgpr - gpr_offset),
+                                                                block_size->preserved_size.vgpr));
+         if (!block_size->clobbered_first)
+            gpr_offset += block_size->clobbered_size.vgpr;
+      }
+
+      return preserved_set;
+   }
+};
+
+static constexpr ABI rtRaygenABI = {
+   .max_param_demand = RegisterDemand(32, 32),
+};
+
+static constexpr ABI rtTraversalABI = {
+   .max_param_demand = RegisterDemand(32, 32),
+};
+
+static constexpr ABI rtAnyHitABI = {
+   .block_size =
+      ABI::RegisterBlock{
+         .clobbered_size =
+            {
+               .sgpr = 128,
+               .vgpr = 256,
+            },
+         .preserved_size =
+            {
+               .sgpr = 80,
+               .vgpr = 80,
+            },
+         .clobbered_first = false,
+      },
+   .max_param_demand = RegisterDemand(32, 32),
+};
+
 struct Block;
 struct Instruction;
 struct Pseudo_instruction;
@@ -1100,6 +1539,7 @@ struct FLAT_instruction;
 struct Pseudo_branch_instruction;
 struct Pseudo_barrier_instruction;
 struct Pseudo_reduction_instruction;
+struct Pseudo_call_instruction;
 struct VALU_instruction;
 struct VINTERP_inreg_instruction;
 struct VINTRP_instruction;
@@ -1300,6 +1740,17 @@ struct Instruction {
       return *(Pseudo_reduction_instruction*)this;
    }
    constexpr bool isReduction() const noexcept { return format == Format::PSEUDO_REDUCTION; }
+   Pseudo_call_instruction& call() noexcept
+   {
+      assert(isCall());
+      return *(Pseudo_call_instruction*)this;
+   }
+   const Pseudo_call_instruction& call() const noexcept
+   {
+      assert(isCall());
+      return *(Pseudo_call_instruction*)this;
+   }
+   constexpr bool isCall() const noexcept { return format == Format::PSEUDO_CALL; }
    constexpr bool isVOP3P() const noexcept { return (uint16_t)format & (uint16_t)Format::VOP3P; }
    VINTERP_inreg_instruction& vinterp_inreg() noexcept
    {
@@ -1777,6 +2228,36 @@ struct Pseudo_reduction_instruction : public Instruction {
 static_assert(sizeof(Pseudo_reduction_instruction) == sizeof(Instruction) + 4,
               "Unexpected padding");
 
+struct Pseudo_call_instruction : public Instruction {
+   /* The set of registers preserved by this instruction. In case of ABIs defining clobbered and
+    * preserved ranges, this corresponds to just the preserved ranges. In case of ABIs clobbering
+    * all registers by default and only some operands being preserved, this set consists of the
+    * registers these preserved operands occupy.
+    */
+   SparseRegisterSet preserved_regs;
+   /* Result of preserved_regs.invert(), to avoid recalculating it all the time */
+   SparseRegisterSet clobbered_regs;
+   /* The amount of "free" preserved registers we can use to stash caller-owned temporaries instead
+    * of needing to spill them. This is equal to the amount of preserved registers given by the ABI,
+    * minus the amount of preserved registers already occupied by call parameters.
+    */
+   RegisterDemand callee_preserved_limit;
+   /* Register demand of caller-owned temporaries we need to preserve a copy of throughout the
+    * callee. This includes all live variables not used by the call instruction as well as clobbered
+    * Operand temporaries (unless the call kills the operand - we don't need to preserve a copy in
+    * that case). Non-clobbered Operand temporaries are not included in this demand - they occupy a
+    * preserved register, which is accounted for in the calculation of callee_preserved_limit
+    * already.
+    *
+    * Iff this demand is higher than callee_preserved_limit, some of the temporaries need to be
+    * spilled to scratch.
+    */
+   RegisterDemand caller_preserved_demand;
+
+   ABI abi;
+};
+static_assert(sizeof(Pseudo_call_instruction) == sizeof(Instruction) + 72, "Unexpected padding");
+
 inline bool
 Instruction::accessesLDS() const noexcept
 {
@@ -1849,9 +2330,11 @@ memory_sync_info get_sync_info(const Instruction* instr);
 inline bool
 is_dead(const std::vector<uint16_t>& uses, const Instruction* instr)
 {
-   if (instr->definitions.empty() || instr->isBranch() || instr->opcode == aco_opcode::p_startpgm ||
-       instr->opcode == aco_opcode::p_init_scratch ||
-       instr->opcode == aco_opcode::p_dual_src_export_gfx11)
+   if (instr->definitions.empty() || instr->isBranch() || instr->isCall() ||
+       instr->opcode == aco_opcode::p_startpgm || instr->opcode == aco_opcode::p_init_scratch ||
+       instr->opcode == aco_opcode::p_dual_src_export_gfx11 ||
+       instr->opcode == aco_opcode::p_spill_preserved ||
+       instr->opcode == aco_opcode::p_reload_preserved)
       return false;
 
    if (std::any_of(instr->definitions.begin(), instr->definitions.end(),
@@ -1986,6 +2469,7 @@ struct Block {
    uint16_t divergent_if_logical_depth = 0;
    uint16_t uniform_if_depth = 0;
 
+   bool contains_call = true;
    Block() : index(0) {}
 };
 
@@ -2132,6 +2616,7 @@ public:
    std::vector<uint8_t> constant_data;
    Temp private_segment_buffer;
    Temp scratch_offset;
+   Temp stack_ptr = {};
 
    uint16_t num_waves = 0;
    uint16_t min_waves = 0;
@@ -2156,6 +2641,23 @@ public:
    bool pending_lds_access = false;
 
    bool should_repair_ssa = false;
+
+   bool is_callee = false;
+   bool has_call = false;
+   bool bypass_reg_preservation = false;
+   ABI callee_abi = {};
+   RegisterDemand callee_param_demand = RegisterDemand();
+   unsigned short arg_sgpr_count;
+   unsigned short arg_vgpr_count;
+   unsigned scratch_arg_size = 0;
+
+   /* Linear VGPRs we can use to spill preserved SGPR backups to. */
+   std::vector<Temp> abi_sgpr_spill_temps;
+   /* The first linear VGPR in abi_sgpr_spill_temps may include some lanes dedicated
+    * to regular SGPR spills. This denotes the first lane that is usable for preserved
+    * SGPR spilling.
+    */
+   unsigned first_abi_sgpr_spill_lane;
 
    struct {
       monotonic_buffer_resource memory;
@@ -2227,7 +2729,8 @@ void select_trap_handler_shader(Program* program, ac_shader_config* config,
 void select_rt_prolog(Program* program, ac_shader_config* config,
                       const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* in_args,
-                      const struct ac_shader_args* out_args);
+                      const struct ac_arg* descriptors, unsigned raygen_param_count,
+                      nir_parameter* raygen_params);
 void select_vs_prolog(Program* program, const struct aco_vs_prolog_info* pinfo,
                       ac_shader_config* config, const struct aco_compiler_options* options,
                       const struct aco_shader_info* info, const struct ac_shader_args* args);
@@ -2257,6 +2760,7 @@ void setup_reduce_temp(Program* program);
 void lower_to_cssa(Program* program);
 void register_allocation(Program* program, ra_test_policy = {});
 void reindex_ssa(Program* program);
+void spill_preserved(Program* program);
 void ssa_elimination(Program* program);
 void lower_to_hw_instr(Program* program);
 void schedule_program(Program* program);
@@ -2269,6 +2773,7 @@ void combine_delay_alu(Program* program);
 bool dealloc_vgprs(Program* program);
 void insert_NOPs(Program* program);
 void form_hard_clauses(Program* program);
+void vectorize_spills(Program* program);
 unsigned emit_program(Program* program, std::vector<uint32_t>& code,
                       std::vector<struct aco_symbol>* symbols = NULL, bool append_endpgm = true);
 /**
@@ -2318,6 +2823,7 @@ int get_op_fixed_to_def(Instruction* instr);
 /* utilities for dealing with register demand */
 RegisterDemand get_live_changes(Instruction* instr);
 RegisterDemand get_temp_registers(Instruction* instr);
+RegisterDemand get_temp_reg_changes(Instruction* instr);
 
 /* number of sgprs that need to be allocated but might notbe addressable as s0-s105 */
 uint16_t get_extra_sgprs(Program* program);
@@ -2370,5 +2876,11 @@ typedef struct {
 extern const Info instr_info;
 
 } // namespace aco
+
+namespace std {
+template <> struct hash<aco::PhysReg> {
+   size_t operator()(aco::PhysReg temp) const noexcept { return std::hash<uint32_t>{}(temp.reg_b); }
+};
+} // namespace std
 
 #endif /* ACO_IR_H */

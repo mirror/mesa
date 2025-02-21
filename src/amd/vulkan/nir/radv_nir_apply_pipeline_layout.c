@@ -5,6 +5,7 @@
  */
 #include "ac_descriptors.h"
 #include "ac_shader_util.h"
+#include "aco_nir_call_attribs.h"
 #include "nir.h"
 #include "nir_builder.h"
 #include "radv_descriptor_set.h"
@@ -35,6 +36,42 @@ get_scalar_arg(nir_builder *b, unsigned size, struct ac_arg arg)
 }
 
 static nir_def *
+get_indirect_descriptors_addr(nir_builder *b, apply_layout_state *state)
+{
+   switch (b->shader->info.stage) {
+   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_CALLABLE:
+      return nir_load_param(b, RAYGEN_ARG_DESCRIPTORS);
+   case MESA_SHADER_INTERSECTION:
+      return nir_load_param(b, TRAVERSAL_ARG_DESCRIPTORS);
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+      return nir_load_param(b, CHIT_MISS_ARG_DESCRIPTORS);
+   default:
+      assert(!gl_shader_stage_is_rt(b->shader->info.stage));
+      return get_scalar_arg(b, 1, state->args->descriptor_sets[0]);
+   }
+}
+
+static nir_def *
+get_indirect_push_constants_addr(nir_builder *b, apply_layout_state *state)
+{
+   switch (b->shader->info.stage) {
+   case MESA_SHADER_RAYGEN:
+   case MESA_SHADER_CALLABLE:
+      return nir_load_param(b, RAYGEN_ARG_PUSH_CONSTANTS);
+   case MESA_SHADER_INTERSECTION:
+      return nir_load_param(b, TRAVERSAL_ARG_PUSH_CONSTANTS);
+   case MESA_SHADER_CLOSEST_HIT:
+   case MESA_SHADER_MISS:
+      return nir_load_param(b, CHIT_MISS_ARG_PUSH_CONSTANTS);
+   default:
+      assert(!gl_shader_stage_is_rt(b->shader->info.stage));
+      return get_scalar_arg(b, 1, state->args->ac.push_constants);
+   }
+}
+
+static nir_def *
 convert_pointer_to_64_bit(nir_builder *b, apply_layout_state *state, nir_def *ptr)
 {
    return nir_pack_64_2x32_split(b, ptr, nir_imm_int(b, state->address32_hi));
@@ -44,8 +81,9 @@ static nir_def *
 load_desc_ptr(nir_builder *b, apply_layout_state *state, unsigned set)
 {
    const struct radv_userdata_locations *user_sgprs_locs = &state->info->user_sgprs_locs;
-   if (user_sgprs_locs->shader_data[AC_UD_INDIRECT_DESCRIPTOR_SETS].sgpr_idx != -1) {
-      nir_def *addr = get_scalar_arg(b, 1, state->args->descriptor_sets[0]);
+   if (user_sgprs_locs->shader_data[AC_UD_INDIRECT_DESCRIPTOR_SETS].sgpr_idx != -1 ||
+       gl_shader_stage_is_rt(b->shader->info.stage)) {
+      nir_def *addr = get_indirect_descriptors_addr(b, state);
       addr = convert_pointer_to_64_bit(b, state, addr);
       return nir_load_smem_amd(b, 1, addr, nir_imm_int(b, set * 4));
    }
@@ -66,7 +104,7 @@ visit_vulkan_resource_index(nir_builder *b, apply_layout_state *state, nir_intri
    nir_def *set_ptr;
    if (vk_descriptor_type_is_dynamic(layout->binding[binding].type)) {
       unsigned idx = state->layout->set[desc_set].dynamic_offset_start + layout->binding[binding].dynamic_offset_offset;
-      set_ptr = get_scalar_arg(b, 1, state->args->ac.push_constants);
+      set_ptr = get_indirect_push_constants_addr(b, state);
       offset = state->layout->push_constant_size + idx * 16;
       stride = 16;
    } else {
@@ -385,8 +423,10 @@ load_push_constant(nir_builder *b, apply_layout_state *state, nir_intrinsic_inst
          continue;
       }
 
-      if (!state->args->ac.push_constants.used) {
-         /* Assume this is an inlined push constant load which was expanded to include dwords which are not inlined. */
+      if (!state->args->ac.push_constants.used && !gl_shader_stage_is_rt(b->shader->info.stage)) {
+         /* Assume this is an inlined push constant load which was expanded to include dwords which are not inlined.
+          * RT stages use neither shader args nor inlined push constants, so skip this for RT shaders.
+          */
          assert(const_offset != -1);
          data[num_loads++] = nir_undef(b, 1, 32);
          start += 1;
@@ -394,7 +434,7 @@ load_push_constant(nir_builder *b, apply_layout_state *state, nir_intrinsic_inst
       }
 
       if (!offset) {
-         addr = get_scalar_arg(b, 1, state->args->ac.push_constants);
+         addr = get_indirect_push_constants_addr(b, state);
          addr = convert_pointer_to_64_bit(b, state, addr);
          offset = nir_iadd_imm_nuw(b, intrin->src[0].ssa, base);
       }

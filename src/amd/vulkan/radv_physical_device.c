@@ -123,7 +123,7 @@ radv_enable_rt(const struct radv_physical_device *pdev)
    if (pdev->use_llvm)
       return false;
 
-   return true;
+   return pdev->info.gfx_level >= GFX9;
 }
 
 bool

@@ -197,6 +197,27 @@ MoveState::downwards_move(DownwardsCursor& cursor, bool add_to_clause)
 {
    aco_ptr<Instruction>& instr = block->instructions[cursor.source_idx];
 
+   const int dest_insert_idx = add_to_clause ? cursor.insert_idx_clause : cursor.insert_idx;
+   const RegisterDemand temp = get_temp_registers(instr.get());
+   const RegisterDemand temp2 = get_temp_registers(block->instructions[dest_insert_idx - 1].get());
+   if (instr->isCall()) {
+      const RegisterDemand live_var_diff =
+         (block->instructions[dest_insert_idx - 1]->register_demand - temp2) -
+         (instr->register_demand - temp);
+      if (live_var_diff.exceeds(instr->call().callee_preserved_limit -
+                                instr->call().caller_preserved_demand))
+         return move_fail_pressure;
+   }
+
+   const RegisterDemand candidate_diff = get_live_changes(instr.get());
+   for (int i = cursor.source_idx; i < cursor.insert_idx; ++i) {
+      if (!block->instructions[i]->isCall())
+         continue;
+      if ((block->instructions[i]->call().caller_preserved_demand - candidate_diff)
+             .exceeds(block->instructions[i]->call().callee_preserved_limit))
+         return move_fail_pressure;
+   }
+
    for (const Definition& def : instr->definitions)
       if (def.isTemp() && depends_on[def.tempId()])
          return move_fail_ssa;
@@ -221,20 +242,16 @@ MoveState::downwards_move(DownwardsCursor& cursor, bool add_to_clause)
       }
    }
 
-   const int dest_insert_idx = add_to_clause ? cursor.insert_idx_clause : cursor.insert_idx;
    RegisterDemand register_pressure = cursor.total_demand;
    if (!add_to_clause) {
       register_pressure.update(cursor.clause_demand);
    }
 
    /* Check the new demand of the instructions being moved over */
-   const RegisterDemand candidate_diff = get_live_changes(instr.get());
    if (RegisterDemand(register_pressure - candidate_diff).exceeds(max_registers))
       return move_fail_pressure;
 
    /* New demand for the moved instruction */
-   const RegisterDemand temp = get_temp_registers(instr.get());
-   const RegisterDemand temp2 = get_temp_registers(block->instructions[dest_insert_idx - 1].get());
    const RegisterDemand new_demand =
       block->instructions[dest_insert_idx - 1]->register_demand - temp2 + temp;
    if (new_demand.exceeds(max_registers))
@@ -343,6 +360,29 @@ MoveState::upwards_move(UpwardsCursor& cursor)
    assert(cursor.has_insert_idx());
 
    aco_ptr<Instruction>& instr = block->instructions[cursor.source_idx];
+
+   const RegisterDemand temp = get_temp_registers(instr.get());
+   const RegisterDemand temp2 =
+      get_temp_registers(block->instructions[cursor.insert_idx - 1].get());
+
+   if (instr->isCall()) {
+      const RegisterDemand live_var_diff =
+         (block->instructions[cursor.insert_idx - 1]->register_demand - temp2) -
+         (block->instructions[cursor.source_idx]->register_demand - temp);
+      if (live_var_diff.exceeds(instr->call().callee_preserved_limit -
+                                instr->call().caller_preserved_demand))
+         return move_fail_pressure;
+   }
+
+   const RegisterDemand candidate_diff = get_live_changes(instr.get());
+   for (int i = cursor.insert_idx; i < cursor.source_idx; ++i) {
+      if (!block->instructions[i]->isCall())
+         continue;
+      if (candidate_diff.exceeds(block->instructions[i]->call().callee_preserved_limit -
+                                 block->instructions[i]->call().caller_preserved_demand))
+         return move_fail_pressure;
+   }
+
    for (const Operand& op : instr->operands) {
       if (op.isTemp() && depends_on[op.tempId()])
          return move_fail_ssa;
@@ -356,12 +396,8 @@ MoveState::upwards_move(UpwardsCursor& cursor)
 
    /* check if register pressure is low enough: the diff is negative if register pressure is
     * decreased */
-   const RegisterDemand candidate_diff = get_live_changes(instr.get());
-   const RegisterDemand temp = get_temp_registers(instr.get());
    if (RegisterDemand(cursor.total_demand + candidate_diff).exceeds(max_registers))
       return move_fail_pressure;
-   const RegisterDemand temp2 =
-      get_temp_registers(block->instructions[cursor.insert_idx - 1].get());
    const RegisterDemand new_demand =
       block->instructions[cursor.insert_idx - 1]->register_demand - temp2 + candidate_diff + temp;
    if (new_demand.exceeds(max_registers))
@@ -372,8 +408,11 @@ MoveState::upwards_move(UpwardsCursor& cursor)
 
    /* update register pressure */
    block->instructions[cursor.insert_idx]->register_demand = new_demand;
-   for (int i = cursor.insert_idx + 1; i <= cursor.source_idx; i++)
+   for (int i = cursor.insert_idx + 1; i <= cursor.source_idx; i++) {
       block->instructions[i]->register_demand += candidate_diff;
+      if (block->instructions[i]->isCall())
+         block->instructions[i]->call().caller_preserved_demand += candidate_diff;
+   }
    cursor.total_demand += candidate_diff;
 
    cursor.total_demand.update(block->instructions[cursor.source_idx]->register_demand);
@@ -1266,6 +1305,17 @@ schedule_program(Program* program)
    assert(ctx.num_waves > 0);
    ctx.mv.max_registers = {int16_t(get_addr_vgpr_from_waves(program, ctx.num_waves * wave_fac) - 2),
                            int16_t(get_addr_sgpr_from_waves(program, ctx.num_waves * wave_fac))};
+   /* If not all preserved SGPRs in callee shaders were spilled, don't try using them for
+    * scheduling.
+    */
+   if (program->is_callee) {
+      SparseRegisterSet clobbered_regs =
+         program->callee_abi
+            .preservedRegisters(ctx.mv.max_registers.sgpr, ctx.mv.max_registers.vgpr)
+            .invert(ctx.mv.max_registers.sgpr, ctx.mv.max_registers.vgpr);
+      ctx.mv.max_registers = clobbered_regs.demand();
+      ctx.mv.max_registers.sgpr = std::min(ctx.mv.max_registers.sgpr, program->max_reg_demand.sgpr);
+   }
 
    /* NGG culling shaders are very sensitive to position export scheduling.
     * Schedule less aggressively when early primitive export is used, and

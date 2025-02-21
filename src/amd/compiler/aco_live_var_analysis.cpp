@@ -55,6 +55,23 @@ get_temp_registers(Instruction* instr)
    return demand_after;
 }
 
+RegisterDemand get_temp_reg_changes(Instruction* instr)
+{
+   RegisterDemand available_def_space;
+
+   for (Definition def : instr->definitions) {
+      if (def.isTemp())
+         available_def_space += def.getTemp();
+   }
+
+   for (Operand op : instr->operands) {
+      if (op.isFirstKillBeforeDef() || op.isCopyKill())
+         available_def_space -= op.getTemp();
+   }
+
+   return available_def_space;
+}
+
 namespace {
 
 struct live_ctx {
@@ -167,7 +184,8 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
          break;
 
       ctx.program->needs_vcc |= instr_needs_vcc(insn);
-      insn->register_demand = RegisterDemand(new_demand.vgpr, new_demand.sgpr);
+      RegisterDemand demand_after_instr = RegisterDemand(new_demand.vgpr, new_demand.sgpr);
+      insn->register_demand = demand_after_instr;
 
       bool has_vgpr_def = false;
 
@@ -292,6 +310,42 @@ process_live_temps_per_block(live_ctx& ctx, Block* block)
             new_demand += temp;
          } else if (operand.isClobbered()) {
             operand_demand += temp;
+         }
+      }
+
+      if (insn->isCall()) {
+         /* For call instructions, definitions are live at the time s_setpc finishes,
+          * which continues execution in the callee. This means that all definitions are
+          * live concurrently with operands.
+          */
+         operand_demand += insn->definitions[0].getTemp();
+         operand_demand += insn->definitions[1].getTemp();
+
+         uint16_t max_vgpr = get_addr_vgpr_from_waves(ctx.program, ctx.program->min_waves);
+         uint16_t max_sgpr = get_addr_sgpr_from_waves(ctx.program, ctx.program->min_waves);
+
+         insn->call().preserved_regs = insn->call().abi.preservedRegisters(max_sgpr, max_vgpr);
+         insn->call().callee_preserved_limit = RegisterDemand();
+
+         for (auto& op : insn->operands) {
+            if (!op.isTemp() || !op.isPrecolored() || op.isClobbered())
+               continue;
+
+            if (op.isKill())
+               insn->call().callee_preserved_limit -= op.getTemp();
+            insn->call().preserved_regs.add(op.physReg(), op.size());
+         }
+         if (!insn->operands[0].isKill() && insn->operands[0].isClobbered())
+            insn->call().callee_preserved_limit += insn->operands[0].getTemp();
+
+         insn->call().clobbered_regs = insn->call().preserved_regs.invert(max_sgpr, max_vgpr);
+         insn->call().callee_preserved_limit += insn->call().preserved_regs.demand();
+
+         insn->call().caller_preserved_demand = demand_after_instr;
+
+         for (unsigned i = 0; i < insn->definitions.size(); ++i) {
+            if (!insn->definitions[i].isKill())
+               insn->call().caller_preserved_demand -= insn->definitions[i].getTemp();
          }
       }
 

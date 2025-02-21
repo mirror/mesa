@@ -92,6 +92,10 @@ bool radv_nir_opt_tid_function(nir_shader *shader, const radv_nir_opt_tid_functi
 
 bool radv_nir_opt_fs_builtins(nir_shader *shader, const struct radv_graphics_state_key *gfx_state);
 
+void radv_nir_lower_callee_signature(nir_function *function, struct set *visited_funcs);
+
+bool radv_nir_lower_call_abi(nir_shader *shader, unsigned wave_size);
+
 #ifdef __cplusplus
 }
 #endif

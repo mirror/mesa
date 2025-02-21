@@ -570,6 +570,7 @@ formats = [("pseudo", [Format.PSEUDO], list(itertools.product(range(5), range(6)
            ("branch", [Format.PSEUDO_BRANCH], [(0, 0), (0, 1)]),
            ("barrier", [Format.PSEUDO_BARRIER], [(0, 0)]),
            ("reduction", [Format.PSEUDO_REDUCTION], [(3, 3)]),
+           ("call", [Format.PSEUDO_CALL], [(0, 0)]),
            ("vop1", [Format.VOP1], [(0, 0), (1, 1), (1, 2), (2, 2)]),
            ("vop1_sdwa", [Format.VOP1, Format.SDWA], [(1, 1)]),
            ("vop2", [Format.VOP2], itertools.product([1, 2], [2, 3])),
@@ -606,6 +607,7 @@ formats = [("pseudo", [Format.PSEUDO], list(itertools.product(range(5), range(6)
 formats = [(f if len(f) == 5 else f + ('',)) for f in formats]
 %>\\
 % for name, formats, shapes, extra_field_setup in formats:
+    % if shapes:
     % for num_definitions, num_operands in shapes:
         <%
         args = ['aco_opcode opcode']
@@ -658,6 +660,33 @@ formats = [(f if len(f) == 5 else f + ('',)) for f in formats]
 
     % endif
     % endfor
+% else:
+        <%
+        args = ['aco_opcode opcode', 'aco::span<Definition> definitions', 'aco::span<Operand> operands' ]
+        for f in formats:
+            args += f.get_builder_field_decls()
+        %>\\
+
+   Result ${name}(${', '.join(args)})
+   {
+      ${struct} *instr = create_instruction<${struct}>(opcode, (Format)(${'|'.join('(int)Format::%s' % f.name for f in formats)}), operands.size(), definitions.size());
+      for (unsigned i = 0; i < definitions.size(); ++i) {
+         instr->definitions[i] = definitions[i];
+         instr->definitions[i].setPrecise(is_precise);
+         instr->definitions[i].setNUW(is_nuw);
+      }
+      for (unsigned i = 0; i < operands.size(); ++i)
+         instr->operands[i] = operands[i];
+        % for f in formats:
+            % for dest, field_name in zip(f.get_builder_field_dests(), f.get_builder_field_names()):
+      instr->${dest} = ${field_name};
+            % endfor
+            ${f.get_builder_initialization(num_operands)}
+        % endfor
+       ${extra_field_setup}
+      return insert(instr);
+   }
+% endif
 % endfor
 };
 

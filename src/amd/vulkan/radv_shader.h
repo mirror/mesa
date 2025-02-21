@@ -33,6 +33,8 @@ struct radv_vertex_input_state;
 struct radv_shader_args;
 struct radv_serialized_shader_arena_block;
 struct vk_pipeline_robustness_state;
+struct nir_parameter;
+typedef struct nir_parameter nir_parameter;
 
 enum {
    RADV_GRAPHICS_STAGE_BITS =
@@ -511,17 +513,17 @@ struct radv_shader_stage;
 void radv_optimize_nir(struct nir_shader *shader, bool optimize_conservatively);
 void radv_optimize_nir_algebraic(nir_shader *shader, bool opt_offsets, bool opt_mqsad);
 
+nir_function_impl *radv_get_rt_shader_entrypoint(nir_shader *shader);
+
 void radv_nir_lower_rt_io(nir_shader *shader, bool monolithic, uint32_t payload_offset);
 
 struct radv_ray_tracing_stage_info;
 
+void radv_nir_init_rt_function_params(nir_function *function, gl_shader_stage stage, unsigned payload_size);
 void radv_nir_lower_rt_abi(nir_shader *shader, const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                            const struct radv_shader_args *args, const struct radv_shader_info *info,
-                           uint32_t *stack_size, bool resume_shader, struct radv_device *device,
-                           struct radv_ray_tracing_pipeline *pipeline, bool monolithic,
-                           const struct radv_ray_tracing_stage_info *traversal_info);
-
-void radv_gather_unused_args(struct radv_ray_tracing_stage_info *info, nir_shader *nir);
+                           uint32_t *payload_size, uint32_t *stack_size, struct radv_device *device,
+                           struct radv_ray_tracing_pipeline *pipeline, bool monolithic);
 
 struct radv_shader_stage;
 
@@ -575,7 +577,8 @@ void radv_free_shader_memory(struct radv_device *device, union radv_shader_arena
 
 struct radv_shader *radv_create_trap_handler_shader(struct radv_device *device);
 
-struct radv_shader *radv_create_rt_prolog(struct radv_device *device);
+struct radv_shader *radv_create_rt_prolog(struct radv_device *device, unsigned raygen_param_count,
+                                          nir_parameter *raygen_params);
 
 struct radv_shader_part *radv_shader_part_create(struct radv_device *device, struct radv_shader_part_binary *binary,
                                                  unsigned wave_size);
@@ -683,33 +686,6 @@ struct radv_ray_tracing_stage_info;
 nir_shader *radv_build_traversal_shader(struct radv_device *device, struct radv_ray_tracing_pipeline *pipeline,
                                         const VkRayTracingPipelineCreateInfoKHR *pCreateInfo,
                                         struct radv_ray_tracing_stage_info *info);
-
-enum radv_rt_priority {
-   radv_rt_priority_raygen = 0,
-   radv_rt_priority_traversal = 1,
-   radv_rt_priority_hit_miss = 2,
-   radv_rt_priority_callable = 3,
-   radv_rt_priority_mask = 0x3,
-};
-
-static inline enum radv_rt_priority
-radv_get_rt_priority(gl_shader_stage stage)
-{
-   switch (stage) {
-   case MESA_SHADER_RAYGEN:
-      return radv_rt_priority_raygen;
-   case MESA_SHADER_INTERSECTION:
-   case MESA_SHADER_ANY_HIT:
-      return radv_rt_priority_traversal;
-   case MESA_SHADER_CLOSEST_HIT:
-   case MESA_SHADER_MISS:
-      return radv_rt_priority_hit_miss;
-   case MESA_SHADER_CALLABLE:
-      return radv_rt_priority_callable;
-   default:
-      unreachable("Unimplemented RT shader stage.");
-   }
-}
 
 struct radv_shader_layout;
 enum radv_pipeline_type;

@@ -73,6 +73,7 @@ reindex_program(idx_ctx& ctx, Program* program)
                                           program->private_segment_buffer.regClass());
    program->scratch_offset =
       Temp(ctx.renames[program->scratch_offset.id()], program->scratch_offset.regClass());
+   program->stack_ptr = Temp(ctx.renames[program->stack_ptr.id()], program->stack_ptr.regClass());
    program->temp_rc = ctx.temp_rc;
 }
 

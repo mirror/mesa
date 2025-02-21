@@ -7,6 +7,7 @@
 
 #include "aco_builder.h"
 #include "aco_ir.h"
+#include "aco_scratch_rsrc.h"
 #include "aco_util.h"
 
 #include "common/ac_descriptors.h"
@@ -15,6 +16,7 @@
 #include <algorithm>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
@@ -87,6 +89,7 @@ struct spill_ctx {
    unsigned sgpr_spill_slots;
    unsigned vgpr_spill_slots;
    Temp scratch_rsrc;
+   unsigned scratch_rsrc_block = -1u;
 
    spill_ctx(const RegisterDemand target_pressure_, Program* program_)
        : target_pressure(target_pressure_), program(program_), memory(),
@@ -305,9 +308,20 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
       /* check how many live-through variables should be spilled */
       RegisterDemand reg_pressure = block->live_in_demand;
       RegisterDemand loop_demand = reg_pressure;
+      RegisterDemand loop_call_spills = RegisterDemand();
       unsigned i = block_idx;
-      while (ctx.program->blocks[i].loop_nest_depth >= block->loop_nest_depth)
-         loop_demand.update(ctx.program->blocks[i++].register_demand);
+      while (ctx.program->blocks[i].loop_nest_depth >= block->loop_nest_depth) {
+         loop_demand.update(ctx.program->blocks[i].register_demand);
+         if (ctx.program->blocks[i].contains_call) {
+            for (auto& instr : ctx.program->blocks[i].instructions) {
+               if (!instr->isCall())
+                  continue;
+               loop_call_spills.update(instr->call().caller_preserved_demand -
+                                       instr->call().callee_preserved_limit);
+            }
+         }
+         ++i;
+      }
 
       for (auto spilled : ctx.spills_exit[block_idx - 1]) {
          /* variable is not live at loop entry: probably a phi operand */
@@ -335,12 +349,15 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
 
       /* select more live-through variables and constants */
       RegType type = RegType::vgpr;
-      while (loop_demand.exceeds(ctx.target_pressure)) {
+      while (loop_demand.exceeds(ctx.target_pressure) ||
+             loop_call_spills.exceeds(spilled_registers)) {
          /* if VGPR demand is low enough, select SGPRs */
-         if (type == RegType::vgpr && loop_demand.vgpr <= ctx.target_pressure.vgpr)
+         if (type == RegType::vgpr && loop_demand.vgpr <= ctx.target_pressure.vgpr &&
+             loop_call_spills.vgpr <= spilled_registers.vgpr)
             type = RegType::sgpr;
          /* if SGPR demand is low enough, break */
-         if (type == RegType::sgpr && loop_demand.sgpr <= ctx.target_pressure.sgpr)
+         if (type == RegType::sgpr && loop_demand.sgpr <= ctx.target_pressure.sgpr &&
+             loop_call_spills.sgpr <= spilled_registers.sgpr)
             break;
 
          float score = 0.0;
@@ -350,6 +367,9 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
             Temp var = Temp(t, ctx.program->temp_rc[t]);
             if (var.type() != type || ctx.spills_entry[block_idx].count(var) ||
                 var.regClass().is_linear_vgpr())
+               continue;
+            if (var == ctx.program->stack_ptr || var == ctx.program->scratch_offset ||
+                var == ctx.program->private_segment_buffer)
                continue;
 
             unsigned can_remat = ctx.remat.count(var);
@@ -395,7 +415,8 @@ init_live_in_vars(spill_ctx& ctx, Block* block, unsigned block_idx)
                continue;
             Temp var = phi->definitions[0].getTemp();
             if (var.type() == type && !ctx.spills_entry[block_idx].count(var) &&
-                ctx.ssa_infos[var.id()].score() > score) {
+                ctx.ssa_infos[var.id()].score() > score && var != ctx.program->stack_ptr &&
+                var != ctx.program->scratch_offset && var != ctx.program->private_segment_buffer) {
                to_spill = var;
                score = ctx.ssa_infos[var.id()].score();
             }
@@ -880,6 +901,8 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
 
    auto& current_spills = ctx.spills_exit[block_idx];
 
+   std::vector<Temp> call_spills;
+
    while (idx < block->instructions.size()) {
       aco_ptr<Instruction>& instr = block->instructions[idx];
 
@@ -893,6 +916,22 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
       }
 
       std::map<Temp, std::pair<Temp, uint32_t>> reloads;
+
+      if (!call_spills.empty()) {
+         RegisterDemand demand = instr->register_demand;
+         while (!(demand - spilled_registers).exceeds(ctx.target_pressure) &&
+                !call_spills.empty()) {
+            Temp old_tmp = call_spills.back();
+            call_spills.pop_back();
+
+            Temp new_tmp = ctx.program->allocateTmp(ctx.program->temp_rc[old_tmp.id()]);
+            ctx.renames[block_idx][old_tmp] = new_tmp;
+            reloads[old_tmp] = std::make_pair(new_tmp, current_spills[old_tmp]);
+            current_spills.erase(old_tmp);
+            spilled_registers -= new_tmp;
+         }
+         call_spills.clear();
+      }
 
       /* rename and reload operands */
       for (Operand& op : instr->operands) {
@@ -909,23 +948,38 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
          /* the Operand is spilled: add it to reloads */
          Temp new_tmp = ctx.program->allocateTmp(op.regClass());
          ctx.renames[block_idx][op.getTemp()] = new_tmp;
-         reloads[new_tmp] = std::make_pair(op.getTemp(), current_spills[op.getTemp()]);
+         reloads[op.getTemp()] = std::make_pair(new_tmp, current_spills[op.getTemp()]);
          current_spills.erase(op.getTemp());
          spilled_registers -= new_tmp;
       }
 
       /* check if register demand is low enough during and after the current instruction */
-      if (block->register_demand.exceeds(ctx.target_pressure)) {
+      if (block->register_demand.exceeds(ctx.target_pressure) || instr->isCall()) {
          RegisterDemand new_demand = instr->register_demand;
+         std::optional<RegisterDemand> live_changes;
 
          /* if reg pressure is too high, spill variable with furthest next use */
-         while ((new_demand - spilled_registers).exceeds(ctx.target_pressure)) {
+         while (true) {
+            bool needs_spill = (new_demand - spilled_registers).exceeds(ctx.target_pressure);
+            if (instr->isCall())
+               needs_spill |= (instr->call().caller_preserved_demand - spilled_registers)
+                                 .exceeds(instr->call().callee_preserved_limit);
+            if (!needs_spill)
+               break;
+
             float score = 0.0;
             Temp to_spill = Temp();
+            bool spill_is_operand = false;
+            unsigned respill_slot = -1u;
             unsigned do_rematerialize = 0;
             unsigned avoid_respill = 0;
+
             RegType type = RegType::sgpr;
-            if (new_demand.vgpr - spilled_registers.vgpr > ctx.target_pressure.vgpr)
+            bool spill_vgpr = new_demand.vgpr - spilled_registers.vgpr > ctx.target_pressure.vgpr;
+            if (instr->isCall())
+               spill_vgpr |= instr->call().caller_preserved_demand.vgpr - spilled_registers.vgpr >
+                             instr->call().callee_preserved_limit.vgpr;
+            if (spill_vgpr)
                type = RegType::vgpr;
 
             for (unsigned t : ctx.program->live.live_in[block_idx]) {
@@ -941,29 +995,75 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
 
                if (can_rematerialize > do_rematerialize || loop_variable > avoid_respill ||
                    ctx.ssa_infos[t].score() > score) {
-                  /* Don't spill operands */
-                  if (std::any_of(instr->operands.begin(), instr->operands.end(),
-                                  [&](Operand& op) { return op.isTemp() && op.getTemp() == var; }))
+                  if (var == ctx.program->stack_ptr || var == ctx.program->scratch_offset ||
+                      var == ctx.program->private_segment_buffer)
                      continue;
+
+                  bool is_operand = false;
+                  bool can_spill = true;
+                  for (auto& op : instr->operands) {
+                     if (!op.isTemp() || op.getTemp() != var)
+                        continue;
+                     if (op.isLateKill() || op.isKill()) {
+                        can_spill = false;
+                        break;
+                     }
+
+                     if (!live_changes)
+                        live_changes = get_temp_reg_changes(instr.get());
+
+                     /* Don't spill operands if killing operands won't help with register pressure */
+                     if (!instr->isCall() && RegisterDemand(op.getTemp()).exceeds(*live_changes)) {
+                        can_spill = false;
+                        break;
+                     }
+                     if (instr->isCall() && !op.isClobbered()) {
+                        can_spill = false;
+                        break;
+                     }
+
+                     is_operand = true;
+                     break;
+                  }
+                  if (!can_spill)
+                     continue;
+
+                  bool is_spilled_operand = is_operand && reloads.count(var);
 
                   to_spill = var;
                   score = ctx.ssa_infos[t].score();
                   do_rematerialize = can_rematerialize;
-                  avoid_respill = loop_variable;
+                  avoid_respill = loop_variable || is_spilled_operand;
+                  spill_is_operand = is_operand;
+
+                  /* This variable is spilled at the loop-header of the current loop.
+                   * Re-use the spill-slot in order to avoid an extra store.
+                   */
+                  if (loop_variable)
+                     respill_slot = ctx.loop.back().spills[var];
+                  else if (is_spilled_operand)
+                     respill_slot = reloads[var].second;
                }
             }
             assert(to_spill != Temp());
 
-            if (avoid_respill) {
-               /* This variable is spilled at the loop-header of the current loop.
-                * Re-use the spill-slot in order to avoid an extra store.
+            if (spill_is_operand) {
+               /* We might not be able to spill all operands. Keep live_changes up-to-date so we
+                * stop when we spilled every operand we can.
                 */
-               current_spills[to_spill] = ctx.loop.back().spills[to_spill];
+               *live_changes -= to_spill;
+            }
+
+            if (avoid_respill) {
+               current_spills[to_spill] = respill_slot;
                spilled_registers += to_spill;
                continue;
             }
 
             uint32_t spill_id = ctx.add_to_spills(to_spill, current_spills);
+            if (instr->isCall())
+               call_spills.emplace_back(to_spill);
+
             /* add interferences with reloads */
             for (std::pair<const Temp, std::pair<Temp, uint32_t>>& pair : reloads)
                ctx.add_interference(spill_id, pair.second.second);
@@ -1007,7 +1107,7 @@ process_block(spill_ctx& ctx, unsigned block_idx, Block* block, RegisterDemand s
       /* add reloads and instruction to new instructions */
       for (std::pair<const Temp, std::pair<Temp, uint32_t>>& pair : reloads) {
          aco_ptr<Instruction> reload =
-            do_reload(ctx, pair.second.first, pair.first, pair.second.second);
+            do_reload(ctx, pair.first, pair.second.first, pair.second.second);
          instructions.emplace_back(std::move(reload));
       }
       instructions.emplace_back(std::move(instr));
@@ -1085,57 +1185,6 @@ spill_block(spill_ctx& ctx, unsigned block_idx)
    }
 }
 
-Temp
-load_scratch_resource(spill_ctx& ctx, Builder& bld, bool apply_scratch_offset)
-{
-   Temp private_segment_buffer = ctx.program->private_segment_buffer;
-   if (!private_segment_buffer.bytes()) {
-      Temp addr_lo =
-         bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_lo));
-      Temp addr_hi =
-         bld.sop1(aco_opcode::p_load_symbol, bld.def(s1), Operand::c32(aco_symbol_scratch_addr_hi));
-      private_segment_buffer =
-         bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
-   } else if (ctx.program->stage.hw != AC_HW_COMPUTE_SHADER) {
-      private_segment_buffer =
-         bld.smem(aco_opcode::s_load_dwordx2, bld.def(s2), private_segment_buffer, Operand::zero());
-   }
-
-   if (apply_scratch_offset) {
-      Temp addr_lo = bld.tmp(s1);
-      Temp addr_hi = bld.tmp(s1);
-      bld.pseudo(aco_opcode::p_split_vector, Definition(addr_lo), Definition(addr_hi),
-                 private_segment_buffer);
-
-      Temp carry = bld.tmp(s1);
-      addr_lo = bld.sop2(aco_opcode::s_add_u32, bld.def(s1), bld.scc(Definition(carry)), addr_lo,
-                         ctx.program->scratch_offset);
-      addr_hi = bld.sop2(aco_opcode::s_addc_u32, bld.def(s1), bld.def(s1, scc), addr_hi,
-                         Operand::c32(0), bld.scc(carry));
-
-      private_segment_buffer =
-         bld.pseudo(aco_opcode::p_create_vector, bld.def(s2), addr_lo, addr_hi);
-   }
-
-   struct ac_buffer_state ac_state = {0};
-   uint32_t desc[4];
-
-   ac_state.size = 0xffffffff;
-   ac_state.format = PIPE_FORMAT_R32_FLOAT;
-   for (int i = 0; i < 4; i++)
-      ac_state.swizzle[i] = PIPE_SWIZZLE_0;
-   /* older generations need element size = 4 bytes. element size removed in GFX9 */
-   ac_state.element_size = ctx.program->gfx_level <= GFX8 ? 1u : 0u;
-   ac_state.index_stride = ctx.program->wave_size == 64 ? 3u : 2u;
-   ac_state.add_tid = true;
-   ac_state.gfx10_oob_select = V_008F0C_OOB_SELECT_RAW;
-
-   ac_build_buffer_descriptor(ctx.program->gfx_level, &ac_state, desc);
-
-   return bld.pseudo(aco_opcode::p_create_vector, bld.def(s4), private_segment_buffer,
-                     Operand::c32(desc[2]), Operand::c32(desc[3]));
-}
-
 void
 setup_vgpr_spill_reload(spill_ctx& ctx, Block& block,
                         std::vector<aco_ptr<Instruction>>& instructions, uint32_t spill_slot,
@@ -1157,19 +1206,28 @@ setup_vgpr_spill_reload(spill_ctx& ctx, Block& block,
    bool overflow = (ctx.vgpr_spill_slots - 1) * 4 > offset_range;
 
    Builder rsrc_bld(ctx.program);
+   unsigned bld_block = block.index;
    if (block.kind & block_kind_top_level) {
       rsrc_bld.reset(&instructions);
    } else if (ctx.scratch_rsrc == Temp() && (!overflow || ctx.program->gfx_level < GFX9)) {
       Block* tl_block = &block;
-      while (!(tl_block->kind & block_kind_top_level))
+      while (!(tl_block->kind & block_kind_top_level) &&
+             std::find_if(tl_block->instructions.begin(), tl_block->instructions.end(),
+                          [](auto& instr)
+                          { return !instr || instr->isCall(); }) == tl_block->instructions.end())
          tl_block = &ctx.program->blocks[tl_block->linear_idom];
 
       /* find p_logical_end */
-      std::vector<aco_ptr<Instruction>>& prev_instructions = tl_block->instructions;
-      unsigned idx = prev_instructions.size() - 1;
-      while (prev_instructions[idx]->opcode != aco_opcode::p_logical_end)
-         idx--;
-      rsrc_bld.reset(&prev_instructions, std::next(prev_instructions.begin(), idx));
+      if (tl_block->kind & block_kind_top_level) {
+         std::vector<aco_ptr<Instruction>>& prev_instructions = tl_block->instructions;
+         unsigned idx = prev_instructions.size() - 1;
+         while (prev_instructions[idx]->opcode != aco_opcode::p_logical_end)
+            idx--;
+         rsrc_bld.reset(&prev_instructions, std::next(prev_instructions.begin(), idx));
+         bld_block = tl_block->index;
+      } else {
+         rsrc_bld.reset(&instructions);
+      }
    }
 
    /* If spilling overflows the constant offset range at any point, we need to emit the soffset
@@ -1191,11 +1249,19 @@ setup_vgpr_spill_reload(spill_ctx& ctx, Block& block,
          }
 
          /* GFX9+ uses scratch_* instructions, which don't use a resource. */
-         ctx.scratch_rsrc = offset_bld.copy(offset_bld.def(s1), Operand::c32(saddr));
+         if (ctx.program->stack_ptr.id())
+            ctx.scratch_rsrc =
+               offset_bld.sop2(aco_opcode::s_add_u32, offset_bld.def(s1), Definition(scc, s1),
+                               Operand(ctx.program->stack_ptr), Operand::c32(saddr));
+         else
+            ctx.scratch_rsrc = offset_bld.copy(offset_bld.def(s1), Operand::c32(saddr));
+         ctx.scratch_rsrc_block = bld_block;
       }
    } else {
-      if (ctx.scratch_rsrc == Temp())
-         ctx.scratch_rsrc = load_scratch_resource(ctx, rsrc_bld, overflow);
+      if (ctx.scratch_rsrc == Temp()) {
+         ctx.scratch_rsrc = load_scratch_resource(ctx.program, rsrc_bld, overflow, true);
+         ctx.scratch_rsrc_block = bld_block;
+      }
 
       if (overflow) {
          uint32_t soffset =
@@ -1400,12 +1466,20 @@ assign_spill_slots_helper(spill_ctx& ctx, RegType type, std::vector<bool>& is_as
 void
 end_unused_spill_vgprs(spill_ctx& ctx, Block& block, std::vector<Temp>& vgpr_spill_temps,
                        const std::vector<uint32_t>& slots,
-                       const aco::unordered_map<Temp, uint32_t>& spills)
+                       const aco::unordered_map<Temp, uint32_t>& spills,
+                       unsigned abi_sgpr_spill_slots)
 {
    std::vector<bool> is_used(vgpr_spill_temps.size());
    for (std::pair<Temp, uint32_t> pair : spills) {
       if (pair.first.type() == RegType::sgpr && ctx.is_reloaded[pair.second])
          is_used[slots[pair.second] / ctx.wave_size] = true;
+   }
+   /* Only end spill VGPRs used for spilling ABI temps in the last block of the program. */
+   if (!block.linear_succs.empty()) {
+      unsigned num_abi_spill_temps = (abi_sgpr_spill_slots + ctx.wave_size - 1) / ctx.wave_size;
+      for (unsigned i = vgpr_spill_temps.size() - num_abi_spill_temps; i < vgpr_spill_temps.size();
+           ++i)
+         is_used[i] = true;
    }
 
    std::vector<Temp> temps;
@@ -1430,7 +1504,7 @@ end_unused_spill_vgprs(spill_ctx& ctx, Block& block, std::vector<Temp>& vgpr_spi
 }
 
 void
-assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
+assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr, unsigned abi_sgpr_spills)
 {
    std::vector<uint32_t> slots(ctx.interferences.size());
    std::vector<bool> is_assigned(ctx.interferences.size());
@@ -1472,17 +1546,59 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
    }
 
    /* hope, we didn't mess up */
-   std::vector<Temp> vgpr_spill_temps((ctx.sgpr_spill_slots + ctx.wave_size - 1) / ctx.wave_size);
+   unsigned num_sgpr_slots = ctx.sgpr_spill_slots + abi_sgpr_spills;
+   std::vector<Temp> vgpr_spill_temps((num_sgpr_slots + ctx.wave_size - 1) / ctx.wave_size);
    assert(vgpr_spill_temps.size() <= spills_to_vgpr);
+
+   if (abi_sgpr_spills > 0) {
+      unsigned first_abi_spill_temp_idx = ctx.sgpr_spill_slots / ctx.wave_size;
+      unsigned first_abi_spill_lane =
+         ctx.sgpr_spill_slots - (first_abi_spill_temp_idx * ctx.wave_size);
+
+      /* initialize linear vgprs for spilling preserved SGPRs */
+      auto insert_it = std::next(std::find_if(
+         ctx.program->blocks[0].instructions.begin(), ctx.program->blocks[0].instructions.end(),
+         [](const auto& instr) { return instr->opcode == aco_opcode::p_spill_preserved; }));
+      for (unsigned vgpr_idx = first_abi_spill_temp_idx; vgpr_idx < vgpr_spill_temps.size();
+           ++vgpr_idx) {
+         Temp linear_vgpr = ctx.program->allocateTmp(v1.as_linear());
+         vgpr_spill_temps[vgpr_idx] = linear_vgpr;
+         aco_ptr<Instruction> create{
+            create_instruction(aco_opcode::p_start_linear_vgpr, Format::PSEUDO, 0, 1)};
+         create->definitions[0] = Definition(linear_vgpr);
+         ctx.program->blocks[0].instructions.emplace(insert_it, std::move(create));
+      }
+      ctx.program->abi_sgpr_spill_temps.insert(
+         ctx.program->abi_sgpr_spill_temps.end(),
+         std::next(vgpr_spill_temps.begin(), first_abi_spill_temp_idx), vgpr_spill_temps.end());
+      ctx.program->first_abi_sgpr_spill_lane = first_abi_spill_lane;
+   }
 
    /* replace pseudo instructions with actual hardware instructions */
    unsigned last_top_level_block_idx = 0;
    for (Block& block : ctx.program->blocks) {
 
+      if (ctx.scratch_rsrc_block < ctx.program->blocks.size() &&
+          !(ctx.program->blocks[ctx.scratch_rsrc_block].kind & block_kind_top_level))
+         ctx.scratch_rsrc = Temp();
+
+      if (block.kind & block_kind_loop_header) {
+         for (unsigned index = block.index;
+              index < ctx.program->blocks.size() &&
+              ctx.program->blocks[index].loop_nest_depth >= block.loop_nest_depth;
+              ++index) {
+            if (ctx.program->blocks[index].contains_call) {
+               ctx.scratch_rsrc = Temp();
+               break;
+            }
+         }
+      }
+
       if (block.kind & block_kind_top_level) {
          last_top_level_block_idx = block.index;
 
-         end_unused_spill_vgprs(ctx, block, vgpr_spill_temps, slots, ctx.spills_entry[block.index]);
+         end_unused_spill_vgprs(ctx, block, vgpr_spill_temps, slots, ctx.spills_entry[block.index],
+                                abi_sgpr_spills);
 
          /* If the block has no predecessors (for example in RT resume shaders),
           * we cannot reuse the current scratch_rsrc temp because its definition is unreachable */
@@ -1495,6 +1611,9 @@ assign_spill_slots(spill_ctx& ctx, unsigned spills_to_vgpr)
       instructions.reserve(block.instructions.size());
       Builder bld(ctx.program, &instructions);
       for (it = block.instructions.begin(); it != block.instructions.end(); ++it) {
+
+         if ((*it)->isCall())
+            ctx.scratch_rsrc = Temp();
 
          if ((*it)->opcode == aco_opcode::p_spill) {
             uint32_t spill_id = (*it)->operands[1].constantValue();
@@ -1609,39 +1728,94 @@ spill(Program* program)
 
    program->progress = CompilationProgress::after_spilling;
 
+   const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
+   const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+   SparseRegisterSet clobberedSGPRs =
+      program->callee_abi.preservedRegisters(sgpr_limit, 0).invert(sgpr_limit, 0);
+   uint16_t abi_sgpr_limit = std::min((uint16_t)(clobberedSGPRs.size()), sgpr_limit);
+   if (!program->is_callee)
+      abi_sgpr_limit = sgpr_limit;
+
    /* no spilling when register pressure is low enough */
-   if (program->num_waves > 0)
+   if (program->has_call) {
+      bool call_needs_spill = false;
+      for (auto& block : program->blocks) {
+         if (!block.contains_call)
+            continue;
+         for (auto& instr : block.instructions) {
+            if (!instr->isCall())
+               continue;
+            call_needs_spill |=
+               instr->call().caller_preserved_demand.exceeds(instr->call().callee_preserved_limit);
+         }
+      }
+
+      if (!call_needs_spill)
+         return;
+   } else if (program->num_waves > 0 && program->max_reg_demand.sgpr <= abi_sgpr_limit) {
       return;
+   }
 
    /* lower to CSSA before spilling to ensure correctness w.r.t. phis */
    lower_to_cssa(program);
 
    /* calculate target register demand */
    const RegisterDemand demand = program->max_reg_demand; /* current max */
-   const uint16_t sgpr_limit = get_addr_sgpr_from_waves(program, program->min_waves);
-   const uint16_t vgpr_limit = get_addr_vgpr_from_waves(program, program->min_waves);
+   RegisterDemand target(vgpr_limit, sgpr_limit);
+   if (program->is_callee)
+      target = program->callee_abi.preservedRegisters(sgpr_limit, vgpr_limit)
+                  .invert(sgpr_limit, vgpr_limit)
+                  .demand();
+
    uint16_t extra_vgprs = 0;
    uint16_t extra_sgprs = 0;
 
    /* calculate extra VGPRs required for spilling SGPRs */
-   if (demand.sgpr > sgpr_limit) {
-      unsigned sgpr_spills = demand.sgpr - sgpr_limit;
-      extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
+   unsigned sgpr_call_spills = 0;
+   unsigned vgpr_call_spills = 0;
+   if (program->has_call) {
+      for (auto& block : program->blocks) {
+         if (!block.contains_call)
+            continue;
+         for (auto& instr : block.instructions) {
+            if (!instr->isCall())
+               continue;
+            RegisterDemand spills =
+               instr->call().caller_preserved_demand - instr->call().callee_preserved_limit;
+            if (spills.sgpr > 0)
+               sgpr_call_spills = std::max((unsigned)spills.sgpr, sgpr_call_spills);
+            if (spills.vgpr > 0)
+               vgpr_call_spills = std::max((unsigned)spills.vgpr, vgpr_call_spills);
+         }
+      }
    }
+
+   unsigned abi_sgpr_spills = 0;
+   if (demand.sgpr > abi_sgpr_limit && sgpr_limit > abi_sgpr_limit)
+      abi_sgpr_spills = std::min((uint16_t)demand.sgpr, sgpr_limit) - abi_sgpr_limit;
+
+   unsigned sgpr_spills = demand.sgpr - std::min((uint16_t)demand.sgpr, sgpr_limit);
+   sgpr_spills += sgpr_call_spills + abi_sgpr_spills;
+
+   if (sgpr_spills)
+      extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
    /* add extra SGPRs required for spilling VGPRs */
-   if (demand.vgpr + extra_vgprs > vgpr_limit) {
+   if (demand.vgpr + extra_vgprs > vgpr_limit || vgpr_call_spills) {
       if (program->gfx_level >= GFX9)
          extra_sgprs = 1; /* SADDR */
       else
          extra_sgprs = 5; /* scratch_resource (s4) + scratch_offset (s1) */
-      if (demand.sgpr + extra_sgprs > sgpr_limit) {
+      if (demand.sgpr + extra_sgprs > std::min(sgpr_limit, abi_sgpr_limit) || sgpr_call_spills) {
          /* re-calculate in case something has changed */
-         unsigned sgpr_spills = demand.sgpr + extra_sgprs - sgpr_limit;
+         sgpr_spills = sgpr_call_spills;
+         if (demand.sgpr + extra_sgprs > sgpr_limit)
+            sgpr_spills += demand.sgpr + extra_sgprs - sgpr_limit;
          extra_vgprs = DIV_ROUND_UP(sgpr_spills * 2, program->wave_size) + 1;
       }
    }
    /* the spiller has to target the following register demand */
-   const RegisterDemand target(vgpr_limit - extra_vgprs, sgpr_limit - extra_sgprs);
+   target.vgpr -= extra_vgprs;
+   target.sgpr -= extra_sgprs;
 
    /* initialize ctx */
    spill_ctx ctx(target, program);
@@ -1653,7 +1827,7 @@ spill(Program* program)
       spill_block(ctx, i);
 
    /* assign spill slots and DCE rematerialized code */
-   assign_spill_slots(ctx, extra_vgprs);
+   assign_spill_slots(ctx, extra_vgprs, abi_sgpr_spills);
 
    /* update live variable information */
    live_var_analysis(program);

@@ -89,7 +89,7 @@ fn jump_thread(func: &mut Function) -> bool {
     progress
 }
 
-fn rewrite_cfg(func: &mut Function) {
+pub fn rewrite_cfg(func: &mut Function) {
     // CFGBuilder takes care of removing dead blocks for us
     // We use the basic block's label to identify it
     let mut builder = CFGBuilder::new();

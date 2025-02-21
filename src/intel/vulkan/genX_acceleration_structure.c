@@ -42,8 +42,11 @@ begin_debug_marker(VkCommandBuffer commandBuffer,
    cmd_buffer->state.rt.debug_markers[cmd_buffer->state.rt.debug_marker_count++] =
       step;
    switch (step) {
-   case VK_ACCELERATION_STRUCTURE_BUILD_STEP_TOP:
-      trace_intel_begin_as_build(&cmd_buffer->trace);
+   case VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR:
+      trace_intel_begin_as_build_bottom_level(&cmd_buffer->trace);
+      break;
+   case VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR:
+      trace_intel_begin_as_build_top_level(&cmd_buffer->trace);
       break;
    case VK_ACCELERATION_STRUCTURE_BUILD_STEP_BUILD_LEAVES:
       trace_intel_begin_as_build_leaves(&cmd_buffer->trace);
@@ -75,8 +78,11 @@ end_debug_marker(VkCommandBuffer commandBuffer)
 
    cmd_buffer->state.rt.debug_marker_count--;
    switch (cmd_buffer->state.rt.debug_markers[cmd_buffer->state.rt.debug_marker_count]) {
-   case VK_ACCELERATION_STRUCTURE_BUILD_STEP_TOP:
-      trace_intel_end_as_build(&cmd_buffer->trace);
+   case VK_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL_KHR:
+      trace_intel_end_as_build_bottom_level(&cmd_buffer->trace);
+      break;
+   case VK_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL_KHR:
+      trace_intel_end_as_build_top_level(&cmd_buffer->trace);
       break;
    case VK_ACCELERATION_STRUCTURE_BUILD_STEP_BUILD_LEAVES:
       trace_intel_end_as_build_leaves(&cmd_buffer->trace);
@@ -683,6 +689,7 @@ genX(CmdBuildAccelerationStructuresKHR)(
                              ANV_CMD_SAVED_STATE_COMPUTE_PIPELINE |
                              ANV_CMD_SAVED_STATE_DESCRIPTOR_SET_ALL |
                              ANV_CMD_SAVED_STATE_PUSH_CONSTANTS, &saved);
+
 
    vk_cmd_build_acceleration_structures(commandBuffer, &device->vk,
                                         &device->meta_device, infoCount,

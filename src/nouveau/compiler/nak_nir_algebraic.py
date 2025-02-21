@@ -40,6 +40,10 @@ algebraic_lowering = [
     (('umax', 'a', 'b'), ('bcsel', ('ult', a, b), b, a), volta),
     (('iadd', 'a@64', ('ineg', 'b@64')), ('isub', a, b)),
 
+    # This is wrong but we're doing for it anyway
+    (('iadd(is_only_used_by_ldg_nv)', a, ('u2u64', ('iadd', 'b@32', '#c'))),
+     ('iadd', ('iadd', a, ('u2u64', b)), ('u2u64', c))),
+
     (('iadd(is_used_by_non_ldc_nv)', 'a@32', ('ishl', 'b@32', '#s@32')),
         ('lea_nv', a, b, s), 'nak->sm >= 70'),
     (('iadd', 'a@64', ('ishl', 'b@64', '#s@32')),

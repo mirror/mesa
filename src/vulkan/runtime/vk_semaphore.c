@@ -587,6 +587,13 @@ vk_common_ImportSemaphoreFdKHR(VkDevice _device,
       break;
 
    case VK_EXTERNAL_SEMAPHORE_HANDLE_TYPE_SYNC_FD_BIT:
+      /** XXX: Spec quote goes here */
+      if (unlikely(!(pImportSemaphoreFdInfo->flags &
+                     VK_SEMAPHORE_IMPORT_TEMPORARY_BIT))) {
+         return vk_errorf(device, VK_ERROR_INVALID_EXTERNAL_HANDLE,
+                          "Cannot do a permanent import from SYNC_FD");
+      }
+
       result = vk_sync_import_sync_file(device, sync, fd);
       break;
 

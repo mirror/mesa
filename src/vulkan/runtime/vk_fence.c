@@ -379,6 +379,13 @@ vk_common_ImportFenceFdKHR(VkDevice _device,
    VkResult result;
    switch (pImportFenceFdInfo->handleType) {
    case VK_EXTERNAL_FENCE_HANDLE_TYPE_OPAQUE_FD_BIT:
+      /** XXX: Spec quote goes here */
+      if (unlikely(!(pImportFenceFdInfo->flags &
+                     VK_FENCE_IMPORT_TEMPORARY_BIT))) {
+         return vk_errorf(device, VK_ERROR_INVALID_EXTERNAL_HANDLE,
+                          "Cannot do a permanent import from SYNC_FD");
+      }
+
       result = vk_sync_import_opaque_fd(device, sync, fd);
       break;
 

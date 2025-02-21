@@ -1567,7 +1567,8 @@ VkResult anv_AllocateMemory(
       alloc_flags |= ANV_BO_ALLOC_COMPRESSED;
 
    if (mem_type->dynamic_visible)
-      alloc_flags |= ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL;
+      alloc_flags |= (ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL |
+                      ANV_BO_ALLOC_CAPTURE);
 
    if (mem->vk.ahardware_buffer) {
       result = anv_import_ahw_memory(_device, mem);

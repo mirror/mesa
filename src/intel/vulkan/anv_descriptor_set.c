@@ -1318,7 +1318,7 @@ anv_descriptor_pool_heap_init(struct anv_device *device,
                                             ANV_BO_ALLOC_MAPPED |
                                             ANV_BO_ALLOC_HOST_CACHED_COHERENT |
                                             (samplers ?
-                                             ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL :
+                                             ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL_FLAGS :
                                              ANV_BO_ALLOC_DESCRIPTOR_POOL),
                                             0 /* explicit_address */,
                                             &heap->bo);

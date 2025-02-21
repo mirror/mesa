@@ -750,6 +750,13 @@ impl Dst {
         }
     }
 
+    pub fn prev_ssa_mut(&mut self) -> Option<&mut SSARef> {
+        match self {
+            Dst::SSA(SSADst { prev, .. }) => prev.as_mut(),
+            _ => None,
+        }
+    }
+
     pub fn iter_ssa_uses(&self) -> slice::Iter<'_, SSAValue> {
         match self {
             Dst::None | Dst::Reg(_) => &[],

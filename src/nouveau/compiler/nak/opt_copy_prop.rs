@@ -667,6 +667,16 @@ impl CopyPropPass {
                     };
                     self.prop_to_src(src_type, &cbuf_rule, src);
                 }
+
+                for dst in instr.dsts_mut() {
+                    if let Some(ssa) = dst.prev_ssa_mut() {
+                        loop {
+                            if !self.prop_to_ssa_ref(ssa) {
+                                break;
+                            }
+                        }
+                    }
+                }
             }
         }
     }

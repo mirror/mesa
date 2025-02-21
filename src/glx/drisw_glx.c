@@ -43,6 +43,8 @@
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"
 #include "dri_util.h"
+#include "mapi/glapi/glapi.h"
+#include "mesa/main/dispatch.h"
 
 static int xshm_error = 0;
 static int xshm_opcode = -1;
@@ -541,7 +543,7 @@ driswSwapBuffers(__GLXDRIdrawable * pdraw,
    (void) remainder;
 
    if (flush) {
-      glFlush();
+      CALL_Flush(GET_DISPATCH(), ());
    }
 
    if (psc->kopper)
@@ -557,7 +559,7 @@ drisw_copy_sub_buffer(__GLXDRIdrawable * pdraw,
                       int x, int y, int width, int height, Bool flush)
 {
    if (flush) {
-      glFlush();
+      CALL_Flush(GET_DISPATCH(), ());
    }
 
    driswCopySubBuffer(pdraw->dri_drawable, x, y, width, height);

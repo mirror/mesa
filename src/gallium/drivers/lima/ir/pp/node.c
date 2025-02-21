@@ -381,7 +381,7 @@ void *ppir_node_create(ppir_block *block, ppir_op op, int index, unsigned mask)
             comp->var_nodes[(index << 2) + u_bit_scan(&mask)] = node;
          snprintf(node->name, sizeof(node->name), "reg%d", index);
       } else {
-         comp->var_nodes[index] = node;
+         comp->var_nodes[index << 2] = node;
          snprintf(node->name, sizeof(node->name), "ssa%d", index);
       }
    }
@@ -612,7 +612,8 @@ static void ppir_node_print_src(ppir_src *src)
    {
       printf(".");
       for (int i = 0; i < 4; i++) {
-         printf("%c", "xyzw"[src->swizzle[i]]);
+         if (src->mask & (1 << i))
+            printf("%c", "xyzw"[src->swizzle[i]]);
       }
    }
    if (src->absolute)

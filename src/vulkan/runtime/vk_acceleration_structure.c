@@ -1024,13 +1024,6 @@ vk_cmd_build_acceleration_structures(VkCommandBuffer commandBuffer,
 
    struct bvh_state *bvh_states = calloc(infoCount, sizeof(struct bvh_state));
 
-   if (args->emit_markers) {
-      device->as_build_ops->begin_debug_marker(commandBuffer,
-                                               VK_ACCELERATION_STRUCTURE_BUILD_STEP_TOP,
-                                               "vkCmdBuildAccelerationStructuresKHR(%u)",
-                                               infoCount);
-   }
-
    for (uint32_t i = 0; i < infoCount; ++i) {
       uint32_t leaf_node_count = 0;
       for (uint32_t j = 0; j < pInfos[i].geometryCount; ++j) {
@@ -1234,9 +1227,6 @@ vk_cmd_build_acceleration_structures(VkCommandBuffer commandBuffer,
          }
       } while (progress);
    }
-
-   if (args->emit_markers)
-      device->as_build_ops->end_debug_marker(commandBuffer);
 
    if (args->emit_markers)
       device->as_build_ops->end_debug_marker(commandBuffer);

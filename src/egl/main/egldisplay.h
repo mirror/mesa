@@ -150,10 +150,8 @@ struct _egl_extensions {
    EGLBoolean MESA_query_driver;
    EGLBoolean MESA_x11_native_visual_id;
 
-   EGLBoolean NOK_swap_region;
    EGLBoolean NOK_texture_from_pixmap;
 
-   EGLBoolean NV_post_sub_buffer;
    EGLBoolean NV_context_priority_realtime;
 
    EGLBoolean WL_bind_wayland_display;

@@ -672,9 +672,55 @@ impl fmt::Display for RegRef {
 }
 
 #[derive(Clone, Copy)]
+pub struct SSADst {
+    // The previous value.  If the predicate for this instruction is false, the
+    // semantics are that this value will be copied to dst.  In practice, RA
+    // will try to assign both the same location so no copy is necessary.
+    pub prev: Option<SSARef>,
+
+    // The destination value
+    pub def: SSARef,
+}
+
+impl SSADst {
+    pub fn as_ssa(&self) -> Option<&SSARef> {
+        match &self.prev {
+            None => Some(&self.def),
+            Some(_) => None,
+        }
+    }
+
+    pub fn as_mut_ssa(&mut self) -> Option<&mut SSARef> {
+        match &self.prev {
+            None => Some(&mut self.def),
+            Some(_) => None,
+        }
+    }
+}
+
+impl fmt::Display for SSADst {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.def)?;
+        if let Some(prev) = &self.prev {
+            write!(f, "?{}", prev)?;
+        }
+        Ok(())
+    }
+}
+
+impl<T: Into<SSARef>> From<T> for SSADst {
+    fn from(ssa: T) -> SSADst {
+        SSADst {
+            prev: None,
+            def: ssa.into(),
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 pub enum Dst {
     None,
-    SSA(SSARef),
+    SSA(SSADst),
     Reg(RegRef),
 }
 
@@ -692,23 +738,45 @@ impl Dst {
 
     pub fn as_ssa(&self) -> Option<&SSARef> {
         match self {
-            Dst::SSA(r) => Some(r),
+            Dst::SSA(r) => r.as_ssa(),
             _ => None,
         }
     }
 
-    pub fn iter_ssa(&self) -> slice::Iter<'_, SSAValue> {
+    pub fn iter_ssa_uses(&self) -> slice::Iter<'_, SSAValue> {
         match self {
             Dst::None | Dst::Reg(_) => &[],
-            Dst::SSA(ssa) => ssa.deref(),
+            Dst::SSA(SSADst { prev, .. }) => match prev {
+                None => &[],
+                Some(ssa) => ssa.deref(),
+            },
         }
         .iter()
     }
 
-    pub fn iter_ssa_mut(&mut self) -> slice::IterMut<'_, SSAValue> {
+    pub fn iter_ssa_uses_mut(&mut self) -> slice::IterMut<'_, SSAValue> {
         match self {
             Dst::None | Dst::Reg(_) => &mut [],
-            Dst::SSA(ssa) => ssa.deref_mut(),
+            Dst::SSA(SSADst { prev, .. }) => match prev {
+                None => &mut [],
+                Some(ssa) => ssa.deref_mut(),
+            },
+        }
+        .iter_mut()
+    }
+
+    pub fn iter_ssa_defs(&self) -> slice::Iter<'_, SSAValue> {
+        match self {
+            Dst::None | Dst::Reg(_) => &[],
+            Dst::SSA(SSADst { def, .. }) => def.deref(),
+        }
+        .iter()
+    }
+
+    pub fn iter_ssa_defs_mut(&mut self) -> slice::IterMut<'_, SSAValue> {
+        match self {
+            Dst::None | Dst::Reg(_) => &mut [],
+            Dst::SSA(SSADst { def, .. }) => def.deref_mut(),
         }
         .iter_mut()
     }
@@ -720,7 +788,7 @@ impl From<RegRef> for Dst {
     }
 }
 
-impl<T: Into<SSARef>> From<T> for Dst {
+impl<T: Into<SSADst>> From<T> for Dst {
     fn from(ssa: T) -> Dst {
         Dst::SSA(ssa.into())
     }
@@ -1452,7 +1520,7 @@ fn all_dsts_uniform(dsts: &[Dst]) -> bool {
         let dst_uniform = match dst {
             Dst::None => continue,
             Dst::Reg(r) => r.is_uniform(),
-            Dst::SSA(r) => r.file().unwrap().is_uniform(),
+            Dst::SSA(r) => r.def.file().unwrap().is_uniform(),
         };
         assert!(uniform == None || uniform == Some(dst_uniform));
         uniform = Some(dst_uniform);
@@ -6749,6 +6817,11 @@ impl Instr {
         for ssa in self.pred.iter_ssa() {
             f(ssa);
         }
+        for dst in self.dsts() {
+            for ssa in dst.iter_ssa_uses() {
+                f(ssa);
+            }
+        }
         for src in self.srcs() {
             for ssa in src.iter_ssa() {
                 f(ssa);
@@ -6760,6 +6833,11 @@ impl Instr {
         for ssa in self.pred.iter_ssa_mut() {
             f(ssa);
         }
+        for dst in self.dsts_mut() {
+            for ssa in dst.iter_ssa_uses_mut() {
+                f(ssa);
+            }
+        }
         for src in self.srcs_mut() {
             for ssa in src.iter_ssa_mut() {
                 f(ssa);
@@ -6769,7 +6847,7 @@ impl Instr {
 
     pub fn for_each_ssa_def(&self, mut f: impl FnMut(&SSAValue)) {
         for dst in self.dsts() {
-            for ssa in dst.iter_ssa() {
+            for ssa in dst.iter_ssa_defs() {
                 f(ssa);
             }
         }
@@ -6777,7 +6855,7 @@ impl Instr {
 
     pub fn for_each_ssa_def_mut(&mut self, mut f: impl FnMut(&mut SSAValue)) {
         for dst in self.dsts_mut() {
-            for ssa in dst.iter_ssa_mut() {
+            for ssa in dst.iter_ssa_defs_mut() {
                 f(ssa);
             }
         }

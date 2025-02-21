@@ -42,7 +42,7 @@ impl DeadCodePass {
     fn is_dst_live(&self, dst: &Dst) -> bool {
         match dst {
             Dst::SSA(ssa) => {
-                for val in ssa.iter() {
+                for val in ssa.def.iter() {
                     if self.live_ssa.get(val).is_some() {
                         return true;
                     }

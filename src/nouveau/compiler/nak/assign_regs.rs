@@ -745,6 +745,7 @@ fn instr_alloc_scalar_dsts_file(
 ) {
     for dst in instr.dsts_mut() {
         if let Dst::SSA(ssa) = dst {
+            let ssa = ssa.as_mut_ssa().expect("Predication unimplemented");
             if ssa.file().unwrap() == ra.file() {
                 assert!(ssa.comps() == 1);
                 let reg = ra.alloc_scalar(ip, sum, phi_webs, ssa[0]);
@@ -774,6 +775,7 @@ fn instr_assign_regs_file(
     let mut vec_dst_comps = 0;
     for (i, dst) in instr.dsts().iter().enumerate() {
         if let Dst::SSA(ssa) = dst {
+            let ssa = ssa.as_ssa().expect("Predication unimplemented");
             if ssa.file().unwrap() == ra.file() && ssa.comps() > 1 {
                 vec_dsts.push(VecDst {
                     dst_idx: i,
@@ -893,6 +895,7 @@ fn instr_assign_regs_file(
         // Scalar destinations can fill in holes.
         for dst in instr.dsts_mut() {
             if let Dst::SSA(ssa) = dst {
+                let ssa = ssa.as_mut_ssa().expect("Predication unimplemented");
                 if ssa.file().unwrap() == vra.file() && ssa.comps() > 1 {
                     *dst = vra.alloc_vector(*ssa).into();
                 }
@@ -1009,6 +1012,7 @@ impl AssignRegsBlock {
         match &mut instr.op {
             Op::Undef(undef) => {
                 if let Dst::SSA(ssa) = undef.dst {
+                    let ssa = ssa.as_ssa().expect("Undef can't be predicated");
                     assert!(ssa.comps() == 1);
                     self.alloc_scalar(ip, sum, phi_webs, ssa[0]);
                 }
@@ -1035,6 +1039,8 @@ impl AssignRegsBlock {
 
                 for (id, dst) in phi.dsts.iter() {
                     if let Dst::SSA(ssa) = dst {
+                        let ssa =
+                            ssa.as_ssa().expect("Phis can't be predicated");
                         assert!(ssa.comps() == 1);
                         let reg = self.alloc_scalar(ip, sum, phi_webs, ssa[0]);
                         self.live_in.push(LiveValue {
@@ -1060,6 +1066,8 @@ impl AssignRegsBlock {
                 self.ra.free_killed(srcs_killed);
 
                 if let Dst::SSA(ssa) = &op.bar_out {
+                    let ssa =
+                        ssa.as_ssa().expect("Barrier ops can't be predicated");
                     let reg = *op.bar_in.src_ref.as_reg().unwrap();
                     self.ra.assign_reg(ssa[0], reg);
                     op.bar_out = reg.into();
@@ -1081,6 +1089,8 @@ impl AssignRegsBlock {
                 self.ra.free_killed(srcs_killed);
 
                 if let Dst::SSA(ssa) = &op.bar_out {
+                    let ssa =
+                        ssa.as_ssa().expect("Barrier ops can't be predicated");
                     let reg = *op.bar_in.src_ref.as_reg().unwrap();
                     self.ra.assign_reg(ssa[0], reg);
                     op.bar_out = reg.into();
@@ -1106,6 +1116,9 @@ impl AssignRegsBlock {
 
                 let mut del_copy = false;
                 if let Dst::SSA(dst_vec) = &mut copy.dst {
+                    let dst_vec = dst_vec
+                        .as_mut_ssa()
+                        .expect("Predication unimplemented");
                     debug_assert!(dst_vec.comps() == 1);
                     let dst_ssa = &dst_vec[0];
 
@@ -1197,6 +1210,9 @@ impl AssignRegsBlock {
                 pcopy.dsts_srcs.retain(|dst, src| match dst {
                     Dst::None => false,
                     Dst::SSA(dst_vec) => {
+                        let dst_vec = dst_vec
+                            .as_ssa()
+                            .expect("Parallel copies can't be predicated");
                         debug_assert!(dst_vec.comps() == 1);
                         !self.try_coalesce(dst_vec[0], src)
                     }
@@ -1205,6 +1221,9 @@ impl AssignRegsBlock {
 
                 for (dst, _) in pcopy.dsts_srcs.iter_mut() {
                     if let Dst::SSA(dst_vec) = dst {
+                        let dst_vec = dst_vec
+                            .as_mut_ssa()
+                            .expect("Parallel copies can't be predicated");
                         debug_assert!(dst_vec.comps() == 1);
                         *dst = self
                             .alloc_scalar(ip, sum, phi_webs, dst_vec[0])
@@ -1313,8 +1332,17 @@ impl AssignRegsBlock {
 
             dsts_killed.clear();
             for dst in instr.dsts() {
-                if let Dst::SSA(vec) = dst {
-                    for ssa in vec.iter() {
+                if let Dst::SSA(ssa) = dst {
+                    if let Some(prev) = &ssa.prev {
+                        for ssa in prev.iter() {
+                            // Predicated instructions must kill the previous
+                            // value in the destination.  Otherwise, we can't
+                            // actually predicate.
+                            assert!(!bl.is_live_after_ip(ssa, ip));
+                            srcs_killed.insert(*ssa);
+                        }
+                    }
+                    for ssa in ssa.def.iter() {
                         if !bl.is_live_after_ip(ssa, ip) {
                             dsts_killed.insert(*ssa);
                         }

@@ -1912,7 +1912,7 @@ impl<'a> ShaderFromNir<'a> {
                 let Dst::SSA(fault) = fault else {
                     panic!("No fault value for sparse op");
                 };
-                nir_dst.push(b.sel(fault.into(), 0.into(), 1.into())[0]);
+                nir_dst.push(b.sel(fault.def.into(), 0.into(), 1.into())[0]);
             } else if mask & (1 << i) == 0 {
                 nir_dst.push(b.copy(0.into())[0]);
             } else {

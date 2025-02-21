@@ -426,7 +426,7 @@ impl Shader<'_> {
                 for (ip, mut instr) in b.instrs.drain(..).enumerate() {
                     if let Op::Pin(pin) = &instr.op {
                         if let Dst::SSA(ssa) = &pin.dst {
-                            pinned.insert(*ssa);
+                            pinned.insert(ssa.def);
                         }
                     }
 

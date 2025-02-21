@@ -33,6 +33,7 @@ impl PhiMap {
     fn add_phi_dsts(&mut self, op: &OpPhiDsts) {
         for (idx, dst) in op.dsts.iter() {
             if let Dst::SSA(ssa) = dst {
+                let ssa = ssa.as_ssa().expect("Phis can't be predicated");
                 assert!(ssa.comps() == 1);
                 self.ssa_phi.insert(ssa[0], *idx);
             }

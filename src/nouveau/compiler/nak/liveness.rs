@@ -63,6 +63,7 @@ impl LiveSet {
         // still may contribute to pressure temporarily.
         for dst in instr.dsts() {
             if let Dst::SSA(vec) = dst {
+                let vec = vec.as_ssa().expect("Predication unimplemented");
                 if vec.comps() > 1 {
                     for ssa in vec.iter() {
                         self.insert(*ssa);
@@ -82,6 +83,7 @@ impl LiveSet {
         // Scalar destinations are allocated last
         for dst in instr.dsts() {
             if let Dst::SSA(vec) = dst {
+                let vec = vec.as_ssa().expect("Predication unimplemented");
                 if vec.comps() == 1 {
                     self.insert(vec[0]);
                 }
@@ -139,6 +141,7 @@ pub trait BlockLiveness {
         // Vector destinations go live before sources are killed.
         for dst in instr.dsts() {
             if let Dst::SSA(vec) = dst {
+                let vec = vec.as_ssa().expect("Predication unimplemented");
                 if vec.comps() > 1 {
                     for ssa in vec.iter() {
                         live[ssa.file()] += 1;
@@ -164,6 +167,7 @@ pub trait BlockLiveness {
         // Scalar destinations are allocated last
         for dst in instr.dsts() {
             if let Dst::SSA(vec) = dst {
+                let vec = vec.as_ssa().expect("Predication unimplemented");
                 if vec.comps() == 1 {
                     live[vec[0].file()] += 1;
                 }

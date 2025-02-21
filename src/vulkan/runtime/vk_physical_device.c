@@ -27,6 +27,25 @@
 #include "vk_device.h"
 #include "vk_util.h"
 
+const struct vk_device_extension_table common_device_extensions = {
+   /* Ignoring VkImageFormatListCreateInfo is a valid implementation */
+   .KHR_image_format_list                 = true,
+
+   /* Handled by spirv_to_nir */
+   .KHR_shader_non_semantic_info          = true,
+
+   /* Handled by spirv_to_nir */
+   .KHR_storage_buffer_storage_class      = true,
+
+   /* Handled by vk_object_base */
+   .EXT_private_data                      = true,
+
+   /* Handled by spirv_to_nir */
+   .GOOGLE_decorate_string                = true,
+   .GOOGLE_hlsl_functionality1            = true,
+   .GOOGLE_user_type                      = true,
+};
+
 VkResult
 vk_physical_device_init(struct vk_physical_device *pdevice,
                         struct vk_instance *instance,
@@ -90,7 +109,8 @@ vk_common_EnumerateDeviceExtensionProperties(VkPhysicalDevice physicalDevice,
    VK_OUTARRAY_MAKE_TYPED(VkExtensionProperties, out, pProperties, pPropertyCount);
 
    for (int i = 0; i < VK_DEVICE_EXTENSION_COUNT; i++) {
-      if (!pdevice->supported_extensions.extensions[i])
+      if (!common_device_extensions.extensions[i] &&
+          !pdevice->supported_extensions.extensions[i])
          continue;
 
 #ifdef ANDROID_STRICT

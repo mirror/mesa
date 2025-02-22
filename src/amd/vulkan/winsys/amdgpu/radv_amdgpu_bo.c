@@ -519,8 +519,19 @@ radv_amdgpu_winsys_bo_create(struct radeon_winsys *_ws, uint64_t size, unsigned 
    }
 
    r = ac_drm_bo_alloc(ws->dev, &request, &buf_handle);
+   if (r && (request.preferred_heap & AMDGPU_GEM_DOMAIN_GTT) &&
+       !(initial_domain & RADEON_DOMAIN_GTT)) {
+      /* In case where GTT memory is very small (e.g. less than 2G on some AMD BC-250
+       * memory splits) allocation with both VRAM and GTT preferred heaps might
+       * spuriosly fail due to low GTT, even though there's plenty of VRAM. In such
+       * case, retry without GTT if GTT wasn't the one initially requested.
+       */
+      request.preferred_heap &= ~AMDGPU_GEM_DOMAIN_GTT;
+      r = ac_drm_bo_alloc(ws->dev, &request, &buf_handle);
+   }
    if (r) {
       fprintf(stderr, "radv/amdgpu: Failed to allocate a buffer:\n");
+      fprintf(stderr, "radv/amdgpu:    error     : %d\n", r);
       fprintf(stderr, "radv/amdgpu:    size      : %" PRIu64 " bytes\n", size);
       fprintf(stderr, "radv/amdgpu:    alignment : %u bytes\n", alignment);
       fprintf(stderr, "radv/amdgpu:    domains   : %u\n", initial_domain);

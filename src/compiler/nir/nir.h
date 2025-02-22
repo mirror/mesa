@@ -4622,6 +4622,10 @@ should_print_nir(UNUSED nir_shader *shader)
    }                                                                                        \
 })
 
+/**
+ * Deprecated. Please do not use in newly written code.
+ * See https://gitlab.freedesktop.org/mesa/mesa/-/issues/10409
+ */
 #define NIR_PASS_V(nir, pass, ...) _PASS(pass, nir, {        \
    if (should_print_nir(nir))                                \
       printf("%s\n", #pass);                                 \
@@ -4814,8 +4818,8 @@ bool nir_lower_var_copies(nir_shader *shader);
 bool nir_opt_memcpy(nir_shader *shader);
 bool nir_lower_memcpy(nir_shader *shader);
 
-void nir_fixup_deref_modes(nir_shader *shader);
-void nir_fixup_deref_types(nir_shader *shader);
+bool nir_fixup_deref_modes(nir_shader *shader);
+bool nir_fixup_deref_types(nir_shader *shader);
 
 bool nir_lower_global_vars_to_local(nir_shader *shader);
 void nir_lower_constant_to_temp(nir_shader *shader);
@@ -6226,7 +6230,7 @@ bool nir_mod_analysis(nir_scalar val, nir_alu_type val_type, unsigned div, unsig
 bool
 nir_remove_tex_shadow(nir_shader *shader, unsigned textures_bitmask);
 
-void
+bool
 nir_trivialize_registers(nir_shader *s);
 
 unsigned

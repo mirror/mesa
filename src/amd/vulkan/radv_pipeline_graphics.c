@@ -1065,7 +1065,7 @@ radv_remove_point_size(const struct radv_graphics_state_key *gfx_state, nir_shad
    var->data.mode = nir_var_shader_temp;
 
    producer->info.outputs_written &= ~VARYING_BIT_PSIZ;
-   NIR_PASS_V(producer, nir_fixup_deref_modes);
+   NIR_PASS(_, producer, nir_fixup_deref_modes);
    NIR_PASS(_, producer, nir_remove_dead_variables, nir_var_shader_temp, NULL);
    NIR_PASS(_, producer, nir_opt_dce);
 }
@@ -1108,7 +1108,7 @@ radv_remove_color_exports(const struct radv_graphics_state_key *gfx_state, nir_s
    }
 
    if (fixup_derefs) {
-      NIR_PASS_V(nir, nir_fixup_deref_modes);
+      NIR_PASS(_, nir, nir_fixup_deref_modes);
       NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_temp, NULL);
       NIR_PASS(_, nir, nir_opt_dce);
    }
@@ -1411,7 +1411,7 @@ radv_remove_varyings(nir_shader *nir)
    }
 
    if (fixup_derefs) {
-      NIR_PASS_V(nir, nir_fixup_deref_modes);
+      NIR_PASS(_, nir, nir_fixup_deref_modes);
       NIR_PASS(_, nir, nir_remove_dead_variables, nir_var_shader_temp, NULL);
       NIR_PASS(_, nir, nir_opt_dce);
    }
@@ -2281,9 +2281,9 @@ radv_create_gs_copy_shader(struct radv_device *device, struct vk_pipeline_cache 
    gs_copy_stage.info.user_sgprs_locs = gs_copy_stage.args.user_sgprs_locs;
    gs_copy_stage.info.inline_push_constant_mask = gs_copy_stage.args.ac.inline_push_const_mask;
 
-   NIR_PASS_V(nir, ac_nir_lower_intrinsics_to_args, pdev->info.gfx_level, pdev->info.has_ls_vgpr_init_bug,
+   NIR_PASS(_, nir, ac_nir_lower_intrinsics_to_args, pdev->info.gfx_level, pdev->info.has_ls_vgpr_init_bug,
               AC_HW_VERTEX_SHADER, 64, 64, &gs_copy_stage.args.ac);
-   NIR_PASS_V(nir, radv_nir_lower_abi, pdev->info.gfx_level, &gs_copy_stage, gfx_state, pdev->info.address32_hi);
+   NIR_PASS(_, nir, radv_nir_lower_abi, pdev->info.gfx_level, &gs_copy_stage, gfx_state, pdev->info.address32_hi);
 
    struct radv_graphics_pipeline_key key = {0};
    bool dump_shader = radv_can_dump_shader(device, nir);

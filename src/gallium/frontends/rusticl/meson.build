@@ -60,8 +60,30 @@ rusticl_files = files(
 )
 
 rusticl_args = [
-  # we want unsafe blocks inside unsafe functions
+  # rust 2024 edition lints
+  '-Dmissing_fragment_specifier',
+  '-Dstatic_mut_refs',
   '-Dunsafe_op_in_unsafe_fn',
+
+  # 1.79:
+  # '-Dkeyword_idents_2024',
+  # 1.80:
+  # '-Dboxed_slice_into_iter',
+  # '-Dimpl_trait_overcaptures',
+  # '-Dmissing_unsafe_on_extern',
+  # '-Dnever_type_fallback_flowing_into_unsafe',
+  # '-Drust_2024_incompatible_pat',
+  # 1.81:
+  # '-Dedition_2024_expr_fragment_specifier',
+  # '-Dunsafe_attr_outside_unsafe',
+  # 1.82:
+  # '-Ddeprecated_safe_2024',
+  # '-Drust_2024_prelude_collisions',
+  # '-Dtail_expr_drop_order',
+  # 1.83:
+  # '-Dif_let_rescope',
+  # '-Drust_2024_guarded_string_incompatible_syntax',
+
   # we error on all clippy warnings unless they are disabled
   '-Dclippy::all',
   # we want to add asserts in control flow

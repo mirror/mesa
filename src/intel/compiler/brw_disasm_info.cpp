@@ -30,7 +30,7 @@
 
 void
 dump_assembly(void *assembly, int start_offset, int end_offset,
-              struct disasm_info *disasm, const unsigned *block_latency)
+              struct disasm_info *disasm, const unsigned *block_latency, FILE *f)
 {
    const struct brw_isa_info *isa = disasm->isa;
    const char *last_annotation_string = NULL;
@@ -51,42 +51,42 @@ dump_assembly(void *assembly, int start_offset, int end_offset,
       int end_offset = next->offset;
 
       if (group->block_start) {
-         fprintf(stderr, "   START B%d", group->block_start->num);
+         fprintf(f, "   START B%d", group->block_start->num);
          foreach_list_typed(struct bblock_link, predecessor_link, link,
                             &group->block_start->parents) {
             struct bblock_t *predecessor_block = predecessor_link->block;
-            fprintf(stderr, " <-B%d", predecessor_block->num);
+            fprintf(f, " <-B%d", predecessor_block->num);
          }
          if (block_latency)
-            fprintf(stderr, " (%u cycles)",
+            fprintf(f, " (%u cycles)",
                     block_latency[group->block_start->num]);
-         fprintf(stderr, "\n");
+         fprintf(f, "\n");
       }
 
       if (last_annotation_string != group->annotation) {
          last_annotation_string = group->annotation;
          if (last_annotation_string)
-            fprintf(stderr, "   %s\n", last_annotation_string);
+            fprintf(f, "   %s\n", last_annotation_string);
       }
 
       brw_disassemble(isa, assembly, start_offset, end_offset,
-                      root_label, stderr);
+                      root_label, f);
 
       if (group->error) {
-         fputs(group->error, stderr);
+         fputs(group->error, f);
       }
 
       if (group->block_end) {
-         fprintf(stderr, "   END B%d", group->block_end->num);
+         fprintf(f, "   END B%d", group->block_end->num);
          foreach_list_typed(struct bblock_link, successor_link, link,
                             &group->block_end->children) {
             struct bblock_t *successor_block = successor_link->block;
-            fprintf(stderr, " ->B%d", successor_block->num);
+            fprintf(f, " ->B%d", successor_block->num);
          }
-         fprintf(stderr, "\n");
+         fprintf(f, "\n");
       }
    }
-   fprintf(stderr, "\n");
+   fprintf(f, "\n");
 
    ralloc_free(mem_ctx);
 }

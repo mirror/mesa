@@ -225,6 +225,7 @@ anv_deps = [
   idep_vulkan_wsi_headers,
   idep_intel_shaders,
   idep_intel_blorp,
+  idep_mda,
 ]
 
 if with_platform_x11

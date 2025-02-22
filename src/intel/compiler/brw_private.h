@@ -37,6 +37,24 @@ void brw_alloc_reg_sets(struct brw_compiler *compiler);
 extern const char *const conditional_modifier[16];
 extern const char *const pred_ctrl_align16[16];
 
+#ifndef NDEBUG
+void brw_debug_archive_nir_with_prefix(debug_archiver *archiver, nir_shader *nir,
+                                       const char *prefix, unsigned dispatch_width,
+                                       const char *step);
+#else
+static inline void
+brw_debug_archive_nir_with_prefix(debug_archiver *archiver, nir_shader *nir,
+                                  const char *prefix, unsigned dispatch_width,
+                                  const char *step) {}
+#endif
+
+static inline void
+brw_debug_archive_nir(debug_archiver *archiver, nir_shader *nir,
+                      unsigned dispatch_width, const char *step)
+{
+   brw_debug_archive_nir_with_prefix(archiver, nir, "NIR", dispatch_width, step);
+}
+
 #ifdef __cplusplus
 }
 #endif

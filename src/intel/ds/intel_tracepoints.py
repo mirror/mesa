@@ -230,7 +230,8 @@ def define_tracepoints(args):
                  need_cs_param=True)
 
     rt_args = [Arg(type='uint32_t', var='cs_hash', c_format='%u')]
-    begin_end_tp('as_build', tp_args=rt_args)
+    begin_end_tp('as_build_top_level')
+    begin_end_tp('as_build_bottom_level')
     begin_end_tp('as_build_leaves', tp_args=rt_args, maybe_compute=True)
     begin_end_tp('as_morton_generate', tp_args=rt_args, maybe_compute=True)
     begin_end_tp('as_morton_sort', tp_args=rt_args, maybe_compute=True)

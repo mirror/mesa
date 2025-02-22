@@ -626,8 +626,8 @@ void genX(CmdDispatchBase)(
                         prog_data->local_size[0] * prog_data->local_size[1] *
                         prog_data->local_size[2]);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0)
-      trace_intel_begin_compute(&cmd_buffer->trace);
+
+   trace_intel_begin_compute(&cmd_buffer->trace);
 
    cmd_buffer_flush_compute_state(cmd_buffer);
 
@@ -639,11 +639,9 @@ void genX(CmdDispatchBase)(
                   groupCountX, groupCountY, groupCountZ,
                   false);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0) {
-      trace_intel_end_compute(&cmd_buffer->trace,
-                              groupCountX, groupCountY, groupCountZ,
-                              pipeline->source_hash);
-   }
+   trace_intel_end_compute(&cmd_buffer->trace,
+                           groupCountX, groupCountY, groupCountZ,
+                           pipeline->source_hash);
 }
 
 static void
@@ -686,8 +684,7 @@ emit_unaligned_cs_walker(
                         prog_data->local_size[0] * prog_data->local_size[1] *
                         prog_data->local_size[2]);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0)
-      trace_intel_begin_compute(&cmd_buffer->trace);
+   trace_intel_begin_compute(&cmd_buffer->trace);
 
    assert(!prog_data->uses_num_work_groups);
    genX(cmd_buffer_flush_compute_state)(cmd_buffer);
@@ -699,12 +696,10 @@ emit_unaligned_cs_walker(
    emit_compute_walker(cmd_buffer, pipeline, ANV_NULL_ADDRESS, prog_data,
                        dispatch, groupCountX, groupCountY, groupCountZ);
 #endif
+   trace_intel_end_compute(&cmd_buffer->trace,
+                           groupCountX, groupCountY, groupCountZ,
+                           pipeline->source_hash);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0) {
-      trace_intel_end_compute(&cmd_buffer->trace,
-                              groupCountX, groupCountY, groupCountZ,
-                              pipeline->source_hash);
-   }
 }
 
 /*
@@ -795,8 +790,7 @@ genX(cmd_buffer_dispatch_indirect)(struct anv_cmd_buffer *cmd_buffer,
                         "compute indirect",
                         0);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0)
-      trace_intel_begin_compute_indirect(&cmd_buffer->trace);
+   trace_intel_begin_compute_indirect(&cmd_buffer->trace);
 
    cmd_buffer_flush_compute_state(cmd_buffer);
 
@@ -806,11 +800,9 @@ genX(cmd_buffer_dispatch_indirect)(struct anv_cmd_buffer *cmd_buffer,
    emit_cs_walker(cmd_buffer, pipeline, prog_data, dispatch, indirect_addr, 0,
                   0, 0, is_unaligned_size_x);
 
-   if (cmd_buffer->state.rt.debug_marker_count == 0) {
-      trace_intel_end_compute_indirect(&cmd_buffer->trace,
-                                       anv_address_utrace(indirect_addr),
-                                       pipeline->source_hash);
-   }
+   trace_intel_end_compute_indirect(&cmd_buffer->trace,
+                                    anv_address_utrace(indirect_addr),
+                                    pipeline->source_hash);
 }
 
 void genX(CmdDispatchIndirect)(

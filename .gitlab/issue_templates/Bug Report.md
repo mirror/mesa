@@ -16,8 +16,9 @@ The title should effectively distinguish this bug report from others and be spec
 
 ### System information
 
-Please post `inxi -GSC -xx` output ([fenced with triple backticks](https://docs.gitlab.com/ee/user/markdown.html#code-spans-and-blocks)) OR fill information below manually
-
+Please post `inxi -GSC -xx` output ([fenced with triple backticks](https://docs.gitlab.com/ee/user/markdown.html#code-spans-and-blocks)).
+For good output, make sure `lspci`, `glxinfo`, and `xdpyinfo` tools are available on the system.
+Alternatively, fill information below manually:
 
 - OS: (`cat /etc/os-release | grep "NAME"`)
 - GPU: (`lspci -nn | grep VGA` or `lshw -C display -numeric`)

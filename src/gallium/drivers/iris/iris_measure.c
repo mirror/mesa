@@ -66,6 +66,7 @@ iris_init_screen_measure(struct iris_screen *screen)
       config->buffer_size * sizeof(struct intel_measure_buffered_result);
    struct intel_measure_ringbuffer *rb = rzalloc_size(screen, rb_bytes);
    measure_device->ringbuffer = rb;
+   measure_device->config = INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_2x64b;
 }
 
 static struct intel_measure_config *

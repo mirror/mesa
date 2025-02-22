@@ -287,11 +287,6 @@ intel_measure_state_changed(const struct intel_measure_batch *batch,
    if (config.flags & INTEL_MEASURE_DRAW)
       return true;
 
-   if (batch->index % 2 == 0) {
-      /* no snapshot is running, but we have a start event */
-      return true;
-   }
-
    if (config.flags & (INTEL_MEASURE_FRAME | INTEL_MEASURE_BATCH)) {
       /* only start collection when index == 0, at the beginning of a batch */
       return false;
@@ -376,15 +371,12 @@ intel_measure_frame_transition(unsigned frame)
    }
 }
 
-#define TIMESTAMP_BITS 36
-static uint64_t
-raw_timestamp_delta(uint64_t time0, uint64_t time1)
+static int64_t
+get_timestamp_ns(const struct intel_device_info *devinfo,
+                 int64_t gpu_timestamp)
 {
-   if (time0 > time1) {
-      return (1ULL << TIMESTAMP_BITS) + time1 - time0;
-   } else {
-      return time1 - time0;
-   }
+   int64_t multiplier = 1000000000ull / devinfo->timestamp_frequency;
+   return gpu_timestamp * multiplier;
 }
 
 /**
@@ -414,12 +406,16 @@ intel_measure_push_result(struct intel_measure_device *device,
    struct intel_measure_ringbuffer *rb = device->ringbuffer;
 
    uint64_t *timestamps = batch->timestamps;
-   assert(timestamps != NULL);
-   assert(batch->index == 0 || timestamps[0] != 0);
+   uint64_t last_timestamp = 0;
+   int event_index = 0;
+   assert(batch->timestamps != NULL);
+   assert(batch->index == 0 || batch->timestamps[0] != 0);
 
    for (int i = 0; i < batch->index; i += 2) {
       const struct intel_measure_snapshot *begin = &batch->snapshots[i];
       const struct intel_measure_snapshot *end = &batch->snapshots[i+1];
+      uint64_t *start_ts = timestamps + i;
+      uint64_t *end_ts = timestamps + i+1;
 
       assert (end->type == INTEL_SNAPSHOT_END);
 
@@ -430,6 +426,26 @@ intel_measure_push_result(struct intel_measure_device *device,
          begin->secondary->primary_renderpass = batch->renderpass;
          intel_measure_push_result(device, begin->secondary);
          continue;
+      } else if (begin->type == INTEL_SNAPSHOT_COMPUTE) {
+         if (device->config->compute_encoding ==
+             INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x32b) {
+            /* Convert 32b timestamp -> 64b by reusing high bits
+             * from last timestamp.
+             */
+            uint64_t highbits = last_timestamp & 0xFFFFFFFF00000000;
+            *start_ts = highbits | *start_ts >> 32;
+            *end_ts   = highbits | *end_ts >> 32;
+         } else if (device->config->compute_encoding ==
+                    INTEL_MEASURE_COMPUTE_TIMESTAMP_ENCODE_4x64b) {
+            bool has_padding = i % 4 == 2;
+            if (has_padding)
+               i += 2;
+
+            /* Start/end timestamps expected in second and fourth uint64. */
+            start_ts = timestamps + i + 1;
+            end_ts = timestamps + i + 3;
+            i += 2;
+         }
       }
 
       const uint64_t prev_end_ts = rb->results[rb->head].end_ts;
@@ -456,16 +472,16 @@ intel_measure_push_result(struct intel_measure_device *device,
       memset(buffered_result, 0, sizeof(*buffered_result));
       memcpy(&buffered_result->snapshot, begin,
              sizeof(struct intel_measure_snapshot));
-      buffered_result->start_ts = timestamps[i];
-      buffered_result->end_ts = timestamps[i+1];
-      buffered_result->idle_duration =
-         raw_timestamp_delta(prev_end_ts, buffered_result->start_ts);
+      buffered_result->start_ts = *start_ts;
+      buffered_result->end_ts = *end_ts;
+      buffered_result->idle_duration = buffered_result->start_ts - prev_end_ts;
       buffered_result->frame = batch->frame;
       buffered_result->batch_count = batch->batch_count;
       buffered_result->batch_size = batch->batch_size;
       buffered_result->primary_renderpass = batch->primary_renderpass;
-      buffered_result->event_index = i / 2;
+      buffered_result->event_index = event_index++;
       buffered_result->snapshot.event_count = end->event_count;
+      last_timestamp = *end_ts;
    }
 }
 
@@ -595,23 +611,21 @@ print_combined_results(struct intel_measure_device *measure_device,
       return;
    --result_count;
 
-   uint64_t duration_ts = raw_timestamp_delta(start_result->start_ts,
-                                              current_result->end_ts);
+   int64_t duration_ts = start_result->end_ts - current_result->start_ts;
    unsigned event_count = start_result->snapshot.event_count;
    while (result_count-- > 0) {
       assert(ringbuffer_size(result_rb) > 0);
       current_result = ringbuffer_pop(result_rb);
       if (current_result == NULL)
          return;
-      duration_ts += raw_timestamp_delta(current_result->start_ts,
-                                         current_result->end_ts);
+      duration_ts += current_result->end_ts - current_result->start_ts;
       event_count += current_result->snapshot.event_count;
    }
 
-   uint64_t duration_idle_ns =
-      intel_device_info_timebase_scale(info, start_result->idle_duration);
-   uint64_t duration_time_ns =
-      intel_device_info_timebase_scale(info, duration_ts);
+   int64_t duration_idle_ns =
+      get_timestamp_ns(info, start_result->idle_duration);
+   int64_t duration_time_ns =
+      get_timestamp_ns(info, duration_ts);
    const struct intel_measure_snapshot *begin = &start_result->snapshot;
    uint32_t renderpass = (start_result->primary_renderpass)
       ? start_result->primary_renderpass : begin->renderpass;

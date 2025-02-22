@@ -25,6 +25,7 @@
 #define ANV_MEASURE_H
 
 #include "anv_private.h"
+//#include "anv_measure.h"
 #include "common/intel_measure.h"
 
 void anv_measure_device_init(struct anv_physical_device *device);
@@ -39,10 +40,10 @@ void _anv_measure_snapshot(struct anv_cmd_buffer *cmd_buffer,
                            const char *event_name,
                            uint32_t count);
 
-/* ends snapshots before command buffer submission */
-void _anv_measure_endcommandbuffer(struct anv_cmd_buffer *cmd_buffer);
+void _anv_measure_end_snapshot(struct anv_cmd_buffer *cmd_buffer,
+                               enum intel_measure_events end_for);
 
-/* when measuring render passes, inserts a timestamp */
+/* when measuring render passes, track renderpass count */
 void _anv_measure_beginrenderpass(struct anv_cmd_buffer *cmd_buffer);
 
 /* tracks frame progression */
@@ -63,9 +64,18 @@ _anv_measure_add_secondary(struct anv_cmd_buffer *primary,
    if (unlikely(cmd_buffer->measure)) \
       _anv_measure_snapshot(cmd_buffer, type, event_name, count)
 
+#define anv_measure_end_snapshot(cmd_buffer) \
+   if (unlikely(cmd_buffer->measure)) \
+      _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_DRAW)
+
 #define anv_measure_endcommandbuffer(cmd_buffer) \
    if (unlikely(cmd_buffer->measure)) \
-      _anv_measure_endcommandbuffer(cmd_buffer)
+      _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_ALL)
+
+#define anv_measure_endrenderpass(cmd_buffer) \
+   if (unlikely(cmd_buffer->measure)) \
+      _anv_measure_end_snapshot(cmd_buffer, INTEL_MEASURE_RENDERPASS \
+                                          | INTEL_MEASURE_SHADER)
 
 #define anv_measure_beginrenderpass(cmd_buffer) \
    if (unlikely(cmd_buffer->measure)) \

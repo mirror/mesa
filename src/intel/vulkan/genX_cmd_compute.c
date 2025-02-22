@@ -639,6 +639,8 @@ void genX(CmdDispatchBase)(
                   groupCountX, groupCountY, groupCountZ,
                   false);
 
+   anv_measure_end_snapshot(cmd_buffer);
+
    if (cmd_buffer->state.rt.debug_marker_count == 0) {
       trace_intel_end_compute(&cmd_buffer->trace,
                               groupCountX, groupCountY, groupCountZ,
@@ -699,6 +701,8 @@ emit_unaligned_cs_walker(
    emit_compute_walker(cmd_buffer, pipeline, ANV_NULL_ADDRESS, prog_data,
                        dispatch, groupCountX, groupCountY, groupCountZ);
 #endif
+
+   anv_measure_end_snapshot(cmd_buffer);
 
    if (cmd_buffer->state.rt.debug_marker_count == 0) {
       trace_intel_end_compute(&cmd_buffer->trace,
@@ -805,6 +809,8 @@ genX(cmd_buffer_dispatch_indirect)(struct anv_cmd_buffer *cmd_buffer,
 
    emit_cs_walker(cmd_buffer, pipeline, prog_data, dispatch, indirect_addr, 0,
                   0, 0, is_unaligned_size_x);
+
+   anv_measure_end_snapshot(cmd_buffer);
 
    if (cmd_buffer->state.rt.debug_marker_count == 0) {
       trace_intel_end_compute_indirect(&cmd_buffer->trace,

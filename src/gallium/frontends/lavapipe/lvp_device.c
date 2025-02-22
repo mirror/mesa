@@ -212,6 +212,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_extended_dynamic_state2           = true,
    .EXT_extended_dynamic_state3           = true,
    .EXT_external_memory_host              = true,
+   .EXT_fragment_shader_interlock         = true,
    .EXT_graphics_pipeline_library         = true,
    .EXT_host_image_copy                   = true,
    .EXT_host_query_reset                  = true,
@@ -765,6 +766,11 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
 
       /* VK_KHR_shader_quad_control */
       .shaderQuadControl = true,
+
+      /* VK_EXT_fragment_shader_interlock */
+      .fragmentShaderSampleInterlock = true,
+      .fragmentShaderPixelInterlock = true,
+      .fragmentShaderShadingRateInterlock = false,
    };
 }
 

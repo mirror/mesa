@@ -24,6 +24,7 @@ pub fn derive_dsts_as_slice(input: TokenStream) -> TokenStream {
 
 
 enum RawArg {
+    Ident(Ident),
     Literal(LitStr),
     AssignLit(Ident, LitStr),
     AssignType(Ident, Type),
@@ -33,7 +34,8 @@ impl RawArg {
     pub fn span(&self) -> Span {
         match self {
             RawArg::Literal(x) => x.span(),
-            RawArg::AssignLit(x, _) => x.span(),
+            RawArg::Ident(x) | 
+            RawArg::AssignLit(x, _) |
             RawArg::AssignType(x, _) => x.span(),
         }
     }
@@ -41,18 +43,20 @@ impl RawArg {
 
 impl syn::parse::Parse for RawArg {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        if input.peek(syn::LitStr) {
+            return Ok(RawArg::Literal(input.parse()?))
+        }
+        let ident = input.parse()?;
+        if !input.peek(Token![=]) {
+            return Ok(RawArg::Ident(ident));
+        }
+        input.parse::<Token![=]>()?;
         let val = if input.peek(syn::LitStr) {
-            RawArg::Literal(input.parse()?)
+            let rhs = input.parse()?;
+            RawArg::AssignLit(ident, rhs)
         } else {
-            let lhs = input.parse()?;
-            input.parse::<Token![=]>()?;
-            if input.peek(syn::LitStr) {
-                let rhs = input.parse()?;
-                RawArg::AssignLit(lhs, rhs)
-            } else {
-                let rhs = input.parse()?;
-                RawArg::AssignType(lhs, rhs)
-            }
+            let rhs = input.parse()?;
+            RawArg::AssignType(ident, rhs)
         };
         Ok(val)
     }
@@ -61,6 +65,7 @@ impl syn::parse::Parse for RawArg {
 #[derive(Default, Debug)]
 struct ModifierArgs {
     name: Option<LitStr>,
+    name_false: Option<LitStr>,
     def: Option<Type>,
 }
 
@@ -72,11 +77,24 @@ impl syn::parse::Parse for ModifierArgs {
             return Ok(args);
         }
 
+        let unhandled_err = |span: Span| return Err(syn::Error::new(span, "Unhandled argument")) as syn::Result<()>;
+
         for arg in syn::punctuated::Punctuated::<RawArg, Token![,]>::parse_terminated(input)?.iter() {
             match arg {
-                RawArg::Literal(name) => args.name = Some(name.clone()),
-                RawArg::AssignType(d, def) if d == "def" => args.def = Some(def.clone()),
-                x => return Err(syn::Error::new(x.span(), "Unhandled argument"))
+                RawArg::Literal(name) => {
+                    if args.name.is_none() {
+                        args.name = Some(name.clone());
+                    } else if args.name_false.is_none() {
+                        args.name_false = Some(name.clone())
+                    } else {
+                        unhandled_err(name.span())?;
+                    }
+                },
+                RawArg::AssignType(d, def) if d == "def" => {
+                    args.def.map_or(Ok(()), |_| return unhandled_err(d.span()))?;
+                    args.def = Some(def.clone())
+                },
+                x => unhandled_err(x.span())?
             }
         }
 
@@ -85,15 +103,20 @@ impl syn::parse::Parse for ModifierArgs {
 }
 
 #[derive(Debug)]
-enum Modifier {
+enum ModifierType {
     BoolMod {
-        ident: Ident,
-        name: LitStr
+        name: LitStr,
+        name_false: Option<LitStr>,
     },
     EnumMod {
-        ident: Ident,
-        def: Option<Type>
+        def: Option<Type>,
     },
+}
+
+struct Modifier {
+    ident: Ident,
+    array_len: usize,
+    ty: ModifierType,
 }
 
 impl Modifier {
@@ -101,12 +124,22 @@ impl Modifier {
         let Some(attr) = field.attrs.iter().filter(|x| x.path().is_ident("modifier")).next() else {
             return Ok(None);
         };
-        let is_bool = match &field.ty {
-            Type::Path(TypePath {
-                qself: None,
-                path
-            }) if path.is_ident("bool") => true,
-            _ => false,
+
+        let is_type_bool = |ty: &Type| matches!(ty, Type::Path(TypePath {
+            qself: None,
+            path
+        }) if path.is_ident("bool"));
+
+        let (array_len, is_bool) = match &field.ty {
+            Type::Array(TypeArray {
+                elem,
+                len: Expr::Lit(ExprLit {
+                    lit: Lit::Int(len),
+                    ..
+                }),
+                ..
+            }) => (len.base10_parse()?, is_type_bool(&elem)),
+            ty => (0usize, is_type_bool(&ty)),
         };
 
         let args: ModifierArgs = match attr.meta {
@@ -114,9 +147,9 @@ impl Modifier {
             _ => attr.parse_args()?,
         };
         let ident = field.ident.as_ref().unwrap().clone();
-        let modif = if is_bool {
-            Modifier::BoolMod {
-                ident,
+        let mod_ty = if is_bool {
+            ModifierType::BoolMod {
+                name_false: args.name_false,
                 name: args.name.unwrap_or_else(|| {
                     let ident = field.ident.as_ref().unwrap();
                     let fname = ident.to_string();
@@ -124,12 +157,15 @@ impl Modifier {
                 })
             }
         } else {
-            Modifier::EnumMod {
-                ident,
+            ModifierType::EnumMod {
                 def: args.def.clone()
             }
         };
-        Ok(Some(modif))
+        Ok(Some(Modifier {
+            ident,
+            array_len,
+            ty: mod_ty,
+        }))
     }
 
     fn parse_all(data: &DataStruct) -> syn::Result<Vec<Self>> {
@@ -142,36 +178,102 @@ impl Modifier {
 
 impl quote::ToTokens for Modifier {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
-        let t = match self {
-            Modifier::BoolMod { ident, name } => {
-                quote! {
-                    if self.#ident {
-                        write!(f, #name)?;
+        let Modifier { ident, array_len, ty } = self;
+
+        let generate_no_arr = |ident| {
+            match ty {
+                ModifierType::BoolMod { name, name_false: None } => {
+                    quote! {
+                        if #ident {
+                            write!(f, #name)?;
+                        }
                     }
-                }
-            },
-            Modifier::EnumMod { ident, def: None } => {
-                quote! {
-                    write!(f, "{}", self.#ident)?;
-                }
-            },
-            Modifier::EnumMod { ident, def: Some(def)} => {
-                quote! {
-                    if self.#ident != #def {
-                        write!(f, "{}", self.#ident)?;
+                },
+                ModifierType::BoolMod { name, name_false: Some(name_false) } => {
+                    quote! {
+                        write!(f, "{}", if #ident { #name } else { #name_false })?;
                     }
-                }
-            },
+                },
+                ModifierType::EnumMod { def: None } => {
+                    quote! {
+                        write!(f, "{}", #ident)?;
+                    }
+                },
+                ModifierType::EnumMod { def: Some(def)} => {
+                    quote! {
+                        if #ident != #def {
+                            write!(f, "{}", #ident)?;
+                        }
+                    }
+                },
+            }
+        };
+        let t = match array_len {
+            0 => generate_no_arr(quote!{ self.#ident }),
+            n => (0..*n).map(|i| {
+                generate_no_arr(quote!{ self.#ident[#i]})
+            }).collect()
         };
         t.to_tokens(tokens);
     }
 }
 
+#[derive(Default, Debug)]
+struct OpSourceFormatArgs {
+    addr: bool,
+    addr_offset: Option<LitStr>,
+    custom_format: Option<LitStr>,
+    prefix: Option<LitStr>,
+}
+
+impl syn::parse::Parse for OpSourceFormatArgs {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let mut args = OpSourceFormatArgs::default();
+
+        let unhandled_err = |span: Span| return Err(syn::Error::new(span, "Unhandled argument")) as syn::Result<()>;
+
+        for arg in syn::punctuated::Punctuated::<RawArg, Token![,]>::parse_terminated(input)?.iter() {
+            match arg {
+                RawArg::Ident(x) if x == "addr" => {
+                    args.addr = true;
+                }
+                RawArg::Literal(fmt) => {
+                    args.custom_format.map_or(Ok(()), |_| return unhandled_err(fmt.span()))?;
+                    args.custom_format = Some(fmt.clone());
+                }
+                RawArg::AssignLit(d, offset) if d == "offset" => {
+                    args.addr_offset.map_or(Ok(()), |_| return unhandled_err(d.span()))?;
+                    args.addr_offset = Some(offset.clone())
+                },
+                RawArg::AssignLit(d, prefix) if d == "prefix" => {
+                    args.prefix.map_or(Ok(()), |_| return unhandled_err(d.span()))?;
+                    args.prefix = Some(prefix.clone())
+                },
+                x => unhandled_err(x.span())?
+            }
+        }
+
+        Ok(args)
+    }
+}
+
+#[derive(Debug)]
+enum OpSourceFormat {
+    Plain,
+    Addr {
+        offset: Option<LitStr>
+    },
+    Custom(LitStr),
+}
+
+/// Tracks sources of instr as Src and Target
+/// Sources can also be arrays of static size
 #[derive(Debug)]
 struct OpSource {
     ident: Ident,
     array_len: usize,
-    // format: String
+    prefix: String,
+    format: OpSourceFormat
 }
 
 impl OpSource {
@@ -180,7 +282,7 @@ impl OpSource {
             Type::Path(TypePath {
                 qself: None,
                 path
-            }) if path.is_ident("Src") => true,
+            }) if path.is_ident("Src") || path.is_ident("Label") => true,
             _ => false,
         };
         let array_len: usize = match &field.ty {
@@ -195,15 +297,28 @@ impl OpSource {
             x if is_type_src(&x) => 0,
             _ => return Ok(None),
         };
-        /*let attr = field.attrs.iter().filter(|x| x.path().is_ident("src_format")).next();
-        let format = match attr {
-            Some(x) => x.parse_args::<LitStr>()?,
-            None => LitStr::new("{}", Span::call_site()),
-        };*/
+        let attr = field.attrs.iter().filter(|x| x.path().is_ident("op_format")).next();
+        let args = match attr {
+            Some(x) => x.parse_args()?,
+            None => OpSourceFormatArgs::default(),
+        };
+
+        let prefix = args.prefix.map(|x| x.value()).unwrap_or_else(|| "".into());
+        let format = if args.addr {
+            OpSourceFormat::Addr {
+                offset: args.addr_offset
+            }
+        } else if let Some(fmt) =  args.custom_format {
+            OpSourceFormat::Custom(fmt)
+        } else {
+            OpSourceFormat::Plain
+        };
 
         Ok(Some(OpSource {
             ident: field.ident.as_ref().unwrap().clone(),
             array_len,
+            prefix,
+            format,
         }))
     }
 
@@ -218,19 +333,29 @@ impl OpSource {
 impl quote::ToTokens for OpSource {
     fn to_tokens(&self, tokens: &mut TokenStream2) {
         let ident = &self.ident;
-        let t = if self.array_len == 0 {
-            // not an array!
+        let generate_no_arr = |ident| {
+            let arg = match &self.format {
+                OpSourceFormat::Plain | OpSourceFormat::Custom(_) => quote!( #ident ),
+                OpSourceFormat::Addr { offset: None } => quote!{ FmtAddr { src: &#ident, off: 0 } },
+                OpSourceFormat::Addr { offset: Some(off) } => {
+                    let off = Ident::new(&off.value(), off.span());
+                    quote!{ FmtAddr { src: &#ident, off: self.#off}}
+                },
+            };
+            let fstr = match &self.format {
+                OpSourceFormat::Custom(fmt) => format!(" {}{}", self.prefix, fmt.value()),
+                _ => format!(" {}{{}}", self.prefix),
+            };
             quote! {
-                write!(f, " {}", self.#ident)?;
-            }
-        } else {
-            let index = 0..self.array_len;
-            quote! {
-                #(
-                    write!(f, " {}", self.#ident[#index])?;
-                )*
+                write!(f, #fstr, #arg)?;
             }
         };
+
+        let t = match self.array_len {
+            0 => generate_no_arr(quote! { self.#ident }),
+            n => (0..n).map(|i| generate_no_arr(quote!{ self.#ident[#i] })).collect()
+        };
+
         t.to_tokens(tokens);
     }
 }
@@ -279,7 +404,7 @@ macro_rules! accumulate_error {
     };
 }
 
-#[proc_macro_derive(DisplayOp, attributes(display_op, modifier))]
+#[proc_macro_derive(DisplayOp, attributes(display_op, modifier, op_format))]
 pub fn enum_derive_display_op(input: TokenStream) -> TokenStream {
     let DeriveInput { ident, data, attrs, .. } = parse_macro_input!(input);
 
@@ -312,9 +437,40 @@ pub fn enum_derive_display_op(input: TokenStream) -> TokenStream {
         }
         .into()
     } else if let Data::Struct(s) = data {
-        let args = attrs.iter().filter(|x|  x.path().is_ident("display_op")).next()
-            .ok_or_else(|| syn::Error::new(Span::call_site(), "No display_op attribute found"))
-            .and_then(|attr| attr.parse_args::<DisplayArgs>());
+        // Missing:
+        // - OpFSetP: is_trivial
+        // - OpFSwzAdd: custom format
+        // - OpDSetP: is_trivial
+        // - OpIAdd2X (missing skip if src zero)
+        // - OpISetP is_trivial
+        // - OpLea if modifier add src(?)
+        // - OpLeaX ^
+        // - OpShf SRC modifier
+        // - OpI2I ^
+        // - OpPLop3 what are ops?
+        // - OpMov quadlines
+        // - OpPrmt custom format split array
+        // - OpSuSt: How to print mask?
+        // - OpCCtl: op not printed
+
+        // TODO:
+        // - modifier after SRC
+        // - modifier add "."
+        // - op_format for modifier
+        // - skip src if 0
+        // - AttrAccess
+
+        let args = match attrs.iter().filter(|x|  x.path().is_ident("display_op")).next() {
+            Some(attr) => attr.parse_args::<DisplayArgs>(),
+            None => {
+                ident.to_string()
+                    .to_lowercase()
+                    .strip_prefix("op")
+                    .ok_or_else(|| syn::Error::new(Span::call_site(), "Cannot convert struct name, please use #[display_op(format = )]"))
+                    .map(|x| DisplayArgs { format: LitStr::new(x, ident.span()) })
+            }
+        };
+
         let modifiers = Modifier::parse_all(&s);
         let srcs = OpSource::parse_all(&s);
 

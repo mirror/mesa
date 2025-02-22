@@ -107,7 +107,7 @@ _libnak_bindings_rs = static_library(
 
 _libnak_ir_proc_rs = rust.proc_macro(
   'nak_ir_proc',
-  files('nak/ir_proc.rs'),
+  files('nak/ir_proc/lib.rs'),
   dependencies : [idep_compiler_proc_rs],
 )
 

@@ -1969,7 +1969,7 @@ radv_queue_init(struct radv_device *device, struct radv_queue *queue, int idx,
          goto fail;
    }
 
-   if (pdev->info.gfx_level == GFX6 &&
+   if (pdev->info.gfx_level <= GFX7 &&
        (queue->state.qf == RADV_QUEUE_GENERAL || queue->state.qf == RADV_QUEUE_COMPUTE)) {
       result = radv_create_flush_postamble(queue);
       if (result != VK_SUCCESS)

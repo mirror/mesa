@@ -483,10 +483,10 @@ static uint32_t get_default_device(const struct instance_info *info,
          *expose_only_one_dev = ends_with_exclamation_mark(dri_prime);
       }
 
-      if (default_idx == -1) {
+      if (default_idx == -1 && !strncmp(dri_prime, "pci-", 4)) {
          /* Try DRI_PRIME=pci-xxxx_yy_zz_w */
-         if (!info->has_vulkan11 && !info->has_pci_bus)
-            fprintf(stderr, "device-select: cannot correctly use DRI_PRIME tag\n");
+         if (!info->has_vulkan11 || !info->has_pci_bus)
+            fprintf(stderr, "device-select: cannot correctly use PCI DRI_PRIME tag\n");
          else
             default_idx = device_select_find_dri_prime_tag_default(pci_infos, physical_device_count, dri_prime);
 

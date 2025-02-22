@@ -79,6 +79,8 @@ typedef bool (*nir_intrinsic_pass_cb)(struct nir_builder *,
                                       nir_intrinsic_instr *, void *);
 typedef bool (*nir_alu_pass_cb)(struct nir_builder *,
                                 nir_alu_instr *, void *);
+typedef bool (*nir_phi_pass_cb)(struct nir_builder *,
+                                nir_phi_instr *, void *);
 
 /**
  * Iterates over all the instructions in a NIR function and calls the given pass
@@ -221,6 +223,36 @@ nir_shader_alu_pass(nir_shader *shader,
                nir_alu_instr *intr = nir_instr_as_alu(instr);
                func_progress |= pass(&b, intr, cb_data);
             }
+         }
+      }
+
+      if (func_progress) {
+         nir_metadata_preserve(impl, preserved);
+         progress = true;
+      } else {
+         nir_metadata_preserve(impl, nir_metadata_all);
+      }
+   }
+
+   return progress;
+}
+
+/* As above, but for phis */
+static inline bool
+nir_shader_phi_pass(nir_shader *shader,
+                    nir_phi_pass_cb pass,
+                    nir_metadata preserved,
+                    void *cb_data)
+{
+   bool progress = false;
+
+   nir_foreach_function_impl(impl, shader) {
+      bool func_progress = false;
+      nir_builder b = nir_builder_create(impl);
+
+      nir_foreach_block_safe(block, impl) {
+         nir_foreach_phi_safe(phi, block) {
+            func_progress |= pass(&b, phi, cb_data);
          }
       }
 

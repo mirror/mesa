@@ -207,7 +207,7 @@ Look for the ``OpenGL vendor`` and ``OpenGL renderer`` values. That will
 identify who's OpenGL library with which driver you're using and what
 sort of hardware it has detected.
 
-If you're using a hardware accelerated driver you want
+If you're using a hardware accelerated driver you'll see
 ``direct rendering: Yes``.
 
 If your DRI-based driver isn't working, go to the `DRI
@@ -223,7 +223,7 @@ Look
 for details.
 
 Mesa uses a 16-bit depth buffer by default which is smaller and faster
-to clear than a 32-bit buffer but not as accurate. If you need a deeper
+to clear than a 32-bit buffer but not as accurate. If you need a deeper one
 you can modify the parameters to ``glXChooseVisual`` in your code.
 
 3.3 Why Isn't depth buffering working at all?

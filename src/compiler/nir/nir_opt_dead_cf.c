@@ -286,14 +286,42 @@ dead_cf_block(nir_block *block)
    }
 
    nir_loop *following_loop = nir_block_get_following_loop(block);
-   if (!following_loop)
-      return false;
+   if (following_loop) {
+      if (node_is_dead(&following_loop->cf_node)) {
+         nir_cf_node_remove(&following_loop->cf_node);
+         return true;
+      }
+   }
 
-   if (!node_is_dead(&following_loop->cf_node))
-      return false;
+   if (block->cf_node.parent->type == nir_cf_node_function) {
+      /* Try to remove everything after a discard/demote at the top level.
+       * TODO: This could be improved for nested CF but we have to be careful
+       * about workarounds that lower discard to demote.
+       */
+      nir_foreach_instr(instr, block) {
+         if (instr->type != nir_instr_type_intrinsic)
+            continue;
 
-   nir_cf_node_remove(&following_loop->cf_node);
-   return true;
+         if (nir_instr_as_intrinsic(instr)->intrinsic != nir_intrinsic_discard &&
+             nir_instr_as_intrinsic(instr)->intrinsic != nir_intrinsic_demote)
+            continue;
+
+         nir_instr *last_instr = nir_block_last_instr(block);
+         if (instr == last_instr)
+            continue;
+
+         /* Remove everything after the current block. */
+         remove_after_cf_node(&block->cf_node);
+
+         /* Remove instructions until the end of the current block. */
+         nir_cf_list list;
+         nir_cf_extract(&list, nir_after_instr(instr), nir_after_instr(last_instr));
+         nir_cf_delete(&list);
+         return true;
+      }
+   }
+
+   return false;
 }
 
 static bool

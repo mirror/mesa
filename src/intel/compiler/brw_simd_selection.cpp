@@ -230,10 +230,14 @@ brw_simd_select_for_workgroup_size(const struct intel_device_info *devinfo,
                                    const struct brw_cs_prog_data *prog_data,
                                    const unsigned *sizes)
 {
+   void *mem_ctx = ralloc_context(NULL);
+
    if (!sizes || (prog_data->local_size[0] == sizes[0] &&
                   prog_data->local_size[1] == sizes[1] &&
                   prog_data->local_size[2] == sizes[2])) {
       brw_simd_selection_state simd_state{
+         .mem_ctx = mem_ctx,
+         .devinfo = devinfo,
          .prog_data = const_cast<struct brw_cs_prog_data *>(prog_data),
       };
 

@@ -71,6 +71,12 @@ pipe_loader_probe(struct pipe_loader_device **devs, int ndev, bool with_zink)
    return n;
 }
 
+int
+pipe_loader_probe_accel(struct pipe_loader_device **devs, int ndev)
+{
+   return pipe_loader_accel_probe(devs, ndev);
+}
+
 void
 pipe_loader_release(struct pipe_loader_device **devs, int ndev)
 {

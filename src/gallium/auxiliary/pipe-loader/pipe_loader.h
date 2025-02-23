@@ -72,7 +72,7 @@ struct pipe_loader_device {
 };
 
 /**
- * Get a list of known devices.
+ * Get a list of known /dev/dri devices.
  *
  * \param devs      Array that will be filled with pointers to the devices
  *                  available in the system.
@@ -82,6 +82,17 @@ struct pipe_loader_device {
  */
 int
 pipe_loader_probe(struct pipe_loader_device **devs, int ndev, bool with_zink);
+
+/**
+ * Get a list of known /dev/accel devices.
+ *
+ * \param devs      Array that will be filled with pointers to the devices
+ *                  available in the system.
+ * \param ndev      Maximum number of devices to return.
+ * \return Number of devices available in the system.
+ */
+int
+pipe_loader_probe_accel(struct pipe_loader_device **devs, int ndev);
 
 /**
  * Create a pipe_screen for the specified device.
@@ -214,6 +225,16 @@ pipe_loader_sw_probe_wrapped(struct pipe_loader_device **dev,
  */
 int
 pipe_loader_drm_probe(struct pipe_loader_device **devs, int ndev);
+
+/**
+ * Get a list of known DRM accel devices.
+ *
+ * This function is platform-specific.
+ *
+ * \sa pipe_loader_probe
+ */
+int
+pipe_loader_accel_probe(struct pipe_loader_device **devs, int ndev);
 
 #ifdef HAVE_ZINK
 /**

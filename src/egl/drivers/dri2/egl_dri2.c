@@ -2946,7 +2946,7 @@ dri2_egl_unref_sync(struct dri2_egl_display *dri2_dpy,
    if (p_atomic_dec_zero(&dri2_sync->refcount)) {
       switch (dri2_sync->base.Type) {
       case EGL_SYNC_REUSABLE_KHR:
-         cnd_destroy(&dri2_sync->cond);
+         pthread_cond_destroy(&dri2_sync->cond);
          break;
       case EGL_SYNC_NATIVE_FENCE_ANDROID:
          if (dri2_sync->base.SyncFd != EGL_NO_NATIVE_FENCE_FD_ANDROID)
@@ -2974,6 +2974,10 @@ dri2_create_sync(_EGLDisplay *disp, EGLenum type, const EGLAttrib *attrib_list)
    EGLint ret;
    pthread_condattr_t attr;
 
+   /* zero-initialization isn't necessarily correct for
+    * dri2_sync->{cond,mutex}, but since they are used only in the
+    * EGL_SYNC_REUSABLE_KHR case, we only initialize them in that case
+    */
    dri2_sync = calloc(1, sizeof(struct dri2_egl_sync));
    if (!dri2_sync) {
       _eglError(EGL_BAD_ALLOC, "eglCreateSyncKHR");
@@ -3031,11 +3035,14 @@ dri2_create_sync(_EGLDisplay *disp, EGLenum type, const EGLAttrib *attrib_list)
 #endif
 
       ret = pthread_cond_init(&dri2_sync->cond, &attr);
+      pthread_condattr_destroy(&attr);
 
       if (ret) {
          _eglError(EGL_BAD_ACCESS, "eglCreateSyncKHR");
          goto fail;
       }
+
+      dri2_sync->mutex = (pthread_mutex_t)PTHREAD_MUTEX_INITIALIZER;
 
       /* initial status of reusable sync must be "unsignaled" */
       dri2_sync->base.SyncStatus = EGL_UNSIGNALED_KHR;
@@ -3078,7 +3085,7 @@ dri2_destroy_sync(_EGLDisplay *disp, _EGLSync *sync)
        dri2_sync->base.SyncStatus == EGL_UNSIGNALED_KHR) {
       dri2_sync->base.SyncStatus = EGL_SIGNALED_KHR;
       /* unblock all threads currently blocked by sync */
-      err = cnd_broadcast(&dri2_sync->cond);
+      err = pthread_cond_broadcast(&dri2_sync->cond);
 
       if (err) {
          _eglError(EGL_BAD_ACCESS, "eglDestroySyncKHR");
@@ -3175,13 +3182,13 @@ dri2_client_wait_sync(_EGLDisplay *disp, _EGLSync *sync, EGLint flags,
 
       /* if timeout is EGL_FOREVER_KHR, it should wait without any timeout.*/
       if (timeout == EGL_FOREVER_KHR) {
-         mtx_lock(&dri2_sync->mutex);
-         cnd_wait(&dri2_sync->cond, &dri2_sync->mutex);
-         mtx_unlock(&dri2_sync->mutex);
+         pthread_mutex_lock(&dri2_sync->mutex);
+         pthread_cond_wait(&dri2_sync->cond, &dri2_sync->mutex);
+         pthread_mutex_unlock(&dri2_sync->mutex);
       } else {
          /* if reusable sync has not been yet signaled */
          if (dri2_sync->base.SyncStatus != EGL_SIGNALED_KHR) {
-            /* timespecs for cnd_timedwait */
+            /* timespecs for pthread_cond_timedwait */
             struct timespec current;
             struct timespec expire;
 
@@ -3202,9 +3209,9 @@ dri2_client_wait_sync(_EGLDisplay *disp, _EGLSync *sync, EGLint flags,
                expire.tv_nsec -= 1000000000L;
             }
 
-            mtx_lock(&dri2_sync->mutex);
-            ret = cnd_timedwait(&dri2_sync->cond, &dri2_sync->mutex, &expire);
-            mtx_unlock(&dri2_sync->mutex);
+            pthread_mutex_lock(&dri2_sync->mutex);
+            ret = pthread_cond_timedwait(&dri2_sync->cond, &dri2_sync->mutex, &expire);
+            pthread_mutex_unlock(&dri2_sync->mutex);
 
             if (ret == thrd_timedout) {
                if (dri2_sync->base.SyncStatus == EGL_UNSIGNALED_KHR) {
@@ -3239,7 +3246,7 @@ dri2_signal_sync(_EGLDisplay *disp, _EGLSync *sync, EGLenum mode)
    dri2_sync->base.SyncStatus = mode;
 
    if (mode == EGL_SIGNALED_KHR) {
-      ret = cnd_broadcast(&dri2_sync->cond);
+      ret = pthread_cond_broadcast(&dri2_sync->cond);
 
       /* fail to broadcast */
       if (ret)

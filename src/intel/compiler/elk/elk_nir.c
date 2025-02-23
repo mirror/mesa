@@ -987,6 +987,17 @@ elk_preprocess_nir(const struct elk_compiler *compiler, nir_shader *nir,
    };
    OPT(nir_lower_subgroups, &subgroups_options);
 
+   if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
+      /* Tessellation control shaders may have array derefs of vectors on
+       * outputs and our compiler can't handle those.
+       */
+      OPT(nir_lower_array_deref_of_vec, nir_var_shader_out,
+          nir_lower_direct_array_deref_of_vec_load |
+          nir_lower_indirect_array_deref_of_vec_load |
+          nir_lower_direct_array_deref_of_vec_store |
+          nir_lower_indirect_array_deref_of_vec_store);
+   }
+
    nir_variable_mode indirect_mask =
       elk_nir_no_indirect_mask(compiler, nir->info.stage);
    OPT(nir_lower_indirect_derefs, indirect_mask, UINT32_MAX);

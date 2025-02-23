@@ -3360,6 +3360,17 @@ nir_lower_io_passes(nir_shader *nir, bool renumber_vs_inputs)
       }
    }
 
+   if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
+      /* Tessellation control shaders may have array derefs of vectors on
+       * outputs and nir_lower_io can't do that with a vec4 type_size.
+       */
+      NIR_PASS_V(nir, nir_lower_array_deref_of_vec, nir_var_shader_out,
+                 nir_lower_direct_array_deref_of_vec_load |
+                 nir_lower_indirect_array_deref_of_vec_load |
+                 nir_lower_direct_array_deref_of_vec_store |
+                 nir_lower_indirect_array_deref_of_vec_store);
+   }
+
    /* The correct lower_64bit_to_32 flag is required by st/mesa depending
     * on whether the GLSL linker lowers IO or not. Setting the wrong flag
     * would break 64-bit vertex attribs for GLSL.

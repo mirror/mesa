@@ -1003,6 +1003,16 @@ nak_postprocess_nir(nir_shader *nir,
    case MESA_SHADER_TESS_CTRL:
    case MESA_SHADER_TESS_EVAL:
    case MESA_SHADER_GEOMETRY:
+      if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
+         /* Tessellation control shaders may have array derefs of vectors on
+          * outputs and nir_lower_io can't handle those yet.
+          */
+         OPT(nir, nir_lower_array_deref_of_vec, nir_var_shader_out,
+             nir_lower_direct_array_deref_of_vec_load |
+             nir_lower_indirect_array_deref_of_vec_load |
+             nir_lower_direct_array_deref_of_vec_store |
+             nir_lower_indirect_array_deref_of_vec_store);
+      }
       OPT(nir, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
           type_size_vec4, nir_lower_io_lower_64bit_to_32_new);
       OPT(nir, nir_opt_constant_folding);

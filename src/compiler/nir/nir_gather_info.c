@@ -246,7 +246,11 @@ get_io_offset(nir_deref_instr *deref, nir_variable *var, bool is_arrayed,
 
    for (nir_deref_instr *d = deref; d; d = nir_deref_instr_parent(d)) {
       if (d->deref_type == nir_deref_type_array) {
-         if (is_arrayed && nir_deref_instr_parent(d)->deref_type == nir_deref_type_var)
+         /* Vector derefs are handled by the caller */
+         nir_deref_instr *parent = nir_deref_instr_parent(d);
+         assert(!glsl_type_is_vector(parent->type));
+
+         if (is_arrayed && parent->deref_type == nir_deref_type_var)
             break;
 
          if (!is_arrayed && skip_non_arrayed)
@@ -292,6 +296,14 @@ try_mask_partial_io(nir_shader *shader, nir_variable *var,
    /* Per view variables will be considered as a whole. */
    if (var->data.per_view)
       return false;
+
+   /* If the deref is within a vector, jump up the chain to the parent and
+    * mark the whole vector used.
+    */
+   nir_deref_instr *parent = nir_deref_instr_parent(deref);
+   if (deref->deref_type == nir_deref_type_array &&
+       glsl_type_is_vector(parent->type))
+      deref = parent;
 
    unsigned offset = get_io_offset(deref, var, is_arrayed, skip_non_arrayed);
    if (offset == -1)

@@ -757,6 +757,17 @@ ir3_nir_post_finalize(struct ir3_shader *shader)
 
    MESA_TRACE_FUNC();
 
+   if (s->info.stage == MESA_SHADER_TESS_CTRL) {
+      /* Tessellation control shaders may have array derefs of vectors on
+       * outputs and nir_lower_io can't handle those yet.
+       */
+      NIR_PASS_V(s, nir_lower_array_deref_of_vec, nir_var_shader_out,
+                 nir_lower_direct_array_deref_of_vec_load |
+                 nir_lower_indirect_array_deref_of_vec_load |
+                 nir_lower_direct_array_deref_of_vec_store |
+                 nir_lower_indirect_array_deref_of_vec_store);
+   }
+
    NIR_PASS_V(s, nir_lower_io, nir_var_shader_in | nir_var_shader_out,
               ir3_glsl_type_size, nir_lower_io_lower_64bit_to_32 |
               nir_lower_io_use_interpolated_input_intrinsics);

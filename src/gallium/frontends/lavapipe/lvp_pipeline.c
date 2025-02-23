@@ -450,6 +450,17 @@ lvp_shader_lower(struct lvp_device *pdevice, nir_shader *nir, struct lvp_pipelin
 
    lvp_shader_optimize(nir);
 
+   if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
+      /* Tessellation control shaders may have array derefs of vectors on
+       * outputs and compilers may not be able to handle those.
+       */
+      NIR_PASS_V(nir, nir_lower_array_deref_of_vec, nir_var_shader_out,
+                 nir_lower_direct_array_deref_of_vec_load |
+                 nir_lower_indirect_array_deref_of_vec_load |
+                 nir_lower_direct_array_deref_of_vec_store |
+                 nir_lower_indirect_array_deref_of_vec_store);
+   }
+
    if (nir->info.stage != MESA_SHADER_VERTEX)
       nir_assign_io_var_locations(nir, nir_var_shader_in, &nir->num_inputs, nir->info.stage);
    else {

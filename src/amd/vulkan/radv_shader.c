@@ -646,6 +646,17 @@ radv_shader_spirv_to_nir(struct radv_device *device, const struct radv_shader_st
       NIR_PASS(_, nir, radv_nir_lower_primitive_shading_rate, pdev->info.gfx_level);
    }
 
+   if (nir->info.stage == MESA_SHADER_TESS_CTRL) {
+      /* Tessellation control shaders may have array derefs of vectors on
+       * outputs and nir_lower_io can't handle those yet.
+       */
+      NIR_PASS(_, nir, nir_lower_array_deref_of_vec, nir_var_shader_out,
+               nir_lower_direct_array_deref_of_vec_load |
+               nir_lower_indirect_array_deref_of_vec_load |
+               nir_lower_direct_array_deref_of_vec_store |
+               nir_lower_indirect_array_deref_of_vec_store);
+   }
+
    /* Indirect lowering must be called after the radv_optimize_nir() loop
     * has been called at least once. Otherwise indirect lowering can
     * bloat the instruction count of the loop and cause it to be

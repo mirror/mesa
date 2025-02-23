@@ -2776,6 +2776,21 @@ struct anv_storage_image_descriptor {
     * RESINFO result.
     */
    uint32_t image_depth;
+
+   /** Image address */
+   uint64_t image_address;
+
+   /** Image tiling mode
+    *
+    * 0 for linear, ~0 otherwise.
+    */
+   uint32_t tile_mode;
+
+   /** Image row pitch in bytes */
+   uint32_t row_pitch_B;
+
+   /** Image Q pitch (rows between array slices) */
+   uint32_t qpitch;
 };
 
 /** Struct representing a address/range descriptor
@@ -5212,11 +5227,15 @@ struct anv_kernel {
 };
 
 struct anv_format_plane {
+   /* Main format */
    enum isl_format isl_format:16;
-   struct isl_swizzle swizzle;
+   /* Vertex buffer format */
+   enum isl_format vbo_format:16;
 
    /* What aspect is associated to this plane */
-   VkImageAspectFlags aspect;
+   VkImageAspectFlags aspect:16;
+
+   struct isl_swizzle swizzle;
 };
 
 enum anv_format_flag {
@@ -5310,6 +5329,13 @@ anv_get_isl_format(const struct anv_physical_device *device, VkFormat vk_format,
    return anv_get_format_aspect(device, vk_format, aspect, tiling).isl_format;
 }
 
+static inline enum isl_format
+anv_get_vbo_format(const struct anv_physical_device *device, VkFormat vk_format,
+                   VkImageAspectFlags aspect, VkImageTiling tiling)
+{
+   return anv_get_format_aspect(device, vk_format, aspect, tiling).vbo_format;
+}
+
 bool anv_format_supports_ccs_e(const struct anv_physical_device *device,
                                const enum isl_format format);
 
@@ -5323,7 +5349,8 @@ extern VkFormat
 vk_format_from_android(unsigned android_format, unsigned android_usage);
 
 static inline VkFormat
-anv_get_emulation_format(const struct anv_physical_device *pdevice, VkFormat format)
+anv_get_compressed_format_emulation(const struct anv_physical_device *pdevice,
+                                    VkFormat format)
 {
    if (pdevice->flush_astc_ldr_void_extent_denorms) {
       const struct util_format_description *desc =
@@ -5340,9 +5367,18 @@ anv_get_emulation_format(const struct anv_physical_device *pdevice, VkFormat for
 }
 
 static inline bool
-anv_is_format_emulated(const struct anv_physical_device *pdevice, VkFormat format)
+anv_is_compressed_format_emulated(const struct anv_physical_device *pdevice,
+                                  VkFormat format)
 {
-   return anv_get_emulation_format(pdevice, format) != VK_FORMAT_UNDEFINED;
+   return anv_get_compressed_format_emulation(pdevice,
+                                              format) != VK_FORMAT_UNDEFINED;
+}
+
+static inline bool
+anv_is_storage_format_emulated(VkFormat format)
+{
+   return format == VK_FORMAT_R64_SINT ||
+          format == VK_FORMAT_R64_UINT;
 }
 
 static inline struct isl_swizzle
@@ -5967,6 +6003,7 @@ anv_image_ccs_op(struct anv_cmd_buffer *cmd_buffer,
 
 isl_surf_usage_flags_t
 anv_image_choose_isl_surf_usage(struct anv_physical_device *device,
+                                VkFormat vk_format,
                                 VkImageCreateFlags vk_create_flags,
                                 VkImageUsageFlags vk_usage,
                                 isl_surf_usage_flags_t isl_extra_usage,
@@ -6221,6 +6258,7 @@ anv_get_image_format_features2(const struct anv_physical_device *physical_device
                                VkFormat vk_format,
                                const struct anv_format *anv_format,
                                VkImageTiling vk_tiling,
+                               bool is_sparse,
                                const struct isl_drm_modifier_info *isl_mod_info);
 
 void anv_fill_buffer_surface_state(struct anv_device *device,

@@ -1122,6 +1122,12 @@ st_api_make_current(struct st_context *st,
    bool ret;
 
    if (st) {
+
+      /* Purge the context's winsys_buffers list before
+       * st_framebuffer_reuse_or_create in case any
+       * of the referenced drawables no longer exist. */
+      st_framebuffers_purge(st);
+
       /* reuse or create the draw fb */
       stdraw = st_framebuffer_reuse_or_create(st, stdrawi);
       if (streadi != stdrawi) {

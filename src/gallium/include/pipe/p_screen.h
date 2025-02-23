@@ -821,6 +821,36 @@ struct pipe_screen {
                                             enum pipe_video_entrypoint entrypoint);
 
    /**
+    * Allocates a cut-out in the GPU's VM space.
+    */
+   struct pipe_vm_allocation *(*alloc_vm)(struct pipe_screen *screen,
+                                           uint64_t start, uint64_t size);
+
+   /**
+    * Frees a cut-out allocated through alloc_vm.
+    */
+   void (*free_vm)(struct pipe_screen *screen, struct pipe_vm_allocation *alloc);
+
+   /**
+    * Binds an \p address to the given \p resource. \p needs to be created with
+    * PIPE_RESOURCE_FLAG_FRONTEND_VM
+    *
+    * \return true if the operation was successful, false otherwise.
+    */
+   bool (*resource_assign_vma)(struct pipe_screen *screen,
+                               struct pipe_resource *resource,
+                               uint64_t address);
+
+   /**
+    * Returns the virtual address of \p resource. \p resource needs to be created
+    * with PIPE_RESOURCE_FLAG_FIXED_ADDRESS.
+    *
+    * \return the virtual address of the given resource. Returns 0 on failure.
+    */
+   uint64_t (*resource_get_address)(struct pipe_screen *screen,
+                                    struct pipe_resource *resource);
+
+   /**
     * pipe_screen is inherited by driver's screen but a simple cast to convert
     * from the generic interface to the driver version won't work if dd_pipe
     * is used.

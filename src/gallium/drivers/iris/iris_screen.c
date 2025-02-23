@@ -501,6 +501,10 @@ iris_init_screen_caps(struct iris_screen *screen)
 
    caps->max_texture_anisotropy = 16.0f;
    caps->max_texture_lod_bias = 15.0f;
+
+   caps->min_vma = IRIS_MEMZONE_OTHER_START;
+   // exclude addresses which would need to be converted to their canonical form.
+   caps->max_vma = 0x7fffffffffff;
 }
 
 static uint64_t

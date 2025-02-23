@@ -25,7 +25,9 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::env;
 use std::ffi::CStr;
+use std::fmt::Debug;
 use std::mem::transmute;
+use std::num::NonZeroU64;
 use std::os::raw::*;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -103,6 +105,13 @@ pub trait HelperContextWrapper {
     where
         F: Fn(&HelperContext);
 
+    fn buffer_map(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer>;
     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void;
     fn delete_compute_state(&self, cso: *mut c_void);
     fn compute_state_info(&self, state: *mut c_void) -> pipe_compute_state_object_info;
@@ -162,6 +171,16 @@ impl HelperContextWrapper for HelperContext<'_> {
     {
         func(self);
         self.lock.flush()
+    }
+
+    fn buffer_map(
+        &self,
+        res: &PipeResource,
+        offset: i32,
+        size: i32,
+        rw: RWFlags,
+    ) -> Option<PipeTransfer> {
+        self.lock.buffer_map(res, offset, size, rw)
     }
 
     fn create_compute_state(&self, nir: &NirShader, static_local_mem: u32) -> *mut c_void {
@@ -713,6 +732,10 @@ impl Device {
             add_ext(1, 0, 0, "cl_arm_shared_virtual_memory");
         }
 
+        if self.bda_supported() {
+            add_ext(1, 0, 2, "cl_ext_buffer_device_address");
+        }
+
         self.extensions = exts;
         self.clc_features = feats;
         self.extension_string = format!("{} {}", PLATFORM_EXTENSION_STR, exts_str.join(" "));
@@ -849,6 +872,10 @@ impl Device {
         }
 
         self.screen.caps().doubles
+    }
+
+    pub fn bda_supported(&self) -> bool {
+        self.screen().is_fixed_address_supported()
     }
 
     pub fn is_gl_sharing_supported(&self) -> bool {
@@ -1097,8 +1124,27 @@ impl Device {
             && (subgroup_sizes == 1 || (subgroup_sizes > 1 && self.shareable_shaders()))
     }
 
-    pub fn svm_supported(&self) -> bool {
+    pub fn system_svm_supported(&self) -> bool {
         self.screen.caps().system_svm
+    }
+
+    pub fn svm_supported(&self) -> bool {
+        self.system_svm_supported() || self.screen().is_vm_supported()
+    }
+
+    /// Checks if the device supports SVM _and_ that we were able to initialize SVM support on a
+    /// platform level.
+    pub fn api_svm_supported(&self) -> bool {
+        self.system_svm_supported()
+            || (self.screen().is_vm_supported() && Platform::get().vm.is_some())
+    }
+
+    // returns (start, end)
+    pub fn vm_alloc_range(&self) -> Option<(NonZeroU64, NonZeroU64)> {
+        let min = self.screen.caps().min_vma;
+        let max = self.screen.caps().max_vma;
+
+        Some((NonZeroU64::new(min)?, NonZeroU64::new(max)?))
     }
 
     pub fn unified_memory(&self) -> bool {
@@ -1151,6 +1197,14 @@ impl Device {
             subgroups_shuffle_relative: subgroups_supported,
             ..Default::default()
         }
+    }
+}
+
+impl Debug for Device {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(&format!("Device@{:?}", self as *const _))
+            .field("name", &self.screen().name())
+            .finish()
     }
 }
 

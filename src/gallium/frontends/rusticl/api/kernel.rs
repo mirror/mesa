@@ -413,32 +413,40 @@ fn set_kernel_arg(
 
         // let's create the arg now
         let arg = unsafe {
-            if arg.dead {
-                KernelArgValue::None
-            } else {
-                match arg.kind {
-                    KernelArgType::Constant(_) => KernelArgValue::Constant(
-                        slice::from_raw_parts(arg_value.cast(), arg_size).to_vec(),
-                    ),
-                    KernelArgType::MemConstant | KernelArgType::MemGlobal => {
-                        let ptr: *const cl_mem = arg_value.cast();
-                        if ptr.is_null() || (*ptr).is_null() {
-                            KernelArgValue::None
-                        } else {
-                            let buffer = Buffer::arc_from_raw(*ptr)?;
-                            KernelArgValue::Buffer(Arc::downgrade(&buffer))
-                        }
+            match arg.kind {
+                KernelArgType::Constant(_) if !arg.dead => KernelArgValue::Constant(
+                    slice::from_raw_parts(arg_value.cast(), arg_size).to_vec(),
+                ),
+                KernelArgType::MemConstant | KernelArgType::MemGlobal => {
+                    let ptr: *const cl_mem = arg_value.cast();
+                    if ptr.is_null() || (*ptr).is_null() {
+                        KernelArgValue::None
+                    } else {
+                        let buffer = Buffer::arc_from_raw(*ptr)?;
+                        KernelArgValue::Buffer(Arc::downgrade(&buffer))
                     }
-                    KernelArgType::MemLocal => KernelArgValue::LocalMem(arg_size),
-                    KernelArgType::Image | KernelArgType::RWImage | KernelArgType::Texture => {
-                        let img: *const cl_mem = arg_value.cast();
-                        let img = Image::arc_from_raw(*img)?;
-                        KernelArgValue::Image(Arc::downgrade(&img))
-                    }
-                    KernelArgType::Sampler => {
-                        let ptr: *const cl_sampler = arg_value.cast();
-                        KernelArgValue::Sampler(Sampler::arc_from_raw(*ptr)?)
-                    }
+                }
+                KernelArgType::MemLocal if !arg.dead => KernelArgValue::LocalMem(arg_size),
+                KernelArgType::Image | KernelArgType::RWImage | KernelArgType::Texture
+                    if !arg.dead =>
+                {
+                    let img: *const cl_mem = arg_value.cast();
+                    let img = Image::arc_from_raw(*img)?;
+                    KernelArgValue::Image(Arc::downgrade(&img))
+                }
+                KernelArgType::Sampler if !arg.dead => {
+                    let ptr: *const cl_sampler = arg_value.cast();
+                    KernelArgValue::Sampler(Sampler::arc_from_raw(*ptr)?)
+                }
+                _ => {
+                    debug_assert!(
+                        arg.dead
+                            || matches!(
+                                arg.kind,
+                                KernelArgType::MemConstant | KernelArgType::MemGlobal
+                            )
+                    );
+                    KernelArgValue::None
                 }
             }
         };
@@ -474,13 +482,45 @@ fn set_kernel_arg_svm_pointer(
             return Err(CL_INVALID_ARG_INDEX);
         }
 
-        let arg_value = KernelArgValue::Constant(arg_value.to_ne_bytes().to_vec());
+        let arg_value = KernelArgValue::SVM(arg_value);
         kernel.set_kernel_arg(arg_index, arg_value)
     } else {
         Err(CL_INVALID_ARG_INDEX)
     }
 
     // CL_INVALID_ARG_VALUE if arg_value specified is not a valid value.
+}
+
+#[cl_entrypoint(clSetKernelArgDevicePointerEXT)]
+fn set_kernel_arg_device_pointer(
+    kernel: cl_kernel,
+    arg_index: cl_uint,
+    arg_value: cl_mem_device_address_ext,
+) -> CLResult<()> {
+    let kernel = Kernel::ref_from_raw(kernel)?;
+    let arg_index = arg_index as usize;
+    let devs = &kernel.prog.context.devs;
+
+    // CL_INVALID_OPERATION if no devices in the context associated with kernel support the device
+    // pointer.
+    if devs.iter().any(|dev| !dev.bda_supported()) {
+        return Err(CL_INVALID_OPERATION);
+    }
+
+    // CL_INVALID_ARG_INDEX if arg_index is not a valid argument index.
+    let Some(arg) = kernel.kernel_info.args.get(arg_index) else {
+        return Err(CL_INVALID_ARG_INDEX);
+    };
+
+    // The device pointer can only be used for arguments that are declared to be a pointer to global
+    // memory allocated with clCreateBufferWithProperties with the CL_MEM_DEVICE_PRIVATE_ADDRESS_EXT
+    // property.
+    if arg.kind != KernelArgType::MemGlobal {
+        return Err(CL_INVALID_ARG_INDEX);
+    }
+
+    // we set the arg also when it's a dead argument, as we need to ensure the buffer gets migrated.
+    kernel.set_kernel_arg(arg_index, KernelArgValue::BDA(arg_value))
 }
 
 #[cl_entrypoint(clSetKernelExecInfo)]
@@ -491,29 +531,94 @@ fn set_kernel_exec_info(
     param_value: *const ::std::os::raw::c_void,
 ) -> CLResult<()> {
     let k = Kernel::ref_from_raw(kernel)?;
+    let devs = &k.prog.devs;
 
-    // CL_INVALID_OPERATION if no devices in the context associated with kernel support SVM.
-    if !k.prog.devs.iter().any(|dev| dev.svm_supported()) {
-        return Err(CL_INVALID_OPERATION);
-    }
+    // CL_INVALID_OPERATION for CL_KERNEL_EXEC_INFO_DEVICE_PTRS_EXT if no device in the context
+    // associated with kernel support the cl_ext_buffer_device_address extension.
+    let check_bda_support = || {
+        if devs.iter().all(|dev| !dev.bda_supported()) {
+            Err(CL_INVALID_OPERATION)
+        } else {
+            Ok(())
+        }
+    };
 
-    // CL_INVALID_VALUE ... if param_value is NULL
-    if param_value.is_null() {
-        return Err(CL_INVALID_VALUE);
-    }
+    // CL_INVALID_OPERATION for CL_KERNEL_EXEC_INFO_SVM_PTRS and
+    // CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM if no devices in the context associated with kernel
+    // support SVM.
+    let check_svm_support = || {
+        if devs.iter().all(|dev| !dev.api_svm_supported()) {
+            Err(CL_INVALID_OPERATION)
+        } else {
+            Ok(())
+        }
+    };
 
     // CL_INVALID_VALUE ... if the size specified by param_value_size is not valid.
     match param_name {
+        CL_KERNEL_EXEC_INFO_DEVICE_PTRS_EXT => {
+            check_bda_support()?;
+            let handles = unsafe {
+                cl_slice::from_raw_parts_bytes_len::<cl_mem_device_address_ext>(
+                    param_value,
+                    param_value_size,
+                )?
+            };
+
+            handles.clone_into(&mut k.bdas.lock().unwrap());
+        }
         CL_KERNEL_EXEC_INFO_SVM_PTRS | CL_KERNEL_EXEC_INFO_SVM_PTRS_ARM => {
-            // it's a list of pointers
-            if param_value_size % mem::size_of::<*const c_void>() != 0 {
-                return Err(CL_INVALID_VALUE);
+            check_svm_support()?;
+
+            // reuse the existing container so we avoid reallocations
+            let mut svms = k.svms.lock().unwrap();
+
+            // To specify that no SVM allocations will be accessed by a kernel other than those set
+            // as kernel arguments, specify an empty set by passing param_value_size equal to zero
+            // and param_value equal to NULL.
+            if param_value_size == 0 && param_value.is_null() {
+                svms.clear();
+            } else {
+                let pointers = unsafe {
+                    cl_slice::from_raw_parts_bytes_len::<*const c_void>(
+                        param_value,
+                        param_value_size,
+                    )?
+                };
+
+                // We need to clear _after_ the error checking above. We could just assign a new
+                // container, however we also want to reuse the allocations.
+                svms.clear();
+                pointers
+                    .iter()
+                    // Each of the pointers can be the pointer returned by clSVMAlloc or can be a
+                    // pointer to the middle of an SVM allocation. It is sufficient to specify one
+                    // pointer for each SVM allocation.
+                    //
+                    // So we'll simply fetch the base and store that one.
+                    .filter_map(|&handle| k.prog.context.find_svm_alloc(handle as usize))
+                    .for_each(|(base, _)| {
+                        svms.insert(base as usize);
+                    });
             }
         }
         CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM
         | CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM_ARM => {
-            if param_value_size != mem::size_of::<cl_bool>() {
+            check_svm_support()?;
+            let val = unsafe {
+                cl_slice::from_raw_parts_bytes_len::<cl_bool>(param_value, param_value_size)?
+            };
+
+            // we must explicitly check that we only got one element
+            if val.len() != 1 {
                 return Err(CL_INVALID_VALUE);
+            }
+
+            // CL_INVALID_OPERATION if param_name is CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM and
+            // param_value is CL_TRUE but no devices in context associated with kernel support
+            // fine-grain system SVM allocations.
+            if val[0] == CL_TRUE && devs.iter().all(|dev| !dev.system_svm_supported()) {
+                return Err(CL_INVALID_OPERATION);
             }
         }
         // CL_INVALID_VALUE if param_name is not valid
@@ -521,8 +626,6 @@ fn set_kernel_exec_info(
     }
 
     Ok(())
-
-    // CL_INVALID_OPERATION if param_name is CL_KERNEL_EXEC_INFO_SVM_FINE_GRAIN_SYSTEM and param_value is CL_TRUE but no devices in context associated with kernel support fine-grain system SVM allocations.
 }
 
 #[cl_entrypoint(clEnqueueNDRangeKernel)]

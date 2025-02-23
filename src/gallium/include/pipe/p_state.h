@@ -1024,6 +1024,10 @@ struct pipe_grid_info
    unsigned draw_count;
    unsigned indirect_draw_count_offset;
    struct pipe_resource *indirect_draw_count;
+
+   /* Resources which might be indirectly accessed through global load/store operations */
+   uint32_t num_globals;
+   struct pipe_resource **globals;
 };
 
 /**
@@ -1291,6 +1295,15 @@ struct pipe_memory_info
 struct pipe_memory_object
 {
    bool dedicated;
+};
+
+/**
+ * Structure that contains information about a vm allocation
+ */
+struct pipe_vm_allocation
+{
+   uint64_t start;
+   uint64_t size;
 };
 
 #ifdef __cplusplus

@@ -88,9 +88,13 @@ struct amdgpu_bo_real {
    struct amdgpu_winsys_bo b;
 
    ac_drm_bo bo;
-   amdgpu_va_handle va_handle;
    /* Timeline point of latest VM ioctl completion. Only used in userqueue. */
    uint64_t vm_timeline_point;
+
+   union {
+      uint64_t svm; /* used when RADEON_FLAG_NO_VMA is set */
+      amdgpu_va_handle handle;
+   } va;
 
    void *cpu_ptr; /* for user_ptr and permanent maps */
    int map_count;
@@ -199,6 +203,14 @@ static inline struct amdgpu_bo_real_reusable_slab *get_real_bo_reusable_slab(str
 {
    assert(bo->type == AMDGPU_BO_REAL_REUSABLE_SLAB);
    return (struct amdgpu_bo_real_reusable_slab*)bo;
+}
+
+static inline uint64_t amdgpu_bo_real_vm_address(struct amdgpu_bo_real *bo)
+{
+   if (bo->b.base.usage & RADEON_FLAG_NO_VMA)
+      return bo->va.svm;
+   else
+      return amdgpu_va_get_start_addr(bo->va.handle);
 }
 
 /* Given a sequence number "fences->seq_no[queue_index]", return a pointer to a non-NULL fence

@@ -3,12 +3,13 @@ use mesa_rust_gen::*;
 use std::{
     marker::PhantomData,
     mem,
+    num::NonZeroU64,
     ptr::{self, NonNull},
 };
 
 use super::context::PipeContext;
 
-#[derive(PartialEq, Eq, Hash)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 #[repr(transparent)]
 pub struct PipeResource {
     pipe: NonNull<pipe_resource>,
@@ -122,6 +123,14 @@ impl PipeResource {
 
     pub fn is_user(&self) -> bool {
         self.as_ref().flags & PIPE_RESOURCE_FLAG_RUSTICL_IS_USER != 0
+    }
+
+    pub fn resource_get_address(&self) -> Option<NonZeroU64> {
+        let screen_ptr = self.as_ref().screen;
+        // SAFETY: it's a valid pointer and everything.
+        let screen = unsafe { screen_ptr.as_ref().unwrap_unchecked() };
+
+        NonZeroU64::new(unsafe { screen.resource_get_address?(screen_ptr, self.pipe()) })
     }
 
     pub fn pipe_image_view(&self, read_write: bool, host_access: u16) -> PipeImageView {
@@ -273,7 +282,18 @@ impl PipeResource {
 
 impl Drop for PipeResource {
     fn drop(&mut self) {
-        unsafe { pipe_resource_reference(&mut self.pipe.as_ptr(), ptr::null_mut()) }
+        unsafe {
+            let pipe = self.pipe.as_ref();
+            let screen = pipe.screen.as_ref().unwrap();
+
+            if pipe.flags & PIPE_RESOURCE_FLAG_FRONTEND_VM != 0 {
+                if let Some(resource_assign_vma) = screen.resource_assign_vma {
+                    resource_assign_vma(pipe.screen, self.pipe(), 0);
+                }
+            }
+
+            pipe_resource_reference(&mut self.pipe.as_ptr(), ptr::null_mut());
+        }
     }
 }
 

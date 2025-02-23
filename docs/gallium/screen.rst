@@ -1015,7 +1015,11 @@ resource_destroy
 
 Destroy a resource. A resource is destroyed if it has no more references.
 
+resource_get_address
+^^^^^^^^^^^^^^^^^^^^
 
+Returns the address of **resource** created with
+``PIPE_RESOURCE_FLAG_FIXED_ADDRESS``.
 
 get_timestamp
 ^^^^^^^^^^^^^

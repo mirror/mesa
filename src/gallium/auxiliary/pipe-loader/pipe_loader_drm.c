@@ -89,6 +89,7 @@ static const struct drm_driver_descriptor *driver_descriptors[] = {
    &panfrost_driver_descriptor,
    &panthor_driver_descriptor,
    &etnaviv_driver_descriptor,
+   &rocket_driver_descriptor,
    &tegra_driver_descriptor,
    &lima_driver_descriptor,
    &zink_driver_descriptor,
@@ -407,6 +408,9 @@ pipe_loader_get_compatible_render_capable_device_fd(int kms_only_fd)
 #if defined GALLIUM_PANFROST
       "panfrost",
       "panthor",
+#endif
+#if defined GALLIUM_ROCKET
+      "rocket",
 #endif
 #if defined GALLIUM_V3D
       "v3d",

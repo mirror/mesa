@@ -106,6 +106,7 @@ Linux, FreeBSD, and other operating systems.
 
    repository
    sourcetree
+   dependencies
    utilities
    helpwanted
    devinfo

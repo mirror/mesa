@@ -490,8 +490,9 @@ static void r300_draw_elements_immediate(struct r300_context *r300,
     const uint16_t *ptr2;
     const uint32_t *ptr4;
     unsigned index_size = info->index_size;
-    unsigned i, count_dwords = index_size == 4 ? draw->count :
-                                                 (draw->count + 1) / 2;
+    unsigned count_words = index_size == 4 ? draw->count * 2 : draw->count;
+    unsigned i, count_dwords = (count_words + 1) / 2;
+
     CS_LOCALS(r300);
 
     /* 19 dwords for r300_draw_elements_immediate. Give up if the function fails. */
@@ -545,7 +546,9 @@ static void r300_draw_elements_immediate(struct r300_context *r300,
             if (draw->count & 1)
                 OUT_CS(ptr2[i] + draw->index_bias);
         } else {
-            OUT_CS_TABLE(ptr2, count_dwords);
+            memcpy(cs_copy->current.buf + cs_copy->current.cdw, ptr2, count_words * 2);
+            cs_copy->current.cdw += count_dwords;
+            CS_USED_DW(count_dwords);
         }
         break;
 

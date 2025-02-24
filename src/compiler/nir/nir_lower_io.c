@@ -913,6 +913,40 @@ type_scalar_size_bytes(const struct glsl_type *type)
 }
 
 nir_def *
+nir_build_addr_convert(nir_builder *b, nir_def *addr, nir_address_format from,
+                       nir_address_format to)
+{
+   assert(addr->bit_size == nir_address_format_bit_size(from));
+   assert(addr->num_components == nir_address_format_num_components(from));
+
+   if (from == to) {
+      return addr;
+   }
+
+   switch (from) {
+   case nir_address_format_64bit_global:
+      switch (to) {
+      case nir_address_format_64bit_global_32bit_offset:
+         return nir_vec4(b, nir_unpack_64_2x32_split_x(b, addr),
+                         nir_unpack_64_2x32_split_y(b, addr), nir_imm_int(b, 0),
+                         nir_imm_int(b, 0));
+      default:
+         unreachable("unsupported");
+      }
+   case nir_address_format_64bit_global_32bit_offset:
+      switch (to) {
+      case nir_address_format_64bit_global:
+         return nir_iadd(b, nir_pack_64_2x32(b, nir_channels(b, addr, 0x3)),
+                         nir_u2u64(b, nir_channel(b, addr, 3)));
+      default:
+         unreachable("unsupported");
+      }
+   default:
+      unreachable("unsupported");
+   }
+}
+
+nir_def *
 nir_build_addr_iadd(nir_builder *b, nir_def *addr,
                     nir_address_format addr_format,
                     nir_variable_mode modes,

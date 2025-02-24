@@ -1002,6 +1002,8 @@ enum vtn_variable_mode vtn_storage_class_to_mode(struct vtn_builder *b,
 
 nir_address_format vtn_mode_to_address_format(struct vtn_builder *b,
                                               enum vtn_variable_mode);
+nir_address_format vtn_mode_to_address_format_abi(struct vtn_builder *b,
+                                                  enum vtn_variable_mode);
 
 nir_rounding_mode vtn_rounding_mode_to_nir(struct vtn_builder *b,
                                            SpvFPRoundingMode mode);

@@ -57,7 +57,8 @@ tu_spirv_to_nir(struct tu_device *dev,
       .ssbo_addr_format = nir_address_format_vec2_index_32bit_offset,
 
       /* Accessed via stg/ldg */
-      .phys_ssbo_addr_format = nir_address_format_64bit_global,
+      .phys_ssbo_addr_format = nir_address_format_64bit_global_32bit_offset,
+      .phys_ssbo_addr_format_abi = nir_address_format_64bit_global,
 
       /* Accessed via the const register file */
       .push_const_addr_format = nir_address_format_logical,
@@ -2547,7 +2548,7 @@ tu_shader_create(struct tu_device *dev,
 
    NIR_PASS_V(nir, nir_lower_explicit_io,
               nir_var_mem_global,
-              nir_address_format_64bit_global);
+              nir_address_format_64bit_global_32bit_offset);
 
    if (nir->info.stage == MESA_SHADER_COMPUTE) {
       if (!nir->info.shared_memory_explicit_layout) {

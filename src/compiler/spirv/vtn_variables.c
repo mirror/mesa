@@ -1921,6 +1921,18 @@ vtn_mode_to_address_format(struct vtn_builder *b, enum vtn_variable_mode mode)
    unreachable("Invalid variable mode");
 }
 
+nir_address_format
+vtn_mode_to_address_format_abi(struct vtn_builder *b,
+                               enum vtn_variable_mode mode)
+{
+   switch (mode) {
+   case vtn_variable_mode_phys_ssbo:
+      return b->options->phys_ssbo_addr_format_abi;
+   default:
+      return vtn_mode_to_address_format(b, mode);
+   }
+}
+
 nir_def *
 vtn_pointer_to_ssa(struct vtn_builder *b, struct vtn_pointer *ptr)
 {
@@ -1954,7 +1966,10 @@ vtn_pointer_to_ssa(struct vtn_builder *b, struct vtn_pointer *ptr)
 
       return ptr->block_index;
    } else {
-      return &vtn_pointer_to_deref(b, ptr)->def;
+      nir_def *deref = &vtn_pointer_to_deref(b, ptr)->def;
+      return nir_build_addr_convert(
+         &b->nb, deref, vtn_mode_to_address_format(b, ptr->mode),
+         vtn_mode_to_address_format_abi(b, ptr->mode));
    }
 }
 
@@ -2000,11 +2015,13 @@ vtn_pointer_from_ssa(struct vtn_builder *b, nir_def *ssa,
        * Uniform storage class with BufferBlock or the StorageBuffer
        * storage class with Block can be used.
        */
-      ptr->deref = nir_build_deref_cast(&b->nb, ssa, nir_mode,
-                                        deref_type, ptr_type->stride);
-      ptr->deref->def.num_components =
-         glsl_get_vector_elements(ptr_type->type);
-      ptr->deref->def.bit_size = glsl_get_bit_size(ptr_type->type);
+      ssa = nir_build_addr_convert(
+         &b->nb, ssa, vtn_mode_to_address_format_abi(b, ptr->mode),
+         vtn_mode_to_address_format(b, ptr->mode));
+      ptr->deref = nir_build_deref_cast(&b->nb, ssa, nir_mode, deref_type,
+                                        ptr_type->stride);
+      ptr->deref->def.num_components = ssa->num_components;
+      ptr->deref->def.bit_size = ssa->bit_size;
    }
 
    return ptr;

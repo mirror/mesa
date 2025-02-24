@@ -99,6 +99,7 @@ struct spirv_to_nir_options {
    nir_address_format ubo_addr_format;
    nir_address_format ssbo_addr_format;
    nir_address_format phys_ssbo_addr_format;
+   nir_address_format phys_ssbo_addr_format_abi;
    nir_address_format push_const_addr_format;
    nir_address_format shared_addr_format;
    nir_address_format task_payload_addr_format;

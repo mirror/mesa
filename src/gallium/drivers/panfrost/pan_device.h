@@ -130,6 +130,11 @@ struct panfrost_device {
    /* debug flags, see pan_util.h how to interpret */
    unsigned debug;
 
+#ifndef NDEBUG
+   /* The MMAP poison rate. If zero, no faults are injected. */
+   unsigned mmap_poison_rate;
+#endif
+
    struct renderonly *ro;
 
    pthread_mutex_t bo_map_lock;

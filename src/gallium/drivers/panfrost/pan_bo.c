@@ -339,6 +339,16 @@ panfrost_bo_mmap(struct panfrost_bo *bo)
    if (bo->ptr.cpu)
       return 0;
 
+#ifndef NDEBUG
+   struct panfrost_device *dev = bo->dev;
+   if (dev->mmap_poison_rate &&
+       !(random() % dev->mmap_poison_rate)) {
+      bo->ptr.cpu = NULL;
+      mesa_loge("*** POISONED MMAP!\n");
+      return -1;
+   }
+#endif
+
    bo->ptr.cpu = pan_kmod_bo_mmap(bo->kmod_bo, 0, panfrost_bo_size(bo),
                                   PROT_READ | PROT_WRITE, MAP_SHARED, NULL);
    if (bo->ptr.cpu == MAP_FAILED) {

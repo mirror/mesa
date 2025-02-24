@@ -552,6 +552,7 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
                         context->tensors[node->inputs->data[1]].data.data == NULL;
             break;
          }
+#if 0
          case kTfLiteBuiltinConcatenation: {
             TfLiteConcatenationParams *params = node->builtin_data;
             supported = true;
@@ -597,6 +598,7 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
          case kTfLiteBuiltinFullyConnected:
             supported = true;
             break;
+#endif
       }
 
       if (supported)

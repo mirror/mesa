@@ -11,7 +11,9 @@ _libmesaclc_c_args = []
 _libmesaclc_cpp_args = ['-DLLVM_LIB_DIR="@0@"'.format(llvm_libdir)]
 _libmesaclc_sources = []
 
-if not _shared_llvm
+_basedir = dep_clc.get_variable(pkgconfig : 'libexecdir')
+_static_libclc = get_option('static-libclc')
+if _static_libclc.length() > 0
   # LLVM 16 moved clang header path from using full version to only major version
   if dep_llvm.version().version_compare('< 16')
     # Prior to LLVM 16, this path used a full version
@@ -38,12 +40,7 @@ if not _shared_llvm
 
   _libmesaclc_sources += [opencl_c_base_h, opencl_c_h]
   _libmesaclc_cpp_args += ['-DUSE_STATIC_OPENCL_C_H=1']
-endif
 
-_basedir = dep_clc.get_variable(pkgconfig : 'libexecdir')
-
-_static_libclc = get_option('static-libclc')
-if _static_libclc.length() > 0
   if _static_libclc.contains('all')
     _static_libclc = ['spirv', 'spirv64']
   endif
@@ -110,7 +107,7 @@ _libmesaclc = static_library(
 )
 
 _idep_mesaclc_link_args = []
-if _shared_llvm
+if _static_libclc.length() == 0
   _idep_mesaclc_link_args += cc.get_supported_link_arguments('-fPIC')
 endif
 

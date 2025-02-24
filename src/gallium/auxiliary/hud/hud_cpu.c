@@ -33,6 +33,7 @@
 #include "util/u_thread.h"
 #include "util/u_memory.h"
 #include "util/u_queue.h"
+#include <assert.h>
 #include <stdio.h>
 #include <inttypes.h>
 #if DETECT_OS_WINDOWS
@@ -369,6 +370,7 @@ hud_thread_busy_install(struct hud_pane *pane, const char *name, bool main)
 {
    struct hud_graph *gr;
 
+   assert(strlen(name) < 128);
    gr = CALLOC_STRUCT(hud_graph);
    if (!gr)
       return;
@@ -455,6 +457,7 @@ void hud_thread_counter_install(struct hud_pane *pane, const char *name,
    if (!gr)
       return;
 
+   assert(strlen(name) < 128);
    strcpy(gr->name, name);
 
    gr->query_data = CALLOC_STRUCT(counter_info);

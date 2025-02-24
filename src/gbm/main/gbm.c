@@ -622,6 +622,9 @@ gbm_bo_map(struct gbm_bo *bo,
       return NULL;
    }
 
+   *stride = 0;
+   *map_data = NULL;
+
    return bo->gbm->v0.bo_map(bo, x, y, width, height,
                              flags, stride, map_data);
 }

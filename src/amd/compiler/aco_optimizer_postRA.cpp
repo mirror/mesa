@@ -116,7 +116,7 @@ struct pr_opt_ctx {
       }
    }
 
-   Instruction* get(Idx idx) { return program->blocks[idx.block].instructions[idx.instr].get(); }
+   Instruction* get(Idx idx) { return program->blocks[idx.block].instructions[idx.instr]; }
 };
 
 void
@@ -389,10 +389,10 @@ try_optimize_scc_nocompare(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
           * This means that the original instruction will be eliminated.
           */
          if (wr_instr->format == Format::SOP2) {
-            instr.reset(create_instruction(pulled_opcode, Format::SOP2, 2, 2));
+            instr = create_instruction(pulled_opcode, Format::SOP2, 2, 2);
             instr->operands[1] = wr_instr->operands[1];
          } else if (wr_instr->format == Format::SOP1) {
-            instr.reset(create_instruction(pulled_opcode, Format::SOP1, 1, 2));
+            instr = create_instruction(pulled_opcode, Format::SOP1, 1, 2);
          }
          instr->definitions[0] = wr_instr->definitions[0];
          instr->definitions[1] = scc_def;
@@ -473,7 +473,7 @@ is_scc_copy(const Instruction* instr)
 void
 save_scc_copy_producer(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
 {
-   if (!is_scc_copy(instr.get()))
+   if (!is_scc_copy(instr))
       return;
 
    Idx wr_idx = last_writer_idx(ctx, instr->operands[0]);
@@ -523,9 +523,8 @@ try_eliminate_scc_copy(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
 
    /* Duplicate the original producer of the SCC */
    Definition scc_def = instr->definitions[0];
-   instr.reset(create_instruction(producer_instr->opcode, producer_instr->format,
-                                  producer_instr->operands.size(),
-                                  producer_instr->definitions.size()));
+   instr = create_instruction(producer_instr->opcode, producer_instr->format,
+                              producer_instr->operands.size(), producer_instr->definitions.size());
    instr->salu().imm = producer_instr->salu().imm;
 
    /* The copy is no longer needed. */
@@ -871,7 +870,7 @@ try_insert_saveexec_out_of_loop(pr_opt_ctx& ctx, Block* block, Definition saved_
          continue;
       if (block->instructions[i]->writes_exec())
          return false;
-      if (instr_overwrites(block->instructions[i].get(), saved_exec.physReg(), saved_exec.size()))
+      if (instr_overwrites(block->instructions[i], saved_exec.physReg(), saved_exec.size()))
          return false;
    }
 
@@ -879,7 +878,7 @@ try_insert_saveexec_out_of_loop(pr_opt_ctx& ctx, Block* block, Definition saved_
    Block* cont = &ctx.program->blocks[block->linear_preds[1]];
    do {
       for (int i = cont->instructions.size() - 1; i >= 0; i--) {
-         Instruction* instr = cont->instructions[i].get();
+         Instruction* instr = cont->instructions[i];
          if (instr->opcode == aco_opcode::p_parallelcopy && instr->definitions.size() == 1 &&
              instr->definitions[0].physReg() == exec &&
              instr->operands[0].physReg() == saved_exec.physReg()) {
@@ -1044,7 +1043,7 @@ try_optimize_branching_sequence(pr_opt_ctx& ctx, aco_ptr<Instruction>& exec_copy
 
    /* Ensure that nothing needs a previous exec between exec_val_idx and the current exec write. */
    for (unsigned i = exec_val_idx.instr + 1; i < ctx.current_instr_idx; i++) {
-      Instruction* instr = ctx.current_block->instructions[i].get();
+      Instruction* instr = ctx.current_block->instructions[i];
       if (instr && needs_exec_mask(instr))
          return false;
 
@@ -1106,7 +1105,7 @@ try_optimize_branching_sequence(pr_opt_ctx& ctx, aco_ptr<Instruction>& exec_copy
             dst.neg = src.neg;
             dst.abs = src.abs;
 
-            ctx.current_block->instructions[exec_val_idx.instr].reset(tmp);
+            ctx.current_block->instructions[exec_val_idx.instr] = tmp;
             exec_val = ctx.get(exec_val_idx);
          }
       }
@@ -1144,11 +1143,11 @@ try_optimize_branching_sequence(pr_opt_ctx& ctx, aco_ptr<Instruction>& exec_copy
 
    if (can_remove_copy) {
       /* Remove the copy. */
-      exec_copy.reset();
+      exec_copy = nullptr;
       ctx.uses[exec_temp.id()]--;
    } else {
       /* Reassign the copy to write the register of the original value. */
-      exec_copy.reset(create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, 1, 1));
+      exec_copy = create_instruction(aco_opcode::p_parallelcopy, Format::PSEUDO, 1, 1);
       exec_copy->definitions[0] = exec_wr_def;
       exec_copy->operands[0] = Operand(exec, ctx.program->lane_mask);
    }
@@ -1207,8 +1206,8 @@ void
 process_instruction(pr_opt_ctx& ctx, aco_ptr<Instruction>& instr)
 {
    /* Don't try to optimize instructions which are already dead. */
-   if (!instr || is_dead(ctx.uses, instr.get())) {
-      instr.reset();
+   if (!instr || is_dead(ctx.uses, instr)) {
+      instr = nullptr;
       ctx.current_instr_idx++;
       return;
    }
@@ -1265,7 +1264,7 @@ optimize_postRA(Program* program)
       instructions.reserve(block.instructions.size());
 
       for (aco_ptr<Instruction>& instr : block.instructions) {
-         if (!instr || is_dead(ctx.uses, instr.get()))
+         if (!instr || is_dead(ctx.uses, instr))
             continue;
 
          instructions.emplace_back(std::move(instr));

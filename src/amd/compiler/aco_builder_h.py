@@ -264,21 +264,6 @@ public:
       it = instr_it;
    }
 
-   Result insert(aco_ptr<Instruction> instr) {
-      Instruction *instr_ptr = instr.get();
-      if (instructions) {
-         if (use_iterator) {
-            it = instructions->emplace(it, std::move(instr));
-            it = std::next(it);
-         } else if (!start) {
-            instructions->emplace_back(std::move(instr));
-         } else {
-            instructions->emplace(instructions->begin(), std::move(instr));
-         }
-      }
-      return Result(instr_ptr);
-   }
-
    Result insert(Instruction* instr) {
       if (instructions) {
          if (use_iterator) {
@@ -525,9 +510,9 @@ public:
       int num_defs = carry_out ? 2 : 1;
       aco_ptr<Instruction> sub;
       if (vop3)
-        sub.reset(create_instruction(op, Format::VOP3, num_ops, num_defs));
+        sub = create_instruction(op, Format::VOP3, num_ops, num_defs);
       else
-        sub.reset(create_instruction(op, Format::VOP2, num_ops, num_defs));
+        sub = create_instruction(op, Format::VOP2, num_ops, num_defs);
       sub->operands[0] = a.op;
       sub->operands[1] = b.op;
       if (!borrow.op.isUndefined())
@@ -671,3 +656,4 @@ from aco_opcodes import Format
 from mako.template import Template
 
 print(Template(template).render(Format=Format))
+

@@ -56,7 +56,7 @@ try_remove_simple_block(branch_ctx& ctx, Block& block)
       Block& pred = ctx.program->blocks[pred_idx];
       assert(pred.index < block.index);
       assert(!pred.instructions.empty() && pred.instructions.back()->isBranch());
-      Instruction* branch = pred.instructions.back().get();
+      Instruction* branch = pred.instructions.back();
       if (branch->opcode == aco_opcode::p_branch) {
          /* The predecessor unconditionally jumps to this block. Redirect to successor. */
          pred.linear_succs[0] = succ_idx;
@@ -167,7 +167,7 @@ try_merge_break_with_continue(branch_ctx& ctx, Block& block)
    if (block.linear_succs.size() != 2 || block.instructions.size() < 2)
       return;
 
-   Instruction* branch = block.instructions.back().get();
+   Instruction* branch = block.instructions.back();
    if (branch->opcode != aco_opcode::s_cbranch_scc0)
       return;
 
@@ -183,7 +183,7 @@ try_merge_break_with_continue(branch_ctx& ctx, Block& block)
          continue;
 
       Block& pred = ctx.program->blocks[merge_pred];
-      Instruction* pred_branch = pred.instructions.back().get();
+      Instruction* pred_branch = pred.instructions.back();
       /* The branch needs to be exec zero only, otherwise we corrupt exec. */
       if (pred_branch->opcode != aco_opcode::p_cbranch_z ||
           pred_branch->operands[0].physReg() != exec)
@@ -195,11 +195,11 @@ try_merge_break_with_continue(branch_ctx& ctx, Block& block)
       return;
 
    Builder bld(ctx.program);
-   Instruction* execwrite = merge.instructions[0].get();
+   Instruction* execwrite = merge.instructions[0];
    if (execwrite->opcode != bld.w64or32(Builder::s_mov) || !execwrite->writes_exec())
       return;
 
-   Instruction* execsrc = block.instructions[block.instructions.size() - 2].get();
+   Instruction* execsrc = block.instructions[block.instructions.size() - 2];
    if (execsrc->opcode != bld.w64or32(Builder::s_andn2) ||
        execsrc->definitions[0].physReg() != execwrite->operands[0].physReg() ||
        execsrc->operands[0].physReg() != execwrite->operands[0].physReg() ||
@@ -232,7 +232,7 @@ try_merge_break_with_continue(branch_ctx& ctx, Block& block)
       Instruction* wr_exec =
          bld.sop1(Builder::s_andn2_wrexec, execsrc->definitions[0], execsrc->definitions[1],
                   Definition(exec, bld.lm), execsrc->operands[0], execsrc->operands[1]);
-      merge.instructions[0].reset(wr_exec);
+      merge.instructions[0] = wr_exec;
    } else {
       /* Move s_andn2 to the merge block. */
       merge.instructions.emplace(merge.instructions.begin(), std::move(block.instructions.back()));
@@ -265,7 +265,7 @@ eliminate_useless_exec_writes_in_block(branch_ctx& ctx, Block& block)
       aco_ptr<Instruction>& instr = block.instructions[i];
 
       /* See if the current instruction needs or writes exec. */
-      bool needs_exec = needs_exec_mask(instr.get());
+      bool needs_exec = needs_exec_mask(instr);
       bool writes_exec =
          instr->writes_exec() && instr->definitions[0].regClass() == ctx.program->lane_mask;
 
@@ -279,7 +279,7 @@ eliminate_useless_exec_writes_in_block(branch_ctx& ctx, Block& block)
                                          [](const Definition& def) -> bool
                                          { return def.physReg() != exec && def.physReg() != scc; });
          if (!writes_other) {
-            instr.reset();
+            instr = nullptr;
             continue;
          }
       }

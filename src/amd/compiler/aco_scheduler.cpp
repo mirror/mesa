@@ -190,9 +190,9 @@ MoveState::downwards_init(int current_idx, bool improved_rar_, bool may_form_cla
    }
 
    DownwardsCursor cursor(current_idx, block->instructions[current_idx]->register_demand);
-   RegisterDemand temp = get_temp_registers(block->instructions[cursor.insert_idx - 1].get());
+   RegisterDemand temp = get_temp_registers(block->instructions[cursor.insert_idx - 1]);
    cursor.insert_demand = block->instructions[cursor.insert_idx - 1]->register_demand - temp;
-   temp = get_temp_registers(block->instructions[cursor.insert_idx_clause - 1].get());
+   temp = get_temp_registers(block->instructions[cursor.insert_idx_clause - 1]);
    cursor.insert_demand_clause =
       block->instructions[cursor.insert_idx_clause - 1]->register_demand - temp;
 
@@ -239,12 +239,12 @@ MoveState::downwards_move(DownwardsCursor& cursor, bool add_to_clause)
    }
 
    /* Check the new demand of the instructions being moved over */
-   const RegisterDemand candidate_diff = get_live_changes(instr.get());
+   const RegisterDemand candidate_diff = get_live_changes(instr);
    if (RegisterDemand(register_pressure - candidate_diff).exceeds(max_registers))
       return move_fail_pressure;
 
    /* New demand for the moved instruction */
-   const RegisterDemand temp = get_temp_registers(instr.get());
+   const RegisterDemand temp = get_temp_registers(instr);
    const RegisterDemand insert_demand =
       add_to_clause ? cursor.insert_demand_clause : cursor.insert_demand;
    const RegisterDemand new_demand = insert_demand + temp;
@@ -348,7 +348,7 @@ MoveState::upwards_update_insert_idx(UpwardsCursor& cursor)
 {
    cursor.insert_idx = cursor.source_idx;
    cursor.total_demand = block->instructions[cursor.insert_idx]->register_demand;
-   const RegisterDemand temp = get_temp_registers(block->instructions[cursor.insert_idx - 1].get());
+   const RegisterDemand temp = get_temp_registers(block->instructions[cursor.insert_idx - 1]);
    cursor.insert_demand = block->instructions[cursor.insert_idx - 1]->register_demand - temp;
 }
 
@@ -371,8 +371,8 @@ MoveState::upwards_move(UpwardsCursor& cursor)
 
    /* check if register pressure is low enough: the diff is negative if register pressure is
     * decreased */
-   const RegisterDemand candidate_diff = get_live_changes(instr.get());
-   const RegisterDemand temp = get_temp_registers(instr.get());
+   const RegisterDemand candidate_diff = get_live_changes(instr);
+   const RegisterDemand temp = get_temp_registers(instr);
    if (RegisterDemand(cursor.total_demand + candidate_diff).exceeds(max_registers))
       return move_fail_pressure;
    const RegisterDemand new_demand = cursor.insert_demand + candidate_diff + temp;
@@ -755,7 +755,7 @@ schedule_SMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
 
       bool can_move_down = true;
 
-      HazardResult haz = perform_hazard_query(&hq, candidate.get(), false);
+      HazardResult haz = perform_hazard_query(&hq, candidate, false);
       if (haz == hazard_fail_reorder_ds || haz == hazard_fail_spill ||
           haz == hazard_fail_reorder_sendmsg || haz == hazard_fail_barrier ||
           haz == hazard_fail_export)
@@ -766,14 +766,14 @@ schedule_SMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       /* don't use LDS/GDS instructions to hide latency since it can
        * significantly worsen LDS scheduling */
       if (candidate->isDS() || !can_move_down) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       }
 
       MoveResult res = ctx.mv.downwards_move(cursor, false);
       if (res == move_fail_ssa || res == move_fail_rar) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       } else if (res == move_fail_pressure) {
@@ -806,7 +806,7 @@ schedule_SMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          break;
 
       if (found_dependency) {
-         HazardResult haz = perform_hazard_query(&hq, candidate.get(), true);
+         HazardResult haz = perform_hazard_query(&hq, candidate, true);
          if (haz == hazard_fail_reorder_ds || haz == hazard_fail_spill ||
              haz == hazard_fail_reorder_sendmsg || haz == hazard_fail_barrier ||
              haz == hazard_fail_export)
@@ -825,7 +825,7 @@ schedule_SMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
 
       if (is_dependency || !found_dependency) {
          if (found_dependency)
-            add_to_hazard_query(&hq, candidate.get());
+            add_to_hazard_query(&hq, candidate);
          else
             k++;
          ctx.mv.upwards_skip(up_cursor);
@@ -837,7 +837,7 @@ schedule_SMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          /* no need to steal from following VMEM instructions */
          if (res == move_fail_ssa && (candidate->isVMEM() || candidate->isFlatLike()))
             break;
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.upwards_skip(up_cursor);
          continue;
       } else if (res == move_fail_pressure) {
@@ -892,7 +892,7 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          /* We can't easily tell how much this will decrease the def-to-use
           * distances, so just use how far it will be moved as a heuristic. */
          part_of_clause =
-            grab_dist < clause_max_grab_dist + k && should_form_clause(current, candidate.get());
+            grab_dist < clause_max_grab_dist + k && should_form_clause(current, candidate);
       }
 
       /* if current depends on candidate, add additional dependencies and continue */
@@ -905,8 +905,8 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          if (part_of_clause) {
             int clause_size = cursor.insert_idx - cursor.insert_idx_clause;
             int prev_clause_size = 1;
-            while (should_form_clause(current,
-                                      block->instructions[candidate_idx - prev_clause_size].get()))
+            while (
+               should_form_clause(current, block->instructions[candidate_idx - prev_clause_size]))
                prev_clause_size++;
             if (prev_clause_size > clause_size + 1)
                break;
@@ -915,7 +915,7 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          }
       }
       HazardResult haz =
-         perform_hazard_query(part_of_clause ? &clause_hq : &indep_hq, candidate.get(), false);
+         perform_hazard_query(part_of_clause ? &clause_hq : &indep_hq, candidate, false);
       if (haz == hazard_fail_reorder_ds || haz == hazard_fail_spill ||
           haz == hazard_fail_reorder_sendmsg || haz == hazard_fail_barrier ||
           haz == hazard_fail_export)
@@ -926,27 +926,27 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       if (!can_move_down) {
          if (part_of_clause)
             break;
-         add_to_hazard_query(&indep_hq, candidate.get());
-         add_to_hazard_query(&clause_hq, candidate.get());
+         add_to_hazard_query(&indep_hq, candidate);
+         add_to_hazard_query(&clause_hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       }
 
-      Instruction* candidate_ptr = candidate.get();
+      Instruction* candidate_ptr = candidate;
       MoveResult res = ctx.mv.downwards_move(cursor, part_of_clause);
       if (res == move_fail_ssa || res == move_fail_rar) {
          if (part_of_clause)
             break;
-         add_to_hazard_query(&indep_hq, candidate.get());
-         add_to_hazard_query(&clause_hq, candidate.get());
+         add_to_hazard_query(&indep_hq, candidate);
+         add_to_hazard_query(&clause_hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       } else if (res == move_fail_pressure) {
          only_clauses = true;
          if (part_of_clause)
             break;
-         add_to_hazard_query(&indep_hq, candidate.get());
-         add_to_hazard_query(&clause_hq, candidate.get());
+         add_to_hazard_query(&indep_hq, candidate);
+         add_to_hazard_query(&clause_hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       }
@@ -976,7 +976,7 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       /* check if candidate depends on current */
       bool is_dependency = false;
       if (found_dependency) {
-         HazardResult haz = perform_hazard_query(&indep_hq, candidate.get(), true);
+         HazardResult haz = perform_hazard_query(&indep_hq, candidate, true);
          if (haz == hazard_fail_reorder_ds || haz == hazard_fail_spill ||
              haz == hazard_fail_reorder_vmem_smem || haz == hazard_fail_reorder_sendmsg ||
              haz == hazard_fail_barrier || haz == hazard_fail_export)
@@ -1002,7 +1002,7 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
 
       if (is_dependency || !found_dependency) {
          if (found_dependency)
-            add_to_hazard_query(&indep_hq, candidate.get());
+            add_to_hazard_query(&indep_hq, candidate);
          else
             k++;
          ctx.mv.upwards_skip(up_cursor);
@@ -1011,7 +1011,7 @@ schedule_VMEM(sched_ctx& ctx, Block* block, Instruction* current, int idx)
 
       MoveResult res = ctx.mv.upwards_move(up_cursor);
       if (res == move_fail_ssa || res == move_fail_rar) {
-         add_to_hazard_query(&indep_hq, candidate.get());
+         add_to_hazard_query(&indep_hq, candidate);
          ctx.mv.upwards_skip(up_cursor);
          continue;
       } else if (res == move_fail_pressure) {
@@ -1043,12 +1043,12 @@ schedule_LDS(sched_ctx& ctx, Block* block, Instruction* current, int idx)
          break;
 
       if (candidate->isDS() || candidate->isLDSDIR()) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       }
 
-      if (perform_hazard_query(&hq, candidate.get(), false) != hazard_success ||
+      if (perform_hazard_query(&hq, candidate, false) != hazard_success ||
           ctx.mv.downwards_move(cursor, false) != move_success)
          break;
 
@@ -1069,7 +1069,7 @@ schedule_LDS(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       /* check if candidate depends on current */
       if (!ctx.mv.upwards_check_deps(up_cursor)) {
          init_hazard_query(ctx, &hq);
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.upwards_update_insert_idx(up_cursor);
          ctx.mv.upwards_skip(up_cursor);
          found_dependency = true;
@@ -1086,12 +1086,12 @@ schedule_LDS(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       if (candidate->opcode == aco_opcode::p_logical_end || is_mem)
          break;
 
-      HazardResult haz = perform_hazard_query(&hq, candidate.get(), true);
+      HazardResult haz = perform_hazard_query(&hq, candidate, true);
       if (haz == hazard_fail_exec || haz == hazard_fail_unreorderable)
          break;
 
       if (haz != hazard_success || ctx.mv.upwards_move(up_cursor) != move_success) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.upwards_skip(up_cursor);
       } else {
          k++;
@@ -1123,19 +1123,19 @@ schedule_position_export(sched_ctx& ctx, Block* block, Instruction* current, int
       if (candidate->isVMEM() || candidate->isSMEM() || candidate->isFlatLike())
          break;
 
-      HazardResult haz = perform_hazard_query(&hq, candidate.get(), false);
+      HazardResult haz = perform_hazard_query(&hq, candidate, false);
       if (haz == hazard_fail_exec || haz == hazard_fail_unreorderable)
          break;
 
       if (haz != hazard_success) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       }
 
       MoveResult res = ctx.mv.downwards_move(cursor, false);
       if (res == move_fail_ssa || res == move_fail_rar) {
-         add_to_hazard_query(&hq, candidate.get());
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
          continue;
       } else if (res == move_fail_pressure) {
@@ -1159,14 +1159,14 @@ schedule_VMEM_store(sched_ctx& ctx, Block* block, Instruction* current, int idx)
       if (candidate->opcode == aco_opcode::p_logical_start)
          break;
 
-      if (!should_form_clause(current, candidate.get())) {
-         add_to_hazard_query(&hq, candidate.get());
+      if (!should_form_clause(current, candidate)) {
+         add_to_hazard_query(&hq, candidate);
          ctx.mv.downwards_skip(cursor);
-         k += get_likely_cost(candidate.get());
+         k += get_likely_cost(candidate);
          continue;
       }
 
-      if (perform_hazard_query(&hq, candidate.get(), false) != hazard_success ||
+      if (perform_hazard_query(&hq, candidate, false) != hazard_success ||
           ctx.mv.downwards_move(cursor, true) != move_success)
          break;
 
@@ -1186,7 +1186,7 @@ schedule_block(sched_ctx& ctx, Program* program, Block* block)
    /* go through all instructions and find memory loads */
    unsigned num_stores = 0;
    for (unsigned idx = 0; idx < block->instructions.size(); idx++) {
-      Instruction* current = block->instructions[idx].get();
+      Instruction* current = block->instructions[idx];
 
       if (current->opcode == aco_opcode::p_logical_end)
          break;
@@ -1223,7 +1223,7 @@ schedule_block(sched_ctx& ctx, Program* program, Block* block)
    /* GFX11 benefits from creating VMEM store clauses. */
    if (num_stores > 1 && program->gfx_level >= GFX11) {
       for (int idx = block->instructions.size() - 1; idx >= 0; idx--) {
-         Instruction* current = block->instructions[idx].get();
+         Instruction* current = block->instructions[idx];
          if (!current->definitions.empty() || !(current->isVMEM() || current->isFlatLike()))
             continue;
 

@@ -37,7 +37,7 @@ create_mimg(bool nsa, unsigned addrs, unsigned instr_dwords)
    mimg->mimg().dmask = 0x1;
    mimg->mimg().dim = ac_image_2d;
 
-   assert(get_mimg_nsa_dwords(mimg.get()) + 2 == instr_dwords);
+   assert(get_mimg_nsa_dwords(mimg) + 2 == instr_dwords);
 
    bld.insert(std::move(mimg));
 }

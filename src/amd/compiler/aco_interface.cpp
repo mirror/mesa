@@ -90,49 +90,48 @@ get_disasm_string(Program* program, std::vector<uint32_t>& code, unsigned exec_s
 }
 
 static std::string
-aco_postprocess_shader(const struct aco_compiler_options* options,
-                       std::unique_ptr<Program>& program)
+aco_postprocess_shader(const struct aco_compiler_options* options, Program* program)
 {
    std::string llvm_ir;
 
    if (options->dump_preoptir)
-      aco_print_program(program.get(), stderr);
+      aco_print_program(program, stderr);
 
-   ASSERTED bool is_valid = validate_cfg(program.get());
+   ASSERTED bool is_valid = validate_cfg(program);
    assert(is_valid);
 
-   dominator_tree(program.get());
+   dominator_tree(program);
    if (program->should_repair_ssa)
-      repair_ssa(program.get());
-   lower_phis(program.get());
+      repair_ssa(program);
+   lower_phis(program);
 
    if (program->gfx_level <= GFX7)
-      lower_subdword(program.get());
+      lower_subdword(program);
 
-   validate(program.get());
+   validate(program);
 
    /* Optimization */
    if (!options->optimisations_disabled) {
       if (!(debug_flags & DEBUG_NO_VN))
-         value_numbering(program.get());
+         value_numbering(program);
       if (!(debug_flags & DEBUG_NO_OPT))
-         optimize(program.get());
+         optimize(program);
 
       /* Optimization may move SGPR uses down, requiring further SSA repair. */
-      if (program->should_repair_ssa && repair_ssa(program.get()))
-         lower_phis(program.get());
+      if (program->should_repair_ssa && repair_ssa(program))
+         lower_phis(program);
    }
 
    /* cleanup and exec mask handling */
-   setup_reduce_temp(program.get());
-   insert_exec_mask(program.get());
-   validate(program.get());
+   setup_reduce_temp(program);
+   insert_exec_mask(program);
+   validate(program);
 
    /* spilling and scheduling */
-   live_var_analysis(program.get());
+   live_var_analysis(program);
    if (program->collect_statistics)
-      collect_presched_stats(program.get());
-   spill(program.get());
+      collect_presched_stats(program);
+   spill(program);
 
    if (options->record_ir) {
       char* data = NULL;
@@ -140,7 +139,7 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
       u_memstream mem;
       if (u_memstream_open(&mem, &data, &size)) {
          FILE* const memf = u_memstream_get(&mem);
-         aco_print_program(program.get(), memf);
+         aco_print_program(program, memf);
          fputc(0, memf);
          u_memstream_close(&mem);
       }
@@ -150,56 +149,56 @@ aco_postprocess_shader(const struct aco_compiler_options* options,
    }
 
    if ((debug_flags & DEBUG_LIVE_INFO) && options->dump_ir)
-      aco_print_program(program.get(), stderr, print_live_vars | print_kill);
+      aco_print_program(program, stderr, print_live_vars | print_kill);
 
    if (!options->optimisations_disabled && !(debug_flags & DEBUG_NO_SCHED))
-      schedule_program(program.get());
-   validate(program.get());
+      schedule_program(program);
+   validate(program);
 
    /* Register Allocation */
-   register_allocation(program.get());
+   register_allocation(program);
 
-   if (validate_ra(program.get())) {
-      aco_print_program(program.get(), stderr);
+   if (validate_ra(program)) {
+      aco_print_program(program, stderr);
       abort();
    } else if (options->dump_ir) {
-      aco_print_program(program.get(), stderr);
+      aco_print_program(program, stderr);
    }
 
-   validate(program.get());
+   validate(program);
 
    /* Optimization */
    if (!options->optimisations_disabled && !(debug_flags & DEBUG_NO_OPT)) {
-      optimize_postRA(program.get());
-      validate(program.get());
+      optimize_postRA(program);
+      validate(program);
    }
 
    /* Lower to HW Instructions */
-   ssa_elimination(program.get());
-   lower_to_hw_instr(program.get());
-   lower_branches(program.get());
-   validate(program.get());
+   ssa_elimination(program);
+   lower_to_hw_instr(program);
+   lower_branches(program);
+   validate(program);
 
    if (!options->optimisations_disabled && !(debug_flags & DEBUG_NO_SCHED_VOPD))
-      schedule_vopd(program.get());
+      schedule_vopd(program);
 
    /* Schedule hardware instructions for ILP */
    if (!options->optimisations_disabled && !(debug_flags & DEBUG_NO_SCHED_ILP))
-      schedule_ilp(program.get());
+      schedule_ilp(program);
 
-   insert_waitcnt(program.get());
-   insert_NOPs(program.get());
+   insert_waitcnt(program);
+   insert_NOPs(program);
    if (program->gfx_level >= GFX11)
-      insert_delay_alu(program.get());
+      insert_delay_alu(program);
 
    if (program->gfx_level >= GFX10)
-      form_hard_clauses(program.get());
+      form_hard_clauses(program);
 
    if (program->gfx_level >= GFX11)
-      combine_delay_alu(program.get());
+      combine_delay_alu(program);
 
    if (program->collect_statistics || (debug_flags & DEBUG_PERF_INFO))
-      collect_preasm_stats(program.get());
+      collect_preasm_stats(program);
 
    return llvm_ir;
 }
@@ -219,31 +218,31 @@ aco_compile_shader_part(const struct aco_compiler_options* options,
    init();
 
    ac_shader_config config = {0};
-   std::unique_ptr<Program> program{new Program};
+   Program program;
 
-   program->collect_statistics = options->record_stats;
-   if (program->collect_statistics)
-      memset(program->statistics, 0, sizeof(program->statistics));
+   program.collect_statistics = options->record_stats;
+   if (program.collect_statistics)
+      memset(program.statistics, 0, sizeof(program.statistics));
 
-   program->debug.func = options->debug.func;
-   program->debug.private_data = options->debug.private_data;
+   program.debug.func = options->debug.func;
+   program.debug.private_data = options->debug.private_data;
 
-   program->is_prolog = is_prolog;
-   program->is_epilog = !is_prolog;
+   program.is_prolog = is_prolog;
+   program.is_epilog = !is_prolog;
 
    /* Instruction selection */
-   select_shader_part(program.get(), pinfo, &config, options, info, args);
+   select_shader_part(&program, pinfo, &config, options, info, args);
 
-   aco_postprocess_shader(options, program);
+   aco_postprocess_shader(options, &program);
 
    /* assembly */
    std::vector<uint32_t> code;
    bool append_endpgm = !(options->is_opengl && is_prolog);
-   unsigned exec_size = emit_program(program.get(), code, NULL, append_endpgm);
+   unsigned exec_size = emit_program(&program, code, NULL, append_endpgm);
 
    std::string disasm;
    if (options->record_asm)
-      disasm = get_disasm_string(program.get(), code, exec_size);
+      disasm = get_disasm_string(&program, code, exec_size);
 
    (*build_binary)(binary, config.num_sgprs, config.num_vgprs, code.data(), code.size(),
                    disasm.data(), disasm.size());
@@ -259,19 +258,19 @@ aco_compile_shader(const struct aco_compiler_options* options, const struct aco_
    init();
 
    ac_shader_config config = {0};
-   std::unique_ptr<Program> program{new Program};
+   Program program;
 
-   program->collect_statistics = options->record_stats;
-   if (program->collect_statistics)
-      memset(program->statistics, 0, sizeof(program->statistics));
+   program.collect_statistics = options->record_stats;
+   if (program.collect_statistics)
+      memset(program.statistics, 0, sizeof(program.statistics));
 
-   program->debug.func = options->debug.func;
-   program->debug.private_data = options->debug.private_data;
+   program.debug.func = options->debug.func;
+   program.debug.private_data = options->debug.private_data;
 
    /* Instruction Selection */
-   select_program(program.get(), shader_count, shaders, &config, options, info, args);
+   select_program(&program, shader_count, shaders, &config, options, info, args);
 
-   std::string llvm_ir = aco_postprocess_shader(options, program);
+   std::string llvm_ir = aco_postprocess_shader(options, &program);
 
    /* assembly */
    std::vector<uint32_t> code;
@@ -280,23 +279,23 @@ aco_compile_shader(const struct aco_compiler_options* options, const struct aco_
     * so only last part need the s_endpgm instruction.
     */
    bool append_endpgm = !(options->is_opengl && info->ps.has_epilog);
-   unsigned exec_size = emit_program(program.get(), code, &symbols, append_endpgm);
+   unsigned exec_size = emit_program(&program, code, &symbols, append_endpgm);
 
-   if (program->collect_statistics)
-      collect_postasm_stats(program.get(), code);
+   if (program.collect_statistics)
+      collect_postasm_stats(&program, code);
 
    std::string disasm;
    if (options->record_asm)
-      disasm = get_disasm_string(program.get(), code, exec_size);
+      disasm = get_disasm_string(&program, code, exec_size);
 
    size_t stats_size = 0;
-   if (program->collect_statistics)
+   if (program.collect_statistics)
       stats_size = aco_num_statistics * sizeof(uint32_t);
 
    (*build_binary)(binary, &config, llvm_ir.c_str(), llvm_ir.size(), disasm.c_str(), disasm.size(),
-                   program->statistics, stats_size, exec_size, code.data(), code.size(),
-                   symbols.data(), symbols.size(), program->debug_info.data(),
-                   program->debug_info.size());
+                   program.statistics, stats_size, exec_size, code.data(), code.size(),
+                   symbols.data(), symbols.size(), program.debug_info.data(),
+                   program.debug_info.size());
 }
 
 void
@@ -309,35 +308,35 @@ aco_compile_rt_prolog(const struct aco_compiler_options* options,
 
    /* create program */
    ac_shader_config config = {0};
-   std::unique_ptr<Program> program{new Program};
-   program->collect_statistics = false;
-   program->debug.func = NULL;
-   program->debug.private_data = NULL;
+   Program program;
+   program.collect_statistics = false;
+   program.debug.func = NULL;
+   program.debug.private_data = NULL;
 
-   select_rt_prolog(program.get(), &config, options, info, in_args, out_args);
-   validate(program.get());
-   insert_waitcnt(program.get());
-   insert_NOPs(program.get());
-   if (program->gfx_level >= GFX11)
-      insert_delay_alu(program.get());
-   if (program->gfx_level >= GFX10)
-      form_hard_clauses(program.get());
-   if (program->gfx_level >= GFX11)
-      combine_delay_alu(program.get());
+   select_rt_prolog(&program, &config, options, info, in_args, out_args);
+   validate(&program);
+   insert_waitcnt(&program);
+   insert_NOPs(&program);
+   if (program.gfx_level >= GFX11)
+      insert_delay_alu(&program);
+   if (program.gfx_level >= GFX10)
+      form_hard_clauses(&program);
+   if (program.gfx_level >= GFX11)
+      combine_delay_alu(&program);
 
    if (options->dump_ir)
-      aco_print_program(program.get(), stderr);
+      aco_print_program(&program, stderr);
 
    /* assembly */
    std::vector<uint32_t> code;
-   code.reserve(align(program->blocks[0].instructions.size() * 2, 16));
-   unsigned exec_size = emit_program(program.get(), code);
+   code.reserve(align(program.blocks[0].instructions.size() * 2, 16));
+   unsigned exec_size = emit_program(&program, code);
 
    std::string disasm;
    if (options->record_asm)
-      disasm = get_disasm_string(program.get(), code, exec_size);
+      disasm = get_disasm_string(&program, code, exec_size);
 
-   (*build_prolog)(binary, &config, NULL, 0, disasm.c_str(), disasm.size(), program->statistics, 0,
+   (*build_prolog)(binary, &config, NULL, 0, disasm.c_str(), disasm.size(), program.statistics, 0,
                    exec_size, code.data(), code.size(), NULL, 0, NULL, 0);
 }
 
@@ -351,29 +350,29 @@ aco_compile_vs_prolog(const struct aco_compiler_options* options,
 
    /* create program */
    ac_shader_config config = {0};
-   std::unique_ptr<Program> program{new Program};
-   program->collect_statistics = false;
-   program->debug.func = NULL;
-   program->debug.private_data = NULL;
+   Program program;
+   program.collect_statistics = false;
+   program.debug.func = NULL;
+   program.debug.private_data = NULL;
 
    /* create IR */
-   select_vs_prolog(program.get(), pinfo, &config, options, info, args);
-   validate(program.get());
-   insert_NOPs(program.get());
-   if (program->gfx_level >= GFX10)
-      form_hard_clauses(program.get());
+   select_vs_prolog(&program, pinfo, &config, options, info, args);
+   validate(&program);
+   insert_NOPs(&program);
+   if (program.gfx_level >= GFX10)
+      form_hard_clauses(&program);
 
    if (options->dump_ir)
-      aco_print_program(program.get(), stderr);
+      aco_print_program(&program, stderr);
 
    /* assembly */
    std::vector<uint32_t> code;
-   code.reserve(align(program->blocks[0].instructions.size() * 2, 16));
-   unsigned exec_size = emit_program(program.get(), code);
+   code.reserve(align(program.blocks[0].instructions.size() * 2, 16));
+   unsigned exec_size = emit_program(&program, code);
 
    std::string disasm;
    if (options->record_asm)
-      disasm = get_disasm_string(program.get(), code, exec_size);
+      disasm = get_disasm_string(&program, code, exec_size);
 
    (*build_prolog)(binary, config.num_sgprs, config.num_vgprs, code.data(), code.size(),
                    disasm.data(), disasm.size());
@@ -407,37 +406,37 @@ aco_compile_trap_handler(const struct aco_compiler_options* options,
    init();
 
    ac_shader_config config = {0};
-   std::unique_ptr<Program> program{new Program};
-   program->collect_statistics = false;
-   program->debug.func = NULL;
-   program->debug.private_data = NULL;
+   Program program;
+   program.collect_statistics = false;
+   program.debug.func = NULL;
+   program.debug.private_data = NULL;
 
-   select_trap_handler_shader(program.get(), &config, options, info, args);
+   select_trap_handler_shader(&program, &config, options, info, args);
 
    if (options->dump_preoptir)
-      aco_print_program(program.get(), stderr);
-   validate(program.get());
+      aco_print_program(&program, stderr);
+   validate(&program);
 
-   insert_exec_mask(program.get());
-   validate(program.get());
+   insert_exec_mask(&program);
+   validate(&program);
 
-   lower_to_hw_instr(program.get());
-   lower_branches(program.get());
-   validate(program.get());
+   lower_to_hw_instr(&program);
+   lower_branches(&program);
+   validate(&program);
 
-   insert_waitcnt(program.get());
-   insert_NOPs(program.get());
+   insert_waitcnt(&program);
+   insert_NOPs(&program);
 
    /* assembly */
    std::vector<uint32_t> code;
-   code.reserve(align(program->blocks[0].instructions.size() * 2, 16));
-   unsigned exec_size = emit_program(program.get(), code);
+   code.reserve(align(program.blocks[0].instructions.size() * 2, 16));
+   unsigned exec_size = emit_program(&program, code);
 
    std::string disasm;
    if (options->record_asm)
-      disasm = get_disasm_string(program.get(), code, exec_size);
+      disasm = get_disasm_string(&program, code, exec_size);
 
-   (*build_binary)(binary, &config, NULL, 0, disasm.c_str(), disasm.size(), program->statistics, 0,
+   (*build_binary)(binary, &config, NULL, 0, disasm.c_str(), disasm.size(), program.statistics, 0,
                    exec_size, code.data(), code.size(), NULL, 0, NULL, 0);
 }
 

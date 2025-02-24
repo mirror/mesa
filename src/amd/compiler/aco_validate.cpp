@@ -82,7 +82,7 @@ validate_ir(Program* program)
             for (Definition def : instr->definitions) {
                if (!def.isTemp())
                   continue;
-               check(!def_blocks.count(def.tempId()), "Temporary defined twice", instr.get());
+               check(!def_blocks.count(def.tempId()), "Temporary defined twice", instr);
                def_blocks[def.tempId()] = std::make_pair(block.index, false);
             }
          }
@@ -114,12 +114,12 @@ validate_ir(Program* program)
                      char msg[256];
                      snprintf(msg, sizeof(msg), "Definition of %%%u does not dominate use",
                               op.tempId());
-                     check(false, msg, instr.get());
+                     check(false, msg, instr);
                   }
                } else {
                   char msg[256];
                   snprintf(msg, sizeof(msg), "%%%u never defined", op.tempId());
-                  check(false, msg, instr.get());
+                  check(false, msg, instr);
                }
             }
 
@@ -137,11 +137,11 @@ validate_ir(Program* program)
          if (program->progress < CompilationProgress::after_lower_to_hw) {
             for (const Operand& op : instr->operands)
                check(!op.isTemp() || op.regClass() == program->temp_rc[op.tempId()],
-                     "Operand RC not consistent.", instr.get());
+                     "Operand RC not consistent.", instr);
 
             for (const Definition& def : instr->definitions)
                check(!def.isTemp() || def.regClass() == program->temp_rc[def.tempId()],
-                     "Definition RC not consistent.", instr.get());
+                     "Definition RC not consistent.", instr);
          }
 
          unsigned pck_defs = instr_info.definitions[(int)instr->opcode];
@@ -155,41 +155,40 @@ validate_ir(Program* program)
             for (unsigned i = 0; i < 4; i++) {
                uint32_t def = (pck_defs >> (i * 8)) & 0xff;
                if (def == 0) {
-                  check(i == instr->definitions.size(), "Too many definitions", instr.get());
+                  check(i == instr->definitions.size(), "Too many definitions", instr);
                   break;
                } else {
-                  check(i < instr->definitions.size(), "Too few definitions", instr.get());
+                  check(i < instr->definitions.size(), "Too few definitions", instr);
                   if (i >= instr->definitions.size())
                      break;
                }
 
                if (def == m0) {
                   check(instr->definitions[i].isFixed() && instr->definitions[i].physReg() == m0,
-                        "Definition needs m0", instr.get());
+                        "Definition needs m0", instr);
                } else if (def == scc) {
                   check(instr->definitions[i].isFixed() && instr->definitions[i].physReg() == scc,
-                        "Definition needs scc", instr.get());
+                        "Definition needs scc", instr);
                } else if (def == exec_hi) {
                   RegClass rc = instr->isSALU() ? s2 : program->lane_mask;
                   check(instr->definitions[i].isFixed() &&
                            instr->definitions[i].physReg() == exec &&
                            instr->definitions[i].regClass() == rc,
-                        "Definition needs exec", instr.get());
+                        "Definition needs exec", instr);
                } else if (def == exec_lo) {
                   check(instr->definitions[i].isFixed() &&
                            instr->definitions[i].physReg() == exec_lo &&
                            instr->definitions[i].regClass() == s1,
-                        "Definition needs exec_lo", instr.get());
+                        "Definition needs exec_lo", instr);
                } else if (def == vcc) {
                   check(instr->definitions[i].regClass() == program->lane_mask,
-                        "Definition has to be lane mask", instr.get());
+                        "Definition has to be lane mask", instr);
                   check(!instr->definitions[i].isFixed() ||
                            instr->definitions[i].physReg() == vcc || instr->isVOP3() ||
                            instr->isSDWA(),
-                        "Definition has to be vcc", instr.get());
+                        "Definition has to be vcc", instr);
                } else {
-                  check(instr->definitions[i].size() == def, "Definition has wrong size",
-                        instr.get());
+                  check(instr->definitions[i].size() == def, "Definition has wrong size", instr);
                }
             }
          }
@@ -198,41 +197,41 @@ validate_ir(Program* program)
             for (unsigned i = 0; i < 4; i++) {
                uint32_t op = (pck_ops >> (i * 8)) & 0xff;
                if (op == 0) {
-                  check(i == instr->operands.size(), "Too many operands", instr.get());
+                  check(i == instr->operands.size(), "Too many operands", instr);
                   break;
                } else {
-                  check(i < instr->operands.size(), "Too few operands", instr.get());
+                  check(i < instr->operands.size(), "Too few operands", instr);
                   if (i >= instr->operands.size())
                      break;
                }
 
                if (op == m0) {
                   check(instr->operands[i].isFixed() && instr->operands[i].physReg() == m0,
-                        "Operand needs m0", instr.get());
+                        "Operand needs m0", instr);
                } else if (op == scc) {
                   check(instr->operands[i].isFixed() && instr->operands[i].physReg() == scc,
-                        "Operand needs scc", instr.get());
+                        "Operand needs scc", instr);
                } else if (op == exec_hi) {
                   RegClass rc = instr->isSALU() ? s2 : program->lane_mask;
                   check(instr->operands[i].isFixed() && instr->operands[i].physReg() == exec &&
                            instr->operands[i].hasRegClass() && instr->operands[i].regClass() == rc,
-                        "Operand needs exec", instr.get());
+                        "Operand needs exec", instr);
                } else if (op == exec_lo) {
                   check(instr->operands[i].isFixed() && instr->operands[i].physReg() == exec_lo &&
                            instr->operands[i].hasRegClass() && instr->operands[i].regClass() == s1,
-                        "Operand needs exec_lo", instr.get());
+                        "Operand needs exec_lo", instr);
                } else if (op == vcc) {
                   check(instr->operands[i].hasRegClass() &&
                            instr->operands[i].regClass() == program->lane_mask,
-                        "Operand has to be lane mask", instr.get());
+                        "Operand has to be lane mask", instr);
                   check(!instr->operands[i].isFixed() || instr->operands[i].physReg() == vcc ||
                            instr->isVOP3(),
-                        "Operand has to be vcc", instr.get());
+                        "Operand has to be vcc", instr);
                } else {
                   check(instr->operands[i].size() == op ||
                            (instr->operands[i].isFixed() && instr->operands[i].physReg() >= 128 &&
                             instr->operands[i].physReg() < 256),
-                        "Operand has wrong size", instr.get());
+                        "Operand has wrong size", instr);
                }
             }
          }
@@ -263,82 +262,79 @@ validate_ir(Program* program)
             }
          }
          check(base_format == instr_info.format[(int)instr->opcode],
-               "Wrong base format for instruction", instr.get());
+               "Wrong base format for instruction", instr);
 
          /* check VOP3 modifiers */
          if (instr->isVOP3() && withoutDPP(instr->format) != Format::VOP3) {
             check(base_format == Format::VOP2 || base_format == Format::VOP1 ||
                      base_format == Format::VOPC || base_format == Format::VINTRP,
-                  "Format cannot have VOP3/VOP3B applied", instr.get());
+                  "Format cannot have VOP3/VOP3B applied", instr);
          }
 
          if (instr->isDPP()) {
             check(base_format == Format::VOP2 || base_format == Format::VOP1 ||
                      base_format == Format::VOPC || base_format == Format::VOP3 ||
                      base_format == Format::VOP3P,
-                  "Format cannot have DPP applied", instr.get());
+                  "Format cannot have DPP applied", instr);
             check((!instr->isVOP3() && !instr->isVOP3P()) || program->gfx_level >= GFX11,
-                  "VOP3+DPP is GFX11+ only", instr.get());
+                  "VOP3+DPP is GFX11+ only", instr);
 
             bool fi =
                instr->isDPP8() ? instr->dpp8().fetch_inactive : instr->dpp16().fetch_inactive;
-            check(!fi || program->gfx_level >= GFX10, "DPP Fetch-Inactive is GFX10+ only",
-                  instr.get());
+            check(!fi || program->gfx_level >= GFX10, "DPP Fetch-Inactive is GFX10+ only", instr);
          }
 
          /* check SDWA */
          if (instr->isSDWA()) {
             check(base_format == Format::VOP2 || base_format == Format::VOP1 ||
                      base_format == Format::VOPC,
-                  "Format cannot have SDWA applied", instr.get());
+                  "Format cannot have SDWA applied", instr);
 
-            check(program->gfx_level >= GFX8, "SDWA is GFX8 to GFX10.3 only", instr.get());
-            check(program->gfx_level < GFX11, "SDWA is GFX8 to GFX10.3 only", instr.get());
+            check(program->gfx_level >= GFX8, "SDWA is GFX8 to GFX10.3 only", instr);
+            check(program->gfx_level < GFX11, "SDWA is GFX8 to GFX10.3 only", instr);
 
             SDWA_instruction& sdwa = instr->sdwa();
             check(sdwa.omod == 0 || program->gfx_level >= GFX9, "SDWA omod only supported on GFX9+",
-                  instr.get());
+                  instr);
             if (base_format == Format::VOPC) {
                check(sdwa.clamp == false || program->gfx_level == GFX8,
-                     "SDWA VOPC clamp only supported on GFX8", instr.get());
+                     "SDWA VOPC clamp only supported on GFX8", instr);
                check((instr->definitions[0].isFixed() && instr->definitions[0].physReg() == vcc) ||
                         program->gfx_level >= GFX9,
-                     "SDWA+VOPC definition must be fixed to vcc on GFX8", instr.get());
+                     "SDWA+VOPC definition must be fixed to vcc on GFX8", instr);
             } else {
                const Definition& def = instr->definitions[0];
-               check(def.bytes() <= 4, "SDWA definitions must not be larger than 4 bytes",
-                     instr.get());
+               check(def.bytes() <= 4, "SDWA definitions must not be larger than 4 bytes", instr);
                check(def.bytes() >= sdwa.dst_sel.size() + sdwa.dst_sel.offset(),
-                     "SDWA definition selection size must be at most definition size", instr.get());
+                     "SDWA definition selection size must be at most definition size", instr);
                check(
                   sdwa.dst_sel.size() == 1 || sdwa.dst_sel.size() == 2 || sdwa.dst_sel.size() == 4,
-                  "SDWA definition selection size must be 1, 2 or 4 bytes", instr.get());
+                  "SDWA definition selection size must be 1, 2 or 4 bytes", instr);
                check(sdwa.dst_sel.offset() % sdwa.dst_sel.size() == 0, "Invalid selection offset",
-                     instr.get());
+                     instr);
                check(def.bytes() == 4 || def.bytes() == sdwa.dst_sel.size(),
-                     "SDWA dst_sel size must be definition size for subdword definitions",
-                     instr.get());
+                     "SDWA dst_sel size must be definition size for subdword definitions", instr);
                check(def.bytes() == 4 || sdwa.dst_sel.offset() == 0,
-                     "SDWA dst_sel offset must be 0 for subdword definitions", instr.get());
+                     "SDWA dst_sel offset must be 0 for subdword definitions", instr);
             }
 
             for (unsigned i = 0; i < std::min<unsigned>(2, instr->operands.size()); i++) {
                const Operand& op = instr->operands[i];
-               check(op.bytes() <= 4, "SDWA operands must not be larger than 4 bytes", instr.get());
+               check(op.bytes() <= 4, "SDWA operands must not be larger than 4 bytes", instr);
                check(op.bytes() >= sdwa.sel[i].size() + sdwa.sel[i].offset(),
-                     "SDWA operand selection size must be at most operand size", instr.get());
+                     "SDWA operand selection size must be at most operand size", instr);
                check(sdwa.sel[i].size() == 1 || sdwa.sel[i].size() == 2 || sdwa.sel[i].size() == 4,
-                     "SDWA operand selection size must be 1, 2 or 4 bytes", instr.get());
+                     "SDWA operand selection size must be 1, 2 or 4 bytes", instr);
                check(sdwa.sel[i].offset() % sdwa.sel[i].size() == 0, "Invalid selection offset",
-                     instr.get());
+                     instr);
             }
             if (instr->operands.size() >= 3) {
                check(instr->operands[2].isFixed() && instr->operands[2].physReg() == vcc,
-                     "3rd operand must be fixed to vcc with SDWA", instr.get());
+                     "3rd operand must be fixed to vcc with SDWA", instr);
             }
             if (instr->definitions.size() >= 2) {
                check(instr->definitions[1].isFixed() && instr->definitions[1].physReg() == vcc,
-                     "2nd definition must be fixed to vcc with SDWA", instr.get());
+                     "2nd definition must be fixed to vcc with SDWA", instr);
             }
 
             const bool sdwa_opcodes =
@@ -358,47 +354,47 @@ validate_ir(Program* program)
                program->gfx_level == GFX8 &&
                (instr->opcode == aco_opcode::v_mac_f32 && instr->opcode == aco_opcode::v_mac_f16);
 
-            check(sdwa_opcodes || feature_mac, "SDWA can't be used with this opcode", instr.get());
+            check(sdwa_opcodes || feature_mac, "SDWA can't be used with this opcode", instr);
          }
 
          /* check opsel */
          if (instr->opcode == aco_opcode::v_permlane16_b32 ||
              instr->opcode == aco_opcode::v_permlanex16_b32) {
-            check(instr->valu().opsel <= 0x3, "Unexpected opsel for permlane", instr.get());
+            check(instr->valu().opsel <= 0x3, "Unexpected opsel for permlane", instr);
          } else if (instr->isVOP3() || instr->isVOP1() || instr->isVOP2() || instr->isVOPC()) {
             VALU_instruction& valu = instr->valu();
             check(valu.opsel == 0 || program->gfx_level >= GFX9, "Opsel is only supported on GFX9+",
-                  instr.get());
+                  instr);
             check(valu.opsel == 0 || instr->format == Format::VOP3 || program->gfx_level >= GFX11,
-                  "Opsel is only supported for VOP3 before GFX11", instr.get());
+                  "Opsel is only supported for VOP3 before GFX11", instr);
 
             for (unsigned i = 0; i < 3; i++) {
                if (i >= instr->operands.size() ||
                    (!instr->isVOP3() && !instr->operands[i].isOfType(RegType::vgpr)) ||
                    (instr->operands[i].hasRegClass() &&
                     instr->operands[i].regClass().is_subdword() && !instr->operands[i].isFixed()))
-                  check(!valu.opsel[i], "Unexpected opsel for operand", instr.get());
+                  check(!valu.opsel[i], "Unexpected opsel for operand", instr);
             }
             if (!instr->definitions.empty() && instr->definitions[0].regClass().is_subdword() &&
                 !instr->definitions[0].isFixed())
-               check(!valu.opsel[3], "Unexpected opsel for sub-dword definition", instr.get());
+               check(!valu.opsel[3], "Unexpected opsel for sub-dword definition", instr);
          } else if (instr->opcode == aco_opcode::v_fma_mixlo_f16 ||
                     instr->opcode == aco_opcode::v_fma_mixhi_f16 ||
                     instr->opcode == aco_opcode::v_fma_mix_f32) {
             check(instr->definitions[0].regClass() ==
                      (instr->opcode == aco_opcode::v_fma_mix_f32 ? v1 : v2b),
-                  "v_fma_mix_f32/v_fma_mix_f16 must have v1/v2b definition", instr.get());
+                  "v_fma_mix_f32/v_fma_mix_f16 must have v1/v2b definition", instr);
          } else if (instr->isVOP3P()) {
             VALU_instruction& vop3p = instr->valu();
             for (unsigned i = 0; i < instr->operands.size(); i++) {
                if (instr->operands[i].hasRegClass() &&
                    instr->operands[i].regClass().is_subdword() && !instr->operands[i].isFixed())
                   check(!vop3p.opsel_lo[i] && !vop3p.opsel_hi[i],
-                        "Unexpected opsel for subdword operand", instr.get());
+                        "Unexpected opsel for subdword operand", instr);
             }
             check(instr->definitions[0].regClass() == v1 ||
                      instr_info.classes[(int)instr->opcode] == instr_class::wmma,
-                  "VOP3P must have v1 definition", instr.get());
+                  "VOP3P must have v1 definition", instr);
          }
 
          /* check for undefs */
@@ -417,11 +413,11 @@ validate_ir(Program* program)
                                    ((instr->isMUBUF() || instr->isMTBUF()) && i == 1) ||
                                    (instr->isScratch() && i == 0) || (instr->isDS() && i == 0) ||
                                    (instr->opcode == aco_opcode::p_init_scratch && i == 0);
-               check(can_be_undef, "Undefs can only be used in certain operands", instr.get());
+               check(can_be_undef, "Undefs can only be used in certain operands", instr);
             } else {
                check(instr->operands[i].isFixed() || instr->operands[i].isTemp() ||
                         instr->operands[i].isConstant(),
-                     "Uninitialized Operand", instr.get());
+                     "Uninitialized Operand", instr);
             }
          }
 
@@ -434,7 +430,7 @@ validate_ir(Program* program)
              * VGPRs to make space for normal ones and that isn't possible inside control flow. */
             if (op.isKill()) {
                check(block.kind & block_kind_top_level,
-                     "Linear VGPR operands must only be killed at top-level blocks", instr.get());
+                     "Linear VGPR operands must only be killed at top-level blocks", instr);
             }
          }
 
@@ -443,7 +439,7 @@ validate_ir(Program* program)
             if (instr->definitions[i].regClass().is_subdword())
                check(instr->definitions[i].bytes() <= 4 || instr->isPseudo() || instr->isVMEM(),
                      "Only Pseudo and VMEM instructions can write subdword registers > 4 bytes",
-                     instr.get());
+                     instr);
          }
 
          if ((instr->isSALU() && instr->opcode != aco_opcode::p_constaddr_addlo &&
@@ -459,14 +455,14 @@ validate_ir(Program* program)
                check(!instr->isDPP() && !instr->isSDWA() &&
                         (!instr->isVOP3() || program->gfx_level >= GFX10) &&
                         (!instr->isVOP3P() || program->gfx_level >= GFX10),
-                     "Literal applied on wrong instruction format", instr.get());
+                     "Literal applied on wrong instruction format", instr);
 
                check(literal.isUndefined() || (literal.size() == op.size() &&
                                                literal.constantValue() == op.constantValue()),
-                     "Only 1 Literal allowed", instr.get());
+                     "Only 1 Literal allowed", instr);
                literal = op;
                check(instr->isSALU() || instr->isVOP3() || instr->isVOP3P() || i == 0 || i == 2,
-                     "Wrong source position for Literal argument", instr.get());
+                     "Wrong source position for Literal argument", instr);
             }
 
             /* check num sgprs for VALU */
@@ -499,11 +495,11 @@ validate_ir(Program* program)
                    instr_info.classes[(int)instr->opcode] ==
                       instr_class::valu_pseudo_scalar_trans) {
                   check(instr->definitions[0].regClass().type() == RegType::sgpr,
-                        "Wrong Definition type for VALU instruction", instr.get());
+                        "Wrong Definition type for VALU instruction", instr);
                } else {
                   if (!instr->definitions.empty())
                      check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                           "Wrong Definition type for VALU instruction", instr.get());
+                           "Wrong Definition type for VALU instruction", instr);
                }
 
                unsigned num_sgprs = 0;
@@ -514,32 +510,31 @@ validate_ir(Program* program)
                       instr->opcode == aco_opcode::v_readlane_b32 ||
                       instr->opcode == aco_opcode::v_readlane_b32_e64) {
                      check(i != 1 || op.isOfType(RegType::sgpr) || op.isConstant(),
-                           "Must be a SGPR or a constant", instr.get());
+                           "Must be a SGPR or a constant", instr);
                      check(i == 1 || (op.isOfType(RegType::vgpr) && op.bytes() <= 4),
-                           "Wrong Operand type for VALU instruction", instr.get());
+                           "Wrong Operand type for VALU instruction", instr);
                      continue;
                   }
                   if (instr->opcode == aco_opcode::v_permlane16_b32 ||
                       instr->opcode == aco_opcode::v_permlanex16_b32 ||
                       instr->opcode == aco_opcode::v_permlane64_b32) {
                      check(i != 0 || op.isOfType(RegType::vgpr),
-                           "Operand 0 of v_permlane must be VGPR", instr.get());
+                           "Operand 0 of v_permlane must be VGPR", instr);
                      check(i == 0 || op.isOfType(RegType::sgpr) || op.isConstant(),
-                           "Lane select operands of v_permlane must be SGPR or constant",
-                           instr.get());
+                           "Lane select operands of v_permlane must be SGPR or constant", instr);
                   }
 
                   if (instr->opcode == aco_opcode::v_writelane_b32 ||
                       instr->opcode == aco_opcode::v_writelane_b32_e64) {
                      check(i != 2 || (op.isOfType(RegType::vgpr) && op.bytes() <= 4),
-                           "Wrong Operand type for VALU instruction", instr.get());
+                           "Wrong Operand type for VALU instruction", instr);
                      check(i == 2 || op.isOfType(RegType::sgpr) || op.isConstant(),
-                           "Must be a SGPR or a constant", instr.get());
+                           "Must be a SGPR or a constant", instr);
                      continue;
                   }
                   if (op.isOfType(RegType::sgpr)) {
                      check(scalar_mask & (1 << i), "Wrong source position for SGPR argument",
-                           instr.get());
+                           instr);
 
                      if (op.tempId() != sgpr[0] && op.tempId() != sgpr[1]) {
                         if (num_sgprs < 2)
@@ -549,44 +544,44 @@ validate_ir(Program* program)
 
                   if (op.isConstant() && !op.isLiteral())
                      check(scalar_mask & (1 << i), "Wrong source position for constant argument",
-                           instr.get());
+                           instr);
                }
                check(num_sgprs + (literal.isUndefined() ? 0 : 1) <= const_bus_limit,
-                     "Too many SGPRs/literals", instr.get());
+                     "Too many SGPRs/literals", instr);
 
                /* Validate modifiers. */
                check(!instr->valu().opsel || instr->isVOP3() || instr->isVOP1() ||
                         instr->isVOP2() || instr->isVOPC() || instr->isVINTERP_INREG(),
-                     "OPSEL set for unsupported instruction format", instr.get());
+                     "OPSEL set for unsupported instruction format", instr);
                check(!instr->valu().opsel_lo || instr->isVOP3P(),
-                     "OPSEL_LO set for unsupported instruction format", instr.get());
+                     "OPSEL_LO set for unsupported instruction format", instr);
                check(!instr->valu().opsel_hi || instr->isVOP3P(),
-                     "OPSEL_HI set for unsupported instruction format", instr.get());
+                     "OPSEL_HI set for unsupported instruction format", instr);
                check(!instr->valu().omod || instr->isVOP3() || instr->isSDWA(),
-                     "OMOD set for unsupported instruction format", instr.get());
+                     "OMOD set for unsupported instruction format", instr);
                check(!instr->valu().clamp || instr->isVOP3() || instr->isVOP3P() ||
                         instr->isSDWA() || instr->isVINTERP_INREG(),
-                     "CLAMP set for unsupported instruction format", instr.get());
+                     "CLAMP set for unsupported instruction format", instr);
 
                for (bool abs : instr->valu().abs) {
                   check(!abs || instr->isVOP3() || instr->isVOP3P() || instr->isSDWA() ||
                            instr->isDPP16(),
-                        "ABS/NEG_HI set for unsupported instruction format", instr.get());
+                        "ABS/NEG_HI set for unsupported instruction format", instr);
                }
                for (bool neg : instr->valu().neg) {
                   check(!neg || instr->isVOP3() || instr->isVOP3P() || instr->isSDWA() ||
                            instr->isDPP16() || instr->isVINTERP_INREG(),
-                        "NEG/NEG_LO set for unsupported instruction format", instr.get());
+                        "NEG/NEG_LO set for unsupported instruction format", instr);
                }
             }
 
             if (instr->isSOP1() || instr->isSOP2()) {
                if (!instr->definitions.empty())
                   check(instr->definitions[0].regClass().type() == RegType::sgpr,
-                        "Wrong Definition type for SALU instruction", instr.get());
+                        "Wrong Definition type for SALU instruction", instr);
                for (const Operand& op : instr->operands) {
                   check(op.isConstant() || op.isOfType(RegType::sgpr),
-                        "Wrong Operand type for SALU instruction", instr.get());
+                        "Wrong Operand type for SALU instruction", instr);
                }
             }
          }
@@ -597,164 +592,157 @@ validate_ir(Program* program)
                 instr->opcode == aco_opcode::p_start_linear_vgpr) {
                unsigned size = 0;
                for (const Operand& op : instr->operands) {
-                  check(op.bytes() < 4 || size % 4 == 0, "Operand is not aligned", instr.get());
+                  check(op.bytes() < 4 || size % 4 == 0, "Operand is not aligned", instr);
                   size += op.bytes();
                }
                if (!instr->operands.empty() || instr->opcode == aco_opcode::p_create_vector) {
                   check(size == instr->definitions[0].bytes(),
-                        "Definition size does not match operand sizes", instr.get());
+                        "Definition size does not match operand sizes", instr);
                }
                if (instr->definitions[0].regClass().type() == RegType::sgpr) {
                   for (const Operand& op : instr->operands) {
                      check(op.isConstant() || op.regClass().type() == RegType::sgpr,
-                           "Wrong Operand type for scalar vector", instr.get());
+                           "Wrong Operand type for scalar vector", instr);
                   }
                }
                if (instr->opcode == aco_opcode::p_start_linear_vgpr)
                   check(instr->definitions[0].regClass().is_linear_vgpr(),
-                        "Definition must be linear VGPR", instr.get());
+                        "Definition must be linear VGPR", instr);
             } else if (instr->opcode == aco_opcode::p_extract_vector) {
                check(!instr->operands[0].isConstant() && instr->operands[1].isConstant(),
-                     "Wrong Operand types", instr.get());
+                     "Wrong Operand types", instr);
                check((instr->operands[1].constantValue() + 1) * instr->definitions[0].bytes() <=
                         instr->operands[0].bytes(),
-                     "Index out of range", instr.get());
+                     "Index out of range", instr);
                check(instr->definitions[0].regClass().type() == RegType::vgpr ||
                         instr->operands[0].regClass().type() == RegType::sgpr,
-                     "Cannot extract SGPR value from VGPR vector", instr.get());
+                     "Cannot extract SGPR value from VGPR vector", instr);
                check(program->gfx_level >= GFX9 ||
                         !instr->definitions[0].regClass().is_subdword() ||
                         instr->operands[0].regClass().type() == RegType::vgpr,
-                     "Cannot extract subdword from SGPR before GFX9+", instr.get());
+                     "Cannot extract subdword from SGPR before GFX9+", instr);
             } else if (instr->opcode == aco_opcode::p_split_vector) {
-               check(!instr->operands[0].isConstant(), "Operand must not be constant", instr.get());
+               check(!instr->operands[0].isConstant(), "Operand must not be constant", instr);
                unsigned size = 0;
                for (const Definition& def : instr->definitions) {
                   size += def.bytes();
                }
                check(size == instr->operands[0].bytes(),
-                     "Operand size does not match definition sizes", instr.get());
+                     "Operand size does not match definition sizes", instr);
                if (instr->operands[0].isOfType(RegType::vgpr)) {
                   for (const Definition& def : instr->definitions)
                      check(def.regClass().type() == RegType::vgpr,
-                           "Wrong Definition type for VGPR split_vector", instr.get());
+                           "Wrong Definition type for VGPR split_vector", instr);
                } else {
                   for (const Definition& def : instr->definitions)
                      check(program->gfx_level >= GFX9 || !def.regClass().is_subdword(),
-                           "Cannot split SGPR into subdword VGPRs before GFX9+", instr.get());
+                           "Cannot split SGPR into subdword VGPRs before GFX9+", instr);
                }
             } else if (instr->opcode == aco_opcode::p_parallelcopy) {
                check(instr->definitions.size() == instr->operands.size(),
-                     "Number of Operands does not match number of Definitions", instr.get());
+                     "Number of Operands does not match number of Definitions", instr);
                for (unsigned i = 0; i < instr->operands.size(); i++) {
                   check(instr->definitions[i].bytes() == instr->operands[i].bytes(),
-                        "Operand and Definition size must match", instr.get());
+                        "Operand and Definition size must match", instr);
                   if (instr->operands[i].hasRegClass()) {
                      check((instr->definitions[i].regClass().type() ==
                             instr->operands[i].regClass().type()) ||
                               (instr->definitions[i].regClass().type() == RegType::vgpr &&
                                instr->operands[i].regClass().type() == RegType::sgpr),
-                           "Operand and Definition types do not match", instr.get());
+                           "Operand and Definition types do not match", instr);
                      check(instr->definitions[i].regClass().is_linear_vgpr() ==
                               instr->operands[i].regClass().is_linear_vgpr(),
-                           "Operand and Definition types do not match", instr.get());
+                           "Operand and Definition types do not match", instr);
                   } else {
                      check(!instr->definitions[i].regClass().is_linear_vgpr(),
                            "Can only copy linear VGPRs into linear VGPRs, not constant/undef",
-                           instr.get());
+                           instr);
                   }
                }
             } else if (instr->opcode == aco_opcode::p_phi) {
                check(instr->operands.size() == block.logical_preds.size(),
-                     "Number of Operands does not match number of predecessors", instr.get());
+                     "Number of Operands does not match number of predecessors", instr);
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "Logical Phi Definition must be vgpr", instr.get());
+                     "Logical Phi Definition must be vgpr", instr);
                for (const Operand& op : instr->operands)
                   check(instr->definitions[0].size() == op.size(),
-                        "Operand sizes must match Definition size", instr.get());
+                        "Operand sizes must match Definition size", instr);
             } else if (instr->opcode == aco_opcode::p_linear_phi) {
                for (const Operand& op : instr->operands) {
-                  check(!op.isTemp() || op.getTemp().is_linear(), "Wrong Operand type",
-                        instr.get());
+                  check(!op.isTemp() || op.getTemp().is_linear(), "Wrong Operand type", instr);
                   check(instr->definitions[0].size() == op.size(),
-                        "Operand sizes must match Definition size", instr.get());
+                        "Operand sizes must match Definition size", instr);
                }
                check(instr->operands.size() == block.linear_preds.size(),
-                     "Number of Operands does not match number of predecessors", instr.get());
+                     "Number of Operands does not match number of predecessors", instr);
             } else if (instr->opcode == aco_opcode::p_extract ||
                        instr->opcode == aco_opcode::p_insert) {
-               check(!instr->operands[0].isConstant(), "Data operand must not be constant",
-                     instr.get());
-               check(instr->operands[1].isConstant(), "Index must be constant", instr.get());
+               check(!instr->operands[0].isConstant(), "Data operand must not be constant", instr);
+               check(instr->operands[1].isConstant(), "Index must be constant", instr);
                if (instr->opcode == aco_opcode::p_extract)
                   check(instr->operands[3].isConstant(), "Sign-extend flag must be constant",
-                        instr.get());
+                        instr);
 
                check(instr->definitions[0].regClass().type() != RegType::sgpr ||
                         instr->operands[0].regClass().type() == RegType::sgpr,
-                     "Can't extract/insert VGPR to SGPR", instr.get());
+                     "Can't extract/insert VGPR to SGPR", instr);
 
                if (instr->opcode == aco_opcode::p_insert)
                   check(instr->operands[0].bytes() == instr->definitions[0].bytes(),
-                        "Sizes of p_insert data operand and definition must match", instr.get());
+                        "Sizes of p_insert data operand and definition must match", instr);
 
                if (instr->definitions[0].regClass().type() == RegType::sgpr)
                   check(instr->definitions.size() >= 2 && instr->definitions[1].isFixed() &&
                            instr->definitions[1].physReg() == scc,
-                        "SGPR extract/insert needs an SCC definition", instr.get());
+                        "SGPR extract/insert needs an SCC definition", instr);
 
                unsigned data_bits = instr->operands[0].bytes() * 8u;
                unsigned op_bits = instr->operands[2].constantValue();
 
-               check(op_bits == 8 || op_bits == 16, "Size must be 8 or 16", instr.get());
+               check(op_bits == 8 || op_bits == 16, "Size must be 8 or 16", instr);
                if (instr->opcode == aco_opcode::p_insert) {
-                  check(op_bits < data_bits, "Size must be smaller than source", instr.get());
+                  check(op_bits < data_bits, "Size must be smaller than source", instr);
                } else if (instr->opcode == aco_opcode::p_extract) {
                   check(data_bits >= op_bits, "Can't extract more bits than what the data has.",
-                        instr.get());
+                        instr);
                }
 
                unsigned comp = data_bits / MAX2(op_bits, 1);
-               check(instr->operands[1].constantValue() < comp, "Index must be in-bounds",
-                     instr.get());
+               check(instr->operands[1].constantValue() < comp, "Index must be in-bounds", instr);
 
                check(program->gfx_level >= GFX9 ||
                         !instr->definitions[0].regClass().is_subdword() ||
                         instr->operands[0].regClass().type() == RegType::vgpr,
-                     "Cannot extract/insert to subdword definition from SGPR before GFX9+",
-                     instr.get());
+                     "Cannot extract/insert to subdword definition from SGPR before GFX9+", instr);
             } else if (instr->opcode == aco_opcode::p_jump_to_epilog) {
                check(instr->definitions.size() == 0, "p_jump_to_epilog must have 0 definitions",
-                     instr.get());
+                     instr);
                check(instr->operands.size() > 0 && instr->operands[0].isOfType(RegType::sgpr) &&
                         instr->operands[0].size() == 2,
-                     "First operand of p_jump_to_epilog must be a SGPR", instr.get());
+                     "First operand of p_jump_to_epilog must be a SGPR", instr);
                for (unsigned i = 1; i < instr->operands.size(); i++) {
                   check(instr->operands[i].isOfType(RegType::vgpr) ||
                            instr->operands[i].isOfType(RegType::sgpr) ||
                            instr->operands[i].isUndefined(),
-                        "Other operands of p_jump_to_epilog must be VGPRs, SGPRs or undef",
-                        instr.get());
+                        "Other operands of p_jump_to_epilog must be VGPRs, SGPRs or undef", instr);
                }
             } else if (instr->opcode == aco_opcode::p_dual_src_export_gfx11) {
                check(instr->definitions.size() == 6,
-                     "p_dual_src_export_gfx11 must have 6 definitions", instr.get());
+                     "p_dual_src_export_gfx11 must have 6 definitions", instr);
                check(instr->definitions[2].regClass() == program->lane_mask,
-                     "Third definition of p_dual_src_export_gfx11 must be a lane mask",
-                     instr.get());
+                     "Third definition of p_dual_src_export_gfx11 must be a lane mask", instr);
                check(instr->definitions[3].regClass() == program->lane_mask,
-                     "Fourth definition of p_dual_src_export_gfx11 must be a lane mask",
-                     instr.get());
+                     "Fourth definition of p_dual_src_export_gfx11 must be a lane mask", instr);
                check(instr->definitions[4].physReg() == vcc,
-                     "Fifth definition of p_dual_src_export_gfx11 must be vcc", instr.get());
+                     "Fifth definition of p_dual_src_export_gfx11 must be vcc", instr);
                check(instr->definitions[5].physReg() == scc,
-                     "Sixth definition of p_dual_src_export_gfx11 must be scc", instr.get());
+                     "Sixth definition of p_dual_src_export_gfx11 must be scc", instr);
                check(instr->operands.size() == 8, "p_dual_src_export_gfx11 must have 8 operands",
-                     instr.get());
+                     instr);
                for (unsigned i = 0; i < instr->operands.size(); i++) {
                   check(
                      instr->operands[i].isOfType(RegType::vgpr) || instr->operands[i].isUndefined(),
-                     "Operands of p_dual_src_export_gfx11 must be VGPRs or undef", instr.get());
+                     "Operands of p_dual_src_export_gfx11 must be VGPRs or undef", instr);
                }
             }
             break;
@@ -762,46 +750,44 @@ validate_ir(Program* program)
          case Format::PSEUDO_REDUCTION: {
             for (const Operand& op : instr->operands)
                check(op.regClass().type() == RegType::vgpr,
-                     "All operands of PSEUDO_REDUCTION instructions must be in VGPRs.",
-                     instr.get());
+                     "All operands of PSEUDO_REDUCTION instructions must be in VGPRs.", instr);
 
             if (instr->opcode == aco_opcode::p_reduce &&
                 instr->reduction().cluster_size == program->wave_size)
                check(instr->definitions[0].regClass().type() == RegType::sgpr ||
                         program->wave_size == 32,
-                     "The result of unclustered reductions must go into an SGPR.", instr.get());
+                     "The result of unclustered reductions must go into an SGPR.", instr);
             else
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "The result of scans and clustered reductions must go into a VGPR.",
-                     instr.get());
+                     "The result of scans and clustered reductions must go into a VGPR.", instr);
 
             break;
          }
          case Format::SMEM: {
             if (instr->operands.size() >= 1)
                check(instr->operands[0].isOfType(RegType::sgpr), "SMEM operands must be sgpr",
-                     instr.get());
+                     instr);
             if (instr->operands.size() >= 2)
                check(instr->operands[1].isConstant() || instr->operands[1].isOfType(RegType::sgpr),
-                     "SMEM offset must be constant or sgpr", instr.get());
+                     "SMEM offset must be constant or sgpr", instr);
             if (!instr->definitions.empty())
                check(instr->definitions[0].regClass().type() == RegType::sgpr,
-                     "SMEM result must be sgpr", instr.get());
+                     "SMEM result must be sgpr", instr);
             break;
          }
          case Format::MTBUF:
          case Format::MUBUF: {
             check(instr->operands.size() > 1, "VMEM instructions must have at least one operand",
-                  instr.get());
+                  instr);
             check(instr->operands[1].isOfType(RegType::vgpr),
-                  "VADDR must be in vgpr for VMEM instructions", instr.get());
+                  "VADDR must be in vgpr for VMEM instructions", instr);
             check(instr->operands[0].isOfType(RegType::sgpr), "VMEM resource constant must be sgpr",
-                  instr.get());
+                  instr);
             check(instr->operands.size() < 4 || instr->operands[3].isOfType(RegType::vgpr),
-                  "VMEM write data must be vgpr", instr.get());
+                  "VMEM write data must be vgpr", instr);
             if (instr->operands.size() >= 3 && instr->operands[2].isConstant())
                check(program->gfx_level < GFX12 || instr->operands[2].constantValue() == 0,
-                     "VMEM SOFFSET must not be non-zero constant on GFX12+", instr.get());
+                     "VMEM SOFFSET must not be non-zero constant on GFX12+", instr);
 
             const bool d16 =
                instr->opcode ==
@@ -827,23 +813,23 @@ validate_ir(Program* program)
                instr->opcode == aco_opcode::tbuffer_load_format_d16_xyzw;
             if (instr->definitions.size()) {
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "VMEM definitions[0] (VDATA) must be VGPR", instr.get());
+                     "VMEM definitions[0] (VDATA) must be VGPR", instr);
                check(d16 || !instr->definitions[0].regClass().is_subdword(),
-                     "Only D16 opcodes can load subdword values.", instr.get());
+                     "Only D16 opcodes can load subdword values.", instr);
                check(instr->definitions[0].bytes() <= 8 || !d16,
-                     "D16 opcodes can only load up to 8 bytes.", instr.get());
+                     "D16 opcodes can only load up to 8 bytes.", instr);
             }
             break;
          }
          case Format::MIMG: {
             check(instr->operands.size() >= 4, "MIMG instructions must have at least 4 operands",
-                  instr.get());
+                  instr);
             check(instr->operands[0].hasRegClass() &&
                      (instr->operands[0].regClass() == s4 || instr->operands[0].regClass() == s8),
-                  "MIMG operands[0] (resource constant) must be in 4 or 8 SGPRs", instr.get());
+                  "MIMG operands[0] (resource constant) must be in 4 or 8 SGPRs", instr);
             if (instr->operands[1].hasRegClass())
                check(instr->operands[1].regClass() == s4,
-                     "MIMG operands[1] (sampler constant) must be 4 SGPRs", instr.get());
+                     "MIMG operands[1] (sampler constant) must be 4 SGPRs", instr);
             if (!instr->operands[2].isUndefined()) {
                bool is_cmpswap = instr->opcode == aco_opcode::image_atomic_cmpswap ||
                                  instr->opcode == aco_opcode::image_atomic_fcmpswap;
@@ -852,33 +838,33 @@ validate_ir(Program* program)
                          is_cmpswap),
                      "MIMG operands[2] (VDATA) must be the same as definitions[0] for atomics and "
                      "TFE/LWE loads",
-                     instr.get());
+                     instr);
             }
 
             if (instr->mimg().strict_wqm) {
                check(instr->operands[3].hasRegClass() &&
                         instr->operands[3].regClass().is_linear_vgpr(),
-                     "MIMG operands[3] must be temp linear VGPR.", instr.get());
+                     "MIMG operands[3] must be temp linear VGPR.", instr);
 
                unsigned total_size = 0;
                for (unsigned i = 4; i < instr->operands.size(); i++) {
                   check(instr->operands[i].hasRegClass() && instr->operands[i].regClass() == v1,
-                        "MIMG operands[4+] (VADDR) must be v1", instr.get());
+                        "MIMG operands[4+] (VADDR) must be v1", instr);
                   total_size += instr->operands[i].bytes();
                }
                check(total_size <= instr->operands[3].bytes(),
-                     "MIMG operands[4+] must fit within operands[3].", instr.get());
+                     "MIMG operands[4+] must fit within operands[3].", instr);
             } else {
                check(instr->operands.size() == 4 || program->gfx_level >= GFX10,
-                     "NSA is only supported on GFX10+", instr.get());
+                     "NSA is only supported on GFX10+", instr);
                for (unsigned i = 3; i < instr->operands.size(); i++) {
                   check(instr->operands[i].hasRegClass() &&
                            instr->operands[i].regClass().type() == RegType::vgpr,
-                        "MIMG operands[3+] (VADDR) must be VGPR", instr.get());
+                        "MIMG operands[3+] (VADDR) must be VGPR", instr);
                   if (instr->operands.size() > 4) {
                      if (program->gfx_level < GFX11) {
                         check(instr->operands[i].regClass() == v1,
-                              "GFX10 MIMG VADDR must be v1 if NSA is used", instr.get());
+                              "GFX10 MIMG VADDR must be v1 if NSA is used", instr);
                      } else {
                         unsigned num_scalar =
                            program->gfx_level >= GFX12 ? (instr->operands.size() - 4) : 4;
@@ -886,7 +872,7 @@ validate_ir(Program* program)
                             instr->opcode != aco_opcode::image_bvh64_intersect_ray &&
                             i < 3 + num_scalar) {
                            check(instr->operands[i].regClass() == v1,
-                                 "first 4 GFX11 MIMG VADDR must be v1 if NSA is used", instr.get());
+                                 "first 4 GFX11 MIMG VADDR must be v1 if NSA is used", instr);
                         }
                      }
                   }
@@ -895,63 +881,61 @@ validate_ir(Program* program)
 
             if (instr->definitions.size()) {
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "MIMG definitions[0] (VDATA) must be VGPR", instr.get());
+                     "MIMG definitions[0] (VDATA) must be VGPR", instr);
                check(instr->mimg().d16 || !instr->definitions[0].regClass().is_subdword(),
-                     "Only D16 MIMG instructions can load subdword values.", instr.get());
+                     "Only D16 MIMG instructions can load subdword values.", instr);
                check(instr->definitions[0].bytes() <= 8 || !instr->mimg().d16,
-                     "D16 MIMG instructions can only load up to 8 bytes.", instr.get());
+                     "D16 MIMG instructions can only load up to 8 bytes.", instr);
             }
             break;
          }
          case Format::DS: {
             for (const Operand& op : instr->operands) {
                check(op.isOfType(RegType::vgpr) || op.physReg() == m0 || op.isUndefined(),
-                     "Only VGPRs are valid DS instruction operands", instr.get());
+                     "Only VGPRs are valid DS instruction operands", instr);
             }
             if (!instr->definitions.empty())
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "DS instruction must return VGPR", instr.get());
+                     "DS instruction must return VGPR", instr);
             break;
          }
          case Format::EXP: {
             for (unsigned i = 0; i < 4; i++)
                check(instr->operands[i].isOfType(RegType::vgpr),
-                     "Only VGPRs are valid Export arguments", instr.get());
+                     "Only VGPRs are valid Export arguments", instr);
             break;
          }
          case Format::FLAT:
-            check(instr->operands[1].isUndefined(), "Flat instructions don't support SADDR",
-                  instr.get());
+            check(instr->operands[1].isUndefined(), "Flat instructions don't support SADDR", instr);
             FALLTHROUGH;
          case Format::GLOBAL:
             check(instr->operands[0].isOfType(RegType::vgpr), "FLAT/GLOBAL address must be vgpr",
-                  instr.get());
+                  instr);
             FALLTHROUGH;
          case Format::SCRATCH: {
             check(instr->operands[0].isOfType(RegType::vgpr),
-                  "FLAT/GLOBAL/SCRATCH address must be undefined or vgpr", instr.get());
+                  "FLAT/GLOBAL/SCRATCH address must be undefined or vgpr", instr);
             check(instr->operands[1].isOfType(RegType::sgpr),
-                  "FLAT/GLOBAL/SCRATCH sgpr address must be undefined or sgpr", instr.get());
+                  "FLAT/GLOBAL/SCRATCH sgpr address must be undefined or sgpr", instr);
             if (instr->format == Format::SCRATCH && program->gfx_level < GFX10_3)
                check(!instr->operands[0].isUndefined() || !instr->operands[1].isUndefined(),
-                     "SCRATCH must have either SADDR or ADDR operand", instr.get());
+                     "SCRATCH must have either SADDR or ADDR operand", instr);
             if (!instr->definitions.empty())
                check(instr->definitions[0].regClass().type() == RegType::vgpr,
-                     "FLAT/GLOBAL/SCRATCH result must be vgpr", instr.get());
+                     "FLAT/GLOBAL/SCRATCH result must be vgpr", instr);
             else
                check(instr->operands[2].isOfType(RegType::vgpr),
-                     "FLAT/GLOBAL/SCRATCH data must be vgpr", instr.get());
+                     "FLAT/GLOBAL/SCRATCH data must be vgpr", instr);
             break;
          }
          case Format::LDSDIR: {
             check(instr->definitions.size() == 1 && instr->definitions[0].regClass() == v1,
-                  "LDSDIR must have an v1 definition", instr.get());
-            check(instr->operands.size() == 1, "LDSDIR must have an operand", instr.get());
+                  "LDSDIR must have an v1 definition", instr);
+            check(instr->operands.size() == 1, "LDSDIR must have an operand", instr);
             if (!instr->operands.empty()) {
-               check(instr->operands[0].regClass() == s1, "LDSDIR must have an s1 operand",
-                     instr.get());
+               check(instr->operands[0].regClass() == s1, "LDSDIR must have an s1 operand", instr);
                check(instr->operands[0].isFixed() && instr->operands[0].physReg() == m0,
-                     "LDSDIR must have an operand fixed to m0", instr.get());
+                     "LDSDIR must have an operand fixed to m0", instr);
             }
             break;
          }
@@ -1074,7 +1058,7 @@ validate_live_vars(Program* program)
                  "(%3u vgpr, %3u sgpr): \n\t",
                  register_demands[i][j].vgpr, register_demands[i][j].sgpr,
                  b.instructions[j]->register_demand.vgpr, b.instructions[j]->register_demand.sgpr);
-         aco_print_instr(program->gfx_level, b.instructions[j].get(), memf, print_kill);
+         aco_print_instr(program->gfx_level, b.instructions[j], memf, print_kill);
          u_memstream_close(&mem);
 
          aco_err(program, "%s", out);
@@ -1407,7 +1391,7 @@ validate_ra(Program* program)
             }
          }
 
-         loc.instr = instr.get();
+         loc.instr = instr;
          for (unsigned i = 0; i < instr->operands.size(); i++) {
             Operand& op = instr->operands[i];
             if (!op.isTemp())
@@ -1469,7 +1453,7 @@ validate_ra(Program* program)
             assignments[def.tempId()].valid = true;
          }
 
-         int op_fixed_to_def = get_op_fixed_to_def(instr.get());
+         int op_fixed_to_def = get_op_fixed_to_def(instr);
          if (op_fixed_to_def != -1 &&
              instr->definitions[0].physReg() != instr->operands[op_fixed_to_def].physReg()) {
             err |= ra_fail(program, loc, Location(),
@@ -1500,7 +1484,7 @@ validate_ra(Program* program)
       }
 
       for (aco_ptr<Instruction>& instr : block.instructions) {
-         loc.instr = instr.get();
+         loc.instr = instr;
 
          /* remove killed p_phi operands from regs */
          if (instr->opcode == aco_opcode::p_logical_end) {

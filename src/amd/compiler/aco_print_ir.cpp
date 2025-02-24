@@ -948,7 +948,7 @@ aco_print_block(enum amd_gfx_level gfx_level, const Block* block, FILE* output, 
    for (auto const& instr : block->instructions) {
       fprintf(output, "\t");
       if (instr->opcode == aco_opcode::p_debug_info) {
-         print_debug_info(program, instr.get(), output);
+         print_debug_info(program, instr, output);
          continue;
       }
       if (flags & print_live_vars) {
@@ -958,7 +958,7 @@ aco_print_block(enum amd_gfx_level gfx_level, const Block* block, FILE* output, 
       if (flags & print_perf_info)
          fprintf(output, "(%3u clk)   ", instr->pass_flags);
 
-      aco_print_instr(gfx_level, instr.get(), output, flags);
+      aco_print_instr(gfx_level, instr, output, flags);
       fprintf(output, "\n");
    }
 }

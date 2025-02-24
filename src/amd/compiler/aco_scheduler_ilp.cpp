@@ -769,7 +769,7 @@ do_schedule(SchedILPContext& ctx, It& insert_it, It& remove_it, It instructions_
       if (remove_it == instructions_end)
          break;
 
-      add_entry(ctx, (remove_it++)->get(), i);
+      add_entry(ctx, *(remove_it++), i);
    }
 
    ctx.prev_info.instr = NULL;
@@ -781,10 +781,10 @@ do_schedule(SchedILPContext& ctx, It& insert_it, It& remove_it, It instructions_
       Instruction* next_instr = ctx.nodes[next_idx].instr;
 
       if (use_vopd) {
-         std::prev(insert_it)->reset(create_vopd_instruction(ctx, next_idx));
+         *std::prev(insert_it) = create_vopd_instruction(ctx, next_idx);
          ctx.prev_info.instr = NULL;
       } else {
-         (insert_it++)->reset(next_instr);
+         *(insert_it++) = next_instr;
          ctx.prev_info = ctx.nodes[next_idx];
          ctx.prev_vopd_info = ctx.vopd[next_idx];
       }
@@ -793,7 +793,7 @@ do_schedule(SchedILPContext& ctx, It& insert_it, It& remove_it, It instructions_
       ctx.nodes[next_idx].instr = NULL;
 
       if (remove_it != instructions_end) {
-         add_entry(ctx, (remove_it++)->get(), next_idx);
+         add_entry(ctx, *(remove_it++), next_idx);
       } else if (ctx.last_non_reorderable != UINT8_MAX) {
          ctx.potential_partial_clause = false;
          ctx.last_non_reorderable = UINT8_MAX;

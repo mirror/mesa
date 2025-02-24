@@ -40,7 +40,7 @@ process_block(std::vector<uint16_t>& uses, Block& block)
       if ((block.kind & block_kind_loop_header) && is_phi(instr))
          break;
 
-      if (!is_dead(uses, instr.get())) {
+      if (!is_dead(uses, instr)) {
          for (const Operand& op : instr->operands) {
             if (op.isTemp())
                uses[op.tempId()]++;

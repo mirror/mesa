@@ -84,8 +84,8 @@ get_instr_needs(aco_ptr<Instruction>& instr)
    if (needs_exact(instr))
       return Exact;
 
-   bool pred_by_exec = needs_exec_mask(instr.get()) || instr->opcode == aco_opcode::p_logical_end ||
-                       instr->isBranch();
+   bool pred_by_exec =
+      needs_exec_mask(instr) || instr->opcode == aco_opcode::p_logical_end || instr->isBranch();
 
    return pred_by_exec ? WQM : Unspecified;
 }
@@ -213,8 +213,7 @@ add_coupling_code(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instruction>>
       if (info.has_discard && preds.size() > 1) {
          aco_ptr<Instruction> phi;
          for (int i = 0; i < info.num_exec_masks - 1; i++) {
-            phi.reset(
-               create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1));
+            phi = create_instruction(aco_opcode::p_linear_phi, Format::PSEUDO, preds.size(), 1);
             phi->definitions[0] = bld.def(bld.lm);
             phi->operands[0] = ctx.info[preds[0]].exec[i].op;
             ctx.info[idx].exec[i].op = bld.insert(std::move(phi));
@@ -476,14 +475,14 @@ process_instructions(exec_ctx& ctx, Block* block, std::vector<aco_ptr<Instructio
          Definition dst = instr->definitions[0];
          assert(dst.size() == bld.lm.size());
          if (state == Exact) {
-            instr.reset(create_instruction(bld.w64or32(Builder::s_mov), Format::SOP1, 1, 1));
+            instr = create_instruction(bld.w64or32(Builder::s_mov), Format::SOP1, 1, 1);
             instr->operands[0] = Operand::zero();
             instr->definitions[0] = dst;
          } else {
             exec_info& exact_mask = info.exec[0];
             assert(exact_mask.type & mask_type_exact);
 
-            instr.reset(create_instruction(bld.w64or32(Builder::s_andn2), Format::SOP2, 2, 2));
+            instr = create_instruction(bld.w64or32(Builder::s_andn2), Format::SOP2, 2, 2);
             instr->operands[0] = Operand(exec, bld.lm); /* current exec */
             instr->operands[1] = Operand(exact_mask.op);
             instr->definitions[0] = dst;

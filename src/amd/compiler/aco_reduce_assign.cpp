@@ -81,7 +81,7 @@ setup_reduce_temp(Program* program)
 
       std::vector<aco_ptr<Instruction>>::iterator it;
       for (it = block.instructions.begin(); it != block.instructions.end(); ++it) {
-         Instruction* instr = (*it).get();
+         Instruction* instr = *it;
          if (instr->format != Format::PSEUDO_REDUCTION &&
              instr->opcode != aco_opcode::p_interp_gfx11 &&
              instr->opcode != aco_opcode::p_bpermute_permlane)

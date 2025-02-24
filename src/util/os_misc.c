@@ -59,10 +59,10 @@
 #  include <cutils/properties.h>
 #elif DETECT_OS_LINUX || DETECT_OS_CYGWIN || DETECT_OS_SOLARIS || DETECT_OS_HURD || DETECT_OS_MANAGARM
 #  include <unistd.h>
-#elif DETECT_OS_OPENBSD || DETECT_OS_FREEBSD
+#elif DETECT_OS_BSD
 #  include <sys/resource.h>
 #  include <sys/sysctl.h>
-#elif DETECT_OS_APPLE || DETECT_OS_BSD
+#elif DETECT_OS_APPLE
 #  include <sys/sysctl.h>
 #  if DETECT_OS_APPLE
 #    include <mach/mach_host.h>
@@ -361,11 +361,11 @@ os_get_available_system_memory(uint64_t *size)
 
    free(meminfo);
    return false;
-#elif DETECT_OS_OPENBSD || DETECT_OS_FREEBSD
+#elif DETECT_OS_BSD
    struct rlimit rl;
-#if DETECT_OS_OPENBSD
+#ifdef HW_USERMEM64
    int mib[] = { CTL_HW, HW_USERMEM64 };
-#elif DETECT_OS_FREEBSD
+#else
    int mib[] = { CTL_HW, HW_USERMEM };
 #endif
    int64_t mem_available;

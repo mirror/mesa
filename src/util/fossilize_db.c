@@ -189,7 +189,7 @@ update_foz_index(struct foz_db *foz_db, FILE *db_idx, unsigned file_idx)
 /* exclusive flock with timeout. timeout is in nanoseconds */
 static int lock_file_with_timeout(FILE *f, int64_t timeout)
 {
-   int err;
+   int err = 0;
    int fd = fileno(f);
    int64_t iterations = MAX2(DIV_ROUND_UP(timeout, 1000000), 1);
 

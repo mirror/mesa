@@ -212,6 +212,24 @@ fd_pipe_fence_server_sync(struct pipe_context *pctx, struct pipe_fence_handle *f
       return;
    }
 
+   /* If the fence was created from an imported syncobj, we need to wait
+    * for the fence to become available to ensure that we can safely
+    * submit a batch with it as an in_fence_fd:
+    */
+   if (fence->syncobj) {
+      int ret;
+
+      assert(!fence->fence->use_fence_fd);
+
+      ret = drmSyncobjExportSyncFile(fd_device_fd(ctx->screen->dev),
+                                     fence->syncobj,
+                                     &fence->fence->fence_fd);
+      if (!ret) {
+         fence->fence->use_fence_fd = true;
+         fence->use_fence_fd = true;
+      }
+   }
+
    /* if not an external fence, then nothing more to do without preemption: */
    if (!fence->use_fence_fd)
       return;

@@ -505,7 +505,7 @@ TEST_F(scoreboard_test, loop1)
    brw_reg x = bld.vgrf(BRW_TYPE_D);
    bld.XOR(   x, g[1], g[2]);
 
-   bld.emit(BRW_OPCODE_DO);
+   bld.DO();
 
    bld.ADD(   x, g[1], g[2]);
    bld.emit(BRW_OPCODE_WHILE)->predicate = BRW_PREDICATE_NORMAL;
@@ -515,12 +515,14 @@ TEST_F(scoreboard_test, loop1)
    brw_calculate_cfg(*v);
    lower_scoreboard(v);
 
-   bblock_t *body = v->cfg->blocks[2];
+   const int num_blocks = v->cfg->num_blocks;
+
+   bblock_t *body = v->cfg->blocks[num_blocks - 2];
    brw_inst *add = instruction(body, 0);
    EXPECT_EQ(add->opcode, BRW_OPCODE_ADD);
    EXPECT_EQ(add->sched, regdist(TGL_PIPE_FLOAT, 1));
 
-   bblock_t *last_block = v->cfg->blocks[3];
+   bblock_t *last_block = v->cfg->blocks[num_blocks - 1];
    brw_inst *mul = instruction(last_block, 0);
    EXPECT_EQ(mul->opcode, BRW_OPCODE_MUL);
    EXPECT_EQ(mul->sched, regdist(TGL_PIPE_FLOAT, 1));
@@ -538,7 +540,7 @@ TEST_F(scoreboard_test, loop2)
    bld.XOR(g[4], g[1], g[2]);
    bld.XOR(g[5], g[1], g[2]);
 
-   bld.emit(BRW_OPCODE_DO);
+   bld.DO();
 
    bld.ADD(   x, g[1], g[2]);
    bld.emit(BRW_OPCODE_WHILE)->predicate = BRW_PREDICATE_NORMAL;
@@ -550,12 +552,14 @@ TEST_F(scoreboard_test, loop2)
 
    /* Now the write in ADD has the tightest RegDist for both ADD and MUL. */
 
-   bblock_t *body = v->cfg->blocks[2];
+   const int num_blocks = v->cfg->num_blocks;
+
+   bblock_t *body = v->cfg->blocks[num_blocks - 2];
    brw_inst *add = instruction(body, 0);
    EXPECT_EQ(add->opcode, BRW_OPCODE_ADD);
    EXPECT_EQ(add->sched, regdist(TGL_PIPE_FLOAT, 2));
 
-   bblock_t *last_block = v->cfg->blocks[3];
+   bblock_t *last_block = v->cfg->blocks[num_blocks - 1];
    brw_inst *mul = instruction(last_block, 0);
    EXPECT_EQ(mul->opcode, BRW_OPCODE_MUL);
    EXPECT_EQ(mul->sched, regdist(TGL_PIPE_FLOAT, 2));
@@ -570,7 +574,7 @@ TEST_F(scoreboard_test, loop3)
    brw_reg x = bld.vgrf(BRW_TYPE_D);
    bld.XOR(   x, g[1], g[2]);
 
-   bld.emit(BRW_OPCODE_DO);
+   bld.DO();
 
    /* For the ADD in the loop body this extra distance will always apply. */
    bld.XOR(g[3], g[1], g[2]);
@@ -586,12 +590,14 @@ TEST_F(scoreboard_test, loop3)
    brw_calculate_cfg(*v);
    lower_scoreboard(v);
 
-   bblock_t *body = v->cfg->blocks[2];
+   const int num_blocks = v->cfg->num_blocks;
+
+   bblock_t *body = v->cfg->blocks[num_blocks - 2];
    brw_inst *add = instruction(body, 4);
    EXPECT_EQ(add->opcode, BRW_OPCODE_ADD);
    EXPECT_EQ(add->sched, regdist(TGL_PIPE_FLOAT, 5));
 
-   bblock_t *last_block = v->cfg->blocks[3];
+   bblock_t *last_block = v->cfg->blocks[num_blocks - 1];
    brw_inst *mul = instruction(last_block, 0);
    EXPECT_EQ(mul->opcode, BRW_OPCODE_MUL);
    EXPECT_EQ(mul->sched, regdist(TGL_PIPE_FLOAT, 1));

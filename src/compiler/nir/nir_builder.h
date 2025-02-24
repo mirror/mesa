@@ -105,12 +105,7 @@ nir_function_instructions_pass(nir_function_impl *impl,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, preserved);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
-
+   nir_metadata_preserve_if(progress, impl, preserved);
    return progress;
 }
 
@@ -168,11 +163,7 @@ nir_function_intrinsics_pass(nir_function_impl *impl,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, preserved);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, preserved);
 
    return progress;
 }

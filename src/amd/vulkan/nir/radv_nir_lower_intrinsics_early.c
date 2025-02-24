@@ -49,10 +49,6 @@ radv_nir_lower_intrinsics_early(nir_shader *nir, bool lower_view_index_to_zero)
       }
    }
 
-   if (progress)
-      nir_metadata_preserve(entry, nir_metadata_control_flow);
-   else
-      nir_metadata_preserve(entry, nir_metadata_all);
-
+   nir_metadata_preserve_if(progress, entry, nir_metadata_control_flow);
    return progress;
 }

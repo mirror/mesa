@@ -300,10 +300,6 @@ bool ac_nir_optimize_outputs(nir_shader *nir, bool sprite_tex_disallowed,
          ac_eliminate_duplicated_output(outputs, outputs_optimized, i, &b, slot_remap);
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl, nir_metadata_control_flow);
    return progress;
 }

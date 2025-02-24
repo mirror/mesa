@@ -70,12 +70,8 @@ nir_opt_combine_barriers_impl(nir_function_impl *impl,
       }
    }
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow |
-                                     nir_metadata_live_defs);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
+   nir_metadata_preserve_if(progress, impl,
+                            nir_metadata_control_flow | nir_metadata_live_defs);
 
    return progress;
 }

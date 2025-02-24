@@ -1464,11 +1464,7 @@ nir_opt_if(nir_shader *shader, nir_opt_if_options options)
          nir_lower_reg_intrinsics_to_ssa_impl(impl);
       }
 
-      if (preserve) {
-         nir_metadata_preserve(impl, nir_metadata_none);
-      } else {
-         nir_metadata_preserve(impl, nir_metadata_all);
-      }
+      nir_metadata_preserve_if(preserve, impl, nir_metadata_none);
    }
 
    return progress;

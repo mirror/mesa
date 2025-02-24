@@ -835,7 +835,16 @@ create_dumb(struct gbm_device *gbm,
    bo->base.gbm = gbm;
    bo->base.v0.width = width;
    bo->base.v0.height = height;
-   bo->base.v0.stride = create_arg.pitch;
+   /*
+    * The CREATE_DUMB ioctl aligns the stride to
+    * the needs of the primary plane, not the cursor.
+    * The CURSOR/CURSOR2 ioctls assume stride==width*4,
+    * which also matches how a lot of hardware works.
+    */
+   if (is_cursor)
+      bo->base.v0.stride = width * 4;
+   else
+      bo->base.v0.stride = create_arg.pitch;
    bo->base.v0.format = format;
    bo->base.v0.handle.u32 = create_arg.handle;
    bo->handle = create_arg.handle;

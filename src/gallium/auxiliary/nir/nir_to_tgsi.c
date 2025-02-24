@@ -1975,6 +1975,7 @@ ntt_emit_mem(struct ntt_compile *c, nir_intrinsic_instr *instr,
    bool is_load = (instr->intrinsic == nir_intrinsic_atomic_counter_read ||
                     instr->intrinsic == nir_intrinsic_load_ssbo ||
                     instr->intrinsic == nir_intrinsic_load_shared);
+   bool need_offset = (mode == nir_var_mem_ssbo || mode == nir_var_mem_shared);
    unsigned opcode;
    struct ureg_src src[4];
    int num_src = 0;
@@ -2008,7 +2009,7 @@ ntt_emit_mem(struct ntt_compile *c, nir_intrinsic_instr *instr,
          memory = ureg_src_indirect(memory, ntt_reladdr(c, ureg_src(addr_temp), 2));
       }
       memory = ureg_src_dimension(memory, nir_intrinsic_base(instr));
-      next_src = 0;
+      next_src = 1;
       break;
    }
 
@@ -2022,7 +2023,14 @@ ntt_emit_mem(struct ntt_compile *c, nir_intrinsic_instr *instr,
    } else {
       src[num_src++] = memory;
       if (instr->intrinsic != nir_intrinsic_get_ssbo_size) {
-         src[num_src++] = ntt_get_src(c, instr->src[next_src++]); /* offset */
+	 if (need_offset) {
+            src[num_src++] = ntt_get_src(c, instr->src[next_src++]); /* offset */
+	 } else {
+            /* offset is already incorporated in memory index for HW atomic
+             * counter, so only need to specify zero offset
+             */
+            src[num_src++] = ureg_imm1i(c->ureg, 0);
+         }
          switch (instr->intrinsic) {
          case nir_intrinsic_atomic_counter_inc:
             src[num_src++] = ureg_imm1i(c->ureg, 1);

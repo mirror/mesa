@@ -167,6 +167,10 @@ compatible_resolve_formats(const struct gl_renderbuffer *readRb,
    if (readFormat == drawFormat) {
       return GL_TRUE;
    }
+   else if(readFormat == GL_RGBA16F || readFormat == GL_RGBA32F ||
+           drawFormat == GL_RGBA16F || drawFormat == GL_RGBA32F){
+      return GL_TRUE;
+   }
 
    return GL_FALSE;
 }

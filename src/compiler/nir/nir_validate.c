@@ -263,15 +263,49 @@ validate_alu_instr(nir_alu_instr *instr, validate_state *state)
                                    src_bit_size == 64);
       }
 
-      /* In nir_opcodes.py, these are defined to take general uint or int
-       * sources.  However, they're really only defined for 32-bit or 64-bit
-       * sources.  This seems to be the only place to enforce this
-       * restriction.
-       */
       switch (instr->op) {
       case nir_op_ufind_msb:
       case nir_op_ufind_msb_rev:
+         /* In nir_opcodes.py, these are defined to take general uint or int
+          * sources.  However, they're really only defined for 32-bit or
+          * 64-bit sources.  This seems to be the only place to enforce this
+          * restriction.
+          */
          validate_assert(state, src_bit_size == 32 || src_bit_size == 64);
+         break;
+
+      case nir_op_extract_i16:
+      case nir_op_extract_u16:
+         /* Src1 must be constant, and it must select a word index that exists
+          * in src0.
+          */
+         if (i == 1) {
+            validate_assert(state, nir_src_is_const(instr->src[1].src));
+
+            if (nir_src_is_const(instr->src[1].src)) {
+               const int64_t limit = nir_src_bit_size(instr->src[0].src) / 8;
+               const int64_t idx = nir_src_as_int(instr->src[1].src);
+
+               validate_assert(state, idx >= 0 && idx < limit);
+            }
+         }
+         break;
+
+      case nir_op_extract_i8:
+      case nir_op_extract_u8:
+         /* Src1 must be constant, and it must select a byte index that exists
+          * in src0.
+          */
+         if (i == 1) {
+            validate_assert(state, nir_src_is_const(instr->src[1].src));
+
+            if (nir_src_is_const(instr->src[1].src)) {
+               const int64_t limit = nir_src_bit_size(instr->src[0].src) / 8;
+               const int64_t idx = nir_src_as_int(instr->src[1].src);
+
+               validate_assert(state, idx >= 0 && idx < limit);
+            }
+         }
          break;
 
       default:

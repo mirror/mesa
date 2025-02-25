@@ -743,9 +743,9 @@ _mesa_program_resource_find_name(struct gl_shader_program *shProg,
          case GL_SHADER_STORAGE_BLOCK:
             /* Basename match, check if array or struct. */
             if (rname_has_array_index_zero ||
-                name[rname.length] == '\0' ||
-                name[rname.length] == '[' ||
-                name[rname.length] == '.') {
+                (rname.length <= len + 1 &&
+                 (name[rname.length] == '\0' || name[rname.length] == '[' ||
+                  name[rname.length] == '.'))) {
                return res;
             }
             break;
@@ -764,17 +764,19 @@ _mesa_program_resource_find_name(struct gl_shader_program *shProg,
          case GL_COMPUTE_SUBROUTINE:
          case GL_TESS_CONTROL_SUBROUTINE:
          case GL_TESS_EVALUATION_SUBROUTINE:
-            if (name[rname.length] == '.') {
+            if (rname.length <= len + 1 && name[rname.length] == '.') {
                return res;
             }
             FALLTHROUGH;
          case GL_PROGRAM_INPUT:
          case GL_PROGRAM_OUTPUT:
-            if (name[rname.length] == '\0') {
-               return res;
-            } else if (name[rname.length] == '[' &&
-                valid_array_index(name, len, array_index)) {
-               return res;
+            if (rname.length <= len + 1) {
+               if (name[rname.length] == '\0') {
+                  return res;
+               } else if (name[rname.length] == '[' &&
+                          valid_array_index(name, len, array_index)) {
+                  return res;
+               }
             }
             break;
          default:

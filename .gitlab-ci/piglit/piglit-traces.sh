@@ -150,6 +150,9 @@ if [ -n "$USE_CASELIST" ]; then
     PIGLIT_TESTS="--test-list /tmp/case-list.txt"
 fi
 
+# use benchmark mode to speed up replays and cut down log spam
+PIGLIT_REPLAY_OPTIONS="-b"
+
 PIGLIT_OPTIONS=$(printf "%s" "$PIGLIT_OPTIONS")
 
 PIGLIT_TESTS=$(printf "%s" "$PIGLIT_TESTS")

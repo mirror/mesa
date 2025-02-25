@@ -55,6 +55,8 @@ The three GitLab CI systems currently integrated are:
    LAVA
    docker
 
+.. _farm-management:
+
 Farm management
 ---------------
 
@@ -77,6 +79,9 @@ After farm restore functionality can be enabled by pushing a new merge request, 
 .. warning::
    Pushing (``git push``) directly to ``main`` is forbidden; this change must
    be sent as a :ref:`Merge Request <merging>`.
+   This includes emergency farm disabling; see this :ref:`exception
+   <merging-exception>` for this special case.
+
 
 Application traces replay
 -------------------------

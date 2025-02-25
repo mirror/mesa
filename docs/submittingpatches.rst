@@ -307,6 +307,35 @@ Do not merge someone else's MR unless you are sure they don't have a new
 version that they are testing locally for instance.
 **When in doubt, ask**, for instance by leaving a comment on that MR.
 
+.. _merging-exception:
+
+Exception
+~~~~~~~~~
+
+When re-enabling a CI farm, or disabling a farm in a scheduled way, use the
+process described above with the change documented in the :ref:`CI farm
+management <farm-management>` section.
+
+However, when a CI farm is unexpectedly down and needs to be urgently
+disabled, a merge request should be sent as always, but it should be merged
+ASAP using the "Merge"/"Merge when pipeline succeeds"/"Set to auto-merge" button.
+
+Farm owners can disable their own farm without any external review as they are
+responsible for it, but everyone else must get an ack from another Developer+
+before merging this.
+
+Using the "Merge" button instead of assigning to Marge will bypass the MR
+currently being merged by Marge. If that MR would have failed anyway there is no
+downside, but otherwise it's nice to wait until that one is merged and the next
+one that would fail is in progress.
+
+Regardless, pay attention to `which MR is currently being merged
+<https://gitlab.freedesktop.org/mesa/mesa/merge_requests?assignee_username=marge-bot>`__
+and, once you have merged the disable MR, cancel that other MR's pipeline (to
+save resources since it would've failed anyway) and a few seconds later when
+Marge notices the cancelled pipeline and de-assigns itself, and re-assign it to
+minimize disruption for that MR's dev.
+
 Nominating a commit for a stable branch
 ---------------------------------------
 

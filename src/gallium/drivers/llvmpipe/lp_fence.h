@@ -90,7 +90,7 @@ lp_fence_reference(struct lp_fence **ptr,
 {
    struct lp_fence *old = *ptr;
 
-   if (pipe_reference(&old->reference, &f->reference)) {
+   if (pipe_reference((struct pipe_reference *) old, (struct pipe_reference *)f)) {
       lp_fence_destroy(old);
    }
    

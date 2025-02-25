@@ -419,6 +419,7 @@ a6xx_gen4 = A6XXProps(
         has_lpac = True,
         has_legacy_pipeline_shading_rate = True,
         has_getfiberid = True,
+        has_movs = True,
         has_dp2acc = True,
         has_dp4acc = True,
         enable_lrz_fast_clear = True,
@@ -435,6 +436,7 @@ a6xx_gen4 = A6XXProps(
         prede_nop_quirk = True,
         predtf_nop_quirk = True,
         has_sad = True,
+        mov_half_shared_quirk = True,
     )
 
 add_gpus([
@@ -848,6 +850,7 @@ a7xx_base = A6XXProps(
         has_sample_locations = True,
         has_lpac = True,
         has_getfiberid = True,
+        has_movs = True,
         has_dp2acc = True,
         has_dp4acc = True,
         enable_lrz_fast_clear = True,

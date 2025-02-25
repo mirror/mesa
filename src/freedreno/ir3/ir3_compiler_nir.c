@@ -2648,6 +2648,27 @@ emit_ray_intersection(struct ir3_context *ctx, nir_intrinsic_instr *intr,
 static void setup_input(struct ir3_context *ctx, nir_intrinsic_instr *intr);
 static void setup_output(struct ir3_context *ctx, nir_intrinsic_instr *intr);
 
+static struct ir3_instruction *
+apply_mov_half_shared_quirk(struct ir3_context *ctx,
+                            struct ir3_instruction *src,
+                            struct ir3_instruction *dst)
+{
+   if (!ctx->compiler->mov_half_shared_quirk) {
+      return dst;
+   }
+
+   /* Work around a bug with half-register shared -> non-shared moves by
+    * adding an extra mov here so that the original destination stays full.
+    */
+   if (src->dsts[0]->flags & IR3_REG_HALF) {
+      dst = ir3_MOV(&ctx->build, dst, TYPE_U32);
+      if (!ctx->compiler->has_scalar_alu)
+         dst->dsts[0]->flags &= ~IR3_REG_SHARED;
+   }
+
+   return dst;
+}
+
 static void
 emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
 {
@@ -3201,14 +3222,26 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       dst[0] = ir3_READ_COND_MACRO(b, ir3_get_predicate(ctx, cond), 0, src, 0);
       dst[0]->dsts[0]->flags |= IR3_REG_SHARED;
       dst[0]->srcs[0]->flags |= IR3_REG_PREDICATE;
-      /* Work around a bug with half-register shared -> non-shared moves by
-       * adding an extra mov here so that the original destination stays full.
-       */
-      if (src->dsts[0]->flags & IR3_REG_HALF) {
-         dst[0] = ir3_MOV(b, dst[0], TYPE_U32);
-         if (!ctx->compiler->has_scalar_alu)
-            dst[0]->dsts[0]->flags &= ~IR3_REG_SHARED;
+      dst[0] = apply_mov_half_shared_quirk(ctx, src, dst[0]);
+      break;
+   }
+
+   case nir_intrinsic_read_invocation: {
+      struct ir3_instruction *const *srcs = ir3_get_src(ctx, &intr->src[0]);
+      nir_src *nir_invocation = &intr->src[1];
+      struct ir3_instruction *invocation = ir3_get_src(ctx, nir_invocation)[0];
+
+      if (!nir_src_is_const(*nir_invocation)) {
+         invocation = ir3_get_addr0(ctx, invocation, 1);
       }
+
+      for (unsigned i = 0; i < intr->def.num_components; i++) {
+         dst[i] = ir3_MOVS(b, srcs[i], invocation,
+                           type_uint_size(intr->def.bit_size));
+         dst[i] = apply_mov_half_shared_quirk(ctx, srcs[i], dst[i]);
+      }
+
+      create_rpt = true;
       break;
    }
 
@@ -3216,12 +3249,7 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       struct ir3_instruction *src = ir3_get_src(ctx, &intr->src[0])[0];
       dst[0] = ir3_READ_FIRST_MACRO(b, src, 0);
       dst[0]->dsts[0]->flags |= IR3_REG_SHARED;
-      /* See above. */
-      if (src->dsts[0]->flags & IR3_REG_HALF) {
-         dst[0] = ir3_MOV(b, dst[0], TYPE_U32);
-         if (!ctx->compiler->has_scalar_alu)
-            dst[0]->dsts[0]->flags &= ~IR3_REG_SHARED;
-      }
+      dst[0] = apply_mov_half_shared_quirk(ctx, src, dst[0]);
       break;
    }
 
@@ -3229,12 +3257,7 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       struct ir3_instruction *src = ir3_get_src(ctx, &intr->src[0])[0];
       dst[0] = ir3_READ_GETLAST_MACRO(b, src, 0);
       dst[0]->dsts[0]->flags |= IR3_REG_SHARED;
-      /* See above. */
-      if (src->dsts[0]->flags & IR3_REG_HALF) {
-         dst[0] = ir3_MOV(b, dst[0], TYPE_U32);
-         if (!ctx->compiler->has_scalar_alu)
-            dst[0]->dsts[0]->flags &= ~IR3_REG_SHARED;
-      }
+      dst[0] = apply_mov_half_shared_quirk(ctx, src, dst[0]);
       break;
    }
 

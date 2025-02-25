@@ -31,6 +31,7 @@
 #include <xf86drm.h>
 struct device_select_wayland_info {
    struct wl_drm *wl_drm;
+   struct wl_fixes *wl_fixes;
    drmDevicePtr dev_info;
    bool info_is_set;
 };
@@ -86,6 +87,10 @@ device_select_registry_global(void *data, struct wl_registry *registry, uint32_t
    if (strcmp(interface, wl_drm_interface.name) == 0) {
       info->wl_drm = wl_registry_bind(registry, name, &wl_drm_interface, MIN2(version, 2));
       wl_drm_add_listener(info->wl_drm, &ds_drm_listener, data);
+#ifdef WL_FIXES_INTERFACE
+   } else if (strcmp(interface, wl_fixes_interface.name) == 0) {
+      info->wl_fixes = wl_registry_bind(registry, name, &wl_fixes_interface, 1);
+#endif
    }
 }
 
@@ -143,6 +148,12 @@ int device_select_find_wayland_pci_default(struct device_pci_info *devices, uint
 
    if (info.wl_drm)
       wl_drm_destroy(info.wl_drm);
+#ifdef WL_FIXES_INTERFACE
+   if (info.wl_fixes) {
+      wl_fixes_destroy_registry(info.wl_fixes, registry);
+      wl_fixes_destroy(info.wl_fixes);
+   }
+#endif
    wl_registry_destroy(registry);
    wl_display_disconnect(display);
  out:

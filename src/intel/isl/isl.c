@@ -2921,17 +2921,16 @@ isl_calc_row_pitch_alignment(const struct isl_device *dev,
     *
     *    - For other linear surfaces, the pitch can be any multiple of
     *      bytes.
+    *
+    * Because the YUV formats are treated as a 2x1 compressed block, bpb is 32
+    * bits, not 16 and the multiple of 2 is already handled.
     */
    const struct isl_format_layout *fmtl = isl_format_get_layout(surf_info->format);
    const uint32_t bs = fmtl->bpb / 8;
    uint32_t alignment;
 
    if (surf_info->usage & ISL_SURF_USAGE_RENDER_TARGET_BIT) {
-      if (isl_format_is_yuv(surf_info->format)) {
-         alignment = 2 * bs;
-      } else  {
-         alignment = bs;
-      }
+      alignment = bs;
    } else {
       alignment = 1;
    }
@@ -3307,17 +3306,13 @@ isl_calc_base_alignment(const struct isl_device *dev,
        *    multiple of 2 element-sizes for YUV surface formats. Other linear
        *    surfaces have no alignment requirements (byte alignment is
        *    sufficient.)"
+       *
+       * Because the YUV formats are treated as a 2x1 compressed block, bpb is
+       * 32 bits, not 16 and the multiple of 2 is already handled.
        */
       base_alignment_B = MAX(1, info->min_alignment_B);
-      if (info->usage & ISL_SURF_USAGE_RENDER_TARGET_BIT) {
-         if (isl_format_is_yuv(info->format)) {
-            base_alignment_B =
-               MAX(base_alignment_B, tile_info->format_bpb / 4);
-         } else {
-            base_alignment_B =
-               MAX(base_alignment_B, tile_info->format_bpb / 8);
-         }
-      }
+      if (info->usage & ISL_SURF_USAGE_RENDER_TARGET_BIT)
+         base_alignment_B = MAX(base_alignment_B, tile_info->format_bpb / 8);
       base_alignment_B = isl_round_up_to_power_of_two(base_alignment_B);
 
       /* From the Skylake PRM Vol 2c, PLANE_STRIDE::Stride:
@@ -4436,7 +4431,8 @@ isl_surf_get_uncompressed_surf(const struct isl_device *dev,
    const enum isl_format view_format = view->format;
 
    assert(fmtl->bw > 1 || fmtl->bh > 1 || fmtl->bd > 1);
-   assert(isl_format_is_compressed(surf->format));
+   assert(isl_format_is_compressed(surf->format) ||
+          isl_format_is_yuv(surf->format));
    assert(!isl_format_is_compressed(view->format));
    assert(isl_format_get_layout(view->format)->bpb == fmtl->bpb);
    assert(view->levels == 1);

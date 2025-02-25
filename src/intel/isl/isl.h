@@ -536,6 +536,7 @@ enum isl_colorspace {
  */
 enum isl_txc {
    ISL_TXC_NONE = 0,
+   ISL_TXC_YUYV,
    ISL_TXC_DXT1,
    ISL_TXC_DXT3,
    ISL_TXC_DXT5,
@@ -2177,6 +2178,7 @@ isl_format_has_bc_compression(enum isl_format fmt)
    case ISL_TXC_DXT5:
       return true;
    case ISL_TXC_NONE:
+   case ISL_TXC_YUYV:
    case ISL_TXC_FXT1:
    case ISL_TXC_RGTC1:
    case ISL_TXC_RGTC2:

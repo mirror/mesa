@@ -2701,6 +2701,8 @@ get_ccs_compatible_uint_format(const struct isl_format_layout *fmtl)
    case ISL_FORMAT_B8G8R8X8_UNORM_SRGB:
    case ISL_FORMAT_R8G8B8X8_UNORM:
    case ISL_FORMAT_R8G8B8X8_UNORM_SRGB:
+   case ISL_FORMAT_YCRCB_NORMAL:
+   case ISL_FORMAT_YCRCB_SWAPY:
       return ISL_FORMAT_R8G8B8A8_UINT;
 
    case ISL_FORMAT_R16G16_UNORM:

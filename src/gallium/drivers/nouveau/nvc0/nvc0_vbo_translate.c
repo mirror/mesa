@@ -1,3 +1,4 @@
+#define NVC0_PUSH_EXPLICIT_SPACE_CHECKING
 
 #include "pipe/p_context.h"
 #include "pipe/p_state.h"
@@ -226,6 +227,8 @@ nvc0_push_setup_vertex_array(struct nvc0_context *nvc0, const unsigned count)
 
    void *const dest = nouveau_scratch_get(&nvc0->base, size, &va, &bo);
 
+   PUSH_SPACE(push, 6);
+
    BEGIN_NVC0(push, NVC0_3D(VERTEX_ARRAY_START_HIGH(0)), 2);
    PUSH_DATAh(push, va);
    PUSH_DATA (push, va);
@@ -291,6 +294,7 @@ disp_vertices_i08(struct push_context *ctx, unsigned start, unsigned count)
          nR -= nE;
       }
       if (count) {
+         PUSH_SPACE(push, 2);
          BEGIN_NVC0(push, NVC0_3D(VB_ELEMENT_U32), 1);
          PUSH_DATA (push, 0xffffffff);
          ++elts;
@@ -348,6 +352,7 @@ disp_vertices_i16(struct push_context *ctx, unsigned start, unsigned count)
          nR -= nE;
       }
       if (count) {
+         PUSH_SPACE(push, 2);
          BEGIN_NVC0(push, NVC0_3D(VB_ELEMENT_U32), 1);
          PUSH_DATA (push, 0xffffffff);
          ++elts;
@@ -405,6 +410,7 @@ disp_vertices_i32(struct push_context *ctx, unsigned start, unsigned count)
          nR -= nE;
       }
       if (count) {
+         PUSH_SPACE(push, 2);
          BEGIN_NVC0(push, NVC0_3D(VB_ELEMENT_U32), 1);
          PUSH_DATA (push, 0xffffffff);
          ++elts;
@@ -573,6 +579,7 @@ nvc0_push_vbo(struct nvc0_context *nvc0, const struct pipe_draw_info *info,
 
    if (nvc0->state.index_bias) {
       /* this is already taken care of by translate */
+      PUSH_SPACE(ctx.push, 1);
       IMMED_NVC0(ctx.push, NVC0_3D(VB_ELEMENT_BASE), 0);
       nvc0->state.index_bias = 0;
    }
@@ -590,11 +597,13 @@ nvc0_push_vbo(struct nvc0_context *nvc0, const struct pipe_draw_info *info,
        * We could also deactivate PRIM_RESTART_WITH_DRAW_ARRAYS temporarily,
        * and add manual restart to disp_vertices_seq.
        */
+      PUSH_SPACE(ctx.push, 3);
       BEGIN_NVC0(ctx.push, NVC0_3D(PRIM_RESTART_ENABLE), 2);
       PUSH_DATA (ctx.push, 1);
       PUSH_DATA (ctx.push, info->index_size ? 0xffffffff : info->restart_index);
    } else
    if (nvc0->state.prim_restart) {
+      PUSH_SPACE(ctx.push, 1);
       IMMED_NVC0(ctx.push, NVC0_3D(PRIM_RESTART_ENABLE), 0);
    }
    nvc0->state.prim_restart = info->primitive_restart;
@@ -618,8 +627,6 @@ nvc0_push_vbo(struct nvc0_context *nvc0, const struct pipe_draw_info *info,
 
    prim = nvc0_prim_gl(info->mode);
    do {
-      PUSH_SPACE(ctx.push, 9);
-
       ctx.dest = nvc0_push_setup_vertex_array(nvc0, vert_count);
       if (unlikely(!ctx.dest))
          break;
@@ -627,6 +634,7 @@ nvc0_push_vbo(struct nvc0_context *nvc0, const struct pipe_draw_info *info,
       if (unlikely(ctx.need_vertex_id))
          nvc0_push_upload_vertex_ids(&ctx, nvc0, info, draw);
 
+      PUSH_SPACE(ctx.push, 3);
       if (nvc0->screen->eng3d->oclass < GM107_3D_CLASS)
          IMMED_NVC0(ctx.push, NVC0_3D(VERTEX_ARRAY_FLUSH), 0);
       BEGIN_NVC0(ctx.push, NVC0_3D(VERTEX_BEGIN_GL), 1);

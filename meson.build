@@ -131,6 +131,9 @@ system_has_kms_drm = ['openbsd', 'netbsd', 'freebsd', 'gnu/kfreebsd', 'dragonfly
 
 gallium_drivers = get_option('gallium-drivers')
 if gallium_drivers.contains('auto')
+  if gallium_drivers.length() > 1
+    error('option gallium-drivers cannot combine auto and explicit drivers list')
+  endif
   if system_has_kms_drm
     # TODO: Sparc
     if ['x86', 'x86_64'].contains(host_machine.cpu_family())
@@ -226,6 +229,9 @@ with_gallium_kmsro = system_has_kms_drm and [
 
 _vulkan_drivers = get_option('vulkan-drivers')
 if _vulkan_drivers.contains('auto')
+  if vulkan_drivers.length() > 1
+    error('option vulkan-drivers cannot combine auto and explicit drivers list')
+  endif
   if system_has_kms_drm
     if host_machine.cpu_family().startswith('x86')
       _vulkan_drivers = ['amd', 'intel', 'intel_hasvk', 'nouveau', 'swrast']
@@ -398,6 +404,9 @@ endforeach
 
 _platforms = get_option('platforms')
 if _platforms.contains('auto')
+  if _platforms.length() > 1
+    error('option platforms cannot combine auto and explicit platforms list')
+  endif
   if system_has_kms_drm
     _platforms = ['x11', 'wayland']
   elif host_machine.system() == 'cygwin'

@@ -782,6 +782,17 @@ AluInstr::indirect_addr() const
    return {visitor.addr, visitor.addr_is_for_dest, visitor.index};
 }
 
+static inline auto
+r600_multislot_get_last_opcode_and_slot(EAluOp opcode, int dest_chan)
+{
+   switch (opcode) {
+   case op2_dot_ieee:
+      return std::make_pair(op2_mul_ieee, dest_chan);
+   default:
+      return std::make_pair(opcode, 0);
+   }
+}
+
 AluGroup *
 AluInstr::split(ValueFactory& vf)
 {
@@ -794,15 +805,8 @@ AluInstr::split(ValueFactory& vf)
 
    m_dest->del_parent(this);
 
-   int start_slot = 0;
-   bool is_dot = m_opcode == op2_dot_ieee;
-   auto last_opcode = m_opcode;
-
-   if (is_dot) {
-      start_slot = m_dest->chan();
-      last_opcode = op2_mul_ieee;
-   }
-
+   auto [last_opcode, start_slot] =
+      r600_multislot_get_last_opcode_and_slot(m_opcode, m_dest->chan());
 
    for (int k = 0; k < m_alu_slots; ++k) {
       int s = k + start_slot;

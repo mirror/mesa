@@ -3992,6 +3992,7 @@ iris_set_constant_buffer(struct pipe_context *ctx,
          }
 
          if (take_ownership) {
+            assert(cbuf->buffer != input->buffer || cbuf->buffer->reference.count > 1);
             pipe_resource_reference(&cbuf->buffer, NULL);
             cbuf->buffer = input->buffer;
          } else {

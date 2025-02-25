@@ -1992,9 +1992,12 @@ if build_machine.system() == 'windows'
 
   prog_flex = find_program('win_flex', required : false)
   if prog_flex.found()
-    # windows compatibility (uses <io.h> instead of <unistd.h> and _isatty,
-    # _fileno functions)
-    prog_flex = [prog_flex, '--wincompat']
+    prog_flex = [prog_flex]
+    if host_machine.system() == 'windows'
+      # windows compatibility (uses <io.h> instead of <unistd.h> and _isatty,
+      # _fileno functions)
+      prog_flex += '--wincompat'
+    endif
   else
     prog_flex = [find_program('flex', 'lex', required : needs_flex_bison, disabler : true)]
   endif
@@ -2304,9 +2307,11 @@ if host_machine.system() == 'windows'
     symbols_check_args = ['--dumpbin', prog_dumpbin.full_path()]
   endif
 else
-  prog_nm = find_program('nm')
-  with_symbols_check = with_tests
-  symbols_check_args = ['--nm', prog_nm.full_path()]
+  prog_nm = find_program('nm', required : false)
+  with_symbols_check = prog_nm.found() and with_tests
+  if with_symbols_check
+    symbols_check_args = ['--nm', prog_nm.full_path()]
+  endif
 endif
 
 # This quirk needs to be applied to sources with functions defined in assembly

@@ -719,9 +719,7 @@ merge_layouts(struct vk_device *device, struct lvp_pipeline *dst, struct lvp_pip
       const struct lvp_descriptor_set_layout *bigger_set_layout =
          vk_to_lvp_descriptor_set_layout(bigger->vk.set_layouts[i]);
 
-      assert(!smaller_set_layout->binding_count ||
-             !bigger_set_layout->binding_count ||
-             layouts_equal(smaller_set_layout, bigger_set_layout));
+      assert(layouts_equal(smaller_set_layout, bigger_set_layout));
    }
 #endif
    /* must be independent sets with different layouts: reallocate to avoid modifying original layout */

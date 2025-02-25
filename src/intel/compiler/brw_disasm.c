@@ -1549,56 +1549,56 @@ imm(FILE *file, const struct brw_isa_info *isa, enum brw_reg_type type,
 
    switch (type) {
    case BRW_TYPE_UQ:
-      format(file, "0x%016"PRIx64"UQ", brw_eu_inst_imm_uq(devinfo, inst));
+      format(file, "0x%016"PRIx64":UQ", brw_eu_inst_imm_uq(devinfo, inst));
       break;
    case BRW_TYPE_Q:
-      format(file, "0x%016"PRIx64"Q", brw_eu_inst_imm_uq(devinfo, inst));
+      format(file, "0x%016"PRIx64":Q", brw_eu_inst_imm_uq(devinfo, inst));
       break;
    case BRW_TYPE_UD:
-      format(file, "0x%08xUD", brw_eu_inst_imm_ud(devinfo, inst));
+      format(file, "0x%08x:UD", brw_eu_inst_imm_ud(devinfo, inst));
       break;
    case BRW_TYPE_D:
-      format(file, "%dD", brw_eu_inst_imm_d(devinfo, inst));
+      format(file, "%d:D", brw_eu_inst_imm_d(devinfo, inst));
       break;
    case BRW_TYPE_UW:
-      format(file, "0x%04xUW", (uint16_t) brw_eu_inst_imm_ud(devinfo, inst));
+      format(file, "0x%04x:UW", (uint16_t) brw_eu_inst_imm_ud(devinfo, inst));
       break;
    case BRW_TYPE_W:
-      format(file, "%dW", (int16_t) brw_eu_inst_imm_d(devinfo, inst));
+      format(file, "%d:W", (int16_t) brw_eu_inst_imm_d(devinfo, inst));
       break;
    case BRW_TYPE_UV:
-      format(file, "0x%08xUV", brw_eu_inst_imm_ud(devinfo, inst));
+      format(file, "0x%08x:UV", brw_eu_inst_imm_ud(devinfo, inst));
       break;
    case BRW_TYPE_VF:
-      format(file, "0x%"PRIx64"VF", brw_eu_inst_bits(inst, 127, 96));
+      format(file, "0x%"PRIx64":VF", brw_eu_inst_bits(inst, 127, 96));
       pad(file, 48);
-      format(file, "/* [%-gF, %-gF, %-gF, %-gF]VF */",
+      format(file, "/* [%-g:F, %-g:F, %-g:F, %-g:F]:VF */",
              brw_vf_to_float(brw_eu_inst_imm_ud(devinfo, inst)),
              brw_vf_to_float(brw_eu_inst_imm_ud(devinfo, inst) >> 8),
              brw_vf_to_float(brw_eu_inst_imm_ud(devinfo, inst) >> 16),
              brw_vf_to_float(brw_eu_inst_imm_ud(devinfo, inst) >> 24));
       break;
    case BRW_TYPE_V:
-      format(file, "0x%08xV", brw_eu_inst_imm_ud(devinfo, inst));
+      format(file, "0x%08x:V", brw_eu_inst_imm_ud(devinfo, inst));
       break;
    case BRW_TYPE_F:
       /* The DIM instruction's src0 uses an F type but contains a
        * 64-bit immediate
        */
-      format(file, "0x%"PRIx64"F", brw_eu_inst_bits(inst, 127, 96));
+      format(file, "0x%"PRIx64":F", brw_eu_inst_bits(inst, 127, 96));
       pad(file, 48);
-      format(file, " /* %-gF */", brw_eu_inst_imm_f(devinfo, inst));
+      format(file, " /* %-g:F */", brw_eu_inst_imm_f(devinfo, inst));
       break;
    case BRW_TYPE_DF:
-      format(file, "0x%016"PRIx64"DF", brw_eu_inst_imm_uq(devinfo, inst));
+      format(file, "0x%016"PRIx64":DF", brw_eu_inst_imm_uq(devinfo, inst));
       pad(file, 48);
-      format(file, "/* %-gDF */", brw_eu_inst_imm_df(devinfo, inst));
+      format(file, "/* %-g:DF */", brw_eu_inst_imm_df(devinfo, inst));
       break;
    case BRW_TYPE_HF:
-      format(file, "0x%04xHF",
+      format(file, "0x%04x:HF",
              (uint16_t) brw_eu_inst_imm_ud(devinfo, inst));
       pad(file, 48);
-      format(file, "/* %-gHF */",
+      format(file, "/* %-g:HF */",
              _mesa_half_to_float((uint16_t) brw_eu_inst_imm_ud(devinfo, inst)));
       break;
    case BRW_TYPE_UB:
@@ -1655,7 +1655,7 @@ src_send_desc_ia(FILE *file,
    string(file, "a0");
    if (_addr_subreg_nr)
       format(file, ".%d", _addr_subreg_nr);
-   format(file, "<0>UD");
+   format(file, "<0>:UD");
 
    return 0;
 }

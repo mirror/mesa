@@ -219,6 +219,9 @@ include:
     - !reference [.disable-farm-mr-rules, rules]
     # Never run immediately after merging, as we just ran everything
     - !reference [.never-post-merge-rules, rules]
+    # Containers have to be generated before handing the MR over to Marge
+    - if: $CI_JOB_STAGE == 'container' && $GITLAB_USER_LOGIN == "marge-bot"
+      when: never
     # Build everything in merge pipelines, if any files affecting the pipeline
     # were changed
     - if: *is-merge-attempt

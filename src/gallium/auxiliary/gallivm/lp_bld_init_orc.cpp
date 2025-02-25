@@ -121,6 +121,7 @@ DEFINE_SIMPLE_CONVERSION_FUNCTIONS(llvm::orc::ThreadSafeContext,
                                    LLVMOrcThreadSafeContextRef)
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(llvm::orc::IRTransformLayer,
                                    LLVMOrcIRTransformLayerRef)
+DEFINE_SIMPLE_CONVERSION_FUNCTIONS(llvm::orc::LLJIT, LLVMOrcLLJITRef)
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(llvm::orc::JITDylib, LLVMOrcJITDylibRef)
 DEFINE_SIMPLE_CONVERSION_FUNCTIONS(llvm::orc::JITTargetMachineBuilder,
                                    LLVMOrcJITTargetMachineBuilderRef)
@@ -176,6 +177,13 @@ public:
       using llvm::orc::JITDylib;
       LPJit* jit = get_instance();
       JITDylib& tmp = ExitOnErr(jit->lljit->createJITDylib(name));
+
+      LLVMOrcDefinitionGeneratorRef ProcessSymbolsGenerator = 0;
+      LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess(&ProcessSymbolsGenerator,
+							   LLVMOrcLLJITGetGlobalPrefix(wrap(jit->lljit.get())),
+							   0, NULL);
+      LLVMOrcJITDylibAddGenerator(wrap(&tmp), ProcessSymbolsGenerator);
+
       return wrap(&tmp);
    }
 

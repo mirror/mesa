@@ -86,7 +86,7 @@ elif with_dri_platform == 'windows'
     meson.get_compiler('c').find_library('gdi32'),
     meson.get_compiler('c').find_library('opengl32')
   ]
-  extra_ld_args_libgl = '-Wl,--disable-stdcall-fixup'
+  extra_ld_args_libgl += ['-Wl,--disable-stdcall-fixup']
 endif
 
 if not with_glvnd

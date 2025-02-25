@@ -795,7 +795,10 @@ va_pack_instr(const bi_instr *I)
 {
    struct va_opcode_info info = valhall_opcodes[I->op];
 
-   uint64_t hex = info.exact | (((uint64_t)I->flow) << 59);
+   uint64_t flow = (uint64_t)I->flow;
+   if (flow < 0b1001)
+      flow = 0b1001;
+   uint64_t hex = info.exact | ((flow) << 59);
    hex |= ((uint64_t)va_select_fau_page(I)) << 57;
 
    if (info.slot)

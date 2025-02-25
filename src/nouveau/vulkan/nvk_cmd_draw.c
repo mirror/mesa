@@ -203,15 +203,25 @@ nvk_push_draw_state_init(struct nvk_queue *queue, struct nv_push *p)
     *
     * This should also prevent any issues with array overruns on I/O arrays.
     * Before, they would get an exception and kill the context whereas now
-    * they should gently get ignored.
+    * they should gently get ignored.  We also disable a few other exceptions
+    * to prevent app bugs from killing their context.
     *
-    * This clears bit 14 of gr_gpcs_tpcs_sms_hww_warp_esr_report_mask
+    * This clears the folliwing bits of
+    * gr_gpcs_tpcs_sms_hww_warp_esr_report_mask:
+    *
+    *    - 2: api_stack_error_report
+    *    - 14: oor_addr_report
+    *    - 14: misaligned_addr_report
+    *    - 18: invalid_const_addr_pdc_report
     */
    if (pdev->info.cls_eng3d >= MAXWELL_B) {
       unsigned reg = pdev->info.cls_eng3d >= VOLTA_A ? 0x419ea8 : 0x419e44;
       P_1INC(p, NV9097, CALL_MME_MACRO(NVK_MME_SET_PRIV_REG));
       P_INLINE_DATA(p, 0);
-      P_INLINE_DATA(p, BITFIELD_BIT(14));
+      P_INLINE_DATA(p, BITFIELD_BIT(2)
+                     | BITFIELD_BIT(14)
+                     | BITFIELD_BIT(15)
+                     | BITFIELD_BIT(18));
       P_INLINE_DATA(p, reg);
    }
 

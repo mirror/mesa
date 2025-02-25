@@ -107,7 +107,8 @@ disassemble(const void* func, std::ostream &buffer)
     */
 
    const char *triple = LLVM_HOST_TRIPLE;
-   LLVMDisasmContextRef D = LLVMCreateDisasm(triple, NULL, 0, NULL, NULL);
+   llvm::StringRef MCPU = llvm::sys::getHostCPUName();
+   LLVMDisasmContextRef D = LLVMCreateDisasmCPUFeatures(triple, MCPU.data(), "", NULL, 0, NULL, NULL);
    char outline[1024];
 
    if (!D) {

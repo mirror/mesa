@@ -10231,6 +10231,97 @@ end_uniform_if(isel_context* ctx, if_context* ic, bool logical_else)
    assert(!ctx->block->logical_preds.empty());
 }
 
+static bool
+scalar_in_block(nir_block* block, nir_scalar cond)
+{
+   return cond.def->parent_instr->block == block;
+}
+
+/* Returns true if cond is the result of x == read_first_invocation(x),
+ * or iand chains of those.
+ */
+static bool
+cond_is_waterfall(nir_block* block, nir_scalar cond)
+{
+   if (!nir_scalar_is_alu(cond) || !scalar_in_block(block, cond))
+      return false;
+
+   nir_op op = nir_scalar_alu_op(cond);
+
+   if (op == nir_op_iand) {
+      return cond_is_waterfall(block, nir_scalar_chase_alu_src(cond, 0)) &&
+             cond_is_waterfall(block, nir_scalar_chase_alu_src(cond, 1));
+   } else if (op == nir_op_ieq) {
+      for (unsigned i = 0; i < 2; i++) {
+         nir_scalar rfi = nir_scalar_chase_alu_src(cond, i);
+
+         if (!scalar_in_block(block, rfi) || !nir_scalar_is_intrinsic(rfi))
+            continue;
+         nir_intrinsic_instr* intrin = nir_instr_as_intrinsic(rfi.def->parent_instr);
+         if (intrin->intrinsic != nir_intrinsic_read_first_invocation)
+            continue;
+
+         nir_scalar eq = nir_scalar_chase_alu_src(cond, !i);
+         if (eq.def == intrin->src[0].ssa && eq.comp == rfi.comp)
+            return true;
+      }
+   }
+
+   return false;
+}
+
+static bool
+block_has_discard(nir_block* block)
+{
+   nir_foreach_instr (instr, block) {
+      if (instr->type != nir_instr_type_intrinsic)
+         continue;
+      nir_intrinsic_instr* intrin = nir_instr_as_intrinsic(instr);
+      if (intrin->intrinsic == nir_intrinsic_terminate_if ||
+          intrin->intrinsic == nir_intrinsic_demote_if ||
+          intrin->intrinsic == nir_intrinsic_terminate || intrin->intrinsic == nir_intrinsic_demote)
+         return true;
+   }
+
+   return false;
+}
+
+static bool
+cond_at_least_one_invocation_true(isel_context* ctx, nir_block* block, nir_scalar cond)
+{
+   /* In uniform control flow, at least one invocation won't be a helper */
+   if (!in_exec_divergent_or_in_loop(ctx)) {
+      if (nir_scalar_is_alu(cond) && nir_scalar_alu_op(cond) == nir_op_inot) {
+         nir_scalar is_helper = nir_scalar_chase_alu_src(cond, 0);
+         if (nir_scalar_is_intrinsic(is_helper)) {
+            nir_intrinsic_op op = nir_scalar_intrinsic_op(is_helper);
+            if (op == nir_intrinsic_is_helper_invocation ||
+                op == nir_intrinsic_load_helper_invocation)
+               return true;
+         }
+      }
+   }
+
+   /* Discards could potentially disable elected lanes. */
+   if (block_has_discard(block))
+      return false;
+
+   /* If one side of ior has at least one invocation, the result does too. */
+   if (nir_scalar_is_alu(cond) && nir_scalar_alu_op(cond) == nir_op_ior)
+      return cond_at_least_one_invocation_true(ctx, block, nir_scalar_chase_alu_src(cond, 0)) ||
+             cond_at_least_one_invocation_true(ctx, block, nir_scalar_chase_alu_src(cond, 0));
+
+   /* Elect is always true for one invocation. */
+   if (scalar_in_block(block, cond) && nir_scalar_is_intrinsic(cond) &&
+       nir_scalar_intrinsic_op(cond) == nir_intrinsic_elect)
+      return true;
+
+   if (cond_is_waterfall(block, cond))
+      return true;
+
+   return false;
+}
+
 static void
 end_empty_exec_skip(isel_context* ctx)
 {
@@ -10355,7 +10446,12 @@ visit_if(isel_context* ctx, nir_if* if_stmt)
        * *) Exceptions may be due to break and continue statements within loops
        **/
 
-      begin_divergent_if_then(ctx, &ic, cond, if_stmt->control);
+      nir_selection_control if_control = if_stmt->control;
+      if (cond_at_least_one_invocation_true(
+             ctx, nir_cf_node_as_block(nir_cf_node_prev(&if_stmt->cf_node)),
+             nir_scalar_resolved(if_stmt->condition.ssa, 0)))
+         if_control = nir_selection_control_divergent_always_taken;
+      begin_divergent_if_then(ctx, &ic, cond, if_control);
       visit_cf_list(ctx, &if_stmt->then_list);
 
       begin_divergent_if_else(ctx, &ic, if_stmt->control);

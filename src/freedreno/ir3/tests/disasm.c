@@ -90,6 +90,8 @@ static const struct test {
    INSTR_6XX(20400005_00003900, "mov.f16f16 hr1.y, h(0.625000)"),
    INSTR_6XX(20400006_00003800, "mov.f16f16 hr1.z, h(0.500000)"),
    INSTR_6XX(204880f5_00000000, "mova1 a1.x, 0"),
+   /* Some FS from GTA V */
+   INSTR_6XX(201560fc_000000c0, "(ul)invsr r63.x, r48.x"), /* (ul)invsr dr63.x, sr48.x */
 
    INSTR_7XX(2004c005_00000405, "cov.f32u32 r1.y, (last)r1.y"),
 

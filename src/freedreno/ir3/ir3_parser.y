@@ -492,6 +492,7 @@ static void print_token(FILE *file, int type, YYSTYPE value)
 %token <tok> T_OP_MOVA
 %token <tok> T_OP_MOV
 %token <tok> T_OP_COV
+%token <tok> T_OP_INVSR
 %token <tok> T_OP_SWZ
 %token <tok> T_OP_GAT
 %token <tok> T_OP_SCT
@@ -1016,6 +1017,13 @@ cat1_mova1:        T_OP_MOVA1 T_A1 ',' {
                        new_dst((61 << 3) + 2, IR3_REG_HALF);
                    } mova_src
 
+cat1_invsr:        T_OP_INVSR T_REGISTER ',' {
+                       new_instr(OPC_MOV);
+                       instr->cat1.src_type = TYPE_S32;
+                       instr->cat1.dst_type = TYPE_S32;
+                       new_dst($2, 0);
+                   } cat1_src
+
 cat1_mova:         T_OP_MOVA T_A0 ',' {
                        new_instr(OPC_MOV);
                        instr->cat1.src_type = TYPE_S16;
@@ -1033,6 +1041,7 @@ cat1_sct:          T_OP_SCT '.' T_CAT1_TYPE_TYPE { parse_type_type(new_instr(OPC
 cat1_instr:        cat1_movmsk
 |                  cat1_mova1
 |                  cat1_mova
+|                  cat1_invsr
 |                  cat1_swz
 |                  cat1_gat
 |                  cat1_sct

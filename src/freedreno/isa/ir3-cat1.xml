@@ -136,6 +136,21 @@ SOFTWARE.
 		<assert low="50" high="52">010</assert>       <!-- SRC_TYPE==u16 -->
 	</override>
 	<override>
+		<doc>
+			TODO: Find what invsr does.
+			The SRC has to be shared reg.
+		</doc>
+		<expr>
+			({DST} == 0xfc /* r63.x (dummy) */) &amp;&amp; ({SRC_TYPE} == 5 /* s32 */) &amp;&amp; ({DST_TYPE} == 5)
+		</expr>
+		<display>
+			{SY}{SS}{JP}{REPEAT}{UL}invsr r63.x, {SRC}
+		</display>
+		<assert low="32" high="39">11111100</assert>  <!-- DST==r63.x -->
+		<assert low="46" high="48">101</assert>       <!-- DST_TYPE==s32 -->
+		<assert low="50" high="52">101</assert>       <!-- SRC_TYPE==s32 -->
+	</override>
+	<override>
 		<expr>
 			{SRC_TYPE} != {DST_TYPE}
 		</expr>

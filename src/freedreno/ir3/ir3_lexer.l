@@ -220,6 +220,7 @@ static int parse_reg(const char *str)
 "mova"                            return TOKEN(T_OP_MOVA);
 "mov"                             return TOKEN(T_OP_MOV);
 "cov"                             return TOKEN(T_OP_COV);
+"invsr"                           return TOKEN(T_OP_INVSR);
 "swz"                             return TOKEN(T_OP_SWZ);
 "gat"                             return TOKEN(T_OP_GAT);
 "sct"                             return TOKEN(T_OP_SCT);

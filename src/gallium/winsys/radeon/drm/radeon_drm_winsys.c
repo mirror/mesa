@@ -709,10 +709,10 @@ static bool radeon_cs_request_feature(struct radeon_cmdbuf *rcs,
 
 uint32_t radeon_drm_get_gpu_reset_counter(struct radeon_drm_winsys *ws)
 {
-   uint64_t retval = 0;
+   uint32_t retval = 0;
 
    radeon_get_drm_value(ws->fd, RADEON_INFO_GPU_RESET_COUNTER,
-                        "gpu-reset-counter", (uint32_t*)&retval);
+                        "gpu-reset-counter", &retval);
    return retval;
 }
 
@@ -720,7 +720,7 @@ static uint64_t radeon_query_value(struct radeon_winsys *rws,
                                    enum radeon_value_id value)
 {
    struct radeon_drm_winsys *ws = (struct radeon_drm_winsys*)rws;
-   uint64_t retval = 0;
+   uint32_t retval = 0;
 
    switch (value) {
    case RADEON_REQUESTED_VRAM_MEMORY:
@@ -742,7 +742,7 @@ static uint64_t radeon_query_value(struct radeon_winsys *rws,
       }
 
       radeon_get_drm_value(ws->fd, RADEON_INFO_TIMESTAMP, "timestamp",
-                           (uint32_t*)&retval);
+                           &retval);
       return retval;
    case RADEON_NUM_GFX_IBS:
       return ws->num_gfx_IBs;
@@ -750,7 +750,7 @@ static uint64_t radeon_query_value(struct radeon_winsys *rws,
       return ws->num_sdma_IBs;
    case RADEON_NUM_BYTES_MOVED:
       radeon_get_drm_value(ws->fd, RADEON_INFO_NUM_BYTES_MOVED,
-                           "num-bytes-moved", (uint32_t*)&retval);
+                           "num-bytes-moved", &retval);
       return retval;
    case RADEON_NUM_EVICTIONS:
    case RADEON_NUM_VRAM_CPU_PAGE_FAULTS:
@@ -762,23 +762,23 @@ static uint64_t radeon_query_value(struct radeon_winsys *rws,
       return 0; /* unimplemented */
    case RADEON_VRAM_USAGE:
       radeon_get_drm_value(ws->fd, RADEON_INFO_VRAM_USAGE,
-                           "vram-usage", (uint32_t*)&retval);
+                           "vram-usage", &retval);
       return retval;
    case RADEON_GTT_USAGE:
       radeon_get_drm_value(ws->fd, RADEON_INFO_GTT_USAGE,
-                           "gtt-usage", (uint32_t*)&retval);
+                           "gtt-usage", &retval);
       return retval;
    case RADEON_GPU_TEMPERATURE:
       radeon_get_drm_value(ws->fd, RADEON_INFO_CURRENT_GPU_TEMP,
-                           "gpu-temp", (uint32_t*)&retval);
+                           "gpu-temp", &retval);
       return retval;
    case RADEON_CURRENT_SCLK:
       radeon_get_drm_value(ws->fd, RADEON_INFO_CURRENT_GPU_SCLK,
-                           "current-gpu-sclk", (uint32_t*)&retval);
+                           "current-gpu-sclk", &retval);
       return retval;
    case RADEON_CURRENT_MCLK:
       radeon_get_drm_value(ws->fd, RADEON_INFO_CURRENT_GPU_MCLK,
-                           "current-gpu-mclk", (uint32_t*)&retval);
+                           "current-gpu-mclk", &retval);
       return retval;
    case RADEON_CS_THREAD_TIME:
       return util_queue_get_thread_time_nano(&ws->cs_queue, 0);

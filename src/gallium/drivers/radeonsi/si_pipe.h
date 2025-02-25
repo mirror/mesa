@@ -1091,7 +1091,7 @@ struct si_context {
    uint32_t compute_tmpring_size;
    bool uses_nontrivial_vs_inputs;
    bool force_trivial_vs_inputs;
-   bool do_update_shaders;
+   uint8_t do_update_shaders_bitmask; /* 0: vs, 1: tes, 2: gs, 3: ps */
    bool compute_shaderbuf_sgprs_dirty;
    bool compute_image_sgprs_dirty;
    bool vs_uses_base_instance;
@@ -2196,6 +2196,16 @@ si_set_rasterized_prim(struct si_context *sctx, enum mesa_prim rast_prim,
       si_vs_ps_key_update_rast_prim_smooth_stipple(sctx);
       si_update_ngg_sgpr_state_out_prim(sctx, hw_vs, ngg);
    }
+}
+
+static ALWAYS_INLINE void
+si_set_shader_bitmask(struct si_context *sctx)
+{
+   sctx->do_update_shaders_bitmask |=
+      ((sctx->shader.vs.cso) ? (1 << 0) : 0) |
+      ((sctx->shader.tes.cso) ? (1 << 1) : 0) |
+      ((sctx->shader.gs.cso) ? (1 << 2) : 0) |
+      ((sctx->shader.ps.cso) ? (1 << 3) : 0);
 }
 
 /* There are 3 ways to flush caches and all of them are correct.

@@ -1230,7 +1230,7 @@ void si_invalidate_inlinable_uniforms(struct si_context *sctx, enum pipe_shader_
          sctx->shaders[shader].key.ge.opt.inline_uniforms = false;
 
       memset(inlined_values, 0, MAX_INLINABLE_UNIFORMS * 4);
-      sctx->do_update_shaders = true;
+      si_set_shader_bitmask(sctx);
    }
 }
 
@@ -1284,7 +1284,7 @@ static void si_set_inlinable_constants(struct pipe_context *ctx,
          sctx->shaders[shader].key.ge.opt.inline_uniforms = true;
 
       memcpy(inlined_values, values, num_values * 4);
-      sctx->do_update_shaders = true;
+      si_set_shader_bitmask(sctx);
       return;
    }
 
@@ -1293,7 +1293,7 @@ static void si_set_inlinable_constants(struct pipe_context *ctx,
     */
    if (memcmp(inlined_values, values, num_values * 4)) {
       memcpy(inlined_values, values, num_values * 4);
-      sctx->do_update_shaders = true;
+      si_set_shader_bitmask(sctx);
    }
 }
 

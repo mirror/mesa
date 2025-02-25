@@ -100,6 +100,8 @@ radv_compile_cs(struct radv_device *device, struct vk_pipeline_cache *cache, str
    /* Compile SPIR-V shader to NIR. */
    cs_stage->nir = radv_shader_spirv_to_nir(device, cs_stage, NULL, is_internal);
 
+   ac_nir_lower_indirect_derefs(cs_stage->nir, pdev->info.gfx_level);
+
    radv_optimize_nir(cs_stage->nir, cs_stage->key.optimisations_disabled);
 
    /* Gather info again, information such as outputs_read can be out-of-date. */

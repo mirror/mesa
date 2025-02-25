@@ -2725,6 +2725,14 @@ radv_graphics_shaders_compile(struct radv_device *device, struct vk_pipeline_cac
 
       radv_optimize_nir(stages[i].nir, stages[i].key.optimisations_disabled);
 
+      /* Indirect lowering must be called after the radv_optimize_nir() loop
+       * has been called at least once. Otherwise indirect lowering can
+       * bloat the instruction count of the loop and cause it to be
+       * considered too large for unrolling.
+       */
+      if (ac_nir_lower_indirect_derefs(stages[i].nir, pdev->info.gfx_level))
+         radv_optimize_nir(stages[i].nir, stages[i].key.optimisations_disabled);
+
       /* Gather info again, information such as outputs_read can be out-of-date. */
       nir_shader_gather_info(stages[i].nir, nir_shader_get_entrypoint(stages[i].nir));
       radv_nir_lower_io(device, stages[i].nir);

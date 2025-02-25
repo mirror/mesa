@@ -615,7 +615,9 @@ OSMesaCreateContextAttribs(const int *attribList, OSMesaContext sharelist)
       case OSMESA_PROFILE:
          profile = attribList[i+1];
          if (profile != OSMESA_CORE_PROFILE &&
-             profile != OSMESA_COMPAT_PROFILE)
+             profile != OSMESA_COMPAT_PROFILE &&
+             profile != OSMESA_ES_PROFILE &&
+             profile != OSMESA_ES2_PROFILE)
             return NULL;
          break;
       case OSMESA_CONTEXT_MAJOR_VERSION:
@@ -662,8 +664,14 @@ OSMesaCreateContextAttribs(const int *attribList, OSMesaContext sharelist)
     * Create the rendering context
     */
    memset(&attribs, 0, sizeof(attribs));
-   attribs.profile = (profile == OSMESA_CORE_PROFILE)
-      ? API_OPENGL_CORE : API_OPENGL_COMPAT;
+   switch (profile) {
+      case OSMESA_CORE_PROFILE: attribs.profile = API_OPENGL_CORE; break;
+      case OSMESA_ES_PROFILE: attribs.profile = API_OPENGLES; break;
+      case OSMESA_ES2_PROFILE: attribs.profile = API_OPENGLES2; break;
+      default:
+      case OSMESA_COMPAT_PROFILE: attribs.profile = API_OPENGL_COMPAT; break;
+   }
+
    attribs.major = version_major;
    attribs.minor = version_minor;
    attribs.flags = 0;  /* ST_CONTEXT_FLAG_x */

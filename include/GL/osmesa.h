@@ -106,6 +106,8 @@ extern "C" {
 #define OSMESA_COMPAT_PROFILE        0x35
 #define OSMESA_CONTEXT_MAJOR_VERSION 0x36
 #define OSMESA_CONTEXT_MINOR_VERSION 0x37
+#define OSMESA_ES_PROFILE            0x38
+#define OSMESA_ES2_PROFILE           0x39
 
 
 typedef struct osmesa_context *OSMesaContext;

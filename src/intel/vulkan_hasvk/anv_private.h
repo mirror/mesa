@@ -3735,8 +3735,6 @@ anv_add_pending_pipe_bits(struct anv_cmd_buffer* cmd_buffer,
 struct anv_performance_configuration_intel {
    struct vk_object_base      base;
 
-   struct intel_perf_registers *register_config;
-
    uint64_t                   config_id;
 };
 

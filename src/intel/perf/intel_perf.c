@@ -689,10 +689,8 @@ oa_metrics_available(struct intel_perf_config *perf, int fd,
    perf->devinfo = devinfo;
 
    /* Consider an invalid as supported. */
-   if (fd == -1) {
-      perf->features_supported = INTEL_PERF_FEATURE_QUERY_PERF;
+   if (fd == -1)
       return true;
-   }
 
    perf->enable_all_metrics = debug_get_bool_option("INTEL_EXTENDED_METRICS", false);
 
@@ -768,19 +766,17 @@ load_oa_metrics(struct intel_perf_config *perf, int fd,
       perf->fallback_raw_oa_metric = perf->queries[perf->n_queries - 1].oa_metrics_set_id;
 }
 
-struct intel_perf_registers *
-intel_perf_load_configuration(struct intel_perf_config *perf_cfg, int fd, const char *guid)
+uint64_t
+intel_perf_get_configuration_id(struct intel_perf_config *perf_cfg, const char *guid)
 {
-   if (!(perf_cfg->features_supported & INTEL_PERF_FEATURE_QUERY_PERF))
-      return NULL;
+   char path[512];
+   uint64_t val;
 
-   switch (perf_cfg->devinfo->kmd_type) {
-   case INTEL_KMD_TYPE_I915:
-      return i915_perf_load_configurations(perf_cfg, fd, guid);
-   default:
-      unreachable("missing");
-      return NULL;
-   }
+   snprintf(path, sizeof(path), "metrics/%s/id", guid);
+   if (read_sysfs_drm_device_file_uint64(perf_cfg, path, &val))
+      return val;
+
+   return 0;
 }
 
 uint64_t

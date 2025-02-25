@@ -91,6 +91,8 @@ resolve_sampler_views(struct iris_context *ice,
    if (info == NULL)
       return;
 
+   const struct intel_device_info *devinfo = &batch->screen->devinfo;
+
    int i;
    BITSET_FOREACH_SET(i, shs->bound_sampler_views, IRIS_MAX_TEXTURES) {
       if (!BITSET_TEST(info->textures_used, i))
@@ -99,16 +101,23 @@ resolve_sampler_views(struct iris_context *ice,
       struct iris_sampler_view *isv = shs->textures[i];
 
       if (isv->res->base.b.target != PIPE_BUFFER) {
-         if (consider_framebuffer) {
+         bool simultaneous_use = consider_framebuffer &&
             disable_rb_aux_buffer(ice, draw_aux_buffer_disabled, isv->res,
                                   isv->view.base_level, isv->view.levels,
                                   "for sampling");
-         }
 
-         iris_resource_prepare_texture(ice, isv->res, isv->view.format,
-                                       isv->view.base_level, isv->view.levels,
-                                       isv->view.base_array_layer,
-                                       isv->view.array_len);
+         if (simultaneous_use && devinfo->ver >= 12) {
+            iris_resource_prepare_access(ice, isv->res,
+                                         isv->view.base_level, isv->view.levels,
+                                         isv->view.base_array_layer,
+                                         isv->view.array_len,
+                                         ISL_AUX_USAGE_NONE, false);
+         } else {
+            iris_resource_prepare_texture(ice, isv->res, isv->view.format,
+                                          isv->view.base_level, isv->view.levels,
+                                          isv->view.base_array_layer,
+                                          isv->view.array_len);
+         }
       }
 
       iris_emit_buffer_barrier_for(batch, isv->res->bo,
@@ -125,6 +134,8 @@ resolve_image_views(struct iris_context *ice,
    if (info == NULL)
       return;
 
+   const struct intel_device_info *devinfo = &batch->screen->devinfo;
+
    const uint64_t images_used =
       (info->images_used[0] | ((uint64_t)info->images_used[1]) << 32);
    uint64_t views = shs->bound_image_views & images_used;
@@ -138,7 +149,13 @@ resolve_image_views(struct iris_context *ice,
          unsigned num_layers =
             pview->u.tex.last_layer - pview->u.tex.first_layer + 1;
 
+         bool simultaneous_use = consider_framebuffer &&
+            disable_rb_aux_buffer(ice, draw_aux_buffer_disabled,
+                                  res, pview->u.tex.level, 1,
+                                  "as a shader image");
+
          enum isl_aux_usage aux_usage =
+            simultaneous_use && devinfo->ver >= 12 ? ISL_AUX_USAGE_NONE :
             iris_image_view_aux_usage(ice, pview, info);
 
          enum isl_format view_format = iris_image_view_get_format(ice, pview);

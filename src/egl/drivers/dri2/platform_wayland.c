@@ -606,13 +606,58 @@ surface_dmabuf_feedback_done(
    void *data, struct zwp_linux_dmabuf_feedback_v1 *dmabuf_feedback)
 {
    struct dri2_egl_surface *dri2_surf = data;
+   struct dri2_egl_display *dri2_dpy =
+      dri2_egl_display(dri2_surf->base.Resource.Display);
 
-   /* The dma-buf feedback protocol states that surface dma-buf feedback should
-    * be sent by the compositor only if its buffers are using a suboptimal pair
-    * of format and modifier. We can't change the buffer format, but we can
-    * reallocate with another modifier. So we raise this flag in order to force
-    * buffer reallocation based on the dma-buf feedback sent. */
+   /* Check if the currently used modifier is considered optimal, i.e. is
+    * in the first tranche of the surface dma-buf feedback that contains the
+    * format we use. We can't change the buffer format, but we can
+    * reallocate with another modifier. So if the modifier is not optimal,
+    * we raise this flag in order to force buffer reallocation based on the
+    * dma-buf feedback sent. */
    dri2_surf->received_dmabuf_feedback = true;
+   if (dri2_dpy->image->base.version >= 15 && dri2_surf->current &&
+       dri2_surf->current->dri_image) {
+      EGLBoolean query;
+      int mod_hi, mod_lo;
+
+      query = dri2_dpy->image->queryImage(dri2_surf->current->dri_image,
+                                          __DRI_IMAGE_ATTRIB_MODIFIER_UPPER,
+                                          &mod_hi);
+      query &= dri2_dpy->image->queryImage(dri2_surf->current->dri_image,
+                                           __DRI_IMAGE_ATTRIB_MODIFIER_LOWER,
+                                           &mod_lo);
+      if (query) {
+         int visual_idx;
+         uint64_t current_modifier;
+
+         current_modifier = combine_u32_into_u64(mod_hi, mod_lo);
+         visual_idx = dri2_wl_visual_idx_from_fourcc(dri2_surf->format);
+         assert(visual_idx != -1);
+
+         util_dynarray_foreach(&dri2_surf->pending_dmabuf_feedback.tranches,
+                         struct dmabuf_feedback_tranche, tranche) {
+            uint64_t *modifiers;
+            unsigned int num_modifiers;
+
+            /* Find the first tranche that contains dri2_surf->format */
+            if (!BITSET_TEST(tranche->formats.formats_bitmap, visual_idx))
+               continue;
+
+            modifiers = util_dynarray_begin(&tranche->formats.modifiers[visual_idx]);
+            num_modifiers = util_dynarray_num_elements(&tranche->formats.modifiers[visual_idx],
+                                                       uint64_t);
+
+            for (int i = 0; i < num_modifiers; i++) {
+               if (modifiers[i] == current_modifier) {
+                  dri2_surf->received_dmabuf_feedback = false;
+                  break;
+               }
+            }
+            break;
+         }
+      }
+   }
 
    dmabuf_feedback_fini(&dri2_surf->dmabuf_feedback);
    dri2_surf->dmabuf_feedback = dri2_surf->pending_dmabuf_feedback;

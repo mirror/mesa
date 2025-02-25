@@ -337,7 +337,7 @@ struct dri2_egl_surface {
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback dmabuf_feedback, pending_dmabuf_feedback;
    bool compositor_using_another_device;
-   int format;
+   uint32_t format;
    bool resized;
    bool received_dmabuf_feedback;
 #endif

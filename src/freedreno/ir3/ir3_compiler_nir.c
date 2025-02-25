@@ -560,6 +560,56 @@ is_unique_use(nir_src *src)
    return true;
 }
 
+static struct ir3_instruction_rpt
+ir3_get_adjusted_csel_conds(struct ir3_context *ctx,
+                            uint8_t num_inputs,
+                            const struct ir3_instruction_rpt src[num_inputs],
+                            unsigned bs[num_inputs],
+                            const unsigned dst_sz){
+   struct ir3_builder *b = &ctx->build;
+   struct ir3_instruction_rpt conds;
+
+   /* TODO: repeat the covs when possible. */
+   for (unsigned rpt = 0; rpt < dst_sz; ++rpt) {
+      struct ir3_instruction *cond =
+         ir3_get_cond_for_nonzero_compare(src[0].rpts[rpt]);
+
+      /* The condition's size has to match the other two arguments' size, so
+       * convert down if necessary.
+       *
+       * Single hashtable is fine, because the conversion will either be
+       * 16->32 or 32->16, but never both
+       */
+      if (is_half(src[1].rpts[rpt]) != is_half(cond)) {
+         struct hash_entry *prev_entry = _mesa_hash_table_search(
+            ctx->sel_cond_conversions, src[0].rpts[rpt]);
+         if (prev_entry) {
+            cond = prev_entry->data;
+         } else {
+            if (is_half(cond)) {
+               if (bs[0] == 8) {
+                  /* Zero-extension of an 8-bit value has to be done through
+                   * masking, as in create_cov.
+                   */
+                  struct ir3_instruction *mask =
+                     create_immed_typed(b, 0xff, TYPE_U8);
+                  cond = ir3_AND_B(b, cond, 0, mask, 0);
+               } else {
+                  cond = ir3_COV(b, cond, TYPE_U16, TYPE_U32);
+               }
+            } else {
+               cond = ir3_COV(b, cond, TYPE_U32, TYPE_U16);
+            }
+            _mesa_hash_table_insert(ctx->sel_cond_conversions,
+                                    src[0].rpts[rpt], cond);
+         }
+      }
+      conds.rpts[rpt] = cond;
+   }
+
+   return conds;
+}
+
 static void
 emit_alu(struct ir3_context *ctx, nir_alu_instr *alu)
 {
@@ -943,60 +993,43 @@ emit_alu(struct ir3_context *ctx, nir_alu_instr *alu)
       set_cat2_condition(dst.rpts, dst_sz, IR3_COND_GE);
       break;
 
-   case nir_op_icsel_eqz:
-   case nir_op_bcsel: {
-      struct ir3_instruction_rpt conds;
-
+   case nir_op_fcsel_eqn: {
       compile_assert(ctx, bs[1] == bs[2]);
 
-      /* TODO: repeat the covs when possible. */
-      for (unsigned rpt = 0; rpt < dst_sz; ++rpt) {
-         struct ir3_instruction *cond =
-            ir3_get_cond_for_nonzero_compare(src[0].rpts[rpt]);
+      const struct ir3_instruction_rpt conds =
+         ir3_get_adjusted_csel_conds(ctx, info->num_inputs, src, bs, dst_sz);
 
-         /* The condition's size has to match the other two arguments' size, so
-          * convert down if necessary.
-          *
-          * Single hashtable is fine, because the conversion will either be
-          * 16->32 or 32->16, but never both
-          */
-         if (is_half(src[1].rpts[rpt]) != is_half(cond)) {
-            struct hash_entry *prev_entry = _mesa_hash_table_search(
-               ctx->sel_cond_conversions, src[0].rpts[rpt]);
-            if (prev_entry) {
-               cond = prev_entry->data;
-            } else {
-               if (is_half(cond)) {
-                  if (bs[0] == 8) {
-                     /* Zero-extension of an 8-bit value has to be done through
-                      * masking, as in create_cov.
-                      */
-                     struct ir3_instruction *mask =
-                        create_immed_typed(b, 0xff, TYPE_U8);
-                     cond = ir3_AND_B(b, cond, 0, mask, 0);
-                  } else {
-                     cond = ir3_COV(b, cond, TYPE_U16, TYPE_U32);
-                  }
-               } else {
-                  cond = ir3_COV(b, cond, TYPE_U32, TYPE_U16);
-               }
-               _mesa_hash_table_insert(ctx->sel_cond_conversions,
-                                       src[0].rpts[rpt], cond);
-            }
-         }
-         conds.rpts[rpt] = cond;
-      }
+      if (is_half(src[1].rpts[0]))
+         dst = ir3_SEL_F16_rpt(b, dst_sz, src[2], 0, conds, 0, src[1], 0);
+      else
+         dst = ir3_SEL_F32_rpt(b, dst_sz, src[2], 0, conds, 0, src[1], 0);
 
-      if (alu->op == nir_op_icsel_eqz) {
-         struct ir3_instruction_rpt tmp = src[1];
-         src[1] = src[2];
-         src[2] = tmp;
-      }
+      break;
+   }
+   case nir_op_icsel_eqz: {
+      compile_assert(ctx, bs[1] == bs[2]);
+
+      const struct ir3_instruction_rpt conds =
+         ir3_get_adjusted_csel_conds(ctx, info->num_inputs, src, bs, dst_sz);
+
+      if (is_half(src[1].rpts[0]))
+         dst = ir3_SEL_B16_rpt(b, dst_sz, src[2], 0, conds, 0, src[1], 0);
+      else
+         dst = ir3_SEL_B32_rpt(b, dst_sz, src[2], 0, conds, 0, src[1], 0);
+
+      break;
+   }
+   case nir_op_bcsel: {
+      compile_assert(ctx, bs[1] == bs[2]);
+
+      const struct ir3_instruction_rpt conds =
+         ir3_get_adjusted_csel_conds(ctx, info->num_inputs, src, bs, dst_sz);
 
       if (is_half(src[1].rpts[0]))
          dst = ir3_SEL_B16_rpt(b, dst_sz, src[1], 0, conds, 0, src[2], 0);
       else
          dst = ir3_SEL_B32_rpt(b, dst_sz, src[1], 0, conds, 0, src[2], 0);
+
       break;
    }
 

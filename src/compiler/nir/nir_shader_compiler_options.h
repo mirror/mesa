@@ -520,6 +520,10 @@ typedef struct nir_shader_compiler_options {
 
    /* Backend supports fused compare against zero and csel */
    bool has_fused_comp_and_csel;
+   /* Backend supports fused isnan and csel. */
+   bool has_fcsel_eqn16;
+   bool has_fcsel_eqn32;
+   bool has_fcsel_eqn64;
    /* Backend supports fused int eq/ne against zero and csel. */
    bool has_icsel_eqz64;
    bool has_icsel_eqz32;

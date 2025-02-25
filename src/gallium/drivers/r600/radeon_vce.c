@@ -448,8 +448,6 @@ struct pipe_video_codec *rvce_create_encoder(struct pipe_context *context,
 
 	reset_cpb(enc);
 
-	goto error;
-
 	return &enc->base;
 
 error:

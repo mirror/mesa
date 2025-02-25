@@ -443,6 +443,7 @@ struct zink_descriptor_data {
          uint32_t bindless_db_offsets[4];
          unsigned max_db_size;
          unsigned size_enlarge_scale;
+         unsigned allocated;
       } db;
    };
 

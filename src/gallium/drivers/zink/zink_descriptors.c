@@ -1501,8 +1501,18 @@ zink_batch_descriptor_deinit(struct zink_screen *screen, struct zink_batch_state
    if (bs->dd.db_xfer)
       zink_screen_buffer_unmap(&screen->base, bs->dd.db_xfer);
    bs->dd.db_xfer = NULL;
-   if (bs->dd.db)
+   if (bs->dd.db) {
+      /* Checking the refcount here is a bit hackish, but when re-allocating the db th eold buffer may be added to a
+       * list to keep it alive and only released later and at the location where the buffer is actually destroyed
+       * we don't have access to ctx->dd.db.allocated. This meand we don't catch all de-allocation of descriptor DB
+       * buffers, but the hope is that we don't have to re-allocate this space very often anyway, so we just
+       * want to make sure that we don't over-allocate. */
+      if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(bs->ctx->flags & ZINK_CONTEXT_COPY_ONLY) &&
+          bs->dd.db->base.b.reference.count == 1) {
+         bs->ctx->dd.db.allocated -= bs->dd.db->base.b.width0;
+      }
       screen->base.resource_destroy(&screen->base, &bs->dd.db->base.b);
+   }
    bs->dd.db = NULL;
    bs->dd.db_bound = false;
    bs->dd.db_offset = 0;
@@ -1587,11 +1597,18 @@ zink_batch_descriptor_init(struct zink_screen *screen, struct zink_batch_state *
 
    if (zink_descriptor_mode == ZINK_DESCRIPTOR_MODE_DB && !(bs->ctx->flags & ZINK_CONTEXT_COPY_ONLY)) {
       unsigned bind = ZINK_BIND_DESCRIPTOR;
-      struct pipe_resource *pres = pipe_buffer_create(&screen->base, bind, 0, bs->ctx->dd.db.max_db_size * screen->base_descriptor_size);
+      unsigned size = bs->ctx->dd.db.max_db_size * screen->base_descriptor_size;
+      if (size > screen->info.db_props.resourceDescriptorBufferAddressSpaceSize - bs->ctx->dd.db.allocated) {
+         size = screen->info.db_props.resourceDescriptorBufferAddressSpaceSize - bs->ctx->dd.db.allocated;
+      }
+
+      struct pipe_resource *pres = pipe_buffer_create(&screen->base, bind, 0, size);
       if (!pres)
          return false;
       bs->dd.db = zink_resource(pres);
       bs->dd.db_map = pipe_buffer_map(&bs->ctx->base, pres, PIPE_MAP_READ | PIPE_MAP_WRITE | PIPE_MAP_PERSISTENT | PIPE_MAP_COHERENT | PIPE_MAP_THREAD_SAFE, &bs->dd.db_xfer);
+      bs->ctx->dd.db.allocated += pres->width0;
+      bs->ctx->dd.db.max_db_size = pres->width0 / screen->base_descriptor_size;
    }
    return true;
 }

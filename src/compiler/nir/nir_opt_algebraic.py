@@ -691,10 +691,14 @@ optimizations.extend([
    (('fneu', a, '#b(is_negative_zero)'), ('fneu', 0.0, a)),
    (('feq', '#b(is_negative_zero)', a), ('feq', a, 0.0)),
 
-   (('ieq', ('ineg', a), 0),  ('ieq', a, 0)),
-   (('ine', ('ineg', a), 0),  ('ine', a, 0)),
+   (('ieq', ('ineg', 'a(is_not_const)'), '#b'),  ('ieq', a, ('ineg', b))),
+   (('ine', ('ineg', 'a(is_not_const)'), '#b'),  ('ine', a, ('ineg', b))),
    (('ieq', ('iabs', a), 0),  ('ieq', a, 0)),
    (('ine', ('iabs', a), 0),  ('ine', a, 0)),
+
+   (('ieq', ('ineg', a), ('ineg', b)), ('ieq', a, b)),
+   (('ine', ('ineg', a), ('ineg', b)), ('ine', a, b)),
+
    (('fneu', ('fabs', a), 0.0), ('fneu', a, 0.0)),
    (('feq', ('fabs', a), 0.0), ('feq', a, 0.0)),
    (('fneu', ('fabs', a), ('fabs', a)), ('fneu', a, a)),
@@ -794,9 +798,9 @@ optimizations.extend([
    (('fneu', ('u2f', a), 0.0), ('ine', a, 0)),
    (('feq', ('u2f', a), 0.0), ('ieq', a, 0)),
    (('fge', ('u2f', a), 0.0), True),
-   (('fge', 0.0, ('u2f', a)), ('uge', 0, a)),    # ieq instead?
+   (('fge', 0.0, ('u2f', a)), ('ieq', 0, a)),
    (('flt', ('u2f', a), 0.0), False),
-   (('flt', 0.0, ('u2f', a)), ('ult', 0, a)),    # ine instead?
+   (('flt', 0.0, ('u2f', a)), ('ine', 0, a)),
    (('fneu', ('i2f', a), 0.0), ('ine', a, 0)),
    (('feq', ('i2f', a), 0.0), ('ieq', a, 0)),
    (('fge', ('i2f', a), 0.0), ('ige', a, 0)),
@@ -867,6 +871,8 @@ optimizations.extend([
    (('bcsel', a, a, b), ('ior', a, b)),
    (('bcsel', a, b, False), ('iand', a, b)),
    (('bcsel', a, b, a), ('iand', a, b)),
+   (('bcsel', a, b, True), ('ior', ('inot', a), b)),
+   (('bcsel', a, False, b), ('iand', ('inot', a), b)),
    (('~fmin', a, a), a),
    (('~fmax', a, a), a),
    (('imin', a, a), a),
@@ -1282,8 +1288,9 @@ optimizations.extend([
 
    (('uge', a, 1), ('ine', a, 0)),
    (('ult', a, 1), ('ieq', a, 0)),
+   (('uge', 0, a), ('ieq', a, 0)),
+   (('ult', 0, a), ('ine', a, 0)),
 
-   (('ine', ('ineg', ('b2i', 'a@1')), ('ineg', ('b2i', 'b@1'))), ('ine', a, b)),
    (('b2i', ('ine', 'a@1', 'b@1')), ('b2i', ('ixor', a, b))),
 
    (('ishl', ('b2i32', ('ine', ('iand', 'a@32', '#b(is_pos_power_of_two)'), 0)), '#c'),
@@ -1451,13 +1458,31 @@ for s in [8, 16, 32, 64]:
    ])
 
 optimizations.extend([
-   (('ieq', ('ineg', ('b2i', 'a@1')), -1), a),
-   (('ine', ('ineg', ('b2i', 'a@1')), -1), ('inot', a)),
    (('ige', ('ineg', ('b2i', 'a@1')), 0), ('inot', a)),
    (('ilt', ('ineg', ('b2i', 'a@1')), 0), a),
-   (('ult', 0, ('ineg', ('b2i', 'a@1'))), a),
    (('iand', ('ineg', ('b2i', a)), 1.0), ('b2f', a)),
    (('iand', ('ineg', ('b2i', a)), 1),   ('b2i', a)),
+   (('bcsel', a, ('b2i', 'b@1'), ('b2i', 'c@1')), ('b2i', ('bcsel', a, b, c))),
+   (('bcsel', a, ('b2i', 'b@1'), 0), ('b2i', ('bcsel', a, b, False))),
+   (('bcsel', a, ('b2i', 'b@1'), 1), ('b2i', ('bcsel', a, b, True))),
+   (('bcsel', a, 0, ('b2i', 'b@1')), ('b2i', ('bcsel', a, False, b))),
+   (('bcsel', a, 1, ('b2i', 'b@1')), ('b2i', ('bcsel', a, True, b))),
+
+   (('bcsel', a, ('ineg', ('b2i', 'b@1')), ('ineg', ('b2i', 'c@1'))), ('ineg', ('b2i', ('bcsel', a, b, c)))),
+   (('bcsel', a, ('ineg', ('b2i', 'b@1')), 0), ('ineg', ('b2i', ('bcsel', a, b, False)))),
+   (('bcsel', a, ('ineg', ('b2i', 'b@1')), -1), ('ineg', ('b2i', ('bcsel', a, b, True)))),
+   (('bcsel', a, 0, ('ineg', ('b2i', 'b@1'))), ('ineg', ('b2i', ('bcsel', a, False, b)))),
+   (('bcsel', a, -1, ('ineg', ('b2i', 'b@1'))), ('ineg', ('b2i', ('bcsel', a, True, b)))),
+
+   (('inot', ('ineg', ('b2i', a))), ('ineg', ('b2i', ('inot', a)))),
+
+   (('ishl', ('ineg', ('b2i', a)), '#b'),
+    ('iand', ('ishl', -1, b), ('ineg', ('b2i', a)))),
+   (('ushr', ('ineg', ('b2i', a)), '#b'),
+    ('iand', ('ushr', -1, b), ('ineg', ('b2i', a)))),
+
+   (('ine', ('b2i', 'a@1'), ('ineg', ('b2i', 'b@1'))), ('ior', a, b)),
+   (('ieq', ('b2i', 'a@1'), ('ineg', ('b2i', 'b@1'))), ('inot', ('ior', a, b))),
 ])
 
 for op in ('ior', 'iand', 'ixor'):
@@ -2079,12 +2104,6 @@ optimizations.extend([
    # Redundant trip through 8-bit
    (('i2i16', ('u2u8', ('iand', 'a@16', 1))), ('iand', 'a@16', 1)),
    (('u2u16', ('u2u8', ('iand', 'a@16', 1))), ('iand', 'a@16', 1)),
-
-   # Reduce 16-bit integers to 1-bit booleans, hit with OpenCL. In turn, this
-   # lets iand(b2i1(...), 1) get simplified. Backends can usually fuse iand/inot
-   # so this should be no worse when it isn't strictly better.
-   (('bcsel', a, 0, ('b2i16', 'b@1')), ('b2i16', ('iand', ('inot', a), b))),
-   (('bcsel', a, ('b2i16', 'b@1'), ('b2i16', 'c@1')), ('b2i16', ('bcsel', a, b, c))),
 
    # Lowered pack followed by lowered unpack, for the high bits
    (('u2u32', ('ushr', ('ior', ('ishl', a, 32), ('u2u64', 'b@8')), 32)), ('u2u32', a)),

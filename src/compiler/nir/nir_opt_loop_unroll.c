@@ -921,6 +921,35 @@ check_unrolling_restrictions(nir_shader *shader, nir_loop *loop)
    if (cost <= cost_limit && trip_count <= max_iter)
       return true;
 
+   /* Alternate loop unrolling heuristic.
+    *
+    * Assume the presence of an optimization pass that will create multiple
+    * copies of the loop body while reducing the loop count. That is, a
+    * transformation of
+    *
+    *    for (unsigned i = 0; i < 64; i++)
+    *        stuff();
+    *
+    * into
+    *
+    *    for (unsigned i = 0; i < 64; ) {
+    *        stuff();
+    *        i++;
+    *        stuff();
+    *        i++;
+    *    }
+    *
+    * If that optimization were applied, would the loop become unrollable by
+    * the previous heuristic? If so, just allow it to be unrolled now.
+    */
+   if (cost <= cost_limit && li->instr_cost <= (LOOP_UNROLL_LIMIT / 2) &&
+       li->exact_trip_count_known && !li->has_soft_fp64) {
+      const unsigned unwind_count = LOOP_UNROLL_LIMIT / li->instr_cost;
+
+      if (DIV_ROUND_UP(trip_count, unwind_count) <= max_iter)
+         return true;
+   }
+
    return false;
 }
 

@@ -6,7 +6,7 @@
 
 #include "simple_mtx.h"
 
-#if !UTIL_FUTEX_SUPPORTED
+#if !UTIL_FUTEX_SUPPORTED && !defined(HAVE_PTHREAD)
 
 void _simple_mtx_plain_init_once(simple_mtx_t *mtx)
 {
@@ -30,4 +30,4 @@ simple_mtx_destroy(simple_mtx_t *mtx)
    }
 }
 
-#endif /* !UTIL_FUTEX_SUPPORTED */
+#endif /* !UTIL_FUTEX_SUPPORTED && !defined(HAVE_PTHREAD) */

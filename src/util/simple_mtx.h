@@ -37,7 +37,9 @@
 #else
 #  define HG(x)
 #endif
-#else /* !UTIL_FUTEX_SUPPORTED */
+#elif defined(HAVE_PTHREAD)
+#  include <pthread.h>
+#else /* !UTIL_FUTEX_SUPPORTED && !defined(HAVE_PTHREAD) */
 #  include "c11/threads.h"
 #endif /* UTIL_FUTEX_SUPPORTED */
 
@@ -142,7 +144,54 @@ simple_mtx_assert_locked(ASSERTED simple_mtx_t *mtx)
    assert(mtx->val);
 }
 
-#else /* !UTIL_FUTEX_SUPPORTED */
+#elif defined(HAVE_PTHREAD)
+
+typedef pthread_mutex_t simple_mtx_t;
+
+#define _SIMPLE_MTX_INITIALIZER_NP PTHREAD_MUTEX_INITIALIZER
+
+static inline void
+simple_mtx_init(simple_mtx_t *mtx, ASSERTED int type)
+{
+   assert(type == mtx_plain);
+   pthread_mutex_init(mtx, NULL);
+}
+
+static inline void
+simple_mtx_destroy(simple_mtx_t *mtx)
+{
+   pthread_mutex_destroy(mtx);
+}
+
+static inline void
+simple_mtx_lock(simple_mtx_t *mtx)
+{
+   pthread_mutex_lock(mtx);
+}
+
+static inline void
+simple_mtx_unlock(simple_mtx_t *mtx)
+{
+   pthread_mutex_unlock(mtx);
+}
+
+static inline void
+simple_mtx_assert_locked(simple_mtx_t *mtx)
+{
+#ifndef NDEBUG
+   /* NOTE: this would not work for recursive mutexes, but
+    * pthread_mutex_t are initialized to not support those
+    */
+   int ret = pthread_mutex_trylock(mtx);
+   assert(ret != 0);
+   if (ret == 0)
+      pthread_mutex_unlock(mtx);
+#else
+   (void)mtx;
+#endif
+}
+
+#else /* !UTIL_FUTEX_SUPPORTED && !defined(HAVE_PTHREAD) */
 
 typedef struct simple_mtx_t {
    util_once_flag flag;

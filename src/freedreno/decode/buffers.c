@@ -136,7 +136,14 @@ has_dumped(uint64_t gpuaddr, unsigned enable_mask)
    /* if needed, allocate a new offset entry: */
    if (n == b->noffsets) {
       b->noffsets++;
-      assert(b->noffsets < ARRAY_SIZE(b->offsets));
+      if (b->noffsets >= ARRAY_SIZE(b->offsets)) {
+         /* In some pathological cases thouthands of calls to
+          * a single IB with different offsets.
+          * Just forget about old entries as a workaround.
+          */
+         b->noffsets = 1;
+         n = 0;
+      }
       b->offsets[n].dumped_mask = 0;
       b->offsets[n].offset = offset;
    }

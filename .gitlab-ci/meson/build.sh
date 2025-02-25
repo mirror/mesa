@@ -181,6 +181,7 @@ meson setup _build \
       -D gallium-drivers=${GALLIUM_DRIVERS:-[]} \
       -D vulkan-drivers=${VULKAN_DRIVERS:-[]} \
       -D video-codecs=all \
+      -D llvm-orcjit=true \
       -D werror=true \
       -D b_lto=${LTO} \
       -D backend_max_links=${MAX_LD} \

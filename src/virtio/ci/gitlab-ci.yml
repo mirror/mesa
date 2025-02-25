@@ -27,23 +27,22 @@ venus-lavapipe-full:
   variables:
     DEQP_FRACTION: 6  # 1 would take 12h so this is as close as we can get
 
-.android-venus-lavapipe:
+android-venus-lavapipe:
   extends:
     - .test-android
     - .venus-manual-rules
   variables:
     ANDROID_GPU_MODE: venus
-    GPU_VERSION: venus
+    GPU_VERSION: venus-android
     DEQP_SUITE: android-venus
-    # TODO: define DEQP_FRACTION?
+    DEQP_FRACTION: 60
 
-.android-venus-angle-lavapipe:
+android-venus-angle-lavapipe:
   extends:
     - .test-android
     - .venus-manual-rules
   variables:
     USE_ANGLE: 1
     ANDROID_GPU_MODE: venus_guest_angle
-    GPU_VERSION: venus
+    GPU_VERSION: venus-android-angle
     DEQP_SUITE: android-venus-angle
-    # TODO: define DEQP_FRACTION?

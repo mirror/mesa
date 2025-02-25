@@ -7,7 +7,6 @@
 section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
-export HOME=/cuttlefish
 export PATH=/cuttlefish/bin:$PATH
 export LD_LIBRARY_PATH=/cuttlefish/lib64:${CI_PROJECT_DIR}/install/lib:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
@@ -34,7 +33,7 @@ function my_atexit()
   cp /cuttlefish/cuttlefish/instances/cvd-1/logs/launcher.log $RESULTS_DIR || true
 
   # shellcheck disable=SC2317
-  /cuttlefish/bin/stop_cvd -wait_for_launcher=10
+  HOME=/cuttlefish stop_cvd -wait_for_launcher=10
 }
 
 # stop cuttlefish if the script ends prematurely or is interrupted
@@ -43,12 +42,7 @@ trap 'exit 2' HUP INT PIPE TERM
 
 ulimit -S -n 32768
 
-# Clean up state of previous run
-rm -rf  /cuttlefish/cuttlefish
-rm -rf  /cuttlefish/.cache
-rm -rf  /cuttlefish/.cuttlefish_config.json
-
-launch_cvd \
+HOME=/cuttlefish launch_cvd \
   -daemon \
   -verbosity=VERBOSE \
   -file_verbosity=VERBOSE \
@@ -60,8 +54,8 @@ launch_cvd \
   -gpu_mode="$ANDROID_GPU_MODE" \
   -cpus=${FDO_CI_CONCURRENT:-4} \
   -memory_mb 8192 \
-  -kernel_path="$HOME/bzImage" \
-  -initramfs_path="$HOME/initramfs.img"
+  -kernel_path="/cuttlefish/bzImage" \
+  -initramfs_path="/cuttlefish/initramfs.img"
 
 sleep 1
 

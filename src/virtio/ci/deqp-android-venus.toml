@@ -3,3 +3,4 @@ deqp = "/data/deqp/deqp-vk"
 caselists = [ "/data/deqp/vk-main.txt" ]
 timeout = 30.0 # Starting lots of Crosvm instances simultaneously can take some time
 renderer_check = "Virtio-GPU Venus.*llvmpipe"
+tests_per_group = 10000

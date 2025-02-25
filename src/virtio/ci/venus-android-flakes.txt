@@ -1,0 +1,8 @@
+dEQP-VK.api.buffer.dedicated_alloc.transfer_dst.storage_texel.storage.index.vertex.create.zero
+dEQP-VK.api.buffer.dedicated_alloc.transfer_dst.storage_texel.uniform.storage.vertex.indirect.create.zero
+dEQP-VK.api.buffer.dedicated_alloc.transfer_dst.uniform.indirect.create.zero
+dEQP-VK.binding_model.mutable_descriptor.multiple_arrays_mixed.unbounded.aliasing.update_write.no_source.no_source.pool_expand_types.update_after_bind.index_push_constant.comp
+dEQP-VK.memory.allocation.random.32
+dEQP-VK.memory.mapping.dedicated_alloc.buffer.sub.8095.offset_1025.size_31.simple
+dEQP-VK.memory.mapping.suballocation.random.36
+dEQP-VK.memory.mapping.suballocation.random.7

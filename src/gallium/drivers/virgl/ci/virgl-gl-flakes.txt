@@ -15,3 +15,7 @@ dEQP-GLES3.functional.clipping.point.wide_point_clip_viewport_corner
 dEQP-GLES3.functional.draw_buffers_indexed.overwrite_indexed.common_enable_buffer_enable
 dEQP-GLES3.functional.draw_buffers_indexed.overwrite_indexed.common_separate_blend_func_buffer_separate_blend_func
 dEQP-GLES3.functional.draw_buffers_indexed.random.max_implementation_draw_buffers.4
+
+dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.buffers.buffersubdata.2
+dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.images.copyteximage2d.12
+dEQP-EGL.functional.sharing.gles2.multithread.random_egl_sync.programs.attach_detach.10

@@ -7,6 +7,9 @@ use crate::tiling::Tiling;
 use std::ffi::c_void;
 use std::ops::Range;
 
+#[cfg(any(target_arch = "x86_64"))]
+use std::arch::x86_64::__m128i;
+
 // This file is dedicated to the internal tiling layout, mainly in the context
 // of CPU-based tiled memcpy implementations (and helpers) for VK_EXT_host_image_copy
 //
@@ -149,9 +152,9 @@ trait Copy16B {
     const X_DIVISOR: u32;
 
     unsafe fn copy(tiled: *mut u8, linear: *mut u8, bytes: usize);
-    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
-        Self::copy(tiled as *mut _, linear as *mut _, 16);
-    }
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]);
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    unsafe fn copy_16b_SSE2(dst: *mut __m128i, data_ptr: *mut [u8; 16]);
 }
 
 struct CopyGOBTuring2D<C: Copy16B> {
@@ -516,6 +519,230 @@ impl Copy16B for RawCopyToTiled {
         // This is backwards from memcpy
         std::ptr::copy_nonoverlapping(linear, tiled, bytes);
     }
+
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
+        #[cfg(any(target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse2") {
+                return unsafe { Self::copy_16b_SSE2(tiled as *mut __m128i, linear); };
+            }
+        }
+
+        // Fallback without using SSE
+        Self::copy(tiled as *mut _, linear as *mut _, 16);
+    }
+
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse2")]
+    unsafe fn copy_16b_SSE2(dst: *mut __m128i, data_ptr: *mut [u8; 16]) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::_mm_loadu_si128;
+        use std::arch::x86_64::_mm_store_si128;
+        
+        let linear_data = _mm_loadu_si128(data_ptr as *mut __m128i);
+        _mm_store_si128(dst, linear_data);
+    }
+}
+
+impl CopyGOB for RawCopyToTiled {
+    const GOB_EXTENT_B: Extent4D<units::Bytes> = CopyGOBTuring2D::<RawCopyToTiled>::GOB_EXTENT_B;
+    const X_DIVISOR: u32 = CopyGOBTuring2D::<RawCopyToTiled>::X_DIVISOR;
+
+    unsafe fn copy_gob(
+        tiled: usize,
+        linear: LinearPointer,
+        start: Offset4D<units::Bytes>,
+        end: Offset4D<units::Bytes>,
+    ) {
+        CopyGOBTuring2D::<RawCopyToTiled>::copy_gob(tiled, linear, start, end);
+    }
+    
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse4.1")]
+    unsafe fn copy_whole_gob(tiled: usize, linear: LinearPointer) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::{_mm_loadu_si128, _mm_stream_si128, _mm_sfence, _mm_store_si128};
+        // Load the linear data into XMM registers. We have 32, so we can fit
+        // a whole GOB's worth of data in our RF. We cannot assume linear data
+        // is aligned, so we need to use unaligned loads here.
+
+        // COLUMN MAJOR (theoretically worse for perf)
+        
+        let data_reg_00 = _mm_loadu_si128((linear.at(Offset4D::new(0, 0, 0, 0))) as *mut __m128i);
+        let data_reg_01 = _mm_loadu_si128((linear.at(Offset4D::new(0, 1, 0, 0))) as *mut __m128i);
+        let data_reg_02 = _mm_loadu_si128((linear.at(Offset4D::new(0, 2, 0, 0))) as *mut __m128i);
+        let data_reg_03 = _mm_loadu_si128((linear.at(Offset4D::new(0, 3, 0, 0))) as *mut __m128i);
+
+        let data_reg_04 = _mm_loadu_si128((linear.at(Offset4D::new(16, 0, 0, 0))) as *mut __m128i);
+        let data_reg_05 = _mm_loadu_si128((linear.at(Offset4D::new(16, 1, 0, 0))) as *mut __m128i);
+        let data_reg_06 = _mm_loadu_si128((linear.at(Offset4D::new(16, 2, 0, 0))) as *mut __m128i);
+        let data_reg_07 = _mm_loadu_si128((linear.at(Offset4D::new(16, 3, 0, 0))) as *mut __m128i);
+
+        let data_reg_08 = _mm_loadu_si128((linear.at(Offset4D::new(0, 4, 0, 0))) as *mut __m128i);
+        let data_reg_09 = _mm_loadu_si128((linear.at(Offset4D::new(0, 5, 0, 0))) as *mut __m128i);
+        let data_reg_0a = _mm_loadu_si128((linear.at(Offset4D::new(0, 6, 0, 0))) as *mut __m128i);
+        let data_reg_0b = _mm_loadu_si128((linear.at(Offset4D::new(0, 7, 0, 0))) as *mut __m128i);
+
+        let data_reg_0c = _mm_loadu_si128((linear.at(Offset4D::new(16, 4, 0, 0))) as *mut __m128i);
+        let data_reg_0d = _mm_loadu_si128((linear.at(Offset4D::new(16, 5, 0, 0))) as *mut __m128i);
+        let data_reg_0e = _mm_loadu_si128((linear.at(Offset4D::new(16, 6, 0, 0))) as *mut __m128i);
+        let data_reg_0f = _mm_loadu_si128((linear.at(Offset4D::new(16, 7, 0, 0))) as *mut __m128i);
+
+        let data_reg_10 = _mm_loadu_si128((linear.at(Offset4D::new(32, 0, 0, 0))) as *mut __m128i);
+        let data_reg_11 = _mm_loadu_si128((linear.at(Offset4D::new(32, 1, 0, 0))) as *mut __m128i);
+        let data_reg_12 = _mm_loadu_si128((linear.at(Offset4D::new(32, 2, 0, 0))) as *mut __m128i);
+        let data_reg_13 = _mm_loadu_si128((linear.at(Offset4D::new(32, 3, 0, 0))) as *mut __m128i);
+
+        let data_reg_14 = _mm_loadu_si128((linear.at(Offset4D::new(48, 0, 0, 0))) as *mut __m128i);
+        let data_reg_15 = _mm_loadu_si128((linear.at(Offset4D::new(48, 1, 0, 0))) as *mut __m128i);
+        let data_reg_16 = _mm_loadu_si128((linear.at(Offset4D::new(48, 2, 0, 0))) as *mut __m128i);
+        let data_reg_17 = _mm_loadu_si128((linear.at(Offset4D::new(48, 3, 0, 0))) as *mut __m128i);
+
+        let data_reg_18 = _mm_loadu_si128((linear.at(Offset4D::new(32, 4, 0, 0))) as *mut __m128i);
+        let data_reg_19 = _mm_loadu_si128((linear.at(Offset4D::new(32, 5, 0, 0))) as *mut __m128i);
+        let data_reg_1a = _mm_loadu_si128((linear.at(Offset4D::new(32, 6, 0, 0))) as *mut __m128i);
+        let data_reg_1b = _mm_loadu_si128((linear.at(Offset4D::new(32, 7, 0, 0))) as *mut __m128i);
+
+        let data_reg_1c = _mm_loadu_si128((linear.at(Offset4D::new(48, 4, 0, 0))) as *mut __m128i);
+        let data_reg_1d = _mm_loadu_si128((linear.at(Offset4D::new(48, 5, 0, 0))) as *mut __m128i);
+        let data_reg_1e = _mm_loadu_si128((linear.at(Offset4D::new(48, 6, 0, 0))) as *mut __m128i);
+        let data_reg_1f = _mm_loadu_si128((linear.at(Offset4D::new(48, 7, 0, 0))) as *mut __m128i);
+
+        // ROW MAJOR (theoretically better for perf)
+        /*
+        let data_reg_00 = _mm_loadu_si128((linear.at(Offset4D::new(0, 0, 0, 0))) as *mut __m128i);
+        let data_reg_01 = _mm_loadu_si128((linear.at(Offset4D::new(16, 0, 0, 0))) as *mut __m128i);
+        let data_reg_02 = _mm_loadu_si128((linear.at(Offset4D::new(32, 0, 0, 0))) as *mut __m128i);
+        let data_reg_03 = _mm_loadu_si128((linear.at(Offset4D::new(48, 0, 0, 0))) as *mut __m128i);
+
+        let data_reg_04 = _mm_loadu_si128((linear.at(Offset4D::new(0, 1, 0, 0))) as *mut __m128i);
+        let data_reg_05 = _mm_loadu_si128((linear.at(Offset4D::new(16, 1, 0, 0))) as *mut __m128i);
+        let data_reg_06 = _mm_loadu_si128((linear.at(Offset4D::new(32, 1, 0, 0))) as *mut __m128i);
+        let data_reg_07 = _mm_loadu_si128((linear.at(Offset4D::new(48, 1, 0, 0))) as *mut __m128i);
+
+        let data_reg_08 = _mm_loadu_si128((linear.at(Offset4D::new(0, 2, 0, 0))) as *mut __m128i);
+        let data_reg_09 = _mm_loadu_si128((linear.at(Offset4D::new(16, 2, 0, 0))) as *mut __m128i);
+        let data_reg_0a = _mm_loadu_si128((linear.at(Offset4D::new(32, 2, 0, 0))) as *mut __m128i);
+        let data_reg_0b = _mm_loadu_si128((linear.at(Offset4D::new(48, 2, 0, 0))) as *mut __m128i);
+
+        let data_reg_0c = _mm_loadu_si128((linear.at(Offset4D::new(0, 3, 0, 0))) as *mut __m128i);
+        let data_reg_0d = _mm_loadu_si128((linear.at(Offset4D::new(16, 3, 0, 0))) as *mut __m128i);
+        let data_reg_0e = _mm_loadu_si128((linear.at(Offset4D::new(32, 3, 0, 0))) as *mut __m128i);
+        let data_reg_0f = _mm_loadu_si128((linear.at(Offset4D::new(48, 3, 0, 0))) as *mut __m128i);
+
+        let data_reg_10 = _mm_loadu_si128((linear.at(Offset4D::new(0, 4, 0, 0))) as *mut __m128i);
+        let data_reg_11 = _mm_loadu_si128((linear.at(Offset4D::new(16, 4, 0, 0))) as *mut __m128i);
+        let data_reg_12 = _mm_loadu_si128((linear.at(Offset4D::new(32, 4, 0, 0))) as *mut __m128i);
+        let data_reg_13 = _mm_loadu_si128((linear.at(Offset4D::new(48, 4, 0, 0))) as *mut __m128i);
+
+        let data_reg_14 = _mm_loadu_si128((linear.at(Offset4D::new(0, 5, 0, 0))) as *mut __m128i);
+        let data_reg_15 = _mm_loadu_si128((linear.at(Offset4D::new(16, 5, 0, 0))) as *mut __m128i);
+        let data_reg_16 = _mm_loadu_si128((linear.at(Offset4D::new(32, 5, 0, 0))) as *mut __m128i);
+        let data_reg_17 = _mm_loadu_si128((linear.at(Offset4D::new(48, 5, 0, 0))) as *mut __m128i);
+
+        let data_reg_18 = _mm_loadu_si128((linear.at(Offset4D::new(0, 6, 0, 0))) as *mut __m128i);
+        let data_reg_19 = _mm_loadu_si128((linear.at(Offset4D::new(16, 6, 0, 0))) as *mut __m128i);
+        let data_reg_1a = _mm_loadu_si128((linear.at(Offset4D::new(32, 6, 0, 0))) as *mut __m128i);
+        let data_reg_1b = _mm_loadu_si128((linear.at(Offset4D::new(48, 6, 0, 0))) as *mut __m128i);
+
+        let data_reg_1c = _mm_loadu_si128((linear.at(Offset4D::new(0, 7, 0, 0))) as *mut __m128i);
+        let data_reg_1d = _mm_loadu_si128((linear.at(Offset4D::new(16, 7, 0, 0))) as *mut __m128i);
+        let data_reg_1e = _mm_loadu_si128((linear.at(Offset4D::new(32, 7, 0, 0))) as *mut __m128i);
+        let data_reg_1f = _mm_loadu_si128((linear.at(Offset4D::new(48, 7, 0, 0))) as *mut __m128i);
+        */
+        
+        // Now we store the data. We use non-temporal stores here for better
+        // caching.
+
+        // COLUMN MAJOR (theoretically worse for perf)
+        _mm_store_si128((tiled + (0x00 as usize)) as *mut __m128i, data_reg_00);
+        _mm_store_si128((tiled + (0x10 as usize)) as *mut __m128i, data_reg_01);
+        _mm_store_si128((tiled + (0x20 as usize)) as *mut __m128i, data_reg_02);
+        _mm_store_si128((tiled + (0x30 as usize)) as *mut __m128i, data_reg_03);
+
+        _mm_store_si128((tiled + (0x40 as usize)) as *mut __m128i, data_reg_04);
+        _mm_store_si128((tiled + (0x50 as usize)) as *mut __m128i, data_reg_05);
+        _mm_store_si128((tiled + (0x60 as usize)) as *mut __m128i, data_reg_06);
+        _mm_store_si128((tiled + (0x70 as usize)) as *mut __m128i, data_reg_07);
+
+        _mm_store_si128((tiled + (0x80 as usize)) as *mut __m128i, data_reg_08);
+        _mm_store_si128((tiled + (0x90 as usize)) as *mut __m128i, data_reg_09);
+        _mm_store_si128((tiled + (0xa0 as usize)) as *mut __m128i, data_reg_0a);
+        _mm_store_si128((tiled + (0xb0 as usize)) as *mut __m128i, data_reg_0b);
+
+        _mm_store_si128((tiled + (0xc0 as usize)) as *mut __m128i, data_reg_0c);
+        _mm_store_si128((tiled + (0xd0 as usize)) as *mut __m128i, data_reg_0d);
+        _mm_store_si128((tiled + (0xe0 as usize)) as *mut __m128i, data_reg_0e);
+        _mm_store_si128((tiled + (0xf0 as usize)) as *mut __m128i, data_reg_0f);
+
+        _mm_store_si128((tiled + (0x100 as usize)) as *mut __m128i, data_reg_10);
+        _mm_store_si128((tiled + (0x110 as usize)) as *mut __m128i, data_reg_11);
+        _mm_store_si128((tiled + (0x120 as usize)) as *mut __m128i, data_reg_12);
+        _mm_store_si128((tiled + (0x130 as usize)) as *mut __m128i, data_reg_13);
+
+        _mm_store_si128((tiled + (0x140 as usize)) as *mut __m128i, data_reg_14);
+        _mm_store_si128((tiled + (0x150 as usize)) as *mut __m128i, data_reg_15);
+        _mm_store_si128((tiled + (0x160 as usize)) as *mut __m128i, data_reg_16);
+        _mm_store_si128((tiled + (0x170 as usize)) as *mut __m128i, data_reg_17);
+
+        _mm_store_si128((tiled + (0x180 as usize)) as *mut __m128i, data_reg_18);
+        _mm_store_si128((tiled + (0x190 as usize)) as *mut __m128i, data_reg_19);
+        _mm_store_si128((tiled + (0x1a0 as usize)) as *mut __m128i, data_reg_1a);
+        _mm_store_si128((tiled + (0x1b0 as usize)) as *mut __m128i, data_reg_1b);
+
+        _mm_store_si128((tiled + (0x1c0 as usize)) as *mut __m128i, data_reg_1c);
+        _mm_store_si128((tiled + (0x1d0 as usize)) as *mut __m128i, data_reg_1d);
+        _mm_store_si128((tiled + (0x1e0 as usize)) as *mut __m128i, data_reg_1e);
+        _mm_store_si128((tiled + (0x1f0 as usize)) as *mut __m128i, data_reg_1f);
+
+       // ROW MAJOR (theoretically better for perf)
+       /*
+        _mm_store_si128((tiled + (0x00 as usize)) as *mut __m128i, data_reg_00);
+        _mm_store_si128((tiled + (0x40 as usize)) as *mut __m128i, data_reg_01);
+        _mm_store_si128((tiled + (0x100 as usize)) as *mut __m128i, data_reg_02);
+        _mm_store_si128((tiled + (0x140 as usize)) as *mut __m128i, data_reg_03);
+
+        _mm_store_si128((tiled + (0x10 as usize)) as *mut __m128i, data_reg_04);
+        _mm_store_si128((tiled + (0x50 as usize)) as *mut __m128i, data_reg_05);
+        _mm_store_si128((tiled + (0x110 as usize)) as *mut __m128i, data_reg_06);
+        _mm_store_si128((tiled + (0x150 as usize)) as *mut __m128i, data_reg_07);
+
+        _mm_store_si128((tiled + (0x20 as usize)) as *mut __m128i, data_reg_08);
+        _mm_store_si128((tiled + (0x60 as usize)) as *mut __m128i, data_reg_09);
+        _mm_store_si128((tiled + (0x120 as usize)) as *mut __m128i, data_reg_0a);
+        _mm_store_si128((tiled + (0x160 as usize)) as *mut __m128i, data_reg_0b);
+
+        _mm_store_si128((tiled + (0x30 as usize)) as *mut __m128i, data_reg_0c);
+        _mm_store_si128((tiled + (0x70 as usize)) as *mut __m128i, data_reg_0d);
+        _mm_store_si128((tiled + (0x130 as usize)) as *mut __m128i, data_reg_0e);
+        _mm_store_si128((tiled + (0x170 as usize)) as *mut __m128i, data_reg_0f);
+
+        _mm_store_si128((tiled + (0x80 as usize)) as *mut __m128i, data_reg_10);
+        _mm_store_si128((tiled + (0xc0 as usize)) as *mut __m128i, data_reg_11);
+        _mm_store_si128((tiled + (0x180 as usize)) as *mut __m128i, data_reg_12);
+        _mm_store_si128((tiled + (0x1c0 as usize)) as *mut __m128i, data_reg_13);
+
+        _mm_store_si128((tiled + (0x90 as usize)) as *mut __m128i, data_reg_14);
+        _mm_store_si128((tiled + (0xd0 as usize)) as *mut __m128i, data_reg_15);
+        _mm_store_si128((tiled + (0x190 as usize)) as *mut __m128i, data_reg_16);
+        _mm_store_si128((tiled + (0x1d0 as usize)) as *mut __m128i, data_reg_17);
+
+        _mm_store_si128((tiled + (0xa0 as usize)) as *mut __m128i, data_reg_18);
+        _mm_store_si128((tiled + (0xe0 as usize)) as *mut __m128i, data_reg_19);
+        _mm_store_si128((tiled + (0x1a0 as usize)) as *mut __m128i, data_reg_1a);
+        _mm_store_si128((tiled + (0x1e0 as usize)) as *mut __m128i, data_reg_1b);
+
+        _mm_store_si128((tiled + (0xb0 as usize)) as *mut __m128i, data_reg_1c);
+        _mm_store_si128((tiled + (0xf0 as usize)) as *mut __m128i, data_reg_1d);
+        _mm_store_si128((tiled + (0x1b0 as usize)) as *mut __m128i, data_reg_1e);
+        _mm_store_si128((tiled + (0x1f0 as usize)) as *mut __m128i, data_reg_1f);
+        */
+
+
+        // Since these are non-temporal stores, we need a fence to ensure the
+        // stores are fully completed before anything else touches this memory.
+        //_mm_sfence();
+    }
 }
 
 struct RawCopyToLinear {}
@@ -526,6 +753,225 @@ impl Copy16B for RawCopyToLinear {
     unsafe fn copy(tiled: *mut u8, linear: *mut u8, bytes: usize) {
         // This is backwards from memcpy
         std::ptr::copy_nonoverlapping(tiled, linear, bytes);
+    }
+
+    unsafe fn copy_16b(tiled: *mut [u8; 16], linear: *mut [u8; 16]) {
+        #[cfg(any(target_arch = "x86_64"))]
+        {
+            if is_x86_feature_detected!("sse2") {
+                return unsafe { Self::copy_16b_SSE2(linear as *mut __m128i, tiled); };
+            }
+        }
+
+        // Fallback without using SSE
+        Self::copy(tiled as *mut _, linear as *mut _, 16);
+    }
+
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse2")]
+    unsafe fn copy_16b_SSE2(linear: *mut __m128i, tiled: *mut [u8; 16]) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::_mm_load_si128;
+        use std::arch::x86_64::_mm_storeu_si128;
+        
+        let tiled_data = _mm_load_si128(tiled as *mut __m128i);
+        _mm_storeu_si128(linear, tiled_data);
+    }
+}
+
+impl CopyGOB for RawCopyToLinear {
+    const GOB_EXTENT_B: Extent4D<units::Bytes> = CopyGOBTuring2D::<RawCopyToLinear>::GOB_EXTENT_B;
+    const X_DIVISOR: u32 = CopyGOBTuring2D::<RawCopyToLinear>::X_DIVISOR;
+
+    unsafe fn copy_gob(
+        tiled: usize,
+        linear: LinearPointer,
+        start: Offset4D<units::Bytes>,
+        end: Offset4D<units::Bytes>,
+    ) {
+        CopyGOBTuring2D::<RawCopyToLinear>::copy_gob(tiled, linear, start, end);
+    }
+    
+    #[cfg(any(target_arch = "x86_64"))]
+    #[target_feature(enable = "sse4.1")]
+    unsafe fn copy_whole_gob(tiled: usize, linear: LinearPointer) {
+        #[cfg(target_arch = "x86_64")]
+        use std::arch::x86_64::{_mm_load_si128, _mm_storeu_si128};
+        // Load the tiled data into XMM registers. We have 32, so we can fit
+        // a whole GOB's worth of data in our RF.
+
+        // COLUMN MAJOR (theoretically worse for perf)
+        /*
+        let data_reg_00 = _mm_load_si128((tiled + (0x00 as usize)) as *mut __m128i);
+        let data_reg_01 = _mm_load_si128((tiled + (0x10 as usize)) as *mut __m128i);
+        let data_reg_02 = _mm_load_si128((tiled + (0x20 as usize)) as *mut __m128i);
+        let data_reg_03 = _mm_load_si128((tiled + (0x30 as usize)) as *mut __m128i);
+
+        let data_reg_04 = _mm_load_si128((tiled + (0x40 as usize)) as *mut __m128i);
+        let data_reg_05 = _mm_load_si128((tiled + (0x50 as usize)) as *mut __m128i);
+        let data_reg_06 = _mm_load_si128((tiled + (0x60 as usize)) as *mut __m128i);
+        let data_reg_07 = _mm_load_si128((tiled + (0x70 as usize)) as *mut __m128i);
+
+        let data_reg_08 = _mm_load_si128((tiled + (0x80 as usize)) as *mut __m128i);
+        let data_reg_09 = _mm_load_si128((tiled + (0x90 as usize)) as *mut __m128i);
+        let data_reg_0a = _mm_load_si128((tiled + (0xa0 as usize)) as *mut __m128i);
+        let data_reg_0b = _mm_load_si128((tiled + (0xb0 as usize)) as *mut __m128i);
+
+        let data_reg_0c = _mm_load_si128((tiled + (0xc0 as usize)) as *mut __m128i);
+        let data_reg_0d = _mm_load_si128((tiled + (0xd0 as usize)) as *mut __m128i);
+        let data_reg_0e = _mm_load_si128((tiled + (0xe0 as usize)) as *mut __m128i);
+        let data_reg_0f = _mm_load_si128((tiled + (0xf0 as usize)) as *mut __m128i);
+
+        let data_reg_10 = _mm_load_si128((tiled + (0x100 as usize)) as *mut __m128i);
+        let data_reg_11 = _mm_load_si128((tiled + (0x110 as usize)) as *mut __m128i);
+        let data_reg_12 = _mm_load_si128((tiled + (0x120 as usize)) as *mut __m128i);
+        let data_reg_13 = _mm_load_si128((tiled + (0x130 as usize)) as *mut __m128i);
+
+        let data_reg_14 = _mm_load_si128((tiled + (0x140 as usize)) as *mut __m128i);
+        let data_reg_15 = _mm_load_si128((tiled + (0x150 as usize)) as *mut __m128i);
+        let data_reg_16 = _mm_load_si128((tiled + (0x160 as usize)) as *mut __m128i);
+        let data_reg_17 = _mm_load_si128((tiled + (0x170 as usize)) as *mut __m128i);
+
+        let data_reg_18 = _mm_load_si128((tiled + (0x180 as usize)) as *mut __m128i);
+        let data_reg_19 = _mm_load_si128((tiled + (0x190 as usize)) as *mut __m128i);
+        let data_reg_1a = _mm_load_si128((tiled + (0x1a0 as usize)) as *mut __m128i);
+        let data_reg_1b = _mm_load_si128((tiled + (0x1b0 as usize)) as *mut __m128i);
+
+        let data_reg_1c = _mm_load_si128((tiled + (0x1c0 as usize)) as *mut __m128i);
+        let data_reg_1d = _mm_load_si128((tiled + (0x1d0 as usize)) as *mut __m128i);
+        let data_reg_1e = _mm_load_si128((tiled + (0x1e0 as usize)) as *mut __m128i);
+        let data_reg_1f = _mm_load_si128((tiled + (0x1f0 as usize)) as *mut __m128i);
+        */
+        
+        // ROW MAJOR (theoretically better for perf)
+
+        let data_reg_00 = _mm_load_si128((tiled + (0x00 as usize)) as *mut __m128i);
+        let data_reg_01 = _mm_load_si128((tiled + (0x40 as usize)) as *mut __m128i);
+        let data_reg_02 = _mm_load_si128((tiled + (0x100 as usize)) as *mut __m128i);
+        let data_reg_03 = _mm_load_si128((tiled + (0x140 as usize)) as *mut __m128i);
+
+        let data_reg_04 = _mm_load_si128((tiled + (0x10 as usize)) as *mut __m128i);
+        let data_reg_05 = _mm_load_si128((tiled + (0x50 as usize)) as *mut __m128i);
+        let data_reg_06 = _mm_load_si128((tiled + (0x110 as usize)) as *mut __m128i);
+        let data_reg_07 = _mm_load_si128((tiled + (0x150 as usize)) as *mut __m128i);
+
+        let data_reg_08 = _mm_load_si128((tiled + (0x20 as usize)) as *mut __m128i);
+        let data_reg_09 = _mm_load_si128((tiled + (0x60 as usize)) as *mut __m128i);
+        let data_reg_0a = _mm_load_si128((tiled + (0x120 as usize)) as *mut __m128i);
+        let data_reg_0b = _mm_load_si128((tiled + (0x160 as usize)) as *mut __m128i);
+
+        let data_reg_0c = _mm_load_si128((tiled + (0x30 as usize)) as *mut __m128i);
+        let data_reg_0d = _mm_load_si128((tiled + (0x70 as usize)) as *mut __m128i);
+        let data_reg_0e = _mm_load_si128((tiled + (0x130 as usize)) as *mut __m128i);
+        let data_reg_0f = _mm_load_si128((tiled + (0x170 as usize)) as *mut __m128i);
+
+        let data_reg_10 = _mm_load_si128((tiled + (0x80 as usize)) as *mut __m128i);
+        let data_reg_11 = _mm_load_si128((tiled + (0xc0 as usize)) as *mut __m128i);
+        let data_reg_12 = _mm_load_si128((tiled + (0x180 as usize)) as *mut __m128i);
+        let data_reg_13 = _mm_load_si128((tiled + (0x1c0 as usize)) as *mut __m128i);
+
+        let data_reg_14 = _mm_load_si128((tiled + (0x90 as usize)) as *mut __m128i);
+        let data_reg_15 = _mm_load_si128((tiled + (0xd0 as usize)) as *mut __m128i);
+        let data_reg_16 = _mm_load_si128((tiled + (0x190 as usize)) as *mut __m128i);
+        let data_reg_17 = _mm_load_si128((tiled + (0x1d0 as usize)) as *mut __m128i);
+
+        let data_reg_18 = _mm_load_si128((tiled + (0xa0 as usize)) as *mut __m128i);
+        let data_reg_19 = _mm_load_si128((tiled + (0xe0 as usize)) as *mut __m128i);
+        let data_reg_1a = _mm_load_si128((tiled + (0x1a0 as usize)) as *mut __m128i);
+        let data_reg_1b = _mm_load_si128((tiled + (0x1e0 as usize)) as *mut __m128i);
+
+        let data_reg_1c = _mm_load_si128((tiled + (0xb0 as usize)) as *mut __m128i);
+        let data_reg_1d = _mm_load_si128((tiled + (0xf0 as usize)) as *mut __m128i);
+        let data_reg_1e = _mm_load_si128((tiled + (0x1b0 as usize)) as *mut __m128i);
+        let data_reg_1f = _mm_load_si128((tiled + (0x1f0 as usize)) as *mut __m128i);
+        
+        // Now we store the data. Again, we cannot guarantee that linear data
+        // is aligned, so we have to use regular unaligned stores here.
+
+        // COLUMN MAJOR (theoretically worse for perf)
+        /*
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 0, 0, 0))) as *mut __m128i, data_reg_00);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 1, 0, 0))) as *mut __m128i, data_reg_01);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 2, 0, 0))) as *mut __m128i, data_reg_02);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 3, 0, 0))) as *mut __m128i, data_reg_03);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 0, 0, 0))) as *mut __m128i, data_reg_04);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 1, 0, 0))) as *mut __m128i, data_reg_05);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 2, 0, 0))) as *mut __m128i, data_reg_06);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 3, 0, 0))) as *mut __m128i, data_reg_07);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 4, 0, 0))) as *mut __m128i, data_reg_08);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 5, 0, 0))) as *mut __m128i, data_reg_09);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 6, 0, 0))) as *mut __m128i, data_reg_0a);
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 7, 0, 0))) as *mut __m128i, data_reg_0b);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 4, 0, 0))) as *mut __m128i, data_reg_0c);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 5, 0, 0))) as *mut __m128i, data_reg_0d);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 6, 0, 0))) as *mut __m128i, data_reg_0e);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 7, 0, 0))) as *mut __m128i, data_reg_0f);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 0, 0, 0))) as *mut __m128i, data_reg_10);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 1, 0, 0))) as *mut __m128i, data_reg_11);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 2, 0, 0))) as *mut __m128i, data_reg_12);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 3, 0, 0))) as *mut __m128i, data_reg_13);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 0, 0, 0))) as *mut __m128i, data_reg_14);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 1, 0, 0))) as *mut __m128i, data_reg_15);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 2, 0, 0))) as *mut __m128i, data_reg_16);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 3, 0, 0))) as *mut __m128i, data_reg_17);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 4, 0, 0))) as *mut __m128i, data_reg_18);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 5, 0, 0))) as *mut __m128i, data_reg_19);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 6, 0, 0))) as *mut __m128i, data_reg_1a);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 7, 0, 0))) as *mut __m128i, data_reg_1b);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 4, 0, 0))) as *mut __m128i, data_reg_1c);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 5, 0, 0))) as *mut __m128i, data_reg_1d);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 6, 0, 0))) as *mut __m128i, data_reg_1e);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 7, 0, 0))) as *mut __m128i, data_reg_1f);
+        */
+        
+        // ROW MAJOR (theoretically better for perf)
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 0, 0, 0))) as *mut __m128i, data_reg_00);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 0, 0, 0))) as *mut __m128i, data_reg_01);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 0, 0, 0))) as *mut __m128i, data_reg_02);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 0, 0, 0))) as *mut __m128i, data_reg_03);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 1, 0, 0))) as *mut __m128i, data_reg_04);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 1, 0, 0))) as *mut __m128i, data_reg_05);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 1, 0, 0))) as *mut __m128i, data_reg_06);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 1, 0, 0))) as *mut __m128i, data_reg_07);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 2, 0, 0))) as *mut __m128i, data_reg_08);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 2, 0, 0))) as *mut __m128i, data_reg_09);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 2, 0, 0))) as *mut __m128i, data_reg_0a);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 2, 0, 0))) as *mut __m128i, data_reg_0b);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 3, 0, 0))) as *mut __m128i, data_reg_0c);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 3, 0, 0))) as *mut __m128i, data_reg_0d);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 3, 0, 0))) as *mut __m128i, data_reg_0e);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 3, 0, 0))) as *mut __m128i, data_reg_0f);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 4, 0, 0))) as *mut __m128i, data_reg_10);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 4, 0, 0))) as *mut __m128i, data_reg_11);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 4, 0, 0))) as *mut __m128i, data_reg_12);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 4, 0, 0))) as *mut __m128i, data_reg_13);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 5, 0, 0))) as *mut __m128i, data_reg_14);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 5, 0, 0))) as *mut __m128i, data_reg_15);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 5, 0, 0))) as *mut __m128i, data_reg_16);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 5, 0, 0))) as *mut __m128i, data_reg_17);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 6, 0, 0))) as *mut __m128i, data_reg_18);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 6, 0, 0))) as *mut __m128i, data_reg_19);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 6, 0, 0))) as *mut __m128i, data_reg_1a);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 6, 0, 0))) as *mut __m128i, data_reg_1b);
+
+        _mm_storeu_si128((linear.at(Offset4D::new(0, 7, 0, 0))) as *mut __m128i, data_reg_1c);
+        _mm_storeu_si128((linear.at(Offset4D::new(16, 7, 0, 0))) as *mut __m128i, data_reg_1d);
+        _mm_storeu_si128((linear.at(Offset4D::new(32, 7, 0, 0))) as *mut __m128i, data_reg_1e);
+        _mm_storeu_si128((linear.at(Offset4D::new(48, 7, 0, 0))) as *mut __m128i, data_reg_1f);
     }
 }
 
@@ -551,7 +997,7 @@ pub unsafe extern "C" fn nil_copy_linear_to_tiled(
         linear_plane_stride_B,
     );
 
-    copy_tiled::<CopyGOBTuring2D<RawCopyToTiled>>(
+    copy_tiled::<RawCopyToTiled>(
         *tiling,
         level_extent_B,
         tiled_dst,
@@ -583,7 +1029,7 @@ pub unsafe extern "C" fn nil_copy_tiled_to_linear(
         linear_plane_stride_B,
     );
 
-    copy_tiled::<CopyGOBTuring2D<RawCopyToLinear>>(
+    copy_tiled::<RawCopyToLinear>(
         *tiling,
         level_extent_B,
         tiled_src,

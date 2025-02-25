@@ -118,6 +118,27 @@ const ppir_op_info ppir_op_infos[] = {
          PPIR_INSTR_SLOT_ALU_COMBINE, PPIR_INSTR_SLOT_END
       },
    },
+   [ppir_op_atan_pt1] = {
+      .name = "atan_pt1",
+      .type = ppir_node_type_alu,
+      .slots = (int []) {
+         PPIR_INSTR_SLOT_ALU_COMBINE, PPIR_INSTR_SLOT_END
+      },
+   },
+   [ppir_op_atan2_pt1] = {
+      .name = "atan2_pt1",
+      .type = ppir_node_type_alu,
+      .slots = (int []) {
+         PPIR_INSTR_SLOT_ALU_COMBINE, PPIR_INSTR_SLOT_END
+      },
+   },
+   [ppir_op_atan_pt2] = {
+      .name = "atan_pt2",
+      .type = ppir_node_type_alu,
+      .slots = (int []) {
+         PPIR_INSTR_SLOT_ALU_COMBINE, PPIR_INSTR_SLOT_END
+      },
+   },
    [ppir_op_max] = {
       .name = "max",
       .slots = (int []) {
@@ -381,7 +402,7 @@ void *ppir_node_create(ppir_block *block, ppir_op op, int index, unsigned mask)
             comp->var_nodes[(index << 2) + u_bit_scan(&mask)] = node;
          snprintf(node->name, sizeof(node->name), "reg%d", index);
       } else {
-         comp->var_nodes[index] = node;
+         comp->var_nodes[index << 2] = node;
          snprintf(node->name, sizeof(node->name), "ssa%d", index);
       }
    }
@@ -612,7 +633,8 @@ static void ppir_node_print_src(ppir_src *src)
    {
       printf(".");
       for (int i = 0; i < 4; i++) {
-         printf("%c", "xyzw"[src->swizzle[i]]);
+         if (src->mask & (1 << i))
+            printf("%c", "xyzw"[src->swizzle[i]]);
       }
    }
    if (src->absolute)
@@ -723,7 +745,17 @@ void ppir_node_print_prog(ppir_compiler *comp)
 
    printf("========prog========\n");
    list_for_each_entry(ppir_block, block, &comp->block_list, list) {
-      printf("-------block %3d-------\n", block->index);
+      printf("*** block %3d", block->index);
+      if (block->successors[0] || block->successors[1]) {
+         printf(", successors:");
+         for (int i = 0; i < 2; i++) {
+            if (block->successors[i])
+               printf(" %d", block->successors[i]->index);
+         }
+      }
+      if (block->stop)
+         printf(", stop");
+      printf("\n");
       list_for_each_entry(ppir_node, node, &block->node_list, list) {
          if (ppir_node_is_root(node))
             ppir_node_print_node(node, 0);

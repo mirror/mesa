@@ -100,6 +100,18 @@ def lowered_sincos(c):
     x = ('fmul', ('fsub', x, ('fmul', x, ('fabs', x))), 4.0)
     return ('ffma', ('ffma', x, ('fabs', x), ('fneg', x)), 0.225, x)
 
+def asin_expr(p0, p1):
+    return ('fmul', ('fsign', a),
+            ('ffma', ('fneg', ('fsqrt', ('fsub', 1.0, ('fabs', a)))),
+                     ('ffma', ('fabs', a),
+                              ('ffma', ('fabs', a),
+                                       ('ffma', ('fabs', a),
+                                                p1,
+                                                p0),
+                                       0.25 * pi - 1),
+                               0.5 * pi),
+                     0.5 * pi))
+
 def intBitsToFloat(i):
     return struct.unpack('!f', struct.pack('!I', i))[0]
 
@@ -1716,6 +1728,10 @@ optimizations.extend([
    # Trig
    (('fsin', a), lowered_sincos(0.5), 'options->lower_sincos'),
    (('fcos', a), lowered_sincos(0.75), 'options->lower_sincos'),
+   (('fasin', a), asin_expr(0.086566724, -0.03102955), '!options->has_atan'),
+   (('facos', a), ('fsub', 0.5 * pi, asin_expr(0.08132463, -0.02363318)), '!options->has_atan'),
+   (('fasin', a), ('fatan2', a, ('fsqrt', ('fsub', 1.0, ('fmul', a, a)))), 'options->has_atan'),
+   (('facos', a), ('fatan2', ('fsqrt', ('fsub', 1.0, ('fmul', a, a))), a), 'options->has_atan'),
    # Boolean simplifications
    (('ieq', a, True), a),
    (('ine(is_not_used_by_if)', a, True), ('inot', a)),

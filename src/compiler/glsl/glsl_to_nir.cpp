@@ -2260,8 +2260,16 @@ nir_visitor::visit(ir_expression *ir)
       return;
    }
 
+   case ir_unop_asin:
+      result = nir_fasin(&b, srcs[0]);
+      break;
+
+   case ir_unop_acos:
+      result = nir_facos(&b, srcs[0]);
+      break;
+
    case ir_unop_atan:
-      result = nir_atan(&b, srcs[0]);
+      result = nir_fatan(&b, srcs[0]);
       break;
 
    case ir_binop_add:
@@ -2447,7 +2455,7 @@ nir_visitor::visit(ir_expression *ir)
       break;
 
    case ir_binop_atan2:
-      result = nir_atan2(&b, srcs[0], srcs[1]);
+      result = nir_fatan2(&b, srcs[0], srcs[1]);
       break;
 
    case ir_binop_ldexp: result = nir_ldexp(&b, srcs[0], srcs[1]); break;

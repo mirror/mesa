@@ -63,8 +63,6 @@ typedef enum {
    ppir_op_asin,
    ppir_op_acos,
 
-   ppir_op_atan,
-   ppir_op_atan2,
    ppir_op_atan_pt1,
    ppir_op_atan2_pt1,
    ppir_op_atan_pt2,
@@ -265,6 +263,7 @@ typedef enum {
 typedef struct ppir_src {
    ppir_target type;
    ppir_node *node;
+   unsigned mask;
 
    union {
       ppir_reg *ssa;
@@ -615,6 +614,8 @@ static inline void ppir_node_target_assign(ppir_src *src, ppir_node *node)
 {
    ppir_dest *dest = ppir_node_get_dest(node);
    src->type = dest->type;
+   if (!src->mask)
+      src->mask = dest->write_mask;
    switch (src->type) {
    case ppir_target_ssa:
       src->ssa = &dest->ssa;
@@ -729,6 +730,19 @@ static inline bool ppir_node_schedulable_slot(ppir_node *node,
    return false;
 }
 
+static bool inline ppir_block_is_empty(ppir_block *block)
+{
+   return list_is_empty(&block->node_list);
+}
+
+static bool ppir_src_swizzle_is_identity(ppir_src *src)
+{
+   uint8_t identity[4] = { PIPE_SWIZZLE_X, PIPE_SWIZZLE_Y,
+                           PIPE_SWIZZLE_Z, PIPE_SWIZZLE_W };
+
+   return memcmp(src->swizzle, identity, sizeof(identity)) == 0;
+}
+
 ppir_instr *ppir_instr_create(ppir_block *block);
 bool ppir_instr_insert_node(ppir_instr *instr, ppir_node *node);
 void ppir_instr_add_dep(ppir_instr *succ, ppir_instr *pred);
@@ -759,8 +773,10 @@ bool ppir_lower_prog(ppir_compiler *comp);
 bool ppir_node_to_instr(ppir_compiler *comp);
 bool ppir_schedule_prog(ppir_compiler *comp);
 bool ppir_regalloc_prog(ppir_compiler *comp);
+bool ppir_compact_prog(ppir_compiler *comp);
 bool ppir_codegen_prog(ppir_compiler *comp);
 void ppir_liveness_analysis(ppir_compiler *comp);
+bool ppir_opt_prog(ppir_compiler *comp);
 
 static inline unsigned int reg_mask_size(unsigned int num_reg)
 {

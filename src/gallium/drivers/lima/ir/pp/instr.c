@@ -322,8 +322,11 @@ bool ppir_instr_insert_node(ppir_instr *instr, ppir_node *node)
             if (instr->slots[PPIR_INSTR_SLOT_BRANCH])
                continue;
 
-            if (!ppir_target_is_scalar(dest))
+            if (node->op != ppir_op_atan2_pt1 &&
+                node->op != ppir_op_atan_pt1 &&
+               !ppir_target_is_scalar(dest))
                continue;
+
             /* Combiner doesn't have pipeline destination */
             if (dest->type == ppir_target_pipeline)
                continue;
@@ -332,8 +335,8 @@ bool ppir_instr_insert_node(ppir_instr *instr, ppir_node *node)
             if (node->op == ppir_op_mul && dest->modifier != ppir_outmod_none)
                continue;
 
-            /* No modifiers on vector source on combiner */
-            if (ppir_node_get_src_num(node) == 2) {
+            /* No modifiers on vector source on combiner mul */
+            if (node->op == ppir_op_mul) {
                ppir_src *src = ppir_node_get_src(node, 1);
                if (src->negate || src->absolute)
                   continue;

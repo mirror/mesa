@@ -109,7 +109,7 @@ util_set_thread_affinity(thrd_t thread,
    cpu_set_t cpuset;
 
    if (old_mask) {
-      if (pthread_getaffinity_np(thread, sizeof(cpuset), &cpuset) != 0)
+      if (pthread_getaffinity_np(c11_thrd_get_pthread(thread), sizeof(cpuset), &cpuset) != 0)
          return false;
 
       memset(old_mask, 0, num_mask_bits / 8);
@@ -124,7 +124,7 @@ util_set_thread_affinity(thrd_t thread,
       if (mask[i / 32] & (1u << (i % 32)))
          CPU_SET(i, &cpuset);
    }
-   return pthread_setaffinity_np(thread, sizeof(cpuset), &cpuset) == 0;
+   return pthread_setaffinity_np(c11_thrd_get_pthread(thread), sizeof(cpuset), &cpuset) == 0;
 
 #elif defined(_WIN32) && !defined(HAVE_PTHREAD)
    DWORD_PTR m = mask[0];
@@ -158,7 +158,7 @@ util_thread_get_time_nano(thrd_t thread)
    struct timespec ts;
    clockid_t cid;
 
-   pthread_getcpuclockid(thread, &cid);
+   pthread_getcpuclockid(c11_thrd_get_pthread(thread), &cid);
    clock_gettime(cid, &ts);
    return (int64_t)ts.tv_sec * 1000000000 + ts.tv_nsec;
 #elif defined(_WIN32)

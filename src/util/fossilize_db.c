@@ -259,15 +259,13 @@ load_foz_dbs(struct foz_db *foz_db, FILE *db_idx, uint8_t file_idx,
 
    flock(fileno(foz_db->file[file_idx]), LOCK_UN);
 
-   if (foz_db->updater.thrd) {
+   {
    /* If MESA_DISK_CACHE_READ_ONLY_FOZ_DBS_DYNAMIC_LIST is enabled, access to
     * the foz_db hash table requires locking to prevent racing between this
     * updated thread loading DBs at runtime and cache entry read/writes. */
       simple_mtx_lock(&foz_db->mtx);
       update_foz_index(foz_db, db_idx, file_idx);
       simple_mtx_unlock(&foz_db->mtx);
-   } else {
-      update_foz_index(foz_db, db_idx, file_idx);
    }
 
    foz_db->alive = true;
@@ -550,7 +548,7 @@ foz_destroy(struct foz_db *foz_db)
 {
 #ifdef FOZ_DB_UTIL_DYNAMIC_LIST
    struct foz_dbs_list_updater *updater = &foz_db->updater;
-   if (updater->thrd) {
+   {
       inotify_rm_watch(updater->inotify_fd, updater->inotify_wd);
       /* inotify_rm_watch() triggers the IN_IGNORE event for the thread
        * to exit.

@@ -504,9 +504,6 @@ radv_device_finish_notifier(struct radv_device *device)
 #ifdef __linux__
    struct radv_notifier *notifier = &device->notifier;
 
-   if (!notifier->thread)
-      return;
-
    notifier->quit = true;
    thrd_join(notifier->thread, NULL);
    inotify_rm_watch(notifier->fd, notifier->watch);

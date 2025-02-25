@@ -120,7 +120,7 @@ static void impl_tss_dtor_invoke(void)
 /*--------------- 7.25.2 Initialization functions ---------------*/
 // 7.25.2.1
 void
-call_once(once_flag *flag, void (*func)(void))
+c11_call_once(once_flag *flag, void (*func)(void))
 {
     assert(flag && func);
     struct impl_call_once_param param;

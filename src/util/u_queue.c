@@ -341,7 +341,7 @@ util_queue_create_thread(struct util_queue *queue, unsigned index)
        * Note that Linux only allows decreasing the priority. The original
        * priority can't be restored.
        */
-      pthread_setschedparam(queue->threads[index], SCHED_BATCH, &sched_param);
+      pthread_setschedparam(c11_thrd_get_pthread(queue->threads[index]), SCHED_BATCH, &sched_param);
 #endif
    }
    return true;

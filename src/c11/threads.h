@@ -42,6 +42,8 @@
 #  include <process.h> /* _exit */
 #elif defined(HAVE_PTHREAD)
 #  include <pthread.h>
+#  include <stdalign.h>
+#  include <stdint.h>
 #  include <unistd.h> /* close, _exit */
 #else
 #  error Not supported on this platform.
@@ -115,7 +117,11 @@ typedef struct
 #  define TSS_DTOR_ITERATIONS 1
 #elif defined(HAVE_PTHREAD)
 typedef pthread_cond_t  cnd_t;
-typedef pthread_t       thrd_t;
+typedef struct
+{
+   alignas(alignof(pthread_t))
+   uint8_t pthrd[sizeof(pthread_t)];
+} thrd_t;
 typedef pthread_key_t   tss_t;
 typedef pthread_mutex_t mtx_t;
 typedef pthread_once_t  once_flag;
@@ -123,7 +129,7 @@ typedef pthread_once_t  once_flag;
 #  ifdef PTHREAD_DESTRUCTOR_ITERATIONS
 #    define TSS_DTOR_ITERATIONS PTHREAD_DESTRUCTOR_ITERATIONS
 #  else
-#    define TSS_DTOR_ITERATIONS 1  // assume TSS dtor MAY be called at least once.
+#    define TSS_DTOR_ITERATIONS 1  /* assume TSS dtor MAY be called at least once. */
 #  endif
 #else
 #  error Not supported on this platform.
@@ -148,42 +154,83 @@ enum
 
 /*-------------------------- functions --------------------------*/
 
-void call_once(once_flag *, void (*)(void));
-int cnd_broadcast(cnd_t *);
-void cnd_destroy(cnd_t *);
-int cnd_init(cnd_t *);
-int cnd_signal(cnd_t *);
-int cnd_timedwait(cnd_t *__restrict, mtx_t *__restrict __mtx,
-                  const struct timespec *__restrict);
-int cnd_wait(cnd_t *, mtx_t *__mtx);
-void mtx_destroy(mtx_t *__mtx);
-int mtx_init(mtx_t *__mtx, int);
-int mtx_lock(mtx_t *__mtx);
-int mtx_timedlock(mtx_t *__restrict __mtx,
-                  const struct timespec *__restrict);
-int mtx_trylock(mtx_t *__mtx);
-int mtx_unlock(mtx_t *__mtx);
-int thrd_create(thrd_t *, thrd_start_t, void *);
-thrd_t thrd_current(void);
-int thrd_detach(thrd_t);
-int thrd_equal(thrd_t, thrd_t);
+void c11_call_once(once_flag *, void (*)(void));
+int c11_cnd_broadcast(cnd_t *);
+void c11_cnd_destroy(cnd_t *);
+int c11_cnd_init(cnd_t *);
+int c11_cnd_signal(cnd_t *);
+int c11_cnd_timedwait(cnd_t *__restrict, mtx_t *__restrict __mtx,
+                      const struct timespec *__restrict);
+int c11_cnd_wait(cnd_t *, mtx_t *__mtx);
+void c11_mtx_destroy(mtx_t *__mtx);
+int c11_mtx_init(mtx_t *__mtx, int);
+int c11_mtx_lock(mtx_t *__mtx);
+int c11_mtx_timedlock(mtx_t *__restrict __mtx,
+                      const struct timespec *__restrict);
+int c11_mtx_trylock(mtx_t *__mtx);
+int c11_mtx_unlock(mtx_t *__mtx);
+int c11_thrd_create(thrd_t *, thrd_start_t, void *);
+thrd_t c11_thrd_current(void);
+int c11_thrd_detach(thrd_t);
+int c11_thrd_equal(thrd_t, thrd_t);
 #if defined(__cplusplus)
 [[ noreturn ]]
 #else
 _Noreturn
 #endif
-void thrd_exit(int);
-int thrd_join(thrd_t, int *);
-int thrd_sleep(const struct timespec *, struct timespec *);
-void thrd_yield(void);
-int tss_create(tss_t *, tss_dtor_t);
-void tss_delete(tss_t);
-void *tss_get(tss_t);
-int tss_set(tss_t, void *);
+void c11_thrd_exit(int);
+int c11_thrd_join(thrd_t, int *);
+int c11_thrd_sleep(const struct timespec *, struct timespec *);
+void c11_thrd_yield(void);
+int c11_tss_create(tss_t *, tss_dtor_t);
+void c11_tss_delete(tss_t);
+void *c11_tss_get(tss_t);
+int c11_tss_set(tss_t, void *);
+
+#if defined(HAVE_PTHREAD)
+static inline pthread_t c11_thrd_get_pthread(thrd_t thrd)
+{
+   intptr_t ptr = (intptr_t)&thrd;
+   return *(pthread_t*)ptr;
+}
+#endif
 
 #ifdef __cplusplus
 }
 #endif
+
+#ifdef __cplusplus
+/* For C++11, already have std::call_once, do not use macro
+ * define that will hidden that
+ */
+const auto call_once = c11_call_once;
+#else
+#define call_once c11_call_once
+#endif
+#define cnd_broadcast c11_cnd_broadcast
+#define cnd_destroy c11_cnd_destroy
+#define cnd_init c11_cnd_init
+#define cnd_signal c11_cnd_signal
+#define cnd_timedwait c11_cnd_timedwait
+#define cnd_wait c11_cnd_wait
+#define mtx_destroy c11_mtx_destroy
+#define mtx_init c11_mtx_init
+#define mtx_lock c11_mtx_lock
+#define mtx_timedlock c11_mtx_timedlock
+#define mtx_trylock c11_mtx_trylock
+#define mtx_unlock c11_mtx_unlock
+#define thrd_create c11_thrd_create
+#define thrd_current c11_thrd_current
+#define thrd_detach c11_thrd_detach
+#define thrd_equal c11_thrd_equal
+#define thrd_exit c11_thrd_exit
+#define thrd_join c11_thrd_join
+#define thrd_sleep c11_thrd_sleep
+#define thrd_yield c11_thrd_yield
+#define tss_create c11_tss_create
+#define tss_delete c11_tss_delete
+#define tss_get c11_tss_get
+#define tss_set c11_tss_set
 
 #endif /* HAVE_THRD_CREATE */
 

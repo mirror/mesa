@@ -47,7 +47,7 @@ impl_thrd_routine(void *p)
 /*--------------- 7.25.2 Initialization functions ---------------*/
 // 7.25.2.1
 void
-call_once(once_flag *flag, void (*func)(void))
+c11_call_once(once_flag *flag, void (*func)(void))
 {
     pthread_once(flag, func);
 }
@@ -239,6 +239,8 @@ mtx_unlock(mtx_t *mtx)
     return (pthread_mutex_unlock(mtx) == 0) ? thrd_success : thrd_error;
 }
 
+static_assert(sizeof(thrd_t) == sizeof(pthread_t), "");
+static_assert(alignof(thrd_t) == alignof(pthread_t), "");
 
 /*------------------- 7.25.5 Thread functions -------------------*/
 // 7.25.5.1
@@ -251,7 +253,7 @@ thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
     if (!pack) return thrd_nomem;
     pack->func = func;
     pack->arg = arg;
-    if (pthread_create(thr, NULL, impl_thrd_routine, pack) != 0) {
+    if (pthread_create((pthread_t*)&thr, NULL, impl_thrd_routine, pack) != 0) {
         free(pack);
         return thrd_error;
     }
@@ -262,21 +264,23 @@ thrd_create(thrd_t *thr, thrd_start_t func, void *arg)
 thrd_t
 thrd_current(void)
 {
-    return pthread_self();
+    pthread_t pthrd = pthread_self();
+    intptr_t ptr = (intptr_t)&pthrd;
+    return *(thrd_t*)ptr;
 }
 
 // 7.25.5.3
 int
 thrd_detach(thrd_t thr)
 {
-    return (pthread_detach(thr) == 0) ? thrd_success : thrd_error;
+    return (pthread_detach(c11_thrd_get_pthread(thr)) == 0) ? thrd_success : thrd_error;
 }
 
 // 7.25.5.4
 int
 thrd_equal(thrd_t thr0, thrd_t thr1)
 {
-    return pthread_equal(thr0, thr1);
+    return pthread_equal(c11_thrd_get_pthread(thr0), c11_thrd_get_pthread(thr1));
 }
 
 // 7.25.5.5
@@ -289,10 +293,10 @@ thrd_exit(int res)
 
 // 7.25.5.6
 int
-thrd_join(thrd_t thr, int *res)
+c11_thrd_join(thrd_t thr, int *res)
 {
     void *code;
-    if (pthread_join(thr, &code) != 0)
+    if (pthread_join(c11_thrd_get_pthread(thr), &code) != 0)
         return thrd_error;
     if (res)
         *res = (int)(intptr_t)code;

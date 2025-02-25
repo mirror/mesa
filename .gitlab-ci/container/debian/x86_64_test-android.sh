@@ -87,16 +87,16 @@ uncollapsed_section_start cuttlefish "Downloading, building and installing Cuttl
 
 CUTTLEFISH_PROJECT_PATH=ao2/aosp-manifest
 CUTTLEFISH_BUILD_VERSION_TAGS=mesa-venus
-CUTTLEFISH_BUILD_NUMBER=20250115.001
+CUTTLEFISH_BUILD_NUMBER=20250215.001
 
 mkdir /cuttlefish
 pushd /cuttlefish
 
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
-  -o aosp_cf_x86_64_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip "https://${S3_HOST}/${S3_ANDROID_BUCKET}/${CUTTLEFISH_PROJECT_PATH}/aosp-${CUTTLEFISH_BUILD_VERSION_TAGS}.${CUTTLEFISH_BUILD_NUMBER}/aosp_cf_x86_64_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip"
+  -o aosp_cf_x86_64_only_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip "https://${S3_HOST}/${S3_ANDROID_BUCKET}/${CUTTLEFISH_PROJECT_PATH}/aosp-${CUTTLEFISH_BUILD_VERSION_TAGS}.${CUTTLEFISH_BUILD_NUMBER}/aosp_cf_x86_64_only_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip"
 
-unzip aosp_cf_x86_64_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip
-rm aosp_cf_x86_64_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip
+unzip aosp_cf_x86_64_only_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip
+rm aosp_cf_x86_64_only_phone-img-$CUTTLEFISH_BUILD_NUMBER.zip
 ls -lhS ./*
 
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
@@ -137,6 +137,38 @@ rm -rf android-cuttlefish
 
 addgroup --system kvm
 usermod -a -G kvm,cvdnetwork root
+
+############### Downloading Android CTS - Build tools - Platform tools ...
+
+ANDROID_CTS_VERSION="${ANDROID_VERSION}_r1"
+ANDROID_CTS_DEVICE_ARCH="x86"
+
+mkdir /android-tools
+pushd /android-tools
+
+curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+  -o "android-cts-${ANDROID_CTS_VERSION}-linux_x86-${ANDROID_CTS_DEVICE_ARCH}.zip" \
+  "https://dl.google.com/dl/android/cts/android-cts-${ANDROID_CTS_VERSION}-linux_x86-${ANDROID_CTS_DEVICE_ARCH}.zip"
+unzip "android-cts-${ANDROID_CTS_VERSION}-linux_x86-${ANDROID_CTS_DEVICE_ARCH}.zip"
+rm "android-cts-${ANDROID_CTS_VERSION}-linux_x86-${ANDROID_CTS_DEVICE_ARCH}.zip"
+
+# Keep only the interesting tests to save space
+# shellcheck disable=SC2086 # we want word splitting
+ANDROID_CTS_MODULES_KEEP_EXPRESSION=$(printf "%s|" $ANDROID_CTS_MODULES | sed -e 's/|$//g')
+find android-cts/testcases/ -mindepth 1 -type d | grep -v -E "$ANDROID_CTS_MODULES_KEEP_EXPRESSION" | xargs rm -rf
+
+curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+  -o "build-tools_r${ANDROID_SDK_VERSION}-linux.zip" "https://dl.google.com/android/repository/build-tools_r${ANDROID_SDK_VERSION}-linux.zip"
+unzip "build-tools_r${ANDROID_SDK_VERSION}-linux.zip"
+rm "build-tools_r${ANDROID_SDK_VERSION}-linux.zip"
+mv "android-$ANDROID_VERSION" build-tools
+
+curl -L --retry 4 -f --retry-all-errors --retry-delay 60 \
+  -o "platform-tools_r${ANDROID_SDK_VERSION}.0.0-linux.zip" "https://dl.google.com/android/repository/platform-tools_r${ANDROID_SDK_VERSION}.0.0-linux.zip"
+unzip "platform-tools_r${ANDROID_SDK_VERSION}.0.0-linux.zip"
+rm "platform-tools_r${ANDROID_SDK_VERSION}.0.0-linux.zip"
+
+popd
 
 ############### Uninstall the build software
 

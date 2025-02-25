@@ -7,8 +7,8 @@
 section_start cuttlefish_setup "cuttlefish: setup"
 set -xe
 
-export HOME=/cuttlefish
-export PATH=/cuttlefish/bin:$PATH
+export PATH=/cuttlefish/bin:/android-tools/android-cts/jdk/bin/:/android-tools/build-tools:/android-tools/platform-tools:$PATH
+export JAVA_HOME=/android-tools/android-cts/jdk
 export LD_LIBRARY_PATH=/cuttlefish/lib64:${CI_PROJECT_DIR}/install/lib:$LD_LIBRARY_PATH
 export EGL_PLATFORM=surfaceless
 
@@ -26,15 +26,14 @@ pushd /cuttlefish
 function my_atexit()
 {
   # shellcheck disable=SC2317
+  HOME=/cuttlefish stop_cvd -wait_for_launcher=10
+
+  # shellcheck disable=SC2317
   cp /cuttlefish/cuttlefish/instances/cvd-1/logs/logcat $RESULTS_DIR || true
   # shellcheck disable=SC2317
   cp /cuttlefish/cuttlefish/instances/cvd-1/kernel.log $RESULTS_DIR || true
-
   # shellcheck disable=SC2317
   cp /cuttlefish/cuttlefish/instances/cvd-1/logs/launcher.log $RESULTS_DIR || true
-
-  # shellcheck disable=SC2317
-  /cuttlefish/bin/stop_cvd -wait_for_launcher=10
 }
 
 # stop cuttlefish if the script ends prematurely or is interrupted
@@ -43,16 +42,12 @@ trap 'exit 2' HUP INT PIPE TERM
 
 ulimit -S -n 32768
 
-# Clean up state of previous run
-rm -rf  /cuttlefish/cuttlefish
-rm -rf  /cuttlefish/.cache
-rm -rf  /cuttlefish/.cuttlefish_config.json
-
-launch_cvd \
+HOME=/cuttlefish launch_cvd \
   -daemon \
   -verbosity=VERBOSE \
   -file_verbosity=VERBOSE \
   -use_overlay=false \
+  -enable_audio=false \
   -enable_bootanimation=false \
   -enable_minimal_mode=true \
   -guest_enforce_security=false \
@@ -60,8 +55,8 @@ launch_cvd \
   -gpu_mode="$ANDROID_GPU_MODE" \
   -cpus=${FDO_CI_CONCURRENT:-4} \
   -memory_mb 8192 \
-  -kernel_path="$HOME/bzImage" \
-  -initramfs_path="$HOME/initramfs.img"
+  -kernel_path="/cuttlefish/bzImage" \
+  -initramfs_path="/cuttlefish/initramfs.img"
 
 sleep 1
 
@@ -89,16 +84,6 @@ $ADB shell mount -t overlay -o "$opts" none /vendor
 
 $ADB shell setenforce 0
 
-# deqp
-
-$ADB shell mkdir -p /data/deqp
-$ADB push /deqp-gles/modules/egl/deqp-egl-android /data/deqp
-$ADB push /deqp-gles/assets/gl_cts/data/mustpass/egl/aosp_mustpass/3.2.6.x/egl-main.txt /data/deqp
-$ADB push /deqp-vk/external/vulkancts/modules/vulkan/* /data/deqp
-$ADB push /deqp-vk/mustpass/vk-main.txt.zst /data/deqp
-$ADB push /deqp-tools/* /data/deqp
-$ADB push /deqp-runner/deqp-runner /data/deqp
-
 # download Android Mesa from S3
 MESA_ANDROID_ARTIFACT_URL=https://${PIPELINE_ARTIFACTS_BASE}/${S3_ANDROID_ARTIFACT_NAME}.tar.zst
 curl -L --retry 4 -f --retry-all-errors --retry-delay 60 -o ${S3_ANDROID_ARTIFACT_NAME}.tar.zst ${MESA_ANDROID_ARTIFACT_URL}
@@ -107,32 +92,6 @@ tar -C /mesa-android -xvf ${S3_ANDROID_ARTIFACT_NAME}.tar.zst
 rm "${S3_ANDROID_ARTIFACT_NAME}.tar.zst" &
 
 INSTALL="/mesa-android/install"
-
-$ADB push "$INSTALL/all-skips.txt" /data/deqp
-$ADB push "$INSTALL/angle-skips.txt" /data/deqp
-if [ -e "$INSTALL/$GPU_VERSION-flakes.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-flakes.txt" /data/deqp
-fi
-if [ -e "$INSTALL/$GPU_VERSION-fails.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-fails.txt" /data/deqp
-fi
-if [ -e "$INSTALL/$GPU_VERSION-skips.txt" ]; then
-  $ADB push "$INSTALL/$GPU_VERSION-skips.txt" /data/deqp
-fi
-$ADB push "$INSTALL/deqp-$DEQP_SUITE.toml" /data/deqp
-
-# remove 32 bits libs from /vendor/lib
-
-$ADB shell rm -f /vendor/lib/egl/libGLES_mesa.so
-
-$ADB shell rm -f /vendor/lib/egl/libEGL_angle.so
-$ADB shell rm -f /vendor/lib/egl/libEGL_emulation.so
-$ADB shell rm -f /vendor/lib/egl/libGLESv1_CM_angle.so
-$ADB shell rm -f /vendor/lib/egl/libGLESv1_CM_emulation.so
-$ADB shell rm -f /vendor/lib/egl/libGLESv2_angle.so
-$ADB shell rm -f /vendor/lib/egl/libGLESv2_emulation.so
-
-$ADB shell rm -f /vendor/lib/hw/vulkan.*
 
 # replace on /vendor/lib64
 
@@ -185,70 +144,12 @@ else
   fi
 fi
 
-BASELINE=""
-if [ -e "$INSTALL/$GPU_VERSION-fails.txt" ]; then
-    BASELINE="--baseline /data/deqp/$GPU_VERSION-fails.txt"
+if [ -n "$USE_ANDROID_CTS" ]; then
+  # The script sets EXIT_CODE
+  . "$(dirname "$0")/android-cts-runner.sh"
+else
+  # The script sets EXIT_CODE
+  . "$(dirname "$0")/android-deqp-runner.sh"
 fi
 
-# Default to an empty known flakes file if it doesn't exist.
-$ADB shell "touch /data/deqp/$GPU_VERSION-flakes.txt"
-
-if [ -e "$INSTALL/$GPU_VERSION-skips.txt" ]; then
-    DEQP_SKIPS="$DEQP_SKIPS /data/deqp/$GPU_VERSION-skips.txt"
-fi
-
-if [ -n "$USE_ANGLE" ]; then
-    DEQP_SKIPS="$DEQP_SKIPS /data/deqp/angle-skips.txt"
-fi
-
-AOSP_RESULTS=/data/deqp/results
-uncollapsed_section_switch cuttlefish_test "cuttlefish: testing"
-
-set +e
-$ADB shell "mkdir ${AOSP_RESULTS}; cd ${AOSP_RESULTS}/..; \
-  XDG_CACHE_HOME=/data/local/tmp \
-  ./deqp-runner \
-    suite \
-    --suite /data/deqp/deqp-$DEQP_SUITE.toml \
-    --output $AOSP_RESULTS \
-    --skips /data/deqp/all-skips.txt $DEQP_SKIPS \
-    --flakes /data/deqp/$GPU_VERSION-flakes.txt \
-    --testlog-to-xml /data/deqp/testlog-to-xml \
-    --shader-cache-dir /data/local/tmp \
-    --fraction-start ${CI_NODE_INDEX:-1} \
-    --fraction $(( CI_NODE_TOTAL * ${DEQP_FRACTION:-1})) \
-    --jobs ${FDO_CI_CONCURRENT:-4} \
-    $BASELINE \
-    ${DEQP_RUNNER_MAX_FAILS:+--max-fails \"$DEQP_RUNNER_MAX_FAILS\"} \
-    "
-
-EXIT_CODE=$?
-set -e
-section_switch cuttlefish_results "cuttlefish: gathering the results"
-
-$ADB pull "$AOSP_RESULTS/." "$RESULTS_DIR"
-
-# Remove all but the first 50 individual XML files uploaded as artifacts, to
-# save fd.o space when you break everything.
-find $RESULTS_DIR -name \*.xml | \
-    sort -n |
-    sed -n '1,+49!p' | \
-    xargs rm -f
-
-# If any QPA XMLs are there, then include the XSL/CSS in our artifacts.
-find $RESULTS_DIR -name \*.xml \
-    -exec cp /deqp-tools/testlog.css /deqp-tools/testlog.xsl "$RESULTS_DIR/" ";" \
-    -quit
-
-$ADB shell "cd ${AOSP_RESULTS}/..; \
-./deqp-runner junit \
-   --testsuite dEQP \
-   --results $AOSP_RESULTS/failures.csv \
-   --output $AOSP_RESULTS/junit.xml \
-   --limit 50 \
-   --template \"See $ARTIFACTS_BASE_URL/results/{{testcase}}.xml\""
-
-$ADB pull "$AOSP_RESULTS/junit.xml" "$RESULTS_DIR"
-
-section_end cuttlefish_results
 exit $EXIT_CODE

@@ -526,7 +526,8 @@ u_vbuf_translate_buffers(struct u_vbuf *mgr, struct translate_key *key,
              * crashing (by reading past the end of a hardware buffer mapping)
              * when people do that.
              */
-            num_vertices = (size + stride - 1) / stride;
+            if (stride)
+               num_vertices = (size + stride - 1) / stride;
          }
 
          map = pipe_buffer_map_range(mgr->pipe, vb->buffer.resource, offset, size,

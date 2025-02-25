@@ -1363,6 +1363,22 @@ r3d_src_gmem(struct tu_cmd_buffer *cmd,
    if (!iview->view.is_mutable)
       desc[0] &= ~A6XX_TEX_CONST_0_SWAP__MASK;
    desc[0] |= A6XX_TEX_CONST_0_TILE_MODE(TILE6_2);
+
+   /* If FDM offset is used, the last row and column extend beyond the
+    * framebuffer but are shifted over when storing. Expand the width and
+    * height to account for that.
+    */
+   if (tu_enable_fdm_offset(cmd)) {
+      uint32_t width = desc[1] & A6XX_TEX_CONST_1_WIDTH__MASK;
+      uint32_t height = (desc[1] & A6XX_TEX_CONST_1_HEIGHT__MASK) >>
+         A6XX_TEX_CONST_1_HEIGHT__SHIFT;
+      width += cmd->state.tiling->tile0.width;
+      height += cmd->state.tiling->tile0.height;
+      desc[1] = (desc[1] & ~(A6XX_TEX_CONST_1_WIDTH__MASK |
+                            A6XX_TEX_CONST_1_HEIGHT__MASK)) |
+         A6XX_TEX_CONST_1_WIDTH(width) | A6XX_TEX_CONST_1_HEIGHT(height);
+   }
+
    desc[2] =
       A6XX_TEX_CONST_2_TYPE(A6XX_TEX_2D) |
       A6XX_TEX_CONST_2_PITCH(cmd->state.tiling->tile0.width * cpp);
@@ -3885,6 +3901,50 @@ remap_attachment(struct tu_cmd_buffer *cmd, unsigned a)
    return i;
 }
 
+struct apply_sysmem_clear_coords_state {
+   unsigned view;
+   unsigned layer;
+   float z_clear_val;
+   VkRect2D rect;
+};
+
+static void
+fdm_apply_sysmem_clear_coords(struct tu_cmd_buffer *cmd,
+                              struct tu_cs *cs,
+                              void *data,
+                              VkOffset2D common_bin_offset,
+                              unsigned views,
+                              const VkExtent2D *frag_areas,
+                              const VkRect2D *bins)
+{
+   const struct apply_sysmem_clear_coords_state *state =
+      (const struct apply_sysmem_clear_coords_state *)data;
+   assert(state->view < views);
+
+   VkExtent2D frag_area = frag_areas[state->view];
+   VkRect2D bin = bins[state->view];
+
+   VkOffset2D offset = tu_fdm_per_bin_offset(frag_area, bin, common_bin_offset);
+
+   unsigned x1 = state->rect.offset.x / frag_area.width + offset.x;
+   unsigned x2 = DIV_ROUND_UP(state->rect.offset.x + state->rect.extent.width,
+                              frag_area.width) + offset.x;
+   unsigned y1 = state->rect.offset.y / frag_area.height + offset.y;
+   unsigned y2 = DIV_ROUND_UP(state->rect.offset.y + state->rect.extent.height,
+                              frag_area.height) + offset.y;
+
+   const float coords[] = {
+      x1, y1,
+      state->z_clear_val,
+      uif(state->layer),
+      x2, y2,
+      state->z_clear_val,
+      1.0f,
+   };
+
+   r3d_coords_raw(cmd, cs, coords);
+}
+
 template <chip CHIP>
 static void
 tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
@@ -4022,6 +4082,9 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
       tu6_emit_blit_consts_load(cmd, cs, CP_LOAD_STATE6_FRAG, SB6_FS_SHADER,
                                 0, packed_clear_value, num_rts);
 
+   if (cmd->state.fdm_enabled)
+      tu_cs_set_writeable(cs, true);
+
    for (uint32_t i = 0; i < rect_count; i++) {
       /* This should be true because of this valid usage for
        * vkCmdClearAttachments:
@@ -4039,18 +4102,31 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
        */
       for_each_layer(layer, subpass->multiview_mask, rects[i].layerCount)
       {
-         const float coords[] = {
-            rects[i].rect.offset.x,
-            rects[i].rect.offset.y,
-            z_clear_val,
-            uif(rects[i].baseArrayLayer + layer),
-            rects[i].rect.offset.x + rects[i].rect.extent.width,
-            rects[i].rect.offset.y + rects[i].rect.extent.height,
-            z_clear_val,
-            1.0f,
-         };
+         if (cmd->state.fdm_enabled) {
+            struct apply_sysmem_clear_coords_state state = {
+               .view = subpass->multiview_mask ? layer : 0,
+               .layer = rects[i].baseArrayLayer + layer,
+               .z_clear_val = z_clear_val,
+               .rect = rects[i].rect,
+            };
+            tu_create_fdm_bin_patchpoint(cmd, cs, 4, TU_FDM_NONE,
+                                         fdm_apply_sysmem_clear_coords,
+                                         state);
+         } else {
+            const float coords[] = {
+               rects[i].rect.offset.x,
+               rects[i].rect.offset.y,
+               z_clear_val,
+               uif(rects[i].baseArrayLayer + layer),
+               rects[i].rect.offset.x + rects[i].rect.extent.width,
+               rects[i].rect.offset.y + rects[i].rect.extent.height,
+               z_clear_val,
+               1.0f,
+            };
 
-         r3d_coords_raw(cmd, cs, coords);
+            r3d_coords_raw(cmd, cs, coords);
+         }
+
          r3d_run_vis(cmd, cs);
       }
    }
@@ -4061,6 +4137,9 @@ tu_clear_sysmem_attachments(struct tu_cmd_buffer *cmd,
    if (cmd->state.prim_generated_query_running_before_rp) {
       tu_emit_event_write<CHIP>(cmd, cs, FD_START_PRIMITIVE_CTRS);
    }
+
+   if (cmd->state.fdm_enabled)
+      tu_cs_set_writeable(cs, false);
 
    trace_end_sysmem_clear_all(&cmd->trace, cs);
 }
@@ -4098,6 +4177,43 @@ clear_gmem_attachment(struct tu_cmd_buffer *cmd,
    tu_emit_event_write<CHIP>(cmd, cs, FD_BLIT);
 }
 
+struct apply_gmem_clear_coords_state {
+   unsigned view;
+   VkRect2D rect;
+};
+
+static void
+fdm_apply_gmem_clear_coords(struct tu_cmd_buffer *cmd,
+                            struct tu_cs *cs,
+                            void *data,
+                            VkOffset2D common_bin_offset,
+                            unsigned views,
+                            const VkExtent2D *frag_areas,
+                            const VkRect2D *bins)
+{
+   const struct apply_gmem_clear_coords_state *state =
+      (const struct apply_gmem_clear_coords_state *)data;
+   assert(state->view < views);
+
+   VkExtent2D frag_area = frag_areas[state->view];
+   VkRect2D bin = bins[state->view];
+
+   VkOffset2D offset = tu_fdm_per_bin_offset(frag_area, bin, common_bin_offset);
+
+   unsigned x1 = state->rect.offset.x / frag_area.width + offset.x;
+   unsigned x2 = DIV_ROUND_UP(state->rect.offset.x + state->rect.extent.width,
+                              frag_area.width) + offset.x - 1;
+   unsigned y1 = state->rect.offset.y / frag_area.height + offset.y;
+   unsigned y2 = DIV_ROUND_UP(state->rect.offset.y + state->rect.extent.height,
+                              frag_area.height) + offset.y - 1;
+
+   tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
+   tu_cs_emit(cs,
+              A6XX_RB_BLIT_SCISSOR_TL_X(x1) | A6XX_RB_BLIT_SCISSOR_TL_Y(y1));
+   tu_cs_emit(cs,
+              A6XX_RB_BLIT_SCISSOR_BR_X(x2) | A6XX_RB_BLIT_SCISSOR_BR_Y(y2));
+}
+
 template <chip CHIP>
 static void
 tu_emit_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
@@ -4108,7 +4224,8 @@ tu_emit_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                               uint32_t layers,
                               uint32_t layer_mask,
                               VkImageAspectFlags mask,
-                              const VkClearValue *value)
+                              const VkClearValue *value,
+                              const VkRect2D *fdm_rect)
 {
    const struct tu_render_pass_attachment *att =
       &cmd->state.pass->attachments[attachment];
@@ -4121,6 +4238,14 @@ tu_emit_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
    enum pipe_format format = vk_format_to_pipe_format(att->format);
    for_each_layer(i, layer_mask, layers) {
       uint32_t layer = i + base_layer;
+      if (fdm_rect) {
+            struct apply_gmem_clear_coords_state state = {
+               .view = layer,
+               .rect = *fdm_rect,
+            };
+            tu_create_fdm_bin_patchpoint(cmd, cs, 3, TU_FDM_SKIP_BINNING,
+                                         fdm_apply_gmem_clear_coords, state);
+      }
       if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
          if (mask & VK_IMAGE_ASPECT_DEPTH_BIT) {
             uint32_t buffer_id = tu_resolve_group_include_buffer<CHIP>(resolve_group, VK_FORMAT_D32_SFLOAT);
@@ -4160,15 +4285,33 @@ tu_clear_gmem_attachments(struct tu_cmd_buffer *cmd,
 
    struct tu_resolve_group resolve_group = {};
 
+   if (cmd->state.fdm_enabled)
+      tu_cs_set_writeable(cs, true);
+
    for (unsigned i = 0; i < rect_count; i++) {
       unsigned x1 = rects[i].rect.offset.x;
       unsigned y1 = rects[i].rect.offset.y;
       unsigned x2 = x1 + rects[i].rect.extent.width - 1;
       unsigned y2 = y1 + rects[i].rect.extent.height - 1;
 
-      tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
-      tu_cs_emit(cs, A6XX_RB_BLIT_SCISSOR_TL_X(x1) | A6XX_RB_BLIT_SCISSOR_TL_Y(y1));
-      tu_cs_emit(cs, A6XX_RB_BLIT_SCISSOR_BR_X(x2) | A6XX_RB_BLIT_SCISSOR_BR_Y(y2));
+      const VkRect2D *fdm_rect = NULL;
+      if (cmd->state.fdm_enabled) {
+         if (!subpass->multiview_mask) {
+            struct apply_gmem_clear_coords_state state = {
+               .view = 0,
+               .rect = rects[i].rect,
+            };
+            tu_create_fdm_bin_patchpoint(cmd, cs, 3, TU_FDM_SKIP_BINNING,
+                                         fdm_apply_gmem_clear_coords, state);
+         } else {
+            /* We need to patch the clear rectangle for each view. */
+            fdm_rect = &rects[i].rect;
+         }
+      } else {
+         tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
+         tu_cs_emit(cs, A6XX_RB_BLIT_SCISSOR_TL_X(x1) | A6XX_RB_BLIT_SCISSOR_TL_Y(y1));
+         tu_cs_emit(cs, A6XX_RB_BLIT_SCISSOR_BR_X(x2) | A6XX_RB_BLIT_SCISSOR_BR_Y(y2));
+      }
 
       for (unsigned j = 0; j < attachment_count; j++) {
          uint32_t a;
@@ -4185,11 +4328,15 @@ tu_clear_gmem_attachments(struct tu_cmd_buffer *cmd,
                                        rects[i].layerCount,
                                        subpass->multiview_mask,
                                        attachments[j].aspectMask,
-                                       &attachments[j].clearValue);
+                                       &attachments[j].clearValue,
+                                       fdm_rect);
       }
    }
 
    tu_emit_resolve_group<CHIP>(cmd, cs, &resolve_group);
+
+   if (cmd->state.fdm_enabled)
+      tu_cs_set_writeable(cs, false);
 }
 
 template <chip CHIP>
@@ -4263,16 +4410,29 @@ tu7_clear_attachment_generic_single_rect(
    const VkClearRect *rect)
 {
    const struct tu_subpass *subpass = cmd->state.subpass;
-   unsigned x1 = rect->rect.offset.x;
-   unsigned y1 = rect->rect.offset.y;
-   unsigned x2 = x1 + rect->rect.extent.width - 1;
-   unsigned y2 = y1 + rect->rect.extent.height - 1;
 
-   tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
-   tu_cs_emit(cs,
-              A6XX_RB_BLIT_SCISSOR_TL_X(x1) | A6XX_RB_BLIT_SCISSOR_TL_Y(y1));
-   tu_cs_emit(cs,
-              A6XX_RB_BLIT_SCISSOR_BR_X(x2) | A6XX_RB_BLIT_SCISSOR_BR_Y(y2));
+   if (cmd->state.fdm_enabled) {
+      tu_cs_set_writeable(cs, true);
+
+      if (!subpass->multiview_mask) {
+            struct apply_gmem_clear_coords_state state = {
+               .view = 0,
+               .rect = rect->rect,
+            };
+            tu_create_fdm_bin_patchpoint(cmd, cs, 3, TU_FDM_SKIP_BINNING,
+                                         fdm_apply_gmem_clear_coords, state);
+      }
+   } else {
+      unsigned x1 = rect->rect.offset.x;
+      unsigned y1 = rect->rect.offset.y;
+      unsigned x2 = x1 + rect->rect.extent.width - 1;
+      unsigned y2 = y1 + rect->rect.extent.height - 1;
+      tu_cs_emit_pkt4(cs, REG_A6XX_RB_BLIT_SCISSOR_TL, 2);
+      tu_cs_emit(cs,
+                 A6XX_RB_BLIT_SCISSOR_TL_X(x1) | A6XX_RB_BLIT_SCISSOR_TL_Y(y1));
+      tu_cs_emit(cs,
+                 A6XX_RB_BLIT_SCISSOR_BR_X(x2) | A6XX_RB_BLIT_SCISSOR_BR_Y(y2));
+   }
 
    auto value = &clear_att->clearValue;
 
@@ -4281,6 +4441,15 @@ tu7_clear_attachment_generic_single_rect(
       uint32_t layer = i + rect->baseArrayLayer;
       uint32_t mask =
          aspect_write_mask_generic_clear(format, clear_att->aspectMask);
+
+      if (cmd->state.fdm_enabled && subpass->multiview_mask) {
+            struct apply_gmem_clear_coords_state state = {
+               .view = layer,
+               .rect = rect->rect,
+            };
+            tu_create_fdm_bin_patchpoint(cmd, cs, 3, TU_FDM_SKIP_BINNING,
+                                         fdm_apply_gmem_clear_coords, state);
+      }
 
       if (att->format == VK_FORMAT_D32_SFLOAT_S8_UINT) {
          if (clear_att->aspectMask & VK_IMAGE_ASPECT_DEPTH_BIT) {
@@ -4298,6 +4467,9 @@ tu7_clear_attachment_generic_single_rect(
          tu7_generic_layer_clear(cmd, cs, buffer_id, format, mask, false, layer, value, a);
       }
    }
+
+   if (cmd->state.fdm_enabled)
+      tu_cs_set_writeable(cs, false);
 }
 
 static void
@@ -4498,7 +4670,7 @@ tu_clear_gmem_attachment(struct tu_cmd_buffer *cmd,
                                  cmd->state.framebuffer->layers,
                                  attachment->clear_views,
                                  attachment->clear_mask,
-                                 &cmd->state.clear_values[a]);
+                                 &cmd->state.clear_values[a], NULL);
 }
 TU_GENX(tu_clear_gmem_attachment);
 
@@ -4650,14 +4822,16 @@ static void
 fdm_apply_load_coords(struct tu_cmd_buffer *cmd,
                       struct tu_cs *cs,
                       void *data,
-                      VkRect2D bin,
+                      VkOffset2D common_bin_offset,
                       unsigned views,
-                      const VkExtent2D *frag_areas)
+                      const VkExtent2D *frag_areas,
+                      const VkRect2D *bins)
 {
    const struct apply_load_coords_state *state =
       (const struct apply_load_coords_state *)data;
    assert(state->view < views);
    VkExtent2D frag_area = frag_areas[state->view];
+   VkRect2D bin = bins[state->view];
 
    assert(bin.extent.width % frag_area.width == 0);
    assert(bin.extent.height % frag_area.height == 0);
@@ -4665,10 +4839,10 @@ fdm_apply_load_coords(struct tu_cmd_buffer *cmd,
    uint32_t scaled_height = bin.extent.height / frag_area.height;
 
    const float coords[] = {
-      bin.offset.x,                    bin.offset.y,
-      bin.offset.x,                    bin.offset.y,
-      bin.offset.x + scaled_width,     bin.offset.y + scaled_height,
-      bin.offset.x + bin.extent.width, bin.offset.y + bin.extent.height,
+      common_bin_offset.x,                common_bin_offset.y,
+      bin.offset.x,                       bin.offset.y,
+      common_bin_offset.x + scaled_width, common_bin_offset.y + scaled_height,
+      bin.offset.x + bin.extent.width,    bin.offset.y + bin.extent.height,
    };
    r3d_coords_raw(cmd, cs, coords);
 }
@@ -4711,7 +4885,8 @@ load_3d_blit(struct tu_cmd_buffer *cmd,
          struct apply_load_coords_state state = {
             .view = att->clear_views ? i : 0,
          };
-         tu_create_fdm_bin_patchpoint(cmd, cs, 4, fdm_apply_load_coords, state);
+         tu_create_fdm_bin_patchpoint(cmd, cs, 4, TU_FDM_SKIP_BINNING,
+                                      fdm_apply_load_coords, state);
       }
 
       r3d_dst_gmem<CHIP>(cmd, cs, iview, att, separate_stencil, i);
@@ -4883,6 +5058,19 @@ store_cp_blit(struct tu_cmd_buffer *cmd,
    enum a6xx_format format = fmt.fmt;
    fixup_src_format(&src_format, dst_format, &format);
 
+   uint32_t src_width = dst_iview->vk.extent.width;
+   uint32_t src_height = dst_iview->vk.extent.height;
+
+   /* With FDM offset, we may blit from an extra row/column of tiles whose
+    * source coordinates are outside of the attachment. Add an extra tile
+    * width/height to the size to avoid clipping the source.
+    */
+   if (tu_enable_fdm_offset(cmd)) {
+      const struct tu_tiling_config *tiling = cmd->state.tiling;
+      src_width += tiling->tile0.width;
+      src_height += tiling->tile0.height;
+   }
+
    tu_cs_emit_regs(cs,
                    SP_PS_2D_SRC_INFO(CHIP,
                       .color_format = format,
@@ -4896,8 +5084,8 @@ store_cp_blit(struct tu_cmd_buffer *cmd,
                       .unk22 = 1,
                       .mutableen = src_iview->view.is_mutable),
                    SP_PS_2D_SRC_SIZE(CHIP,
-                      .width = dst_iview->vk.extent.width,
-                      .height = dst_iview->vk.extent.height),
+                      .width = src_width,
+                      .height = src_height),
                    SP_PS_2D_SRC(CHIP, .qword = cmd->device->physical_device->gmem_base + gmem_offset),
                    SP_PS_2D_SRC_PITCH(CHIP, .pitch = cmd->state.tiling->tile0.width * cpp));
 
@@ -5107,14 +5295,16 @@ static void
 fdm_apply_store_coords(struct tu_cmd_buffer *cmd,
                        struct tu_cs *cs,
                        void *data,
-                       VkRect2D bin,
+                       VkOffset2D common_bin_offset,
                        unsigned views,
-                       const VkExtent2D *frag_areas)
+                       const VkExtent2D *frag_areas,
+                       const VkRect2D *bins)
 {
    const struct apply_store_coords_state *state =
       (const struct apply_store_coords_state *)data;
    assert(state->view < views);
    VkExtent2D frag_area = frag_areas[state->view];
+   VkRect2D bin = bins[state->view];
 
    /* The bin width/height must be a multiple of the frag_area to make sure
     * that the scaling happens correctly. This means there may be some
@@ -5132,10 +5322,10 @@ fdm_apply_store_coords(struct tu_cmd_buffer *cmd,
       A6XX_GRAS_2D_DST_BR(.x = bin.offset.x + bin.extent.width - 1,
                           .y = bin.offset.y + bin.extent.height - 1));
    tu_cs_emit_regs(cs,
-                   A6XX_GRAS_2D_SRC_TL_X(bin.offset.x),
-                   A6XX_GRAS_2D_SRC_BR_X(bin.offset.x + scaled_width - 1),
-                   A6XX_GRAS_2D_SRC_TL_Y(bin.offset.y),
-                   A6XX_GRAS_2D_SRC_BR_Y(bin.offset.y + scaled_height - 1));
+                   A6XX_GRAS_2D_SRC_TL_X(common_bin_offset.x),
+                   A6XX_GRAS_2D_SRC_BR_X(common_bin_offset.x + scaled_width - 1),
+                   A6XX_GRAS_2D_SRC_TL_Y(common_bin_offset.y),
+                   A6XX_GRAS_2D_SRC_BR_Y(common_bin_offset.y + scaled_height - 1));
 }
 
 template <chip CHIP>
@@ -5270,8 +5460,8 @@ tu_store_gmem_attachment(struct tu_cmd_buffer *cmd,
             struct apply_store_coords_state state = {
                .view = view,
             };
-            tu_create_fdm_bin_patchpoint(cmd, cs, 8, fdm_apply_store_coords,
-                                         state);
+            tu_create_fdm_bin_patchpoint(cmd, cs, 8, TU_FDM_SKIP_BINNING,
+                                         fdm_apply_store_coords, state);
          }
          if (store_common) {
             store_cp_blit<CHIP>(cmd, cs, src_iview, dst_iview, src->samples, false, src_format,

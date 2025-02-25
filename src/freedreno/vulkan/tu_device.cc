@@ -330,6 +330,7 @@ get_device_extensions(const struct tu_physical_device *device,
       .GOOGLE_user_type = true,
       .IMG_filter_cubic = device->info->a6xx.has_tex_filter_cubic,
       .NV_compute_shader_derivatives = device->info->chip >= 7,
+      .QCOM_fragment_density_map_offset = true,
       .VALVE_mutable_descriptor_type = true,
    } };
 
@@ -738,6 +739,9 @@ tu_get_features(struct tu_physical_device *pdevice,
    /* VK_KHR_subgroup_rotate */
    features->shaderSubgroupRotate = true;
    features->shaderSubgroupRotateClustered = true;
+
+   /* VK_QCOM_fragment_density_map_offset */
+   features->fragmentDensityMapOffset = true;
 }
 
 static void
@@ -1354,6 +1358,15 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->degenerateLinesRasterized = false;
    props->fullyCoveredFragmentShaderInputVariable = false;
    props->conservativeRasterizationPostDepthCoverage = false;
+
+   /* VK_QCOM_fragment_density_map_offset */
+
+   /* This is arbitrary, but the fragment width and height must divide the
+    * offset, so we don't want apps specifying weird offsets. A value of 8
+    * makes sure we can always have fragment widths and heights of 2, 4, and
+    * 8.
+    */
+   props->fragmentDensityOffsetGranularity = (VkExtent2D) { 8, 8 };
 }
 
 static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {

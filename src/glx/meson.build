@@ -59,6 +59,10 @@ extra_libs_libglx = []
 extra_deps_libgl = []
 extra_ld_args_libgl = []
 
+if host_machine.cpu_family() == 'x86' and with_gallium_llvmpipe
+  extra_ld_args_libgl += [cc.get_supported_link_arguments('-Wl,--no-error-rwx-segments')]
+endif
+
 # dri2
 if with_x11_dri2
   files_libglx += files(

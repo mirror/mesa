@@ -203,7 +203,15 @@ driCreateConfigs(enum pipe_format format,
         for ( i = 0 ; i < num_db_modes ; i++ ) {
             for ( h = 0 ; h < num_msaa_modes; h++ ) {
                 for ( j = 0 ; j < num_accum_bits ; j++ ) {
-                    if (color_depth_match &&
+                    /* Provide configs where depth bits == color bits if either
+                     * the driver required it (color_depth_match), or if we're
+                     * front-buffer rendering.  Front buffer is a
+                     * poorly-supported, low-performance GLX rendering mode, so
+                     * no need to provide precision depth control there.  This
+                     * saves visual-iterating test runtime, along with reducing
+                     * the noise in glxinfo.
+                     */
+                    if ((color_depth_match || !db_modes[i]) &&
                         (depth_bits || stencil_bits)) {
                         /* Depth can really only be 0, 16, 24, or 32. A 32-bit
                          * color format still matches 24-bit depth, as there

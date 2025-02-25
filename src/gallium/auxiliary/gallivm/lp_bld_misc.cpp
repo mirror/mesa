@@ -388,7 +388,21 @@ lp_build_fill_mattrs(std::vector<std::string> &MAttrs)
    if (!util_get_cpu_caps()->has_neon) {
       MAttrs.push_back("-neon");
       MAttrs.push_back("-crypto");
+#if defined(__ARM_ARCH) && __ARM_ARCH >= 7 && defined(__ARM_32BIT_STATE)
+#if LLVM_VERSION_MAJOR >= 16
+    /* LLVM fp64,d32 subtarget features were introduced in earlier LLVM on ARM.
+    But a miss-behavior with fpu was fixed in a later version
+    So only tune theses with LLVM >= 16 to keep previous behavior
+    See https://github.com/llvm/llvm-project/issues/59286
+    */
+      MAttrs.push_back("+fp64");
+#if ! defined(__HAVE_FLOAT32)
+      MAttrs.push_back("-d32");
+#endif
+#endif
+#elif defined(__ARM_ARCH) && __ARM_ARCH <= 6 && defined(__ARM_32BIT_STATE)
       MAttrs.push_back("-vfp2");
+#endif
    }
 #endif
 

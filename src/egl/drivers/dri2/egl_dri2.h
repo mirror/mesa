@@ -47,6 +47,8 @@
 #endif
 
 #ifdef HAVE_WAYLAND_PLATFORM
+#include "loader_wayland_helper.h"
+
 /* forward declarations to avoid pulling wayland headers everywhere */
 struct wl_egl_window;
 struct wl_event_queue;
@@ -287,6 +289,7 @@ struct dri2_egl_display {
    struct wl_shm *wl_shm;
    struct wl_event_queue *wl_queue;
    struct zwp_linux_dmabuf_v1 *wl_dmabuf;
+   struct wp_presentation *wp_presentation;
    struct dri2_wl_formats formats;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback_format_table format_table;
@@ -294,6 +297,7 @@ struct dri2_egl_display {
    uint32_t capabilities;
    char *device_name;
    bool is_render_node;
+   clockid_t presentation_clock_id;
 #endif
 
 #ifdef HAVE_ANDROID_PLATFORM
@@ -330,12 +334,13 @@ struct dri2_egl_surface {
    int dx;
    int dy;
    struct wl_event_queue *wl_queue;
-   struct wl_surface *wl_surface_wrapper;
+   struct loader_wayland_surface wayland_surface;
    struct wl_display *wl_dpy_wrapper;
    struct wl_drm *wl_drm_wrapper;
    struct wl_callback *throttle_callback;
    struct zwp_linux_dmabuf_feedback_v1 *wl_dmabuf_feedback;
    struct dmabuf_feedback dmabuf_feedback, pending_dmabuf_feedback;
+   struct loader_wayland_presentation wayland_presentation;
    bool compositor_using_another_device;
    int format;
    bool resized;
@@ -349,7 +354,7 @@ struct dri2_egl_surface {
 #if defined(HAVE_WAYLAND_PLATFORM) || defined(HAVE_DRM_PLATFORM)
    struct {
 #ifdef HAVE_WAYLAND_PLATFORM
-      struct wl_buffer *wl_buffer;
+      struct loader_wayland_buffer wayland_buffer;
       bool wl_release;
       struct dri_image *dri_image;
       /* for is_different_gpu case. NULL else */

@@ -171,8 +171,6 @@ thread_spawner		{ return THREAD_SPAWNER; }
 render            	{ return RENDER; }
 const 			{ return CONST; }
 data 			{ return DATA; }
-cre 			{ return CRE; }
-vme 			{ return VME; }
 "pixel interp"		{ return PIXEL_INTERP; }
 "dp data 1" 		{ return DP_DATA_1; }
 "rt accel"		{ return RT_ACCEL; }

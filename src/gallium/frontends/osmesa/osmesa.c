@@ -704,6 +704,9 @@ GLAPI void GLAPIENTRY
 OSMesaDestroyContext(OSMesaContext osmesa)
 {
    if (osmesa) {
+      if (osmesa->current_buffer) {
+         osmesa_destroy_buffer(osmesa->current_buffer);
+      }
       pp_free(osmesa->pp);
       st_destroy_context(osmesa->st);
       free(osmesa->zs);

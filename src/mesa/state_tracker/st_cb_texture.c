@@ -2472,7 +2472,6 @@ st_CompressedTexSubImage(struct gl_context *ctx, GLuint dims,
    unsigned bw, bh, level, max_layer;
    int layer;
    intptr_t buf_offset;
-   bool success = false;
 
    /* Check basic pre-conditions for PBO upload */
    if (!st->prefer_blit_based_texture_transfer) {
@@ -2579,9 +2578,7 @@ st_CompressedTexSubImage(struct gl_context *ctx, GLuint dims,
       layer++;
       addr.depth--;
    }
-
-   if (success)
-      return;
+   return;
 
 fallback:
    _mesa_store_compressed_texsubimage(ctx, dims, texImage,

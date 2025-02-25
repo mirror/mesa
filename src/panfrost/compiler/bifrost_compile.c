@@ -5478,6 +5478,10 @@ bifrost_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    };
    NIR_PASS(_, nir, nir_lower_ssbo, &ssbo_opts);
 
+   NIR_PASS(_, nir, nir_lower_64bit_phis);
+   NIR_PASS(_, nir, nir_lower_int64);
+   NIR_PASS(_, nir, nir_lower_bit_size, bi_lower_bit_size, NULL);
+
    /* REMOVE THIS COMMENT: we need to have lower subgroups happen here for int64 ops to work properly */
    /*
     * TODO: we can implement certain operations (notably reductions, scans,

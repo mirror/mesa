@@ -1206,8 +1206,34 @@ opt_replace_struct_wrapper_cast(nir_builder *b, nir_deref_instr *cast)
       return false;
 
    /* we can't drop the stride information */
-   if (cast->cast.ptr_stride != glsl_get_explicit_stride(field_type))
+   unsigned field_stride = glsl_get_explicit_stride(field_type);
+   if (field_stride == 0 && glsl_type_is_vector_or_scalar(field_type))
+         field_stride = type_scalar_size_bytes(field_type);
+   if (cast->cast.ptr_stride != field_stride)
       return false;
+
+   if (glsl_type_is_scalar(field_type)) {
+      nir_foreach_use(use, &cast->def) {
+         nir_instr *src_parent = nir_src_parent_instr(use);
+
+         switch (src_parent->type) {
+         case nir_instr_type_intrinsic: {
+            nir_intrinsic_instr *intrins = nir_instr_as_intrinsic(src_parent);
+            if (intrins->intrinsic == nir_intrinsic_memcpy_deref)
+               return false;
+            break;
+         }
+         case nir_instr_type_deref: {
+            nir_deref_instr *deref = nir_instr_as_deref(src_parent);
+            if (deref->deref_type == nir_deref_type_ptr_as_array)
+               return false;
+            break;
+         }
+         default:
+            continue;
+         }
+      }
+   }
 
    nir_deref_instr *replace = nir_build_deref_struct(b, parent, 0);
    nir_def_rewrite_uses(&cast->def, &replace->def);

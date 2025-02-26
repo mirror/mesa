@@ -1259,4 +1259,3 @@ is_coalescing_payload(const brw_shader &s, const brw_inst *inst)
           inst->src[0].offset == 0 &&
           s.alloc.sizes[inst->src[0].nr] * REG_SIZE == inst->size_written;
 }
-

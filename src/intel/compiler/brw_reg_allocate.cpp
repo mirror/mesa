@@ -307,6 +307,8 @@ private:
    brw_reg alloc_spill_reg(unsigned size, int ip);
    void spill_reg(unsigned spill_reg);
 
+   bool is_partial_write(brw_inst *inst);
+
    void *mem_ctx;
    brw_shader *fs;
    const intel_device_info *devinfo;
@@ -1108,6 +1110,24 @@ brw_reg_alloc::alloc_spill_reg(unsigned size, int ip)
    return brw_vgrf(vgrf, BRW_TYPE_F);
 }
 
+bool
+brw_reg_alloc::is_partial_write(brw_inst *inst)
+{
+   if (inst->predicate && !inst->predicate_trivial &&
+       inst->opcode != BRW_OPCODE_SEL)
+      return true;
+
+   if (!inst->dst.is_contiguous())
+      return true;
+
+   unsigned phys_reg_size = REG_SIZE * reg_unit(devinfo);
+
+   if (inst->dst.offset % phys_reg_size != 0)
+      return true;
+
+   return inst->size_written % phys_reg_size != 0;
+}
+
 void
 brw_reg_alloc::spill_reg(unsigned spill_reg)
 {
@@ -1228,7 +1248,7 @@ brw_reg_alloc::spill_reg(unsigned spill_reg)
           * write, there should be no need for the unspill since the
           * instruction will be overwriting the whole destination in any case.
 	  */
-         if (inst->is_partial_write() ||
+         if (is_partial_write(inst) ||
              (!inst->force_writemask_all && !per_channel))
             emit_unspill(ubld, &fs->shader_stats, spill_src,
                          subset_spill_offset, regs_written(inst), ip);

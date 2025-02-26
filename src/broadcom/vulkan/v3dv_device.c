@@ -2537,25 +2537,48 @@ v3dv_BindImageMemory2(VkDevice _device,
                       const VkBindImageMemoryInfo *pBindInfos)
 {
    for (uint32_t i = 0; i < bindInfoCount; i++) {
-      /* This section is removed by the optimizer for non-ANDROID builds */
-      V3DV_FROM_HANDLE(v3dv_image, image, pBindInfos[i].image);
-      if (vk_image_is_android_hardware_buffer(&image->vk)) {
+      if (DETECT_OS_ANDROID) {
          V3DV_FROM_HANDLE(v3dv_device, device, _device);
-         V3DV_FROM_HANDLE(v3dv_device_memory, mem, pBindInfos[i].memory);
+         V3DV_FROM_HANDLE(v3dv_image, image, pBindInfos[i].image);
 
          VkImageDrmFormatModifierExplicitCreateInfoEXT eci;
          VkSubresourceLayout a_plane_layouts[V3DV_MAX_PLANE_COUNT];
-         VkResult result = vk_android_get_ahb_layout(mem->vk.ahardware_buffer,
-                                                     &eci, a_plane_layouts,
-                                                     V3DV_MAX_PLANE_COUNT);
-         if (result != VK_SUCCESS)
-            return result;
 
-         result = v3dv_update_image_layout(device, image,
-                                           eci.drmFormatModifier,
-                                           /* disjoint = */ false, &eci);
-         if (result != VK_SUCCESS)
-            return result;
+         const VkNativeBufferANDROID *anb_info =
+            vk_find_struct_const(pBindInfos[i].pNext, NATIVE_BUFFER_ANDROID);
+
+         bool is_anb_bind = anb_info != NULL;
+         bool is_ahb_bind = vk_image_is_android_hardware_buffer(&image->vk);
+
+         if (is_anb_bind) {
+            VkResult result = vk_android_get_anb_layout2(
+               &pBindInfos[i], &eci, a_plane_layouts, V3DV_MAX_PLANE_COUNT);
+
+            if (result != VK_SUCCESS)
+               return result;
+         }
+
+         if (is_ahb_bind) {
+            V3DV_FROM_HANDLE(v3dv_device_memory, mem, pBindInfos[i].memory);
+
+            VkResult result = vk_android_get_ahb_layout(
+               mem->vk.ahardware_buffer, &eci, a_plane_layouts, V3DV_MAX_PLANE_COUNT);
+
+            if (result != VK_SUCCESS)
+               return result;
+         }
+
+         if (is_anb_bind || is_ahb_bind) {
+            VkResult result = v3dv_update_image_layout(
+               device, image, eci.drmFormatModifier, /* disjoint = */ false, &eci);
+
+            if (result != VK_SUCCESS)
+               return result;
+         }
+
+         if (is_anb_bind) {
+            return vk_android_bind_anb_as_mem(&device->vk, &pBindInfos[i]);
+         }
       }
 
       const VkBindImageMemorySwapchainInfoKHR *swapchain_info =

@@ -499,11 +499,8 @@ v3dv_image_init(struct v3dv_device *device,
     */
    image->vk.create_flags |= VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT;
 
-   /* At this time, an AHB handle is not yet provided.
-    * Image layout will be filled up during vkBindImageMemory2
-    * This section is removed by the optimizer for non-ANDROID builds
-    */
-   if (vk_image_is_android_hardware_buffer(&image->vk))
+   /* AHB/ANB buffer layout is initialized during binding */
+   if (vk_image_is_android_buffer(&image->vk))
       return VK_SUCCESS;
 
    bool disjoint = image->vk.create_flags & VK_IMAGE_CREATE_DISJOINT_BIT;
@@ -550,8 +547,7 @@ create_image(struct v3dv_device *device,
 
    /* This section is removed by the optimizer for non-ANDROID builds */
    if (vk_image_is_android_native_buffer(&image->vk)) {
-      result = vk_android_import_anb(&device->vk, pCreateInfo, pAllocator,
-                                     &image->vk);
+      result = vk_android_import_anb2(&device->vk, pCreateInfo, &image->vk);
       if (result != VK_SUCCESS)
          goto fail;
    }

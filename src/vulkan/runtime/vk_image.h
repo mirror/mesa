@@ -32,6 +32,7 @@
 enum android_buffer_type {
    ANDROID_BUFFER_NONE = 0,
    ANDROID_BUFFER_NATIVE,
+   ANDROID_BUFFER_NATIVE_DEFERRED,
    ANDROID_BUFFER_HARDWARE,
 };
 #endif
@@ -413,9 +414,19 @@ vk_image_is_android_native_buffer(struct vk_image *image)
 {
    return image->android_buffer_type == ANDROID_BUFFER_NATIVE;
 }
+static inline bool
+vk_image_is_android_buffer(struct vk_image *image)
+{
+   return image->android_buffer_type != ANDROID_BUFFER_NONE;
+}
 #else
 static inline bool
 vk_image_is_android_native_buffer(struct vk_image *image)
+{
+   return false;
+}
+static inline bool
+vk_image_is_android_buffer(struct vk_image *image)
 {
    return false;
 }

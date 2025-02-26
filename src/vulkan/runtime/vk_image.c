@@ -101,16 +101,18 @@ vk_image_init(struct vk_device *device,
 #endif
 
 #if DETECT_OS_ANDROID
-   if (image->external_handle_types &
-             VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)
-      image->android_buffer_type = ANDROID_BUFFER_HARDWARE;
-
    const VkNativeBufferANDROID *native_buffer =
       vk_find_struct_const(pCreateInfo->pNext, NATIVE_BUFFER_ANDROID);
+   const VkImageSwapchainCreateInfoKHR *swapchain_info =
+      vk_find_struct_const(pCreateInfo->pNext, IMAGE_SWAPCHAIN_CREATE_INFO_KHR);
 
-   if (native_buffer != NULL) {
-      assert(image->android_buffer_type == ANDROID_BUFFER_NONE);
+   if (image->external_handle_types &
+             VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID) {
+      image->android_buffer_type = ANDROID_BUFFER_HARDWARE;
+   } else if (native_buffer != NULL) {
       image->android_buffer_type = ANDROID_BUFFER_NATIVE;
+   } else if (swapchain_info && swapchain_info->swapchain != VK_NULL_HANDLE) {
+      image->android_buffer_type = ANDROID_BUFFER_NATIVE_DEFERRED;
    }
 
    const VkExternalFormatANDROID *ext_format =

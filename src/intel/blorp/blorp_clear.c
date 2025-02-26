@@ -35,6 +35,7 @@
 #include "blorp_nir_builder.h"
 
 #define FILE_DEBUG_FLAG DEBUG_BLORP
+#define _64k (64 * 1024)
 
 #pragma pack(push, 1)
 struct blorp_const_color_prog_key
@@ -54,8 +55,18 @@ blorp_params_get_clear_kernel_fs(struct blorp_batch *batch,
                                  bool want_replicated_data,
                                  bool clear_rgb_as_red)
 {
+   /* From the BSpec: 47719 (TGL/DG2/MTL) Replicate Data:
+    *
+    * "Replicate Data Render Target Write message should not be used
+    *  on all projects TGL+."
+    *
+    * See 14017879046, 14017880152 for additional information.
+    *
+    * Replicated clears don't work before gfx6.
+    */
    const bool use_replicated_data = want_replicated_data &&
-      batch->blorp->isl_dev->info->ver < 20;
+      batch->blorp->isl_dev->info->ver >= 6 &&
+      batch->blorp->isl_dev->info->ver < 12;
    struct blorp_context *blorp = batch->blorp;
 
    const struct blorp_const_color_prog_key blorp_key = {
@@ -436,6 +447,131 @@ convert_rt_from_3d_to_2d(const struct isl_device *isl_dev,
    info->surf.size_B = size_B;
 }
 
+/* Returns divisor+1 if divisor >= num. */
+static int64_t
+find_next_divisor(int64_t divisor, int64_t num)
+{
+   if (divisor >= num) {
+      return divisor + 1;
+   } else {
+      while (num % ++divisor != 0);
+      return divisor;
+   }
+}
+
+/* Return an extent which holds the given number of tiles and has a minimum
+ * array length.
+ */
+static struct isl_extent4d
+get_2d_array_extent(const struct isl_tile_info *tile_info, int64_t tiles)
+{
+   for (int64_t array_len = 1; array_len <= tiles;
+         array_len = find_next_divisor(array_len, tiles)) {
+      int64_t layer_tiles = tiles / array_len;
+      for (int64_t h_tl = 1; h_tl <= layer_tiles;
+            h_tl = find_next_divisor(h_tl, layer_tiles))  {
+         int64_t w_tl = layer_tiles / h_tl;
+         int64_t w_el = w_tl * tile_info->logical_extent_el.w;
+         int64_t h_el = h_tl * tile_info->logical_extent_el.h;
+         if (w_el <= 16 * 1024 && h_el <= 16 * 1024)
+            return isl_extent4d(w_el, h_el, 1, array_len);
+      }
+   }
+
+   unreachable("extent not found for given number of tiles.");
+}
+
+/* Return an optimal fast-clearing surface for the beginning of the provided
+ * memory range. This function assumes that the remaining range, if any, will
+ * be passed into it.
+ */
+static void
+surf_from_mem(const struct isl_device *isl_dev,
+              int64_t offset,
+              int64_t mem_size_B,
+              struct isl_surf *surf)
+{
+   int size_to_64k_alignment = ALIGN(offset, _64k) - offset;
+
+   enum isl_tiling tiling;
+   int64_t img_size_B;
+   if (mem_size_B - size_to_64k_alignment < _64k) {
+      tiling = ISL_TILING_4;
+      img_size_B = mem_size_B;
+   } else if (size_to_64k_alignment > 0) {
+      tiling = ISL_TILING_4;
+      img_size_B = size_to_64k_alignment;
+   } else {
+      tiling = ISL_TILING_64;
+      img_size_B = ROUND_DOWN_TO(mem_size_B, _64k);
+   }
+
+   const struct isl_format_layout *fmtl =
+      isl_format_get_layout(ISL_FORMAT_R32G32B32A32_UINT);
+
+   struct isl_tile_info tile_info;
+   isl_tiling_get_info(tiling, ISL_SURF_DIM_2D, ISL_MSAA_LAYOUT_NONE,
+                       fmtl->bpb, 1 /* samples */, &tile_info);
+   int tile_size_B = tile_info.phys_extent_B.w * tile_info.phys_extent_B.h;
+   int64_t tiles = img_size_B / tile_size_B;
+   struct isl_extent4d extent = get_2d_array_extent(&tile_info, tiles);
+
+   isl_surf_usage_flags_t usage = ISL_SURF_USAGE_RENDER_TARGET_BIT |
+                                  ISL_SURF_USAGE_NO_AUX_TT_ALIGNMENT_BIT;
+   ASSERTED bool ok = isl_surf_init(isl_dev, surf,
+                                    .dim = ISL_SURF_DIM_2D,
+                                    .format = fmtl->format,
+                                    .width = extent.width,
+                                    .height = extent.height,
+                                    .depth = extent.depth,
+                                    .levels = 1,
+                                    .array_len = extent.array_len,
+                                    .samples = 1,
+                                    .row_pitch_B = 0,
+                                    .usage = usage,
+                                    .tiling_flags = 1 << tiling);
+   assert(ok);
+   assert(surf->size_B == img_size_B);
+}
+
+static int64_t
+tile_aligned_lod0_clear_size(const struct blorp_surf *surf,
+                             uint32_t start_layer, uint32_t num_layers)
+{
+   int64_t size_B;
+   bool tile4_aligned_clear;
+   if (surf->surf->levels > 1) {
+      if (num_layers > 1) {
+         /* TODO: We could return the sizes of a each layer that is aligned
+          * and the caller could skip the miplevels and unaligned layers in
+          * between.
+          */
+         size_B = 0;
+         tile4_aligned_clear = false;
+      } else {
+         int level0_height = ALIGN(surf->surf->logical_level0_px.h,
+                                   surf->surf->image_alignment_el.h);
+         size_B = surf->surf->row_pitch_B * level0_height;
+         tile4_aligned_clear = level0_height % 32 == 0 &&
+            start_layer * surf->surf->array_pitch_el_rows % 32 == 0;
+      }
+   } else if (surf->surf->logical_level0_px.d > 1 ||
+              surf->surf->logical_level0_px.a > 1) {
+      size_B = isl_surf_get_array_pitch(surf->surf) * num_layers;
+      tile4_aligned_clear = surf->surf->array_pitch_el_rows % 32 == 0;
+   } else {
+      size_B = surf->surf->size_B;
+      tile4_aligned_clear = true;
+   }
+
+   if (tile4_aligned_clear) {
+      assert(size_B % 4096 == 0);
+      return size_B;
+   } else {
+      return 0;
+   }
+}
+
 void
 blorp_fast_clear(struct blorp_batch *batch,
                  const struct blorp_surf *surf,
@@ -445,13 +581,7 @@ blorp_fast_clear(struct blorp_batch *batch,
 {
    struct blorp_params params;
    blorp_params_init(&params);
-   params.num_layers = num_layers;
    assert((batch->flags & BLORP_BATCH_USE_COMPUTE) == 0);
-
-   params.x0 = x0;
-   params.y0 = y0;
-   params.x1 = x1;
-   params.y1 = y1;
 
    if (batch->blorp->isl_dev->info->ver >= 20) {
       union isl_color_value clear_color =
@@ -483,12 +613,6 @@ blorp_fast_clear(struct blorp_batch *batch,
 
    params.fast_clear_op = ISL_AUX_OP_FAST_CLEAR;
 
-   get_fast_clear_rect(batch->blorp->isl_dev, surf->surf, surf->aux_surf,
-                       &params.x0, &params.y0, &params.x1, &params.y1);
-
-   if (!blorp_params_get_clear_kernel(batch, &params, true, true, false))
-      return;
-
    blorp_surface_info_init(batch, &params.dst, surf, level,
                                start_layer, format, true);
 
@@ -509,13 +633,80 @@ blorp_fast_clear(struct blorp_batch *batch,
    else
       params.op = BLORP_OP_MCS_COLOR_CLEAR;
 
-   /* If a swizzle was provided, we need to swizzle the clear color so that
-    * the hardware color format conversion will work properly.
-    */
-   params.dst.clear_color =
-      isl_color_value_swizzle_inv(params.dst.clear_color, swizzle);
+   /* If helpful, perform a virtual address-based clear. */
+   int64_t size_B =
+      tile_aligned_lod0_clear_size(surf, start_layer, num_layers);
+   int64_t layer_offset = params.dst.addr.offset + start_layer *
+                          isl_surf_get_array_pitch(surf->surf);
+   int size_to_64k_alignment = ALIGN(layer_offset, _64k) - layer_offset;
+   if (ISL_GFX_VERX10(batch->blorp->isl_dev) == 125 && level == 0 &&
+       size_B - size_to_64k_alignment >= _64k && params.num_samples == 1) {
+      /* From Bspec 47709, "MCS/CCS Buffer for Render Target(s)":
+       *
+       *    Two basic changes in the control surface mapping cause new scaling
+       *    requirements with clear and resolve operations. These changes are:
+       *
+       *    1) introduction of Tile4 and Tile64 as new tiling formats [...]
+       *    2) CCS layout is memory hash aware, CCS is a flat monolithic
+       *       structure.
+       *
+       *    With the above changes, fast clear and resolve rectangles need to
+       *    be scaled based on 64KB aligned surface for Tile64 surfaces. HW
+       *    has a burden to use the actual surface parameter to actually
+       *    fragment the portion of the surface that's not aligned to 64KB and
+       *    clear them appropriately.
+       *
+       * The above section is tagged with HSD 1407682962. According to that
+       * HSD, optimizations are possible when the cleared area is 64KB
+       * aligned. Unfortunately, the optimization is seemingly restricted to
+       * Tile64. So, clear any 64KB aligned memory range as Tile64 for faster
+       * performance.
+       */
+      params.dst.view.base_array_layer = 0;
+      params.dst.addr.offset = layer_offset;
 
-   batch->blorp->exec(batch, &params);
+      do {
+         surf_from_mem(batch->blorp->isl_dev, params.dst.addr.offset, size_B,
+                       &params.dst.surf);
+
+         params.dst.view.format = params.dst.surf.format;
+         params.dst.view.array_len = params.dst.surf.logical_level0_px.a;
+         params.num_layers = params.dst.view.array_len;
+
+         assert(x0 == 0);
+         assert(y0 == 0);
+         assert(x1 == surf->surf->logical_level0_px.w);
+         assert(y1 == surf->surf->logical_level0_px.h);
+         params.x1 = params.dst.surf.logical_level0_px.w;
+         params.y1 = params.dst.surf.logical_level0_px.h;
+         get_fast_clear_rect(batch->blorp->isl_dev, &params.dst.surf,
+                             surf->aux_surf, &params.x0, &params.y0,
+                             &params.x1, &params.y1);
+
+         if (!blorp_params_get_clear_kernel(batch, &params, true, true,
+                                            false))
+            return;
+
+         batch->blorp->exec(batch, &params);
+         size_B -= params.dst.surf.size_B;
+         params.dst.addr.offset += params.dst.surf.size_B;
+      } while (size_B != 0);
+   } else {
+      params.num_layers = num_layers;
+
+      params.x0 = x0;
+      params.y0 = y0;
+      params.x1 = x1;
+      params.y1 = y1;
+      get_fast_clear_rect(batch->blorp->isl_dev, &params.dst.surf,
+                          surf->aux_surf, &params.x0, &params.y0,
+                          &params.x1, &params.y1);
+
+      if (!blorp_params_get_clear_kernel(batch, &params, true, true, false))
+         return;
+
+      batch->blorp->exec(batch, &params);
+   }
 }
 
 bool
@@ -630,23 +821,6 @@ blorp_clear(struct blorp_batch *batch,
     *      (untiled) memory is UNDEFINED."
     */
    if (surf->surf->tiling == ISL_TILING_LINEAR)
-      use_simd16_replicated_data = false;
-
-   /* Replicated clears don't work before gfx6 */
-   if (batch->blorp->isl_dev->info->ver < 6)
-      use_simd16_replicated_data = false;
-
-   /* From the BSpec: 47719 (TGL/DG2/MTL) Replicate Data:
-    *
-    * "Replicate Data Render Target Write message should not be used
-    *  on all projects TGL+."
-    *
-    * Xe2 spec (57350) does not mention this restriction.
-    *
-    *  See 14017879046, 14017880152 for additional information.
-    */
-   if (batch->blorp->isl_dev->info->ver >= 12 &&
-       batch->blorp->isl_dev->info->ver < 20)
       use_simd16_replicated_data = false;
 
    if (compute)

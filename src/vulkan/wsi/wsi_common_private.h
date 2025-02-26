@@ -27,6 +27,7 @@
 #include "util/perf/cpu_trace.h"
 #include "vk_object.h"
 #include "vk_sync.h"
+#include "vulkan/vulkan_core.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -179,6 +180,9 @@ struct wsi_swapchain {
    VkAllocationCallbacks alloc;
    VkFence* fences;
    VkPresentModeKHR present_mode;
+   VkPresentGravityFlagsEXT present_gravity_x;
+   VkPresentGravityFlagsEXT present_gravity_y;
+
    VkSemaphore present_id_timeline;
 
    int signal_dma_buf_from_semaphore;

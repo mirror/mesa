@@ -60,6 +60,7 @@
 #include "vk_device.h"
 #include "vk_util.h"
 #include "vk_enum_to_str.h"
+#include "vulkan/vulkan_core.h"
 #include "wsi_common_entrypoints.h"
 #include "wsi_common_private.h"
 #include "wsi_common_queue.h"
@@ -789,11 +790,10 @@ x11_surface_get_capabilities2(VkIcdSurfaceBase *icd_surface,
       }
 
       case VK_STRUCTURE_TYPE_SURFACE_PRESENT_SCALING_CAPABILITIES_EXT: {
-         /* Unsupported. */
          VkSurfacePresentScalingCapabilitiesEXT *scaling = (void *)ext;
-         scaling->supportedPresentScaling = 0;
-         scaling->supportedPresentGravityX = 0;
-         scaling->supportedPresentGravityY = 0;
+         scaling->supportedPresentScaling = VK_PRESENT_SCALING_ONE_TO_ONE_BIT_EXT;
+         scaling->supportedPresentGravityX = VK_PRESENT_GRAVITY_MIN_BIT_EXT | VK_PRESENT_GRAVITY_MAX_BIT_EXT | VK_PRESENT_GRAVITY_CENTERED_BIT_EXT;
+         scaling->supportedPresentGravityY = VK_PRESENT_GRAVITY_MIN_BIT_EXT | VK_PRESENT_GRAVITY_MAX_BIT_EXT | VK_PRESENT_GRAVITY_CENTERED_BIT_EXT;
          scaling->minScaledImageExtent = caps->surfaceCapabilities.minImageExtent;
          scaling->maxScaledImageExtent = caps->surfaceCapabilities.maxImageExtent;
          break;
@@ -1423,8 +1423,47 @@ x11_present_to_x11_dri3(struct x11_swapchain *chain, uint32_t image_index,
          .signal_present_id = image->present_id,
          .serial = serial,
       };
+   
+   int16_t x_off = 0;
+   int16_t y_off = 0;
+
+   xcb_get_geometry_reply_t *geometry =
+      xcb_get_geometry_reply(chain->conn, xcb_get_geometry(chain->conn, chain->window), NULL);
+
+   if (geometry) {
+      switch (chain->base.present_gravity_x) {
+      case VK_PRESENT_GRAVITY_MIN_BIT_EXT:
+         x_off = 0;
+         break;
+      case VK_PRESENT_GRAVITY_MAX_BIT_EXT:
+         x_off = geometry->width - chain->extent.width;
+         break;
+      case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT:
+         x_off = (geometry->width / 2) - (chain->extent.width / 2);
+         break;
+      default:
+         x_off = 0;
+      }
+
+      switch (chain->base.present_gravity_y) {
+      case VK_PRESENT_GRAVITY_MIN_BIT_EXT:
+         y_off = 0;
+         break;
+      case VK_PRESENT_GRAVITY_MAX_BIT_EXT:
+         y_off = geometry->height - chain->extent.height;
+         break;
+      case VK_PRESENT_GRAVITY_CENTERED_BIT_EXT:
+         y_off = (geometry->height / 2) - (chain->extent.height / 2);
+         break;
+      default:
+         y_off = 0;
+      }
+
+      free(geometry);
+   }
 
    xcb_void_cookie_t cookie;
+
 #ifdef HAVE_DRI3_EXPLICIT_SYNC
    if (chain->base.image_info.explicit_sync) {
       uint64_t acquire_point = image->base.explicit_sync[WSI_ES_ACQUIRE].timeline;
@@ -1434,11 +1473,11 @@ x11_present_to_x11_dri3(struct x11_swapchain *chain, uint32_t image_index,
          chain->window,
          image->pixmap,
          serial,
-         0,                                   /* valid */
-         image->update_area,                  /* update */
-         0,                                   /* x_off */
-         0,                                   /* y_off */
-         XCB_NONE,                            /* target_crtc */
+         0,                                 /* valid */
+         image->update_area,               /* update */
+         x_off,                               /* x_off */
+         y_off,                               /* y_off */
+         XCB_NONE,                        /* target_crtc */
          image->dri3_syncobj[WSI_ES_ACQUIRE], /* acquire_syncobj */
          image->dri3_syncobj[WSI_ES_RELEASE], /* release_syncobj */
          acquire_point,
@@ -1454,10 +1493,10 @@ x11_present_to_x11_dri3(struct x11_swapchain *chain, uint32_t image_index,
                                   chain->window,
                                   image->pixmap,
                                   serial,
-                                  0,                  /* valid */
-                                  image->update_area, /* update */
-                                  0,                  /* x_off */
-                                  0,                  /* y_off */
+                                  0,                        /* valid */
+                                  image->update_area,      /* update */
+                                  x_off,                      /* x_off */
+                                  y_off,                      /* y_off */
                                   XCB_NONE,           /* target_crtc */
                                   XCB_NONE,
                                   image->sync_fence,
@@ -1466,8 +1505,10 @@ x11_present_to_x11_dri3(struct x11_swapchain *chain, uint32_t image_index,
                                   divisor,
                                   remainder, 0, NULL);
    }
+
    xcb_discard_reply(chain->conn, cookie.sequence);
    xcb_flush(chain->conn);
+
    return x11_swapchain_result(chain, VK_SUCCESS);
 }
 #endif
@@ -2701,6 +2742,14 @@ x11_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
    chain->has_dri3_modifiers = wsi_conn->has_dri3_modifiers;
    chain->has_mit_shm = wsi_conn->has_mit_shm;
    chain->has_async_may_tear = present_caps & XCB_PRESENT_CAPABILITY_ASYNC_MAY_TEAR;
+
+   const VkSwapchainPresentScalingCreateInfoEXT* scaling_info =
+      vk_find_struct_const(pCreateInfo->pNext, SWAPCHAIN_PRESENT_SCALING_CREATE_INFO_EXT);
+
+   if (scaling_info) {
+      chain->base.present_gravity_x = scaling_info->presentGravityX;
+      chain->base.present_gravity_y = scaling_info->presentGravityY;
+   }
 
    /* When images in the swapchain don't fit the window, X can still present them, but it won't
     * happen by flip, only by copy. So this is a suboptimal copy, because if the client would change

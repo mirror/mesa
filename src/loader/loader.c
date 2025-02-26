@@ -101,6 +101,10 @@ loader_open_device(const char *device_name)
       log_(_LOADER_WARNING, "failed to open %s: %s\n",
            device_name, strerror(errno));
    }
+
+   if (drmIsMaster(fd))
+      drmDropMaster(fd);
+
    return fd;
 }
 

@@ -70,10 +70,13 @@ variables:
   FDO_UPSTREAM_REPO: mesa/mesa
   MESA_TEMPLATES_COMMIT: &ci-templates-commit 48e4b6c9a2015f969fbe648999d16d5fb3eef6c4
   CI_PRE_CLONE_SCRIPT: |-
+          DGC_SH='download-git-cache.sh'
           set -o xtrace
-          wget -q -O download-git-cache.sh ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/download-git-cache.sh
-          bash download-git-cache.sh
-          rm download-git-cache.sh
+          wget -q -O $${DGC_SH} ${CI_PROJECT_URL}/-/raw/${CI_COMMIT_SHA}/.gitlab-ci/$${DGC_SH}
+          # An HTML page is a (hidden) failure; for instance a Sign in page for a private fork
+          if grep -i -C 10 'DOCTYPE[[:space:]]*HTML' $${DGC_SH}; then exit 1; fi
+          bash $${DGC_SH}
+          rm $${DGC_SH}
           set +o xtrace
   S3_JWT_FILE: /s3_jwt
   S3_JWT_FILE_SCRIPT: |-

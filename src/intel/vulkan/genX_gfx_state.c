@@ -138,6 +138,39 @@ static const uint32_t vk_to_intel_primitive_type[] = {
    [VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY] = _3DPRIM_TRISTRIP_ADJ,
 };
 
+void
+genX(batch_emit_wa_16014912113)(struct anv_batch *batch,
+                                const struct intel_urb_config *urb_cfg)
+{
+#if INTEL_NEEDS_WA_16014912113
+   if (urb_cfg->size[0] == 0)
+      return;
+
+   for (int i = 0; i <= MESA_SHADER_GEOMETRY; i++) {
+#if GFX_VER >= 12
+      anv_batch_emit(batch, GENX(3DSTATE_URB_ALLOC_VS), urb) {
+         urb._3DCommandSubOpcode             += i;
+         urb.VSURBEntryAllocationSize        = urb_cfg->size[i] - 1;
+         urb.VSURBStartingAddressSlice0      = urb_cfg->start[i];
+         urb.VSURBStartingAddressSliceN      = urb_cfg->start[i];
+         urb.VSNumberofURBEntriesSlice0      = i == 0 ? 256 : 0;
+         urb.VSNumberofURBEntriesSliceN      = i == 0 ? 256 : 0;
+      }
+#else
+      anv_batch_emit(batch, GENX(3DSTATE_URB_VS), urb) {
+         urb._3DCommandSubOpcode      += i;
+         urb.VSURBStartingAddress      = urb_cfg->start[i];
+         urb.VSURBEntryAllocationSize  = urb_cfg->size[i] - 1;
+         urb.VSNumberofURBEntries      = i == 0 ? 256 : 0;
+      }
+#endif
+   }
+   anv_batch_emit(batch, GENX(PIPE_CONTROL), pc) {
+      pc.HDCPipelineFlushEnable = true;
+   }
+#endif
+}
+
 static void
 genX(streamout_prologue)(struct anv_cmd_buffer *cmd_buffer)
 {
@@ -712,31 +745,13 @@ update_fs_msaa_flags(struct anv_gfx_dynamic_state *hw_state,
        wm_prog_data->alpha_to_coverage != INTEL_SOMETIMES)
       return;
 
-   enum intel_msaa_flags fs_msaa_flags = INTEL_MSAA_FLAG_ENABLE_DYNAMIC;
-
-   if (dyn->ms.rasterization_samples > 1) {
-      fs_msaa_flags |= INTEL_MSAA_FLAG_MULTISAMPLE_FBO;
-
-      if (wm_prog_data->sample_shading) {
-         assert(wm_prog_data->persample_dispatch != INTEL_NEVER);
-         fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH;
-      }
-      if ((pipeline->sample_shading_enable &&
-           (pipeline->min_sample_shading * dyn->ms.rasterization_samples) > 1) ||
-          wm_prog_data->sample_shading) {
-         fs_msaa_flags |= INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH |
-                          INTEL_MSAA_FLAG_PERSAMPLE_INTERP;
-      }
-   }
-
-   if (wm_prog_data->coarse_pixel_dispatch == INTEL_SOMETIMES &&
-       !(fs_msaa_flags & INTEL_MSAA_FLAG_PERSAMPLE_DISPATCH)) {
-      fs_msaa_flags |= INTEL_MSAA_FLAG_COARSE_PI_MSG |
-                       INTEL_MSAA_FLAG_COARSE_RT_WRITES;
-   }
-
-   if (dyn->ms.alpha_to_coverage_enable)
-      fs_msaa_flags |= INTEL_MSAA_FLAG_ALPHA_TO_COVERAGE;
+   enum intel_msaa_flags fs_msaa_flags =
+      intel_fs_msaa_flags(wm_prog_data->sample_shading,
+                          pipeline->min_sample_shading,
+                          pipeline->sample_shading_enable,
+                          dyn->ms.rasterization_samples,
+                          !vk_fragment_shading_rate_is_disabled(&dyn->fsr),
+                          dyn->ms.alpha_to_coverage_enable);
 
    SET(FS_MSAA_FLAGS, fs_msaa_flags, fs_msaa_flags);
 }
@@ -2155,8 +2170,10 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
    }
 
    if (BITSET_TEST(hw_state->dirty, ANV_GFX_STATE_URB)) {
-      genX(urb_workaround)(cmd_buffer, &pipeline->urb_cfg);
-
+      if (genX(need_wa_16014912113)(&gfx->urb_cfg, &pipeline->urb_cfg)) {
+         genX(batch_emit_wa_16014912113)(&cmd_buffer->batch,
+                                         &gfx->urb_cfg);
+      }
       anv_batch_emit_pipeline_state(&cmd_buffer->batch, pipeline, final.urb);
 
       memcpy(&gfx->urb_cfg, &pipeline->urb_cfg,

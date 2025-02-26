@@ -1168,6 +1168,8 @@ struct si_context {
    /* Emitted draw state. */
    bool ngg : 1;
    bool disable_instance_packing : 1;
+   bool fixed_func_face_culling_needed : 1;
+   bool fixed_func_face_culling_has_effect : 1;
    uint16_t ngg_culling;
    unsigned last_index_size;
    unsigned last_instance_count;
@@ -1442,6 +1444,8 @@ struct pipe_resource *si_buffer_from_winsys_buffer(struct pipe_screen *screen,
 void si_replace_buffer_storage(struct pipe_context *ctx, struct pipe_resource *dst,
                                struct pipe_resource *src, unsigned num_rebinds,
                                uint32_t rebind_mask, uint32_t delete_buffer_id);
+bool si_reallocate_buffer_change_flags(struct si_context *sctx, struct pipe_resource *buf,
+                                       unsigned usage, unsigned bind);
 void si_init_screen_buffer_functions(struct si_screen *sscreen);
 void si_init_buffer_functions(struct si_context *sctx);
 
@@ -2215,6 +2219,13 @@ static inline void si_emit_barrier_direct(struct si_context *sctx)
       sctx->emit_barrier(sctx, &sctx->gfx_cs);
       sctx->dirty_atoms &= ~SI_ATOM_BIT(barrier);
    }
+}
+
+static inline bool si_is_buffer_idle(struct si_context *sctx, struct si_resource *buf,
+                                     unsigned usage)
+{
+   return !si_cs_is_buffer_referenced(sctx, buf->buf, usage) &&
+          sctx->ws->buffer_wait(sctx->ws, buf->buf, 0, usage | RADEON_USAGE_DISALLOW_SLOW_REPLY);
 }
 
 #define PRINT_ERR(fmt, args...)                                                                    \

@@ -1903,9 +1903,14 @@ dep_clang = null_dep
 if with_clc or with_gallium_clover
   llvm_libdir = dep_llvm.get_variable(cmake : 'LLVM_LIBRARY_DIR', configtool: 'libdir')
 
-  dep_clang = cpp.find_library('clang-cpp', dirs : llvm_libdir, required : false)
+  foreach trial : [{'dirs': llvm_libdir}, {}]
+    if _shared_llvm
+      dep_clang = cpp.find_library('clang-cpp', required : false, kwargs : trial)
+      if dep_clang.found()
+        break
+      endif
+    endif
 
-  if not dep_clang.found() or not _shared_llvm
     clang_modules = [
       'clangBasic', 'clangAST', 'clangCodeGen', 'clangLex',
       'clangDriver', 'clangFrontend', 'clangFrontendTool',
@@ -1924,9 +1929,15 @@ if with_clc or with_gallium_clover
 
     dep_clang = []
     foreach m : clang_modules
-      dep_clang += cpp.find_library(m, dirs : llvm_libdir, required : true)
+      dep_clang += cpp.find_library(m, required : 'dirs' not in trial, kwargs : trial)
+      if not dep_clang[-1].found()
+        break
+      endif
     endforeach
-  endif
+    if dep_clang.length() == clang_modules.length()
+      break
+    endif
+  endforeach
 endif
 
 dep_lua = dependency('lua54', 'lua5.4', 'lua-5.4',

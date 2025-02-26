@@ -508,6 +508,9 @@ struct drm_tegra_submit {
 #define DRM_TEGRA_GEM_TILING_MODE_TILED 1
 #define DRM_TEGRA_GEM_TILING_MODE_BLOCK 2
 
+#define DRM_TEGRA_GEM_SECTOR_LAYOUT_TEGRA 0
+#define DRM_TEGRA_GEM_SECTOR_LAYOUT_GPU 1
+
 /**
  * struct drm_tegra_gem_set_tiling - parameters for the set tiling IOCTL
  */

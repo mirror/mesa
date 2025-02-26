@@ -32,6 +32,8 @@ struct tegra_screen {
 
    struct pipe_screen *gpu;
    int gpu_fd;
+
+   bool has_tiling_ioctl;
 };
 
 static inline struct tegra_screen *

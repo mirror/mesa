@@ -156,9 +156,34 @@ static int tegra_screen_import_resource(struct tegra_screen *screen,
    fd = handle.handle;
 
    err = drmPrimeFDToHandle(screen->fd, fd, &resource->handle);
-   if (err < 0)
+   if (err < 0) {
       err = -errno;
+      goto cleanup;
+   }
 
+   if (handle.modifier != DRM_FORMAT_MOD_LINEAR) {
+      struct drm_tegra_gem_set_tiling tiling = {0};
+      bool block_linear = (handle.modifier >> 4) & 0x1;
+      bool sector_layout = (handle.modifier >> 22) & 0x1;
+
+      tiling.handle = resource->handle;
+
+      if (block_linear) {
+         tiling.mode = DRM_TEGRA_GEM_TILING_MODE_BLOCK;
+         tiling.value = handle.modifier & 0xf;
+      } else {
+         tiling.mode = DRM_TEGRA_GEM_TILING_MODE_TILED;
+      }
+
+      if (sector_layout)
+         tiling.pad = DRM_TEGRA_GEM_SECTOR_LAYOUT_GPU;
+      else
+         tiling.pad = DRM_TEGRA_GEM_SECTOR_LAYOUT_TEGRA;
+
+      err = drmIoctl(screen->fd, DRM_IOCTL_TEGRA_GEM_SET_TILING, &tiling);
+   }
+
+cleanup:
    close(fd);
 
    return err;
@@ -181,14 +206,15 @@ tegra_screen_resource_create(struct pipe_screen *pscreen,
     * Applications that create scanout resources without modifiers are very
     * unlikely to support modifiers at all. In that case the resources need
     * to be created with a pitch-linear layout so that they can be properly
-    * shared with scanout hardware.
+    * shared with scanout hardware, if the kernel does not support setting
+    * the tiling via the SET_TILING IOCTL.
     *
     * Technically it is possible for applications to create resources without
     * specifying a modifier but still query the modifier associated with the
     * resource (e.g. using gbm_bo_get_modifier()) before handing it to the
     * framebuffer creation API (such as the DRM_IOCTL_MODE_ADDFB2 IOCTL).
     */
-   if (template->bind & PIPE_BIND_SCANOUT)
+   if (template->bind & PIPE_BIND_SCANOUT && !screen->has_tiling_ioctl)
       modifier = DRM_FORMAT_MOD_LINEAR;
 
    resource->gpu = screen->gpu->resource_create_with_modifiers(screen->gpu,
@@ -562,6 +588,17 @@ tegra_screen_create(int fd)
       free(screen);
       return NULL;
    }
+
+   /* Test if the kernel has GET_TILING; it will return -EINVAL if the
+   * ioctl does not exist, but -ENOENT if we pass an impossible handle.
+   * 0 cannot be a valid GEM object, so use that.
+   */
+   struct drm_tegra_gem_get_tiling get_tiling = {
+      .handle = 0x0,
+   };
+   int ret = drmIoctl(screen->fd, DRM_IOCTL_TEGRA_GEM_GET_TILING, &get_tiling);
+   if (ret == -1 && errno == ENOENT)
+      screen->has_tiling_ioctl = true;
 
    screen->base.destroy = tegra_screen_destroy;
    screen->base.get_name = tegra_screen_get_name;

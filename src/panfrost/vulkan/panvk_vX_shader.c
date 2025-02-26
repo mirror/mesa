@@ -1414,13 +1414,6 @@ panvk_shader_serialize(struct vk_device *vk_dev,
    return !blob->out_of_memory;
 }
 
-#define WRITE_STR(field, ...)                                                  \
-   ({                                                                          \
-      memset(field, 0, sizeof(field));                                         \
-      UNUSED int i = snprintf(field, sizeof(field), __VA_ARGS__);              \
-      assert(i > 0 && i < sizeof(field));                                      \
-   })
-
 static VkResult
 panvk_shader_get_executable_properties(
    UNUSED struct vk_device *device, const struct vk_shader *vk_shader,
@@ -1436,9 +1429,9 @@ panvk_shader_get_executable_properties(
    {
       props->stages = mesa_to_vk_shader_stage(shader->info.stage);
       props->subgroupSize = 8;
-      WRITE_STR(props->name, "%s",
+      VK_COPY_STR(props->name,
                 _mesa_shader_stage_to_string(shader->info.stage));
-      WRITE_STR(props->description, "%s shader",
+      VK_PRINT_STR(props->description, "%s shader",
                 _mesa_shader_stage_to_string(shader->info.stage));
    }
 
@@ -1461,8 +1454,8 @@ panvk_shader_get_executable_statistics(
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat)
    {
-      WRITE_STR(stat->name, "Code Size");
-      WRITE_STR(stat->description,
+      VK_COPY_STR(stat->name, "Code Size");
+      VK_COPY_STR(stat->description,
                 "Size of the compiled shader binary, in bytes");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = shader->bin_size;
@@ -1511,8 +1504,8 @@ panvk_shader_get_executable_internal_representations(
       vk_outarray_append_typed(VkPipelineExecutableInternalRepresentationKHR,
                                &out, ir)
       {
-         WRITE_STR(ir->name, "NIR shader");
-         WRITE_STR(ir->description,
+         VK_COPY_STR(ir->name, "NIR shader");
+         VK_COPY_STR(ir->description,
                    "NIR shader before sending to the back-end compiler");
          if (!write_ir_text(ir, shader->nir_str))
             incomplete_text = true;
@@ -1523,8 +1516,8 @@ panvk_shader_get_executable_internal_representations(
       vk_outarray_append_typed(VkPipelineExecutableInternalRepresentationKHR,
                                &out, ir)
       {
-         WRITE_STR(ir->name, "Assembly");
-         WRITE_STR(ir->description, "Final Assembly");
+         VK_COPY_STR(ir->name, "Assembly");
+         VK_COPY_STR(ir->description, "Final Assembly");
          if (!write_ir_text(ir, shader->asm_str))
             incomplete_text = true;
       }

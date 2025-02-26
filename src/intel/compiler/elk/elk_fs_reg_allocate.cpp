@@ -389,6 +389,7 @@ private:
    int rsi;
 
    ra_graph *g;
+   bool interference_graph_supports_spilling;
    bool have_spill_costs;
 
    int payload_node_count;
@@ -631,6 +632,8 @@ elk_fs_reg_alloc::setup_inst_interference(const elk_fs_inst *inst)
 void
 elk_fs_reg_alloc::build_interference_graph(bool allow_spilling)
 {
+   interference_graph_supports_spilling = allow_spilling;
+
    /* Compute the RA node layout */
    node_count = 0;
    first_payload_node = node_count;
@@ -923,6 +926,28 @@ elk_fs_reg_alloc::set_spill_costs()
 int
 elk_fs_reg_alloc::choose_spill_reg()
 {
+   /* If we're going to spill but we've never spilled before, we need
+    * to re-build the interference graph with MRFs enabled to allow
+    * spilling.
+    */
+   if (!interference_graph_supports_spilling) {
+      discard_interference_graph();
+      build_interference_graph(true);
+
+      /* ra_get_best_spill_node() relies on ra_allocate() having been called
+       * once to set up the stack of trivially colorable and optimistically
+       * colored nodes.  By torching and rebuilding our interference graph,
+       * we also discarded the information needed to pick spill candidates.
+       *
+       * The simplest (if expensive) solution is to call ra_allocate() again
+       * on the new graph.  This can't succeed - allocation already failed on
+       * our old graph which had fewer constraints - but it creates the list
+       * of spill candidates for our new more constrained graph.
+       */
+      ASSERTED bool allocated = ra_allocate(g);
+      assert(!allocated);
+   }
+
    if (!have_spill_costs)
       set_spill_costs();
 
@@ -1155,15 +1180,6 @@ elk_fs_reg_alloc::assign_regs(bool allow_spilling, bool spill_all)
             if (j == 0)
                return false; /* Nothing to spill */
             break;
-         }
-
-         /* If we're going to spill but we've never spilled before, we need
-          * to re-build the interference graph with MRFs enabled to allow
-          * spilling.
-          */
-         if (!fs->spilled_any_registers) {
-            discard_interference_graph();
-            build_interference_graph(true);
          }
 
          spill_reg(reg);

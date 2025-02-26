@@ -239,6 +239,12 @@ impl ShaderBin {
             num_control_barriers: info.num_control_barriers,
             _pad0: Default::default(),
             num_instrs: info.num_instrs,
+            num_static_cycles: info.num_static_cycles,
+            num_spills_to_mem: info.num_spills_to_mem,
+            num_fills_from_mem: info.num_fills_from_mem,
+            num_spills_to_reg: info.num_spills_to_reg,
+            num_fills_from_reg: info.num_fills_from_reg,
+            occupancy_in_warps_per_sm: info.occupancy_in_warps_per_sm,
             slm_size: info.slm_size,
             crs_size: sm.crs_size(info.max_crs_depth),
             __bindgen_anon_1: match &info.stage {
@@ -313,6 +319,10 @@ impl ShaderBin {
 
             eprintln!("Stage: {}", stage_name);
             eprintln!("Instruction count: {}", c_info.num_instrs);
+            eprintln!("Static cycle count: {}", c_info.num_static_cycles);
+            eprintln!("Spills to mem: {}", c_info.num_spills_to_mem);
+            eprintln!("Spills to reg: {}", c_info.num_spills_to_reg);
+            eprintln!("Occupancy (warps/SM): {}", c_info.occupancy_in_warps_per_sm);
             eprintln!("Num GPRs: {}", c_info.num_gprs);
             eprintln!("SLM size: {}", c_info.slm_size);
 
@@ -416,6 +426,7 @@ fn nak_compile_shader_internal(
     pass!(s, opt_dce);
     pass!(s, opt_out);
     pass!(s, legalize);
+    pass!(s, opt_instr_sched_prepass);
     pass!(s, assign_regs);
     pass!(s, lower_par_copies);
     pass!(s, lower_copy_swap);
@@ -427,6 +438,7 @@ fn nak_compile_shader_internal(
 
     s.remove_annotations();
 
+    pass!(s, opt_instr_sched_postpass);
     pass!(s, calc_instr_deps);
 
     s.gather_info();

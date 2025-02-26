@@ -10,7 +10,7 @@ use crate::liveness::{
 };
 
 use compiler::bitset::BitSet;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::cmp::{max, Ordering, Reverse};
 use std::collections::{BinaryHeap, HashMap, HashSet};
 
@@ -231,6 +231,67 @@ impl Spill for SpillGPR {
     }
 }
 
+struct SpillStatistics<'a, S>
+where
+    S: Spill,
+{
+    inner: S,
+    info: &'a mut ShaderInfo,
+    dst_is_mem: bool,
+    spill_count: Cell<u32>,
+    fill_count: Cell<u32>,
+}
+
+impl<'a, S> SpillStatistics<'a, S>
+where
+    S: Spill,
+{
+    fn new(inner: S, file: RegFile, info: &'a mut ShaderInfo) -> Self {
+        let dst_is_mem = inner.spill_file(file) == RegFile::Mem;
+        SpillStatistics {
+            inner,
+            info,
+            dst_is_mem,
+            spill_count: Cell::new(0),
+            fill_count: Cell::new(0),
+        }
+    }
+}
+
+impl<'a, S> Spill for SpillStatistics<'a, S>
+where
+    S: Spill,
+{
+    fn spill_file(&self, file: RegFile) -> RegFile {
+        self.inner.spill_file(file)
+    }
+
+    fn spill(&self, dst: SSAValue, src: Src) -> Box<Instr> {
+        self.spill_count.set(self.spill_count.get() + 1);
+        self.inner.spill(dst, src)
+    }
+
+    fn fill(&self, dst: Dst, src: SSAValue) -> Box<Instr> {
+        self.fill_count.set(self.fill_count.get() + 1);
+        self.inner.fill(dst, src)
+    }
+}
+
+impl<'a, S> Drop for SpillStatistics<'a, S>
+where
+    S: Spill,
+{
+    fn drop(&mut self) {
+        if self.dst_is_mem {
+            self.info.num_spills_to_mem += self.spill_count.get();
+            self.info.num_fills_from_mem += self.fill_count.get();
+        } else {
+            self.info.num_spills_to_reg += self.spill_count.get();
+            self.info.num_fills_from_reg += self.fill_count.get();
+        }
+    }
+}
+
 #[derive(Eq, PartialEq)]
 struct SSANextUse {
     ssa: SSAValue,
@@ -399,10 +460,12 @@ fn spill_values<S: Spill>(
     file: RegFile,
     limit: u32,
     spill: S,
+    info: &mut ShaderInfo,
 ) {
     let files = RegFileSet::from_iter([file]);
     let live = NextUseLiveness::for_function(func, &files);
     let blocks = &mut func.blocks;
+    let spill = SpillStatistics::new(spill, file, info);
 
     // Record the set of SSA values used within each loop
     let mut phi_dst_maps = Vec::new();
@@ -1023,27 +1086,32 @@ impl Function {
     /// just for the sake of a parallel copy.  While this may not be true in
     /// general, especially not when spilling to memory, the register allocator
     /// is good at eliding unnecessary copies.
-    pub fn spill_values(&mut self, file: RegFile, limit: u32) {
+    pub fn spill_values(
+        &mut self,
+        file: RegFile,
+        limit: u32,
+        info: &mut ShaderInfo,
+    ) {
         match file {
             RegFile::GPR => {
                 let spill = SpillGPR::new();
-                spill_values(self, file, limit, spill);
+                spill_values(self, file, limit, spill, info);
             }
             RegFile::UGPR => {
                 let spill = SpillUniform::new();
-                spill_values(self, file, limit, spill);
+                spill_values(self, file, limit, spill, info);
             }
             RegFile::Pred => {
                 let spill = SpillPred::new();
-                spill_values(self, file, limit, spill);
+                spill_values(self, file, limit, spill, info);
             }
             RegFile::UPred => {
                 let spill = SpillPred::new();
-                spill_values(self, file, limit, spill);
+                spill_values(self, file, limit, spill, info);
             }
             RegFile::Bar => {
                 let spill = SpillBar::new();
-                spill_values(self, file, limit, spill);
+                spill_values(self, file, limit, spill, info);
             }
             _ => panic!("Don't know how to spill {} registers", file),
         }

@@ -181,6 +181,9 @@ root_resource::root_resource(clover::device &dev, memory_obj &obj,
                 PIPE_BIND_GLOBAL);
 
    if (obj.flags() & CL_MEM_USE_HOST_PTR && dev.allows_user_pointers()) {
+      if (obj.flags() & CL_MEM_READ_ONLY)
+         info.usage = PIPE_USAGE_IMMUTABLE;
+
       // Page alignment is normally required for this, just try, hope for the
       // best and fall back if it fails.
       pipe = dev.pipe->resource_from_user_memory(dev.pipe, &info, obj.host_ptr());

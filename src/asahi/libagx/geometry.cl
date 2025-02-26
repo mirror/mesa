@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "util/u_math.h"
 #include "geometry.h"
 #include "libagx_intrinsics.h"
 #include "query.h"

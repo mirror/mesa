@@ -112,7 +112,7 @@ __indirect_glInterleavedArrays(GLenum format, GLsizei stride,
     */
       GLubyte size;
    }
-   static const modes[14][4] = {
+   static const modes[16][4] = {
       /* texture color normal vertex */
       {NONE, NONE, NONE, F(2)}, /* GL_V2F */
       {NONE, NONE, NONE, F(3)}, /* GL_V3F */
@@ -128,6 +128,8 @@ __indirect_glInterleavedArrays(GLenum format, GLsizei stride,
       {F(2), NONE, F(3), F(3)}, /* GL_T2F_N3F_V3F */
       {F(2), F(4), F(3), F(3)}, /* GL_T2F_C4F_N3F_V3F */
       {F(4), F(4), F(3), F(4)}, /* GL_T4F_C4F_N3F_V4F */
+      {F(4), F(4), F(4), F(4)}, /* GL_T4F_C4F_N4F_V4F */
+      {F(4), UB4, F(3), F(4)},  /* GL_T4F_C4UB_N3F_V4F */
    };
 #undef NONE
 #undef F

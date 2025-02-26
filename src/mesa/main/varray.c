@@ -2927,6 +2927,24 @@ _mesa_get_interleaved_layout(GLenum format,
          layout->voffset = 11 * f;
          layout->defstride = 15 * f;
          break;
+      case GL_T4F_C4F_N4F_V4F:
+         layout->tflag = true;  layout->cflag = true;  layout->nflag = true;
+         layout->tcomps = 4;  layout->ccomps = 4;  layout->vcomps = 4;
+         layout->ctype = GL_FLOAT;
+         layout->coffset = 4 * f;
+         layout->noffset = 8 * f;
+         layout->voffset = 12 * f;
+         layout->defstride = 16 * f;
+         break;
+      case GL_T4F_C4UB_N3F_V4F:
+         layout->tflag = true;  layout->cflag = true;  layout->nflag = true;
+         layout->tcomps = 4;  layout->ccomps = 4;  layout->vcomps = 4;
+         layout->ctype = GL_UNSIGNED_BYTE;
+         layout->coffset = 4 * f;
+         layout->noffset = c + 4  * f;
+         layout->voffset = c + 7 * f;
+         layout->defstride = c + 11 * f;
+         break;
       default:
          return false;
    }

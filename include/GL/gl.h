@@ -200,6 +200,8 @@ typedef double		GLclampd;	/* double precision float in [0,1] */
 #define GL_T2F_N3F_V3F				0x2A2B
 #define GL_T2F_C4F_N3F_V3F			0x2A2C
 #define GL_T4F_C4F_N3F_V4F			0x2A2D
+#define GL_T4F_C4F_N4F_V4F			0x2A2E
+#define GL_T4F_C4UB_N3F_V4F			0x2A2F
 
 /* Matrix Mode */
 #define GL_MATRIX_MODE				0x0BA0

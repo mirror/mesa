@@ -43,6 +43,7 @@ SUPPORTED_FEATURES = [
     "VK_KHR_dedicated_allocation",
     "VK_KHR_get_memory_requirements2",
     "VK_KHR_sampler_ycbcr_conversion",
+    "VK_KHR_global_priority",
     "VK_KHR_shader_float16_int8",
     "VK_AMD_gpu_shader_half_float",
     "VK_NV_shader_subgroup_partitioned",
@@ -73,6 +74,7 @@ SUPPORTED_FEATURES = [
     "VK_KHR_descriptor_update_template",
     "VK_EXT_depth_clip_enable",
     "VK_EXT_robustness2",
+    "VK_KHR_multiview",
     # see aosp/2736079 + b/268351352
     "VK_EXT_swapchain_maintenance1",
     "VK_KHR_maintenance5",

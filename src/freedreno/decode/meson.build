@@ -194,6 +194,7 @@ if dep_lua.found() and dep_libarchive.found()
       log = custom_target(name + '.log',
         output: name + '.log',
         command: [cffdump, '--unit-test', args, files('../.gitlab-ci/traces/' + name + '.rd.gz')],
+        env: {'RNN_PATH': rnn_src_path},
         capture: true,
       )
       test('cffdump-' + name,
@@ -247,7 +248,8 @@ if with_tests
       output: name + '.log',
       command: [crashdec, args, files('../.gitlab-ci/traces/' + name + '.devcore')],
       capture: true,
-      env: {'GALLIUM_DUMP_CPU': 'false'},
+      env: {'GALLIUM_DUMP_CPU': 'false',
+            'RNN_PATH': rnn_src_path},
     )
 
     test('crashdec-' + name,

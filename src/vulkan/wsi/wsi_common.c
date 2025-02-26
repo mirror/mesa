@@ -1007,7 +1007,8 @@ wsi_CreateSwapchainKHR(VkDevice _device,
          .sType = VK_STRUCTURE_TYPE_SURFACE_CAPABILITIES_2_KHR,
       };
       iface->get_capabilities2(surface, wsi_device, NULL, &caps2);
-      info.imageExtent = caps2.surfaceCapabilities.currentExtent;
+      if (caps2.surfaceCapabilities.currentExtent.width != UINT32_MAX)
+         info.imageExtent = caps2.surfaceCapabilities.currentExtent;
    }
 
    /* Ignore DEFERRED_MEMORY_ALLOCATION_BIT. Would require deep plumbing to be able to take advantage of it.

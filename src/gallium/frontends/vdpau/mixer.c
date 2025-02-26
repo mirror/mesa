@@ -481,6 +481,7 @@ vlVdpVideoMixerUpdateDeinterlaceFilter(vlVdpVideoMixer *vmixer)
             vmixer->skip_chroma_deint, vmixer->deint.spatial, false);
       if (!vmixer->deint.enabled) {
          FREE(vmixer->deint.filter);
+         vmixer->deint.filter = NULL;
       }
    }
 }

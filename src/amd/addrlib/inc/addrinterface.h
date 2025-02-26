@@ -354,6 +354,10 @@ typedef union _ADDR_CREATE_FLAGS
 */
 typedef struct _ADDR_REGISTER_VALUE
 {
+                                        ///< Global tables-------------------------------------------------
+    const UINT_32* pTileConfig;         ///< Global tile setting tables
+    const UINT_32* pMacroTileConfig;    ///< Global macro tile mode table
+
     UINT_32  gbAddrConfig;       ///< For R8xx, use GB_ADDR_CONFIG register value.
                                  ///  For R6xx/R7xx, use GB_TILING_CONFIG.
                                  ///  But they can be treated as the same.
@@ -371,11 +375,9 @@ typedef struct _ADDR_REGISTER_VALUE
                                  ///  0: 1
                                  ///  1: 2
                                  ///  SI (R1000) registers-----------------------------------------
-    const UINT_32* pTileConfig;  ///< Global tile setting tables
     UINT_32  noOfEntries;        ///< Number of entries in pTileConfig
 
                                  ///< CI registers-------------------------------------------------
-    const UINT_32* pMacroTileConfig;    ///< Global macro tile mode table
     UINT_32  noOfMacroEntries;   ///< Number of entries in pMacroTileConfig
 } ADDR_REGISTER_VALUE;
 
@@ -413,12 +415,10 @@ typedef struct _ADDR_CREATE_INPUT
 */
 typedef struct _ADDR_CREATE_OUTPUT
 {
-    UINT_32              size;            ///< Size of this structure in bytes
-
-    ADDR_HANDLE          hLib;            ///< Address lib handle
-
-    UINT_32              numEquations;    ///< Number of equations in the table
     const ADDR_EQUATION* pEquationTable;  ///< Pointer to the equation table
+    ADDR_HANDLE          hLib;            ///< Address lib handle
+    UINT_32              size;            ///< Size of this structure in bytes
+    UINT_32              numEquations;    ///< Number of equations in the table
 } ADDR_CREATE_OUTPUT;
 
 /**
@@ -1001,9 +1001,8 @@ typedef struct _ADDR_COMPUTE_HTILE_ADDRFROMCOORD_INPUT
 */
 typedef struct _ADDR_COMPUTE_HTILE_ADDRFROMCOORD_OUTPUT
 {
-    UINT_32 size;           ///< Size of this structure in bytes
-
     UINT_64 addr;           ///< Address in bytes
+    UINT_32 size;           ///< Size of this structure in bytes
     UINT_32 bitPosition;    ///< Bit position, 0 or 4. CMASK and HTILE shares some lib method.
                             ///  So we keep bitPosition for HTILE as well
 } ADDR_COMPUTE_HTILE_ADDRFROMCOORD_OUTPUT;
@@ -1033,11 +1032,11 @@ ADDR_E_RETURNCODE ADDR_API AddrComputeHtileAddrFromCoord(
 */
 typedef struct _ADDR_COMPUTE_HTILE_COORDFROMADDR_INPUT
 {
-    UINT_32            size;            ///< Size of this structure in bytes
-
     UINT_64            addr;            ///< Address
     UINT_32            bitPosition;     ///< Bit position 0 or 4. CMASK and HTILE share some methods
                                         ///  so we keep bitPosition for HTILE as well
+    UINT_32            size;            ///< Size of this structure in bytes
+
     UINT_32            pitch;           ///< Pitch, in pixels
     UINT_32            height;          ///< Height, in pixels
     UINT_32            numSlices;       ///< Number of slices
@@ -1214,11 +1213,10 @@ typedef struct _ADDR_COMPUTE_CMASK_ADDRFROMCOORD_INPUT
 */
 typedef struct _ADDR_COMPUTE_CMASK_ADDRFROMCOORD_OUTPUT
 {
-    UINT_32 size;           ///< Size of this structure in bytes
-
     UINT_64 addr;           ///< CMASK address in bytes
     UINT_32 bitPosition;    ///< Bit position within addr, 0-7. CMASK is 4 bpp,
                             ///  so the address may be located in bit 0 (0) or 4 (4)
+    UINT_32 size;           ///< Size of this structure in bytes
 } ADDR_COMPUTE_CMASK_ADDRFROMCOORD_OUTPUT;
 
 /**
@@ -1246,11 +1244,11 @@ ADDR_E_RETURNCODE ADDR_API AddrComputeCmaskAddrFromCoord(
 */
 typedef struct _ADDR_COMPUTE_CMASK_COORDFROMADDR_INPUT
 {
-    UINT_32        size;            ///< Size of this structure in bytes
-
     UINT_64        addr;            ///< CMASK address in bytes
     UINT_32        bitPosition;     ///< Bit position within addr, 0-7. CMASK is 4 bpp,
                                     ///  so the address may be located in bit 0 (0) or 4 (4)
+    UINT_32        size;            ///< Size of this structure in bytes
+
     UINT_32        pitch;           ///< Pitch, in pixels
     UINT_32        height;          ///< Height in pixels
     UINT_32        numSlices;       ///< Number of slices
@@ -1435,10 +1433,10 @@ typedef struct _ADDR_COMPUTE_FMASK_ADDRFROMCOORD_INPUT
 */
 typedef struct _ADDR_COMPUTE_FMASK_ADDRFROMCOORD_OUTPUT
 {
-    UINT_32 size;           ///< Size of this structure in bytes
-
     UINT_64 addr;           ///< Fmask address
     UINT_32 bitPosition;    ///< Bit position within fmaskAddr, 0-7.
+
+    UINT_32 size;           ///< Size of this structure in bytes
 } ADDR_COMPUTE_FMASK_ADDRFROMCOORD_OUTPUT;
 
 /**
@@ -1466,10 +1464,10 @@ ADDR_E_RETURNCODE ADDR_API AddrComputeFmaskAddrFromCoord(
 */
 typedef struct _ADDR_COMPUTE_FMASK_COORDFROMADDR_INPUT
 {
-    UINT_32         size;               ///< Size of this structure in bytes
-
     UINT_64         addr;               ///< Address
     UINT_32         bitPosition;        ///< Bit position within addr, 0-7.
+
+    UINT_32         size;               ///< Size of this structure in bytes
 
     UINT_32         pitch;              ///< Pitch, in pixels
     UINT_32         height;             ///< Height in pixels
@@ -3210,10 +3208,10 @@ typedef struct _ADDR2_COMPUTE_CMASK_ADDRFROMCOORD_INPUT
 */
 typedef struct _ADDR2_COMPUTE_CMASK_ADDRFROMCOORD_OUTPUT
 {
-    UINT_32    size;           ///< Size of this structure in bytes
-
     UINT_64    addr;           ///< CMASK address in bytes
     UINT_32    bitPosition;    ///< Bit position within addr, 0 or 4
+
+    UINT_32    size;           ///< Size of this structure in bytes
 } ADDR2_COMPUTE_CMASK_ADDRFROMCOORD_OUTPUT;
 
 /**
@@ -3241,10 +3239,10 @@ ADDR_E_RETURNCODE ADDR_API Addr2ComputeCmaskAddrFromCoord(
 */
 typedef struct _ADDR2_COMPUTE_CMASK_COORDFROMADDR_INPUT
 {
-    UINT_32             size;                ///< Size of this structure in bytes
-
     UINT_64             addr;                ///< CMASK address in bytes
     UINT_32             bitPosition;         ///< Bit position within addr, 0 or 4
+
+    UINT_32             size;                ///< Size of this structure in bytes
 
     ADDR2_META_FLAGS    cMaskFlags;          ///< CMASK flags
     ADDR2_SURFACE_FLAGS colorFlags;          ///< Color surface flags
@@ -3415,10 +3413,10 @@ typedef struct _ADDR2_COMPUTE_FMASK_ADDRFROMCOORD_INPUT
 */
 typedef struct _ADDR2_COMPUTE_FMASK_ADDRFROMCOORD_OUTPUT
 {
-    UINT_32    size;           ///< Size of this structure in bytes
-
     UINT_64    addr;           ///< Fmask address
     UINT_32    bitPosition;    ///< Bit position within fmaskAddr, 0-7.
+
+    UINT_32    size;           ///< Size of this structure in bytes
 } ADDR2_COMPUTE_FMASK_ADDRFROMCOORD_OUTPUT;
 
 /**
@@ -3783,14 +3781,14 @@ ADDR_E_RETURNCODE ADDR_API Addr2ComputeSlicePipeBankXor(
 */
 typedef struct _ADDR2_COMPUTE_SUBRESOURCE_OFFSET_FORSWIZZLEPATTERN_INPUT
 {
+    UINT_64             sliceSize;          ///< Slice size of a mip chain
+    UINT_64             macroBlockOffset;   ///< Macro block offset, returned in ADDR2_MIP_INFO
+    UINT_32             slice;              ///< Slice id
+    UINT_32             mipTailOffset;      ///< Mip tail offset, returned in ADDR2_MIP_INFO
     UINT_32             size;               ///< Size of this structure in bytes
     AddrSwizzleMode     swizzleMode;        ///< Surface swizzle mode
     AddrResourceType    resourceType;       ///< Surface resource type
     UINT_32             pipeBankXor;        ///< Per resource xor
-    UINT_32             slice;              ///< Slice id
-    UINT_64             sliceSize;          ///< Slice size of a mip chain
-    UINT_64             macroBlockOffset;   ///< Macro block offset, returned in ADDR2_MIP_INFO
-    UINT_32             mipTailOffset;      ///< Mip tail offset, returned in ADDR2_MIP_INFO
 } ADDR2_COMPUTE_SUBRESOURCE_OFFSET_FORSWIZZLEPATTERN_INPUT;
 
 /**
@@ -3854,8 +3852,8 @@ typedef struct _ADDR2_COMPUTE_NONBLOCKCOMPRESSEDVIEW_INPUT
 */
 typedef struct _ADDR2_COMPUTE_NONBLOCKCOMPRESSEDVIEW_OUTPUT
 {
-    UINT_32             size;               ///< Size of this structure in bytes
     UINT_64             offset;             ///< Offset shifted from resource base for the view
+    UINT_32             size;               ///< Size of this structure in bytes
     UINT_32             pipeBankXor;        ///< Pipe bank xor for the view
     UINT_32             unalignedWidth;     ///< Mip0 width (in element) for the view
     UINT_32             unalignedHeight;    ///< Mip0 height (in element) for the view
@@ -4625,14 +4623,14 @@ ADDR_E_RETURNCODE ADDR_API Addr3ComputeNonBlockCompressedView(
 */
 typedef struct _ADDR3_COMPUTE_SUBRESOURCE_OFFSET_FORSWIZZLEPATTERN_INPUT
 {
+    UINT_64             sliceSize;          ///< Slice size of a mip chain
+    UINT_64             macroBlockOffset;   ///< Macro block offset, returned in ADDR3_MIP_INFO
     UINT_32             size;               ///< Size of this structure in bytes
+    UINT_32             mipTailOffset;      ///< Mip tail offset, returned in ADDR3_MIP_INFO
     Addr3SwizzleMode    swizzleMode;        ///< Surface swizzle mode
     AddrResourceType    resourceType;       ///< Surface resource type
     UINT_32             pipeBankXor;        ///< Per resource xor
     UINT_32             slice;              ///< Slice id
-    UINT_64             sliceSize;          ///< Slice size of a mip chain
-    UINT_64             macroBlockOffset;   ///< Macro block offset, returned in ADDR3_MIP_INFO
-    UINT_32             mipTailOffset;      ///< Mip tail offset, returned in ADDR3_MIP_INFO
 } ADDR3_COMPUTE_SUBRESOURCE_OFFSET_FORSWIZZLEPATTERN_INPUT;
 
 /**

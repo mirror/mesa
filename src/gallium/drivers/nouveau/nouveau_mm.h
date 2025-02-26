@@ -7,10 +7,7 @@ struct nouveau_mman;
 /* Since a resource can be migrated, we need to decouple allocations from
  * them. This struct is linked with fences for delayed freeing of allocs.
  */
-struct nouveau_mm_allocation {
-   void *priv;
-   uint32_t offset;
-};
+struct nouveau_mm_allocation;
 
 extern struct nouveau_mman *
 nouveau_mm_create(struct nouveau_device *, uint32_t domain,

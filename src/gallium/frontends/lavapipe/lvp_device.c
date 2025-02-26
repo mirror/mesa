@@ -176,6 +176,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_shader_integer_dot_product        = true,
    .KHR_shader_maximal_reconvergence      = true,
    .KHR_shader_non_semantic_info          = true,
+   .KHR_shader_quad_control               = true,
    .KHR_shader_relaxed_extended_instruction = true,
    .KHR_shader_subgroup_extended_types    = true,
    .KHR_shader_subgroup_rotate            = true,
@@ -212,6 +213,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_extended_dynamic_state2           = true,
    .EXT_extended_dynamic_state3           = true,
    .EXT_external_memory_host              = true,
+   .EXT_fragment_shader_interlock         = true,
    .EXT_graphics_pipeline_library         = true,
    .EXT_hdr_metadata = true,
    .EXT_host_image_copy                   = true,
@@ -253,6 +255,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_shader_atomic_float               = true,
    .EXT_shader_atomic_float2              = true,
    .EXT_shader_demote_to_helper_invocation= true,
+   .EXT_shader_image_atomic_int64         = true,
    .EXT_shader_object                     = true,
    .EXT_shader_replicated_composites      = true,
    .EXT_shader_stencil_export             = true,
@@ -383,6 +386,7 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderInt16                              = AND_SHADER_CAP(pdevice->pscreen, int16),
       .variableMultisampleRate                  = false,
       .inheritedQueries                         = false,
+      .shaderResourceMinLod                     = true,
       .sparseBinding                            = DETECT_OS_LINUX,
       .sparseResidencyBuffer                    = DETECT_OS_LINUX,
       .sparseResidencyImage2D                   = DETECT_OS_LINUX,
@@ -702,6 +706,10 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       .shaderImageFloat32AtomicMinMax  = LLVM_VERSION_MAJOR >= 15,
       .sparseImageFloat32AtomicMinMax  = false,
 
+      /* VK_EXT_shader_image_atomic_int64 */
+      .shaderImageInt64Atomics = true,
+      .sparseImageInt64Atomics = true,
+
       /* VK_EXT_memory_priority */
       .memoryPriority = true,
 
@@ -753,6 +761,14 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       /* VK_KHR_compute_shader_derivatives */
       .computeDerivativeGroupQuads = true,
       .computeDerivativeGroupLinear = true,
+
+      /* VK_KHR_shader_quad_control */
+      .shaderQuadControl = true,
+
+      /* VK_EXT_fragment_shader_interlock */
+      .fragmentShaderSampleInterlock = true,
+      .fragmentShaderPixelInterlock = true,
+      .fragmentShaderShadingRateInterlock = false,
    };
 }
 

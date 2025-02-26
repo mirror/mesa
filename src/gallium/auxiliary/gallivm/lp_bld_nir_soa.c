@@ -350,6 +350,15 @@ mask_vec_with_helpers(struct lp_build_nir_soa_context *bld)
                                  bld->uint_bld.type, -1);
 }
 
+static LLVMValueRef
+group_op_mask_vec(struct lp_build_nir_soa_context *bld)
+{
+   if (bld->shader->info.fs.require_full_quads)
+      return mask_vec_with_helpers(bld);
+   
+   return mask_vec(bld);
+}
+
 static bool
 lp_exec_mask_is_nz(struct lp_build_nir_soa_context *bld)
 {
@@ -2152,7 +2161,7 @@ static void emit_vote(struct lp_build_nir_soa_context *bld, LLVMValueRef src,
    struct gallivm_state * gallivm = bld->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
    uint32_t bit_size = nir_src_bit_size(instr->src[0]);
-   LLVMValueRef exec_mask = mask_vec(bld);
+   LLVMValueRef exec_mask = group_op_mask_vec(bld);
    struct lp_build_loop_state loop_state;
    LLVMValueRef outer_cond = LLVMBuildICmp(builder, LLVMIntNE, exec_mask, bld->uint_bld.zero, "");
 
@@ -2223,7 +2232,7 @@ static void emit_ballot(struct lp_build_nir_soa_context *bld, LLVMValueRef src, 
 {
    struct gallivm_state * gallivm = bld->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef exec_mask = mask_vec(bld);
+   LLVMValueRef exec_mask = group_op_mask_vec(bld);
    struct lp_build_loop_state loop_state;
    src = LLVMBuildSExt(builder, src, bld->int_bld.vec_type, "");
    src = LLVMBuildAnd(builder, src, exec_mask, "");
@@ -2247,7 +2256,7 @@ static void emit_elect(struct lp_build_nir_soa_context *bld, LLVMValueRef result
 {
    struct gallivm_state *gallivm = bld->base.gallivm;
    LLVMBuilderRef builder = gallivm->builder;
-   LLVMValueRef exec_mask = mask_vec(bld);
+   LLVMValueRef exec_mask = group_op_mask_vec(bld);
    struct lp_build_loop_state loop_state;
 
    LLVMValueRef idx_store = lp_build_alloca(gallivm, bld->int_bld.elem_type, "");
@@ -2287,7 +2296,7 @@ static void emit_reduce(struct lp_build_nir_soa_context *bld, LLVMValueRef src,
    LLVMBuilderRef builder = gallivm->builder;
    uint32_t bit_size = nir_src_bit_size(instr->src[0]);
    /* can't use llvm reduction intrinsics because of exec_mask */
-   LLVMValueRef exec_mask = mask_vec(bld);
+   LLVMValueRef exec_mask = group_op_mask_vec(bld);
    nir_op reduction_op = nir_intrinsic_reduction_op(instr);
 
    uint32_t cluster_size = 0;
@@ -4230,10 +4239,15 @@ visit_store_image(struct lp_build_nir_soa_context *bld,
    for (unsigned i = 0; i < 4; i++) {
       params.indata[i] = in_val[i];
 
-      if (integer)
-         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int_bld.vec_type, "");
-      else
-         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->base.vec_type, "");
+      if (nir_src_bit_size(instr->src[3]) == 64) {
+         assert(integer);
+         params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int64_bld.vec_type, "");
+      } else {
+         if (integer)
+            params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->int_bld.vec_type, "");
+         else
+            params.indata[i] = LLVMBuildBitCast(builder, params.indata[i], bld->base.vec_type, "");
+      }
    }
    if (nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS)
       params.ms_index = get_src(bld, &instr->src[2], 0);
@@ -4334,24 +4348,28 @@ visit_atomic_image(struct lp_build_nir_soa_context *bld,
    if (nir_intrinsic_image_dim(instr) == GLSL_SAMPLER_DIM_MS)
       params.ms_index = get_src(bld, &instr->src[2], 0);
 
+   LLVMTypeRef indata_type = NULL;
+   if (nir_src_bit_size(instr->src[3]) == 64) {
+      assert(integer);
+      indata_type = bld->int64_bld.vec_type;
+   } else {
+      if (integer)
+         indata_type = bld->int_bld.vec_type;
+      else
+         indata_type = bld->base.vec_type;
+   }
+
    if (instr->intrinsic == nir_intrinsic_image_atomic_swap ||
        instr->intrinsic == nir_intrinsic_bindless_image_atomic_swap) {
       LLVMValueRef cas_val = get_src(bld, &instr->src[4], 0);
       params.indata[0] = in_val;
       params.indata2[0] = cas_val;
-
-      if (integer)
-         params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], bld->int_bld.vec_type, "");
-      else
-         params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], bld->base.vec_type, "");
+      params.indata2[0] = LLVMBuildBitCast(builder, params.indata2[0], indata_type, "");
    } else {
       params.indata[0] = in_val;
    }
 
-   if (integer)
-      params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], bld->int_bld.vec_type, "");
-   else
-      params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], bld->base.vec_type, "");
+   params.indata[0] = LLVMBuildBitCast(builder, params.indata[0], indata_type, "");
 
    params.outdata = result;
 
@@ -5110,6 +5128,12 @@ visit_intrinsic(struct lp_build_nir_soa_context *bld,
       result[0] = load_ubo_base_addr(bld, get_src(bld, &instr->src[0], 0));
       break;
    }
+   case nir_intrinsic_begin_invocation_interlock:
+   case nir_intrinsic_end_invocation_interlock:
+      /* There is no need to do any synchronization here since llvmpipe rasterizes
+       * geometry using tiles and each tile is handled only one thread at once.
+       */
+      break;
    default:
       fprintf(stderr, "Unsupported intrinsic: ");
       nir_print_instr(&instr->instr, stderr);
@@ -5220,6 +5244,11 @@ lp_build_nir_sample_key(gl_shader_stage stage, nir_tex_instr *instr)
          explicit_lod = true;
          lod_src = i;
          break;
+      case nir_tex_src_min_lod:
+         sample_key |= LP_SAMPLER_MIN_LOD;
+         explicit_lod = true;
+         lod_src = i;
+         break;
       case nir_tex_src_offset:
          sample_key |= LP_SAMPLER_OFFSETS;
          break;
@@ -5310,6 +5339,9 @@ visit_tex(struct lp_build_nir_soa_context *bld, nir_tex_instr *instr)
             explicit_lod = cast_type(bld, get_src(bld, &instr->src[i].src, 0), nir_type_int, 32);
          else
             explicit_lod = cast_type(bld, get_src(bld, &instr->src[i].src, 0), nir_type_float, 32);
+         break;
+      case nir_tex_src_min_lod:
+         params.min_lod = cast_type(bld, get_src(bld, &instr->src[i].src, 0), nir_type_float, 32);
          break;
       case nir_tex_src_ddx: {
          int deriv_cnt = instr->coord_components;

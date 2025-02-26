@@ -21,9 +21,10 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import partial
 from itertools import chain
 from subprocess import check_output, CalledProcessError
-from typing import Dict, TYPE_CHECKING, Iterable, Literal, Optional, Tuple
+from typing import Dict, TYPE_CHECKING, Iterable, Literal, Optional, Tuple, cast
 
 import gitlab
+import gitlab.base
 import gitlab.v4.objects
 from colorama import Fore, Style
 from gitlab_common import (
@@ -42,8 +43,12 @@ from gitlab_gql import GitlabGQL, create_job_needs_dag, filter_dag, print_dag
 if TYPE_CHECKING:
     from gitlab_gql import Dag
 
+# Refresh wait times in seconds
 REFRESH_WAIT_LOG = 10
 REFRESH_WAIT_JOBS = 6
+REFRESH_WAIT_JOB_RETRY = 10
+
+NUMBER_OF_RETRIES_JOB_OPS = 5
 
 URL_START = "\033]8;;"
 URL_END = "\033]8;;\a"
@@ -99,7 +104,10 @@ def job_duration(job: gitlab.v4.objects.ProjectPipelineJob) -> float:
     if job.duration:
         return job.duration
     elif job.started_at:
-        return time.perf_counter() - time.mktime(job.started_at.timetuple())
+        # Convert both times to UTC timestamps for consistent comparison
+        current_time = time.time()
+        start_time = job.started_at.timestamp()
+        return current_time - start_time
     return 0.0
 
 
@@ -170,9 +178,16 @@ def monitor_pipeline(
                         stress_status_counter[job.name][target_status] += 1
                         execution_times[job.name][job.id] = (job_duration(job), target_status, job.web_url)
                         job = enable_job_fn(job=job, action_type="retry")
+                        # If we retried the job, wait for the next iteration to get the new job object
+                        continue
                 else:
                     execution_times[job.name][job.id] = (job_duration(job), target_status, job.web_url)
                     job = enable_job_fn(job=job, action_type="target")
+
+                # If we tried to enable the job but it failed, skip it, we will get a new job object
+                # in the next iteration.
+                if job is None:
+                    continue
 
                 print_job_status(job, target_status not in target_statuses[job.name], name_field_pad)
                 target_statuses[job.name] = target_status
@@ -247,12 +262,68 @@ def monitor_pipeline(
         pretty_wait(REFRESH_WAIT_JOBS)
 
 
-def get_pipeline_job(
+def play_job(
+    project: gitlab.v4.objects.Project,
     pipeline: gitlab.v4.objects.ProjectPipeline,
-    job_id: int,
-) -> gitlab.v4.objects.ProjectPipelineJob:
-    pipeline_jobs = pipeline.jobs.list(all=True)
-    return [j for j in pipeline_jobs if j.id == job_id][0]
+    job: gitlab.v4.objects.ProjectPipelineJob,
+    retry_count: int = NUMBER_OF_RETRIES_JOB_OPS,
+) -> gitlab.v4.objects.ProjectPipelineJob | None:
+    """
+    Helper function to play a job.
+
+    Possibly, the job can enter into a transition state, so we need to refresh the job object and
+    try again.
+
+    :param project: The project object
+    :param pipeline: The pipeline object
+    :param job: The job object
+    :param retry_count: The number of reiterations if the pipeline takes longer to update
+    :return: The updated job object or None if the job is not found
+    """
+    try:
+        # Get the ProjectJob object to be able to play the job
+        pjob = project.jobs.get(job.id, lazy=True)
+        pjob.play()
+    except gitlab.GitlabJobPlayError as e:
+        print(f"Error playing job {job.id}: {job.name}: {e}")
+        # Refresh the job object to get the latest status
+        pjob = project.jobs.get(job.id, lazy=True)
+        if retry_count > 0 and job.status in {"created", "pending", "running"}:
+            print(
+                f"Can't play job {job.id}: {job.name} because it is still {pjob.status}, "
+                f"refreshing in {REFRESH_WAIT_JOB_RETRY} seconds..."
+            )
+            pretty_wait(REFRESH_WAIT_JOB_RETRY)
+            return play_job(project, pipeline, job, retry_count - 1)
+
+        print(f"Could not play job {job.id}: {job.name} after {retry_count} attempts: {e}")
+        return None
+    return job
+
+
+def retry_job(
+    project: gitlab.v4.objects.Project,
+    pipeline: gitlab.v4.objects.ProjectPipeline,
+    job: gitlab.v4.objects.ProjectPipelineJob,
+    retry_count: int = NUMBER_OF_RETRIES_JOB_OPS,
+) -> gitlab.v4.objects.ProjectPipelineJob | None:
+    retried_job_dict = None
+    try:
+        pjob = project.jobs.get(job.id, lazy=True)
+        retried_job_dict = pjob.retry()
+    except gitlab.GitlabJobRetryError as e:
+        print(f"Error retrying job {job.id}: {job.name}: {e}")
+        if retry_count > 0 and pjob.status not in COMPLETED_STATUSES:
+            print(f"Can't retry job {job.name} because it is not in a completed state, "
+                  f"refreshing in {REFRESH_WAIT_JOB_RETRY} seconds...")
+            pretty_wait(REFRESH_WAIT_JOB_RETRY)
+            return retry_job(project, pipeline, job, retry_count - 1)
+
+        print(f"Could not retry job {job.name} after {retry_count} attempts: {e}")
+
+    if retried_job_dict:
+        return job
+    return None
 
 
 def enable_job(
@@ -262,7 +333,7 @@ def enable_job(
     action_type: Literal["target", "dep", "retry"],
     job_name_field_pad: int = 0,
     jobs_waiting: list[str] = [],
-) -> gitlab.v4.objects.ProjectPipelineJob:
+) -> gitlab.v4.objects.ProjectPipelineJob | None:
     # We want to run this job, but it is not ready to run yet, so let's try again in the next
     # iteration.
     if job.status == "created":
@@ -275,14 +346,16 @@ def enable_job(
     ):
         return job
 
-    pjob = project.jobs.get(job.id, lazy=True)
-
     if job.status in {"success", "failed", "canceled", "canceling"}:
-        new_job = pjob.retry()
-        job = get_pipeline_job(pipeline, new_job["id"])
+        if new_job := retry_job(project, pipeline, job):
+            job = new_job
+        else:
+            return None
     else:
-        pjob.play()
-        job = get_pipeline_job(pipeline, pjob.id)
+        if new_job := play_job(project, pipeline, job):
+            job = new_job
+        else:
+            return None
 
     if action_type == "target":
         jtype = "🞋 target"  # U+1F78B Round target

@@ -152,6 +152,9 @@ wsi_x11_check_dri3_compatible(const struct wsi_device *wsi_dev,
       xcb_setup_roots_iterator(xcb_get_setup(conn));
    xcb_screen_t *screen = screen_iter.data;
 
+   if (getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE"))
+      return true;
+
    /* Open the DRI3 device from the X server. If we do not retrieve one we
     * assume our local device is compatible.
     */

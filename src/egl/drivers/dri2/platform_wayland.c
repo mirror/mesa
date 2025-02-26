@@ -1847,6 +1847,10 @@ drm_handle_device(void *data, struct wl_drm *drm, const char *device)
    struct dri2_egl_display *dri2_dpy = data;
    drm_magic_t magic;
 
+   if (getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE")) {
+      return;
+   }
+
    dri2_dpy->device_name = strdup(device);
    if (!dri2_dpy->device_name)
       return;
@@ -2217,6 +2221,10 @@ dri2_initialize_wayland_drm_extensions(struct dri2_egl_display *dri2_dpy)
       zwp_linux_dmabuf_feedback_v1_destroy(dri2_dpy->wl_dmabuf_feedback);
       dri2_dpy->wl_dmabuf_feedback = NULL;
       dmabuf_feedback_format_table_fini(&dri2_dpy->format_table);
+   }
+
+   if (getenv("WSI_ASSUME_SAME_DISPLAY_RENDER_DEVICE")){
+      return true;
    }
 
    /* We couldn't retrieve a render node from the dma-buf feedback (or the

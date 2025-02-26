@@ -136,7 +136,7 @@ transfer_overlap(const struct virgl_transfer *xfer,
    return true;
 }
 
-static struct virgl_transfer *
+struct virgl_transfer *
 virgl_transfer_queue_find_overlap(const struct virgl_transfer_queue *queue,
                                   const struct virgl_hw_res *hw_res,
                                   unsigned level,

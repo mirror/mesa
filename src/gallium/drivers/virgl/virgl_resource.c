@@ -125,7 +125,10 @@ static bool virgl_res_needs_flush(struct virgl_context *vctx,
    if (!vws->res_is_referenced(vws, vctx->cbuf, res->hw_res))
       return false;
 
-   return true;
+   return virgl_transfer_queue_find_overlap(&vctx->queue, res->hw_res,
+                                            trans->base.level,
+                                            &trans->base.box,
+                                            false) != NULL;
 }
 
 /* We need to read back from the host storage to make sure the guest storage

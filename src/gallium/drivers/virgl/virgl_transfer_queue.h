@@ -63,4 +63,11 @@ bool virgl_transfer_queue_extend_buffer(struct virgl_transfer_queue *queue,
                                         unsigned offset, unsigned size,
                                         const void *data);
 
+struct virgl_transfer *
+virgl_transfer_queue_find_overlap(const struct virgl_transfer_queue *queue,
+                                  const struct virgl_hw_res *hw_res,
+                                  unsigned level,
+                                  const struct pipe_box *box,
+                                  bool include_touching);
+
 #endif /* VIRGL_TRANSFER_QUEUE_H */

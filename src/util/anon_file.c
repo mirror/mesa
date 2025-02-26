@@ -46,6 +46,10 @@
 #include <stdio.h>
 #endif
 
+#ifdef __APPLE__
+#include <sys/syslimits.h>
+#endif
+
 #if !(defined(__FreeBSD__) || defined(HAVE_MEMFD_CREATE) || defined(HAVE_MKOSTEMP) || DETECT_OS_ANDROID)
 static int
 set_cloexec_or_close(int fd)
@@ -136,11 +140,29 @@ os_create_anonymous_file(int64_t size, const char *debug_name)
    const char *path;
    char *name;
 
+#ifdef __APPLE__
+   char buf[PATH_MAX];
+   size_t buf_size;
+
+   errno = 0;
+   buf_size = confstr(_CS_DARWIN_USER_TEMP_DIR, buf, sizeof(buf));
+   if (buf_size == 0 || buf_size > sizeof(buf)) {
+      if (buf_size > sizeof(buf))
+         errno = ENAMETOOLONG;
+      /* When confstr() fails it might or might not set errno. */
+      else if (errno == 0)
+         errno = ENOENT;
+      return -1;
+   }
+
+   path = buf;
+#else
    path = getenv("XDG_RUNTIME_DIR");
    if (!path) {
       errno = ENOENT;
       return -1;
    }
+#endif
 
    if (debug_name)
       asprintf(&name, "%s/mesa-shared-%s-XXXXXX", path, debug_name);

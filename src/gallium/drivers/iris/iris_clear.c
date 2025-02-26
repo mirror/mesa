@@ -80,9 +80,9 @@ can_fast_clear_color(struct iris_context *ice,
       return false;
 
    /* Check for partial clear */
-   if (box->x > 0 || box->y > 0 ||
-       box->width < u_minify(p_res->width0, level) ||
-       box->height < u_minify(p_res->height0, level)) {
+   if (!util_texrect_covers_whole_level(p_res, level,
+                                        box->x, box->y,
+                                        box->width, box->height)) {
       return false;
    }
 
@@ -457,9 +457,9 @@ can_fast_clear_depth(struct iris_context *ice,
       return false;
 
    /* Check for partial clears */
-   if (box->x > 0 || box->y > 0 ||
-       box->width < u_minify(p_res->width0, level) ||
-       box->height < u_minify(p_res->height0, level)) {
+   if (!util_texrect_covers_whole_level(p_res, level,
+                                        box->x, box->y,
+                                        box->width, box->height)) {
       return false;
    }
 

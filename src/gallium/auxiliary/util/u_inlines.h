@@ -795,6 +795,16 @@ util_num_layers(const struct pipe_resource *r, unsigned level)
 }
 
 static inline bool
+util_texrect_covers_whole_level(const struct pipe_resource *tex,
+                                unsigned level, unsigned x, unsigned y,
+                                unsigned width, unsigned height)
+{
+   return x == 0 && y == 0 &&
+          width == u_minify(tex->width0, level) &&
+          height == u_minify(tex->height0, level);
+}
+
+static inline bool
 util_texrange_covers_whole_level(const struct pipe_resource *tex,
                                  unsigned level, unsigned x, unsigned y,
                                  unsigned z, unsigned width,

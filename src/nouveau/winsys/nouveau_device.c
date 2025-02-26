@@ -365,6 +365,13 @@ nouveau_ws_device_new(drmDevicePtr drm_device)
 
    nouveau_ws_context_destroy(tmp_ctx);
 
+   struct nouveau_ws_vid_context *tmp_vid_ctx;
+   if(nouveau_ws_vid_context_create(device, &tmp_vid_ctx))
+      goto out_err;
+   device->info.cls_video = tmp_vid_ctx->dec.cls;
+
+   nouveau_ws_vid_context_destroy(tmp_vid_ctx);
+
    simple_mtx_init(&device->bos_lock, mtx_plain);
    device->bos = _mesa_pointer_hash_table_create(NULL);
 

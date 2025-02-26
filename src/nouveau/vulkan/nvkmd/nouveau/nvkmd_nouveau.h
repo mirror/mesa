@@ -103,7 +103,12 @@ struct nvkmd_nouveau_exec_ctx {
    struct nvkmd_ctx base;
 
    struct nouveau_ws_device *ws_dev;
-   struct nouveau_ws_context *ws_ctx;
+   union {
+      struct nouveau_ws_context *ws_ctx;
+      struct nouveau_ws_vid_context *ws_vid_ctx;
+   };
+
+   uint32_t engines;
 
    uint32_t syncobj;
 

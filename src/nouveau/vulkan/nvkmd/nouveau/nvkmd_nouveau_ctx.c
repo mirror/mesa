@@ -62,8 +62,13 @@ nvkmd_nouveau_create_exec_ctx(struct nvkmd_dev *_dev,
    STATIC_ASSERT(NVKMD_ENGINE_3D       == (int)NOUVEAU_WS_ENGINE_3D);
    STATIC_ASSERT(NVKMD_ENGINE_M2MF     == (int)NOUVEAU_WS_ENGINE_M2MF);
    STATIC_ASSERT(NVKMD_ENGINE_COMPUTE  == (int)NOUVEAU_WS_ENGINE_COMPUTE);
+   STATIC_ASSERT(NVKMD_ENGINE_VIDEO    == (int)NOUVEAU_WS_ENGINE_VIDEO);
 
-   err = nouveau_ws_context_create(dev->ws_dev, (int)engines, &ctx->ws_ctx);
+   if (engines & NVKMD_ENGINE_VIDEO)
+      err = nouveau_ws_vid_context_create(dev->ws_dev, &ctx->ws_vid_ctx);
+   else
+      err = nouveau_ws_context_create(dev->ws_dev, (int)engines, &ctx->ws_ctx);
+
    if (err != 0) {
       FREE(ctx);
       if (err == -ENOSPC)
@@ -74,7 +79,10 @@ nvkmd_nouveau_create_exec_ctx(struct nvkmd_dev *_dev,
 
    err = drmSyncobjCreate(dev->ws_dev->fd, 0, &ctx->syncobj);
    if (err < 0) {
-      nouveau_ws_context_destroy(ctx->ws_ctx);
+      if (engines & NVKMD_ENGINE_VIDEO)
+         nouveau_ws_vid_context_destroy(ctx->ws_vid_ctx);
+      else
+         nouveau_ws_context_destroy(ctx->ws_ctx);
       FREE(ctx);
       return vk_error(dev, VK_ERROR_OUT_OF_HOST_MEMORY);
    }
@@ -103,8 +111,10 @@ nvkmd_nouveau_exec_ctx_destroy(struct nvkmd_ctx *_ctx)
 
    ASSERTED int err = drmSyncobjDestroy(ctx->ws_dev->fd, ctx->syncobj);
    assert(err == 0);
-
-   nouveau_ws_context_destroy(ctx->ws_ctx);
+   if (ctx->engines & NVKMD_ENGINE_VIDEO)
+      nouveau_ws_vid_context_destroy(ctx->ws_vid_ctx);
+   else
+      nouveau_ws_context_destroy(ctx->ws_ctx);
    FREE(ctx);
 }
 

@@ -19,6 +19,7 @@ enum nouveau_ws_engines {
    NOUVEAU_WS_ENGINE_3D       = (1 << 2),
    NOUVEAU_WS_ENGINE_M2MF     = (1 << 3),
    NOUVEAU_WS_ENGINE_COMPUTE  = (1 << 4),
+   NOUVEAU_WS_ENGINE_VIDEO    = (1 << 6),
 };
 
 struct nouveau_ws_context {
@@ -33,11 +34,22 @@ struct nouveau_ws_context {
    struct nouveau_ws_object compute;
 };
 
+struct nouveau_ws_vid_context {
+   struct nouveau_ws_device *dev;
+
+   int channel;
+
+   struct nouveau_ws_object dec;
+};
+
 int nouveau_ws_context_create(struct nouveau_ws_device *,
                               enum nouveau_ws_engines engines,
                               struct nouveau_ws_context **out);
+
 bool nouveau_ws_context_killed(struct nouveau_ws_context *);
 void nouveau_ws_context_destroy(struct nouveau_ws_context *);
+int nouveau_ws_vid_context_create(struct nouveau_ws_device *dev, struct nouveau_ws_vid_context **out);
+void nouveau_ws_vid_context_destroy(struct nouveau_ws_vid_context *context);
 
 #ifdef __cplusplus
 }

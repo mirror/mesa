@@ -436,6 +436,7 @@ nvk_queue_init_context_state(struct nvk_queue *queue)
    struct nvk_device *dev = nvk_queue_device(queue);
    const struct nvk_physical_device *pdev = nvk_device_physical(dev);
    VkResult result;
+   size_t dw_count;
 
    uint32_t push_data[4096];
    struct nv_push push;
@@ -466,7 +467,11 @@ nvk_queue_init_context_state(struct nvk_queue *queue)
          return result;
    }
 
-   return nvk_queue_submit_simple(queue, nv_push_dw_count(&push), push_data);
+   dw_count = nv_push_dw_count(&push);
+   if (dw_count > 0)
+      return nvk_queue_submit_simple(queue, dw_count, push_data);
+   else
+      return VK_SUCCESS;
 }
 
 static VkQueueGlobalPriority
@@ -530,6 +535,9 @@ nvk_queue_init(struct nvk_device *dev, struct nvk_queue *queue,
    }
    if (queue_family->queue_flags & VK_QUEUE_TRANSFER_BIT)
       queue->engines |= NVKMD_ENGINE_COPY;
+
+   if(queue_family->queue_flags & (VK_QUEUE_VIDEO_DECODE_BIT_KHR | VK_QUEUE_VIDEO_ENCODE_BIT_KHR))
+      queue->engines |= NVKMD_ENGINE_VIDEO;
 
    if (queue->engines) {
       result = nvkmd_dev_create_ctx(dev->nvkmd, &dev->vk.base,

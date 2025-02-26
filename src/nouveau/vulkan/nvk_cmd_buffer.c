@@ -108,6 +108,7 @@ nvk_reset_cmd_buffer(struct vk_command_buffer *vk_cmd_buffer,
    cmd->push_mem = NULL;
    cmd->push_mem_limit = NULL;
    cmd->push = (struct nv_push) {0};
+   memset(&cmd->rust, 0, sizeof(cmd->rust));
 
    util_dynarray_clear(&cmd->pushes);
 
@@ -156,6 +157,42 @@ nvk_cmd_buffer_flush_push(struct nvk_cmd_buffer *cmd)
    }
 
    cmd->push.start = cmd->push.end;
+
+   if(cmd->rust.mem) {
+      struct nvk_cmd_push push = {
+         .map = cmd->rust.mem->mem->map + cmd->rust.bytes_submitted,
+         .addr = cmd->rust.mem->mem->va->addr + cmd->rust.bytes_submitted,
+         .range = cmd->rust.dw_count * 4,
+      };
+      util_dynarray_append(&cmd->pushes, struct nvk_cmd_push, push);
+
+      cmd->rust.bytes_submitted += cmd->rust.dw_count * 4;
+      cmd->rust.dw_count = 0;
+   }
+}
+
+VkResult
+nvk_cmd_buffer_append_rust_push(struct nvk_cmd_buffer *cmd,
+                                uint32_t *data,
+                                uint32_t dw_count)
+{
+   VkResult result;
+   int offset = cmd->rust.dw_count * 4;
+
+   if (!cmd->rust.mem) {
+      result = nvk_cmd_buffer_alloc_mem(cmd, false, &cmd->rust.mem);
+      if (result != VK_SUCCESS)
+         return result;
+   }
+
+   if (dw_count > cmd->rust.mem->mem->size_B / sizeof(uint32_t)) {
+      nvk_cmd_buffer_flush_push(cmd);
+   }
+
+   memcpy(cmd->rust.mem->mem->map + offset, data, dw_count * 4);
+   cmd->rust.dw_count += dw_count;
+
+   return VK_SUCCESS;
 }
 
 void
@@ -298,6 +335,8 @@ nvk_BeginCommandBuffer(VkCommandBuffer commandBuffer,
 
    nvk_reset_cmd_buffer(&cmd->vk, 0);
 
+   if (cmd->vk.pool->queue_family_index == 1)
+      return VK_SUCCESS;
    /* Start with a nop so we have at least something to submit */
    struct nv_push *p = nvk_cmd_buffer_push(cmd, 2);
    P_MTHD(p, NV90B5, NOP);
@@ -505,8 +544,10 @@ nvk_cmd_flush_wait_dep(struct nvk_cmd_buffer *cmd,
          });
       }
    } else if (barriers & NVK_BARRIER_RENDER_WFI) {
+      bool is_video = cmd->vk.pool->queue_family_index == 1;
+
       /* If this comes from a vkCmdSetEvent, we don't need to wait */
-      if (wait)
+      if (wait && !is_video)
          P_IMMD(p, NVA097, WAIT_FOR_IDLE, 0);
    } else {
       /* Compute WFI only happens when shader data is flushed */

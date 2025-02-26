@@ -77,6 +77,20 @@
     - farm:$RUNNER_FARM_LOCATION
     - $B2C_MARS_SETUP_TAGS
 
+# 1 devices (2025-02-26)
+# Status: https://lava.pengutronix.de/scheduler/device_type/imx8mp-tqma8mpql-mba8mpxl
+.pengutronix-imx8mp-mba8mpxl:arm64:
+  variables:
+    DEVICE_TYPE: imx8mp-tqma8mpql-mba8mpxl
+    DTB: $DEVICE_TYPE
+    FARM: pengutronix
+    GPU_VERSION: "etnaviv-gc7000"
+    BOOT_METHOD: barebox
+    RUNNER_TAG: mesa-ci-x86-64-lava-imx8mp-tqma8mpql-mba8mpxl
+    VISIBILITY_GROUP: "mesa-ci"
+    KERNEL_REPO: "Valentine/linux"
+    EXTERNAL_KERNEL_TAG: "v6.13-rc4-pengutronix"
+
 gc2000-gles2:
   extends:
     - .b2c-arm32-test-gl
@@ -115,7 +129,7 @@ gc2000-piglit:
   timeout: 30m
 
 # Disabled until DUTs appear
-.gc7000-gles2:
+.gc7000-imx8mq-gles2:
   extends:
     - .b2c-arm64-test-gl
     - .austriancoder-imx8mq-nitrogen:arm64
@@ -125,4 +139,13 @@ gc2000-piglit:
     FLAKES_CHANNEL: ""
     HWCI_TEST_SCRIPT: "/install/deqp-runner.sh"
     B2C_TIMEOUT_OVERALL_MINUTES: 28
+  timeout: 30m
+
+gc7000-imx8mp-gles2:
+  extends:
+    - .lava-test-deqp:arm64
+    - .pengutronix-imx8mp-mba8mpxl:arm64
+    - .etnaviv-manual-rules
+  variables:
+    DEQP_SUITE: etnaviv-gc7000
   timeout: 30m

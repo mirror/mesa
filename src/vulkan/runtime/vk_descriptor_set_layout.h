@@ -42,6 +42,8 @@ struct vk_descriptor_set_layout {
     */
    blake3_hash blake3;
 
+   const VkAllocationCallbacks *allocator;
+
    void (*destroy)(struct vk_device *device,
                    struct vk_descriptor_set_layout *layout);
 
@@ -66,9 +68,12 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(vk_descriptor_set_layout, base,
                                VkDescriptorSetLayout,
                                VK_OBJECT_TYPE_DESCRIPTOR_SET_LAYOUT);
 
-void *vk_descriptor_set_layout_zalloc(struct vk_device *device, size_t size);
+void *vk_descriptor_set_layout_zalloc(struct vk_device *device,
+                                      const VkAllocationCallbacks *pAllocator,
+                                      size_t size);
 
 void *vk_descriptor_set_layout_multizalloc(struct vk_device *device,
+                                           const VkAllocationCallbacks *pAllocator,
                                            struct vk_multialloc *ma);
 
 void vk_descriptor_set_layout_destroy(struct vk_device *device,

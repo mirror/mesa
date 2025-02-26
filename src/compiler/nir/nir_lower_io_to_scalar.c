@@ -177,6 +177,10 @@ lower_store_output_to_scalar(nir_builder *b, nir_intrinsic_instr *intr)
       nir_intrinsic_set_component(chan_intr, new_component);
       nir_intrinsic_set_src_type(chan_intr, nir_intrinsic_src_type(intr));
       set_io_semantics(chan_intr, intr, i);
+      if (nir_intrinsic_has_range(chan_intr))
+         nir_intrinsic_set_range(chan_intr, nir_intrinsic_range(intr));
+      if (nir_intrinsic_has_range_base(chan_intr))
+         nir_intrinsic_set_range_base(chan_intr, nir_intrinsic_range_base(intr));
 
       if (nir_intrinsic_has_io_xfb(intr)) {
          /* Scalarize transform feedback info. */

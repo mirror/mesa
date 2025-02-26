@@ -8722,7 +8722,7 @@ iris_upload_render_state(struct iris_context *ice,
 
    iris_batch_sync_region_end(batch);
 
-   uint32_t count = (sc) ? sc->count : 0;
+   uint32_t count = sc->count;
    count *= draw->instance_count ? draw->instance_count : 1;
    trace_intel_end_draw(&batch->trace, count, 0, 0);
 }

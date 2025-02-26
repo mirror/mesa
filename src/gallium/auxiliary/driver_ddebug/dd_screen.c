@@ -632,6 +632,7 @@ ddebug_screen_create(struct pipe_screen *screen)
 #define SCR_INIT(_member) \
    dscreen->base._member = screen->_member ? dd_screen_##_member : NULL
 
+   dscreen->base.transfer_helper = screen->transfer_helper ? screen->transfer_helper : NULL;
    dscreen->base.destroy = dd_screen_destroy;
    dscreen->base.get_name = dd_screen_get_name;
    dscreen->base.get_vendor = dd_screen_get_vendor;

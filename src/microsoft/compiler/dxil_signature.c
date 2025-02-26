@@ -44,6 +44,7 @@ struct semantic_info {
    uint8_t cols;
    uint8_t interpolation;
    uint8_t stream;
+   enum dxil_min_precision min_precision;
    const char *sysvalue_name;
 };
 
@@ -128,6 +129,23 @@ get_additional_semantic_info(nir_shader *s, nir_variable *var, struct semantic_i
 
    info->comp_type = dxil_get_prog_sig_comp_type(type);
    info->sig_comp_type = dxil_get_comp_type_from_prog_sig_type(info->comp_type);
+
+   if (var->data.precision == GLSL_PRECISION_MEDIUM || var->data.precision == GLSL_PRECISION_LOW) {
+      switch (info->comp_type) {
+      case DXIL_PROG_SIG_COMP_TYPE_FLOAT16:
+         info->min_precision = DXIL_MIN_PREC_FLOAT16;
+         break;
+      case DXIL_PROG_SIG_COMP_TYPE_SINT16:
+         info->min_precision = DXIL_MIN_PREC_SINT16;
+         break;
+      case DXIL_PROG_SIG_COMP_TYPE_UINT16:
+         info->min_precision = DXIL_MIN_PREC_UINT16;
+         break;
+      default:
+         /* This caller didn't lower mediump vars */
+         break;
+      }
+   }
 
    bool is_depth = is_depth_output(info->kind);
 
@@ -486,7 +504,7 @@ fill_signature_element(struct dxil_signature_element *elm,
 
    assert(semantic->cols + semantic->start_col <= 4);
    elm->mask = (uint8_t) (((1 << semantic->cols) - 1) << semantic->start_col);
-   elm->min_precision = DXIL_MIN_PREC_DEFAULT;
+   elm->min_precision = semantic->min_precision;
 }
 
 static bool

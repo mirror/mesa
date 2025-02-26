@@ -810,9 +810,116 @@ dxil_spirv_nir_link(nir_shader *nir, nir_shader *prev_stage_nir,
             }
          }
       }
+
+      bool has_mediump_inputs = false, has_native_16bit_inputs = false;
+      bool has_mediump_outputs = false, has_native_16bit_outputs = false;
+      nir_foreach_variable_with_modes(var, nir, nir_var_shader_in) {
+         if (glsl_base_type_is_16bit(glsl_get_base_type(glsl_without_array(var->type)))) {
+            if (var->data.precision == GLSL_PRECISION_HIGH || var->data.precision == GLSL_PRECISION_NONE)
+               has_native_16bit_inputs = true;
+            else
+               has_mediump_inputs = true;
+            /* Can't have both, we should've already removed mediump */
+            break;
+         }
+      }
+      nir_foreach_variable_with_modes(var, prev_stage_nir, nir_var_shader_out) {
+         if (glsl_base_type_is_16bit(glsl_get_base_type(glsl_without_array(var->type)))) {
+            if (var->data.precision == GLSL_PRECISION_HIGH || var->data.precision == GLSL_PRECISION_NONE)
+               has_native_16bit_outputs = true;
+            else
+               has_mediump_outputs = true;
+            /* Can't have both, we should've already removed mediump */
+            break;
+         }
+      }
+
+      if (has_native_16bit_inputs && has_mediump_outputs) {
+         nir_foreach_variable_with_modes(var, prev_stage_nir, nir_var_shader_in | nir_var_shader_out)
+            var->data.precision = GLSL_PRECISION_HIGH;
+      }
+      if (has_native_16bit_outputs && has_mediump_inputs) {
+         nir_foreach_variable_with_modes(var, nir, nir_var_shader_in | nir_var_shader_out)
+            var->data.precision = GLSL_PRECISION_HIGH;
+      }
    }
 
    glsl_type_singleton_decref();
+}
+
+static bool
+shader_has_native_16bit(nir_shader *nir)
+{
+   nir_foreach_function(func, nir) {
+      if (!func->impl)
+         continue;
+      nir_foreach_block(block, func->impl) {
+         nir_foreach_instr(instr, block) {
+            switch (instr->type) {
+            case nir_instr_type_alu: {
+               nir_alu_instr *alu = nir_instr_as_alu(instr);
+               if (alu->def.bit_size == 8)
+                  return true;
+               if (alu->def.bit_size > 16)
+                  continue;
+               switch (alu->op) {
+               case nir_op_f2fmp:
+               case nir_op_i2imp:
+               case nir_op_f2imp:
+               case nir_op_f2ump:
+               case nir_op_i2fmp:
+               case nir_op_u2fmp:
+                  break;
+               case nir_op_unpack_32_2x16:
+               case nir_op_unpack_32_2x16_split_x:
+               case nir_op_unpack_32_2x16_split_y:
+               case nir_op_unpack_64_4x16:
+                  return true;
+               default:
+                  if (nir_op_infos[alu->op].is_conversion &&
+                      nir_src_bit_size(alu->src[0].src) > alu->def.bit_size)
+                     return true;
+                  break;
+               }
+               break;
+            }
+            case nir_instr_type_intrinsic: {
+               nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
+               switch (intr->intrinsic) {
+               case nir_intrinsic_load_deref:
+               case nir_intrinsic_interp_deref_at_centroid:
+               case nir_intrinsic_interp_deref_at_offset:
+               case nir_intrinsic_interp_deref_at_sample:
+               case nir_intrinsic_interp_deref_at_vertex:
+               case nir_intrinsic_store_deref: {
+                  nir_variable *var = nir_deref_instr_get_variable(nir_src_as_deref(intr->src[0]));
+                  bool is_16bit = (intr->intrinsic == nir_intrinsic_store_deref) ?
+                     nir_src_bit_size(intr->src[1]) == 16 : intr->def.bit_size == 16;
+                  if (is_16bit &&
+                      (!var || var->data.precision == GLSL_PRECISION_HIGH || var->data.precision == GLSL_PRECISION_NONE ||
+                       /* TODO: remove this condition once these are no longer lowered */
+                       var->data.mode & (nir_var_function_temp | nir_var_mem_shared)))
+                     return true;
+                  break;
+               }
+               default:
+                  if (nir_intrinsic_infos[intr->intrinsic].has_dest &&
+                      (intr->def.bit_size == 16 || intr->def.bit_size == 8))
+                     return true;
+                  for (unsigned i = 0; i < nir_intrinsic_infos[intr->intrinsic].num_srcs; ++i)
+                     if (nir_src_bit_size(intr->src[i]) == 16 || nir_src_bit_size(intr->src[i]) == 8)
+                        return true;
+                  break;
+               }
+               break;
+            }
+            default:
+               break;
+            }
+         }
+      }
+   }
+   return false;
 }
 
 static unsigned
@@ -990,6 +1097,31 @@ dxil_spirv_nir_passes(nir_shader *nir,
               nir_var_shader_in | nir_var_shader_out |
               nir_var_system_value | nir_var_mem_shared,
               NULL);
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT) {
+      nir_foreach_variable_with_modes(var, nir, nir_var_shader_out) {
+         /* Don't do mediump lowering on FS outputs with type int. There's issues with sign extension. */
+         if (glsl_get_base_type(var->type) == GLSL_TYPE_INT)
+            var->data.precision = GLSL_PRECISION_HIGH;
+      }
+      /* Don't pass point coord data in mediump either */
+      nir_variable *pntc = nir_find_variable_with_location(nir, nir_var_shader_in, VARYING_SLOT_PNTC);
+      if (pntc)
+         pntc->data.precision = GLSL_PRECISION_HIGH;
+   }
+
+   nir_foreach_variable_with_modes(var, nir, nir_var_shader_in | nir_var_shader_out) {
+      if (var->data.invariant)
+         var->data.precision = GLSL_PRECISION_HIGH;
+   }
+
+   nir_variable_mode mediump_modes = nir_var_shader_out |
+      (nir->info.stage == MESA_SHADER_VERTEX ? 0 : nir_var_shader_in);
+   NIR_PASS_V(nir, nir_lower_mediump_vars, mediump_modes);
+   if (shader_has_native_16bit(nir)) {
+      nir_foreach_variable_with_modes(var, nir, nir_var_shader_in | nir_var_shader_out)
+         var->data.precision = GLSL_PRECISION_HIGH;
+   }
 
    uint32_t push_constant_size = 0;
    NIR_PASS_V(nir, nir_lower_explicit_io, nir_var_mem_push_const,

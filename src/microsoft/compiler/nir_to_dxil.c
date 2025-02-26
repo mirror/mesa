@@ -2473,7 +2473,8 @@ emit_cast(struct ntd_context *ctx, nir_alu_instr *alu,
       case nir_op_u2fmp:
          break;
       default:
-         ctx->mod.feats.native_low_precision = true;
+         if (nir_src_bit_size(alu->src[0].src) > 16)
+            ctx->mod.feats.native_low_precision = true;
       }
    }
 
@@ -3601,6 +3602,12 @@ emit_store_output_via_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *in
                         (semantics.location == VARYING_SLOT_TESS_LEVEL_INNER ||
                          semantics.location == VARYING_SLOT_TESS_LEVEL_OUTER);
 
+   if (nir_src_bit_size(intr->src[0]) == 16) {
+      ctx->mod.feats.min_precision = true;
+      if (!semantics.medium_precision)
+         ctx->mod.feats.native_low_precision = true;
+   }
+
    const struct dxil_value *row = NULL;
    const struct dxil_value *col = NULL;
    if (is_tess_level)
@@ -3740,6 +3747,12 @@ emit_load_input_via_intrinsic(struct ntd_context *ctx, nir_intrinsic_instr *intr
                         (semantics.location == VARYING_SLOT_TESS_LEVEL_INNER ||
                          semantics.location == VARYING_SLOT_TESS_LEVEL_OUTER);
 
+   if (intr->def.bit_size == 16) {
+      ctx->mod.feats.min_precision = true;
+      if (!semantics.medium_precision)
+         ctx->mod.feats.native_low_precision = true;
+   }
+
    const struct dxil_value *row = NULL;
    const struct dxil_value *comp = NULL;
    if (is_tess_level)
@@ -3860,6 +3873,12 @@ emit_load_interpolated_input(struct ntd_context *ctx, nir_intrinsic_instr *intr)
    nir_variable *var = find_patch_matching_variable_by_driver_location(ctx->shader, nir_var_shader_in, nir_intrinsic_base(intr), false);
    unsigned var_base_component = var ? var->data.location_frac : 0;
    unsigned base_component = nir_intrinsic_component(intr) - var_base_component;
+
+   if (intr->def.bit_size == 16) {
+      ctx->mod.feats.min_precision = true;
+      if (!nir_intrinsic_io_semantics(intr).medium_precision)
+         ctx->mod.feats.native_low_precision = true;
+   }
 
    if (ctx->mod.minor_validator >= 5) {
       struct dxil_signature_record *sig_rec = &ctx->mod.inputs[io_index];

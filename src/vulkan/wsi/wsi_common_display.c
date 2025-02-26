@@ -307,10 +307,67 @@ wsi_display_alloc_connector(struct wsi_display *wsi,
    connector->id = connector_id;
    connector->wsi = wsi;
    connector->active = false;
-   /* XXX use EDID name */
-   connector->name = "monitor";
+   connector->name = NULL;
    list_inithead(&connector->display_modes);
    return connector;
+}
+
+/** Section 30.3.1 of the Vulkan spec for
+ * "VkDisplayPropertiesKHR.displayName"
+ *
+ *     "displayName is NULL or a pointer to a null-terminated UTF-8
+ *      string containing the name of the display. Generally, this will
+ *      be the name provided by the display’s EDID. If NULL, no suitable
+ *      name is available. If not NULL, the string pointed to must
+ *      remain accessible and unmodified as long as display is valid."
+ * 
+ * Though EDID is suggested, it is not required.
+ * As an abstraction over DRM, DRM connector names make sense.
+ */
+static char * 
+wsi_display_get_name(struct wsi_display *wsi,
+                     drmModeConnectorPtr drm_connector)
+{
+   static const char* drm_connector_names[] = {
+      [DRM_MODE_CONNECTOR_Unknown] = "Unknown",
+      [DRM_MODE_CONNECTOR_VGA] = "VGA",
+      [DRM_MODE_CONNECTOR_DVII] = "DVI-I",
+      [DRM_MODE_CONNECTOR_DVID] = "DVI-D",
+      [DRM_MODE_CONNECTOR_DVIA] = "DVI-A",
+      [DRM_MODE_CONNECTOR_Composite] = "Composite",
+      [DRM_MODE_CONNECTOR_SVIDEO] = "SVIDEO",
+      [DRM_MODE_CONNECTOR_LVDS] = "LVDS",
+      [DRM_MODE_CONNECTOR_Component] = "Component",
+      [DRM_MODE_CONNECTOR_9PinDIN] = "DIN",
+      [DRM_MODE_CONNECTOR_DisplayPort] = "DP",
+      [DRM_MODE_CONNECTOR_HDMIA] = "HDMI-A",
+      [DRM_MODE_CONNECTOR_HDMIB] = "HDMI-B",
+      [DRM_MODE_CONNECTOR_TV] = "TV",
+      [DRM_MODE_CONNECTOR_eDP] = "eDP",
+      [DRM_MODE_CONNECTOR_VIRTUAL] = "Virtual",
+      [DRM_MODE_CONNECTOR_DSI] = "DSI",
+      [DRM_MODE_CONNECTOR_DPI] = "DPI",
+      [DRM_MODE_CONNECTOR_WRITEBACK] = "Writeback",
+      [DRM_MODE_CONNECTOR_SPI] = "SPI",
+      [DRM_MODE_CONNECTOR_USB] = "USB",
+   };
+
+   // Prevent updates to DRM from causing issues
+   if (drm_connector->connector_type >=
+       sizeof(drm_connector_names) / sizeof(char*))
+      return NULL;
+
+   const char* name = drm_connector_names[drm_connector->connector_type];
+   uint32_t id = drm_connector->connector_type_id;
+   size_t required_length = snprintf(NULL, 0, "%s-%d", name, id) + 1;
+
+   // The name must be valid for as long as the vkDisplayKHR
+   char* display_name = 
+      vk_zalloc(wsi->alloc, required_length, 1,
+                VK_SYSTEM_ALLOCATION_SCOPE_INSTANCE);
+
+   snprintf(display_name, required_length, "%s-%d", name, id);
+   return display_name;
 }
 
 static struct wsi_display_connector *
@@ -343,6 +400,7 @@ wsi_display_get_connector(struct wsi_device *wsi_device,
    }
 
    connector->connected = drm_connector->connection != DRM_MODE_DISCONNECTED;
+   connector->name = wsi_display_get_name(wsi, drm_connector);
 
    /* Look for a DPMS property if we haven't already found one */
    for (int p = 0; connector->dpms_property == 0 &&
@@ -2370,6 +2428,8 @@ wsi_display_finish_wsi(struct wsi_device *wsi_device,
          wsi_for_each_display_mode(mode, connector) {
             vk_free(wsi->alloc, mode);
          }
+         if (connector->name)
+            vk_free(wsi->alloc, connector->name);
          vk_free(wsi->alloc, connector);
       }
 

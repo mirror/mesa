@@ -345,8 +345,7 @@ crocus_format_for_usage(const struct intel_device_info *devinfo,
       info.fmt = ISL_FORMAT_A8_UNORM;
    }
 
-   if (usage & ISL_SURF_USAGE_RENDER_TARGET_BIT)
-      info.fmt = get_render_format(pformat, info.fmt);
+   info.fmt = get_render_format(pformat, info.fmt);
    if (devinfo->ver < 6) {
       if (pformat == PIPE_FORMAT_Z32_FLOAT_S8X24_UINT)
          info.fmt = ISL_FORMAT_R32_FLOAT_X8X24_TYPELESS;

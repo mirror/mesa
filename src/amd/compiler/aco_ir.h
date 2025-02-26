@@ -43,6 +43,7 @@ enum {
    DEBUG_NO_VALIDATE_IR = 0x400,
    DEBUG_NO_SCHED_ILP = 0x800,
    DEBUG_NO_SCHED_VOPD = 0x1000,
+   DEBUG_LLVM_DISASM = 0x2000,
 };
 
 enum storage_class : uint8_t {
@@ -445,6 +446,8 @@ static constexpr PhysReg exec{126};
 static constexpr PhysReg exec_lo{126};
 static constexpr PhysReg exec_hi{127};
 static constexpr PhysReg pops_exiting_wave_id{239}; /* GFX9-GFX10.3 */
+static constexpr PhysReg vccz{251};
+static constexpr PhysReg execz{252};
 static constexpr PhysReg scc{253};
 
 /**
@@ -1890,6 +1893,12 @@ unsigned get_vopd_opy_start(const Instruction* instr);
 
 unsigned get_operand_size(aco_ptr<Instruction>& instr, unsigned index);
 
+static inline aco_mimg_op_info
+aco_mimg_op_info_get_op(aco_mimg_op_info info)
+{
+   return (aco_mimg_op_info)(info & (util_next_power_of_two(aco_mimg_op_info::count) - 1));
+}
+
 bool should_form_clause(const Instruction* a, const Instruction* b);
 
 enum vmem_type : uint8_t {
@@ -2276,6 +2285,8 @@ unsigned emit_program(Program* program, std::vector<uint32_t>& code,
  * configuration
  */
 bool check_print_asm_support(Program* program);
+bool disasm_program(Program* program, std::vector<uint32_t>& binary, unsigned exec_size,
+                    char** string);
 bool print_asm(Program* program, std::vector<uint32_t>& binary, unsigned exec_size, FILE* output);
 bool validate_ir(Program* program);
 bool validate_cfg(Program* program);
@@ -2304,7 +2315,10 @@ enum print_flags {
    print_live_vars = 0x8,
 };
 
-void aco_print_operand(const Operand* operand, FILE* output, unsigned flags = 0);
+void aco_print_physreg(enum amd_gfx_level gfx_level, PhysReg reg, FILE* output, unsigned bytes = 4,
+                       unsigned flags = 0);
+void aco_print_operand(enum amd_gfx_level gfx_level, const Operand* operand, FILE* output,
+                       unsigned flags = 0);
 void aco_print_instr(enum amd_gfx_level gfx_level, const Instruction* instr, FILE* output,
                      unsigned flags = 0);
 void aco_print_program(const Program* program, FILE* output, unsigned flags = 0);
@@ -2361,6 +2375,8 @@ typedef struct {
    const instr_class classes[static_cast<int>(aco_opcode::num_opcodes)];
    const uint32_t definitions[static_cast<int>(aco_opcode::num_opcodes)];
    const uint32_t operands[static_cast<int>(aco_opcode::num_opcodes)];
+   const std::unordered_map<aco_opcode, aco_mimg_op_info> mimg_infos;
+   const std::unordered_map<aco_mimg_op_info, aco_opcode> sample_opcodes;
 } Info;
 
 extern const Info instr_info;

@@ -219,6 +219,38 @@ Opcode = namedtuple('Opcode', ['gfx6', 'gfx7', 'gfx8', 'gfx9', 'gfx10', 'gfx11',
 # to support older versions.
 Opcode.__new__.__defaults__=(-1, -1, -1, -1, -1, -1, -1)
 
+class MIMGOpInfo(IntEnum):
+   load = 0
+   store = auto()
+   atomic = auto()
+   get_resinfo = auto()
+   get_lod = auto()
+   msaa_load = auto()
+   sample = auto()
+   gather4 = auto()
+   bvh = auto()
+   bvh64 = auto()
+   count = auto()
+   flag_lod = 1 << 16
+   flag_lod_bias = 1 << 17
+   flag_lod_clamp = 1 << 18
+   flag_derivative = 1 << 19
+   flag_level0 = 1 << 20
+   flag_compare = 1 << 21
+   flag_offset = 1 << 22
+   flag_d16 = 1 << 23
+   flag_g16 = 1 << 24
+
+mimg_l = MIMGOpInfo.flag_lod
+mimg_b = MIMGOpInfo.flag_lod_bias
+mimg_cl = MIMGOpInfo.flag_lod_clamp
+mimg_d = MIMGOpInfo.flag_derivative
+mimg_lz = MIMGOpInfo.flag_level0
+mimg_c = MIMGOpInfo.flag_compare
+mimg_o = MIMGOpInfo.flag_offset
+mimg_d16 = MIMGOpInfo.flag_d16
+mimg_g16 = MIMGOpInfo.flag_g16
+
 class Instruction(object):
    """Class that represents all the information we have about the opcode
    NOTE: this must be kept in sync with aco_op_info
@@ -286,6 +318,7 @@ def src(op1 = 0, op2 = 0, op3 = 0, op4 = 0):
 
 def dst(def1 = 0, def2 = 0, def3 = 0, def4 = 0):
    return def1 | (def2 << 8) | (def3 << 16) | (def4 << 24)
+
 
 def op(*args, **kwargs):
    enc = [None] * len(Opcode._fields)
@@ -1757,119 +1790,121 @@ for (name, num) in MTBUF:
 
 
 MIMG = {
-   ("image_load",                op(0x00)),
-   ("image_load_mip",            op(0x01)),
-   ("image_load_pck",            op(0x02)),
-   ("image_load_pck_sgn",        op(0x03)),
-   ("image_load_mip_pck",        op(0x04)),
-   ("image_load_mip_pck_sgn",    op(0x05)),
-   ("image_store",               op(0x08, gfx11=0x06)),
-   ("image_store_mip",           op(0x09, gfx11=0x07)),
-   ("image_store_pck",           op(0x0a, gfx11=0x08)),
-   ("image_store_mip_pck",       op(0x0b, gfx11=0x09)),
-   ("image_get_resinfo",         op(0x0e, gfx11=0x17)),
-   ("image_get_lod",             op(0x60, gfx11=0x38)),
-   ("image_msaa_load",           op(gfx10=0x80, gfx11=0x18)), #GFX10.3+
-   ("image_atomic_swap",         op(0x0f, gfx8=0x10, gfx10=0x0f, gfx11=0x0a)),
-   ("image_atomic_cmpswap",      op(0x10, gfx8=0x11, gfx10=0x10, gfx11=0x0b)),
-   ("image_atomic_add",          op(0x11, gfx8=0x12, gfx10=0x11, gfx11=0x0c)),
-   ("image_atomic_sub",          op(0x12, gfx8=0x13, gfx10=0x12, gfx11=0x0d)),
-   ("image_atomic_rsub",         op(0x13, gfx7=-1)),
-   ("image_atomic_smin",         op(0x14, gfx11=0x0e)),
-   ("image_atomic_umin",         op(0x15, gfx11=0x0f)),
-   ("image_atomic_smax",         op(0x16, gfx11=0x10)),
-   ("image_atomic_umax",         op(0x17, gfx11=0x11)),
-   ("image_atomic_and",          op(0x18, gfx11=0x12)),
-   ("image_atomic_or",           op(0x19, gfx11=0x13)),
-   ("image_atomic_xor",          op(0x1a, gfx11=0x14)),
-   ("image_atomic_inc",          op(0x1b, gfx11=0x15)),
-   ("image_atomic_dec",          op(0x1c, gfx11=0x16)),
-   ("image_atomic_fcmpswap",     op(0x1d, gfx8=-1, gfx10=0x1d, gfx11=-1)),
-   ("image_atomic_fmin",         op(0x1e, gfx8=-1, gfx10=0x1e, gfx11=-1, gfx12=0x84)), #image_atomic_min_num_flt in GFX12
-   ("image_atomic_fmax",         op(0x1f, gfx8=-1, gfx10=0x1f, gfx11=-1, gfx12=0x85)), #image_atomic_max_num_flt in GFX12
-   ("image_atomic_pk_add_f16",   op(gfx12=0x86)),
-   ("image_atomic_pk_add_bf16",  op(gfx12=0x87)),
-   ("image_atomic_add_flt",      op(gfx12=0x83)),
-   ("image_sample",              op(0x20, gfx11=0x1b)),
-   ("image_sample_cl",           op(0x21, gfx11=0x40)),
-   ("image_sample_d",            op(0x22, gfx11=0x1c)),
-   ("image_sample_d_cl",         op(0x23, gfx11=0x41)),
-   ("image_sample_l",            op(0x24, gfx11=0x1d)),
-   ("image_sample_b",            op(0x25, gfx11=0x1e)),
-   ("image_sample_b_cl",         op(0x26, gfx11=0x42)),
-   ("image_sample_lz",           op(0x27, gfx11=0x1f)),
-   ("image_sample_c",            op(0x28, gfx11=0x20)),
-   ("image_sample_c_cl",         op(0x29, gfx11=0x43)),
-   ("image_sample_c_d",          op(0x2a, gfx11=0x21)),
-   ("image_sample_c_d_cl",       op(0x2b, gfx11=0x44)),
-   ("image_sample_c_l",          op(0x2c, gfx11=0x22)),
-   ("image_sample_c_b",          op(0x2d, gfx11=0x23)),
-   ("image_sample_c_b_cl",       op(0x2e, gfx11=0x45)),
-   ("image_sample_c_lz",         op(0x2f, gfx11=0x24)),
-   ("image_sample_o",            op(0x30, gfx11=0x25)),
-   ("image_sample_cl_o",         op(0x31, gfx11=0x46)),
-   ("image_sample_d_o",          op(0x32, gfx11=0x26)),
-   ("image_sample_d_cl_o",       op(0x33, gfx11=0x47)),
-   ("image_sample_l_o",          op(0x34, gfx11=0x27)),
-   ("image_sample_b_o",          op(0x35, gfx11=0x28)),
-   ("image_sample_b_cl_o",       op(0x36, gfx11=0x48)),
-   ("image_sample_lz_o",         op(0x37, gfx11=0x29)),
-   ("image_sample_c_o",          op(0x38, gfx11=0x2a)),
-   ("image_sample_c_cl_o",       op(0x39, gfx11=0x49)),
-   ("image_sample_c_d_o",        op(0x3a, gfx11=0x2b)),
-   ("image_sample_c_d_cl_o",     op(0x3b, gfx11=0x4a)),
-   ("image_sample_c_l_o",        op(0x3c, gfx11=0x2c)),
-   ("image_sample_c_b_o",        op(0x3d, gfx11=0x2d)),
-   ("image_sample_c_b_cl_o",     op(0x3e, gfx11=0x4b)),
-   ("image_sample_c_lz_o",       op(0x3f, gfx11=0x2e)),
-   ("image_sample_cd",           op(0x68, gfx11=-1)),
-   ("image_sample_cd_cl",        op(0x69, gfx11=-1)),
-   ("image_sample_c_cd",         op(0x6a, gfx11=-1)),
-   ("image_sample_c_cd_cl",      op(0x6b, gfx11=-1)),
-   ("image_sample_cd_o",         op(0x6c, gfx11=-1)),
-   ("image_sample_cd_cl_o",      op(0x6d, gfx11=-1)),
-   ("image_sample_c_cd_o",       op(0x6e, gfx11=-1)),
-   ("image_sample_c_cd_cl_o",    op(0x6f, gfx11=-1)),
-   ("image_sample_d_g16",        op(gfx10=0xa2, gfx11=0x39)),
-   ("image_sample_d_cl_g16",     op(gfx10=0xa3, gfx11=0x5f)),
-   ("image_sample_c_d_g16",      op(gfx10=0xaa, gfx11=0x3a)),
-   ("image_sample_c_d_cl_g16",   op(gfx10=0xab, gfx11=0x54)),
-   ("image_sample_d_o_g16",      op(gfx10=0xb2, gfx11=0x3b)),
-   ("image_sample_d_cl_o_g16",   op(gfx10=0xb3, gfx11=0x55)),
-   ("image_sample_c_d_o_g16",    op(gfx10=0xba, gfx11=0x3c)),
-   ("image_sample_c_d_cl_o_g16", op(gfx10=0xbb, gfx11=0x56)),
+   ("image_load",                MIMGOpInfo.load, op(0x00)),
+   ("image_load_mip",            MIMGOpInfo.load | mimg_l, op(0x01)),
+   ("image_load_pck",            MIMGOpInfo.load, op(0x02)),
+   ("image_load_pck_sgn",        MIMGOpInfo.load, op(0x03)),
+   ("image_load_mip_pck",        MIMGOpInfo.load, op(0x04)),
+   ("image_load_mip_pck_sgn",    MIMGOpInfo.load, op(0x05)),
+   ("image_store",               MIMGOpInfo.store, op(0x08, gfx11=0x06)),
+   ("image_store_mip",           MIMGOpInfo.store | mimg_l, op(0x09, gfx11=0x07)),
+   ("image_store_pck",           MIMGOpInfo.store, op(0x0a, gfx11=0x08)),
+   ("image_store_mip_pck",       MIMGOpInfo.store, op(0x0b, gfx11=0x09)),
+   ("image_get_resinfo",         MIMGOpInfo.get_resinfo, op(0x0e, gfx11=0x17)),
+   ("image_get_lod",             MIMGOpInfo.get_lod, op(0x60, gfx11=0x38)),
+   ("image_msaa_load",           MIMGOpInfo.msaa_load, op(gfx10=0x80, gfx11=0x18)), #GFX10.3+
+   ("image_atomic_swap",         MIMGOpInfo.atomic, op(0x0f, gfx8=0x10, gfx10=0x0f, gfx11=0x0a)),
+   ("image_atomic_cmpswap",      MIMGOpInfo.atomic, op(0x10, gfx8=0x11, gfx10=0x10, gfx11=0x0b)),
+   ("image_atomic_add",          MIMGOpInfo.atomic, op(0x11, gfx8=0x12, gfx10=0x11, gfx11=0x0c)),
+   ("image_atomic_sub",          MIMGOpInfo.atomic, op(0x12, gfx8=0x13, gfx10=0x12, gfx11=0x0d)),
+   ("image_atomic_rsub",         MIMGOpInfo.atomic, op(0x13, gfx7=-1)),
+   ("image_atomic_smin",         MIMGOpInfo.atomic, op(0x14, gfx11=0x0e)),
+   ("image_atomic_umin",         MIMGOpInfo.atomic, op(0x15, gfx11=0x0f)),
+   ("image_atomic_smax",         MIMGOpInfo.atomic, op(0x16, gfx11=0x10)),
+   ("image_atomic_umax",         MIMGOpInfo.atomic, op(0x17, gfx11=0x11)),
+   ("image_atomic_and",          MIMGOpInfo.atomic, op(0x18, gfx11=0x12)),
+   ("image_atomic_or",           MIMGOpInfo.atomic, op(0x19, gfx11=0x13)),
+   ("image_atomic_xor",          MIMGOpInfo.atomic, op(0x1a, gfx11=0x14)),
+   ("image_atomic_inc",          MIMGOpInfo.atomic, op(0x1b, gfx11=0x15)),
+   ("image_atomic_dec",          MIMGOpInfo.atomic, op(0x1c, gfx11=0x16)),
+   ("image_atomic_fcmpswap",     MIMGOpInfo.atomic, op(0x1d, gfx8=-1, gfx10=0x1d, gfx11=-1)),
+   ("image_atomic_fmin",         MIMGOpInfo.atomic, op(0x1e, gfx8=-1, gfx10=0x1e, gfx11=-1, gfx12=0x84)), #image_atomic_min_num_flt in GFX12
+   ("image_atomic_fmax",         MIMGOpInfo.atomic, op(0x1f, gfx8=-1, gfx10=0x1f, gfx11=-1, gfx12=0x85)), #image_atomic_max_num_flt in GFX12
+   ("image_atomic_pk_add_f16",   MIMGOpInfo.atomic, op(gfx12=0x86)),
+   ("image_atomic_pk_add_bf16",  MIMGOpInfo.atomic, op(gfx12=0x87)),
+   ("image_atomic_add_flt",      MIMGOpInfo.atomic, op(gfx12=0x83)),
+   ("image_sample",              MIMGOpInfo.sample, op(0x20, gfx11=0x1b)),
+   ("image_sample_cl",           MIMGOpInfo.sample | mimg_cl, op(0x21, gfx11=0x40)),
+   ("image_sample_d",            MIMGOpInfo.sample | mimg_d, op(0x22, gfx11=0x1c)),
+   ("image_sample_d_cl",         MIMGOpInfo.sample | mimg_d | mimg_cl, op(0x23, gfx11=0x41)),
+   ("image_sample_l",            MIMGOpInfo.sample | mimg_l, op(0x24, gfx11=0x1d)),
+   ("image_sample_b",            MIMGOpInfo.sample | mimg_b, op(0x25, gfx11=0x1e)),
+   ("image_sample_b_cl",         MIMGOpInfo.sample | mimg_b | mimg_cl, op(0x26, gfx11=0x42)),
+   ("image_sample_lz",           MIMGOpInfo.sample | mimg_lz, op(0x27, gfx11=0x1f)),
+   ("image_sample_c",            MIMGOpInfo.sample | mimg_c, op(0x28, gfx11=0x20)),
+   ("image_sample_c_cl",         MIMGOpInfo.sample | mimg_c | mimg_cl, op(0x29, gfx11=0x43)),
+   ("image_sample_c_d",          MIMGOpInfo.sample | mimg_c | mimg_d, op(0x2a, gfx11=0x21)),
+   ("image_sample_c_d_cl",       MIMGOpInfo.sample | mimg_c | mimg_d | mimg_cl, op(0x2b, gfx11=0x44)),
+   ("image_sample_c_l",          MIMGOpInfo.sample | mimg_c | mimg_l, op(0x2c, gfx11=0x22)),
+   ("image_sample_c_b",          MIMGOpInfo.sample | mimg_c | mimg_b, op(0x2d, gfx11=0x23)),
+   ("image_sample_c_b_cl",       MIMGOpInfo.sample | mimg_c | mimg_b | mimg_cl, op(0x2e, gfx11=0x45)),
+   ("image_sample_c_lz",         MIMGOpInfo.sample | mimg_c | mimg_lz, op(0x2f, gfx11=0x24)),
+   ("image_sample_o",            MIMGOpInfo.sample | mimg_o, op(0x30, gfx11=0x25)),
+   ("image_sample_cl_o",         MIMGOpInfo.sample | mimg_o | mimg_cl, op(0x31, gfx11=0x46)),
+   ("image_sample_d_o",          MIMGOpInfo.sample | mimg_o | mimg_d, op(0x32, gfx11=0x26)),
+   ("image_sample_d_cl_o",       MIMGOpInfo.sample | mimg_o | mimg_d | mimg_cl, op(0x33, gfx11=0x47)),
+   ("image_sample_l_o",          MIMGOpInfo.sample | mimg_o | mimg_l, op(0x34, gfx11=0x27)),
+   ("image_sample_b_o",          MIMGOpInfo.sample | mimg_o | mimg_b, op(0x35, gfx11=0x28)),
+   ("image_sample_b_cl_o",       MIMGOpInfo.sample | mimg_o | mimg_b | mimg_cl, op(0x36, gfx11=0x48)),
+   ("image_sample_lz_o",         MIMGOpInfo.sample | mimg_o | mimg_lz, op(0x37, gfx11=0x29)),
+   ("image_sample_c_o",          MIMGOpInfo.sample | mimg_o | mimg_c, op(0x38, gfx11=0x2a)),
+   ("image_sample_c_cl_o",       MIMGOpInfo.sample | mimg_o | mimg_c | mimg_cl, op(0x39, gfx11=0x49)),
+   ("image_sample_c_d_o",        MIMGOpInfo.sample | mimg_o | mimg_c | mimg_d, op(0x3a, gfx11=0x2b)),
+   ("image_sample_c_d_cl_o",     MIMGOpInfo.sample | mimg_o | mimg_c | mimg_d | mimg_cl, op(0x3b, gfx11=0x4a)),
+   ("image_sample_c_l_o",        MIMGOpInfo.sample | mimg_o | mimg_c | mimg_l, op(0x3c, gfx11=0x2c)),
+   ("image_sample_c_b_o",        MIMGOpInfo.sample | mimg_o | mimg_c | mimg_b, op(0x3d, gfx11=0x2d)),
+   ("image_sample_c_b_cl_o",     MIMGOpInfo.sample | mimg_o | mimg_c | mimg_b | mimg_cl, op(0x3e, gfx11=0x4b)),
+   ("image_sample_c_lz_o",       MIMGOpInfo.sample | mimg_o | mimg_c | mimg_lz, op(0x3f, gfx11=0x2e)),
+   ("image_sample_cd",           MIMGOpInfo.sample | mimg_c, op(0x68, gfx11=-1)),
+   ("image_sample_cd_cl",        MIMGOpInfo.sample | mimg_c | mimg_cl, op(0x69, gfx11=-1)),
+   ("image_sample_c_cd",         MIMGOpInfo.sample | mimg_c, op(0x6a, gfx11=-1)),
+   ("image_sample_c_cd_cl",      MIMGOpInfo.sample | mimg_c | mimg_cl, op(0x6b, gfx11=-1)),
+   ("image_sample_cd_o",         MIMGOpInfo.sample | mimg_o | mimg_c, op(0x6c, gfx11=-1)),
+   ("image_sample_cd_cl_o",      MIMGOpInfo.sample | mimg_o | mimg_c | mimg_cl, op(0x6d, gfx11=-1)),
+   ("image_sample_c_cd_o",       MIMGOpInfo.sample | mimg_o | mimg_c, op(0x6e, gfx11=-1)),
+   ("image_sample_c_cd_cl_o",    MIMGOpInfo.sample | mimg_o | mimg_c | mimg_cl, op(0x6f, gfx11=-1)),
+   ("image_sample_d_g16",        MIMGOpInfo.sample | mimg_d | mimg_g16, op(gfx10=0xa2, gfx11=0x39)),
+   ("image_sample_d_cl_g16",     MIMGOpInfo.sample | mimg_d | mimg_g16 | mimg_cl, op(gfx10=0xa3, gfx11=0x5f)),
+   ("image_sample_c_d_g16",      MIMGOpInfo.sample | mimg_c | mimg_d | mimg_g16, op(gfx10=0xaa, gfx11=0x3a)),
+   ("image_sample_c_d_cl_g16",   MIMGOpInfo.sample | mimg_c | mimg_d | mimg_g16 | mimg_cl, op(gfx10=0xab, gfx11=0x54)),
+   ("image_sample_d_o_g16",      MIMGOpInfo.sample | mimg_o | mimg_d | mimg_g16, op(gfx10=0xb2, gfx11=0x3b)),
+   ("image_sample_d_cl_o_g16",   MIMGOpInfo.sample | mimg_o | mimg_d | mimg_g16 | mimg_cl, op(gfx10=0xb3, gfx11=0x55)),
+   ("image_sample_c_d_o_g16",    MIMGOpInfo.sample | mimg_o | mimg_c | mimg_d | mimg_g16, op(gfx10=0xba, gfx11=0x3c)),
+   ("image_sample_c_d_cl_o_g16", MIMGOpInfo.sample | mimg_o | mimg_c | mimg_d | mimg_g16 | mimg_cl, op(gfx10=0xbb, gfx11=0x56)),
    #("image_gather4h",            op(gfx9=0x42, gfx10=0x61, gfx11=0x90)), VEGA only?
    #("image_gather4h_pck",        op(gfx9=0x4a, gfx10=-1)), VEGA only?
    #("image_gather8h_pck",        op(gfx9=0x4b, gfx10=-1)), VEGA only?
-   ("image_gather4",             op(0x40, gfx11=0x2f)),
-   ("image_gather4_cl",          op(0x41, gfx11=0x60)),
-   ("image_gather4_l",           op(0x44, gfx11=0x30)), # following instructions have different opcodes according to ISA sheet.
-   ("image_gather4_b",           op(0x45, gfx11=0x31)),
-   ("image_gather4_b_cl",        op(0x46, gfx11=0x61)),
-   ("image_gather4_lz",          op(0x47, gfx11=0x32)),
-   ("image_gather4_c",           op(0x48, gfx11=0x33)),
-   ("image_gather4_c_cl",        op(0x49, gfx11=0x62)), # previous instructions have different opcodes according to ISA sheet.
-   ("image_gather4_c_l",         op(0x4c, gfx11=0x63)),
-   ("image_gather4_c_b",         op(0x4d, gfx11=0x64)),
-   ("image_gather4_c_b_cl",      op(0x4e, gfx11=0x65)),
-   ("image_gather4_c_lz",        op(0x4f, gfx11=0x34)),
-   ("image_gather4_o",           op(0x50, gfx11=0x35)),
-   ("image_gather4_cl_o",        op(0x51, gfx11=-1)),
-   ("image_gather4_l_o",         op(0x54, gfx11=-1)),
-   ("image_gather4_b_o",         op(0x55, gfx11=-1)),
-   ("image_gather4_b_cl_o",      op(0x56, gfx11=-1)),
-   ("image_gather4_lz_o",        op(0x57, gfx11=0x36)),
-   ("image_gather4_c_o",         op(0x58, gfx11=-1)),
-   ("image_gather4_c_cl_o",      op(0x59, gfx11=-1)),
-   ("image_gather4_c_l_o",       op(0x5c, gfx11=-1)),
-   ("image_gather4_c_b_o",       op(0x5d, gfx11=-1)),
-   ("image_gather4_c_b_cl_o",    op(0x5e, gfx11=-1)),
-   ("image_gather4_c_lz_o",      op(0x5f, gfx11=0x37)),
-   ("image_bvh_intersect_ray",   op(gfx10=0xe6, gfx11=0x19)),
-   ("image_bvh64_intersect_ray", op(gfx10=0xe7, gfx11=0x1a)),
+   ("image_gather4",             MIMGOpInfo.gather4, op(0x40, gfx11=0x2f)),
+   ("image_gather4_cl",          MIMGOpInfo.gather4 | mimg_cl, op(0x41, gfx11=0x60)),
+   ("image_gather4_l",           MIMGOpInfo.gather4 | mimg_l, op(0x44, gfx11=0x30)), # following instructions have different opcodes according to ISA sheet.
+   ("image_gather4_b",           MIMGOpInfo.gather4 | mimg_b, op(0x45, gfx11=0x31)),
+   ("image_gather4_b_cl",        MIMGOpInfo.gather4 | mimg_b | mimg_cl, op(0x46, gfx11=0x61)),
+   ("image_gather4_lz",          MIMGOpInfo.gather4 | mimg_lz, op(0x47, gfx11=0x32)),
+   ("image_gather4_c",           MIMGOpInfo.gather4 | mimg_c, op(0x48, gfx11=0x33)),
+   ("image_gather4_c_cl",        MIMGOpInfo.gather4 | mimg_c | mimg_cl, op(0x49, gfx11=0x62)), # previous instructions have different opcodes according to ISA sheet.
+   ("image_gather4_c_l",         MIMGOpInfo.gather4 | mimg_c | mimg_l, op(0x4c, gfx11=0x63)),
+   ("image_gather4_c_b",         MIMGOpInfo.gather4 | mimg_c | mimg_b, op(0x4d, gfx11=0x64)),
+   ("image_gather4_c_b_cl",      MIMGOpInfo.gather4 | mimg_c | mimg_b | mimg_cl, op(0x4e, gfx11=0x65)),
+   ("image_gather4_c_lz",        MIMGOpInfo.gather4 | mimg_c | mimg_lz, op(0x4f, gfx11=0x34)),
+   ("image_gather4_o",           MIMGOpInfo.gather4 | mimg_o, op(0x50, gfx11=0x35)),
+   ("image_gather4_cl_o",        MIMGOpInfo.gather4 | mimg_o | mimg_cl, op(0x51, gfx11=-1)),
+   ("image_gather4_l_o",         MIMGOpInfo.gather4 | mimg_o | mimg_l, op(0x54, gfx11=-1)),
+   ("image_gather4_b_o",         MIMGOpInfo.gather4 | mimg_o | mimg_b, op(0x55, gfx11=-1)),
+   ("image_gather4_b_cl_o",      MIMGOpInfo.gather4 | mimg_o | mimg_b | mimg_cl, op(0x56, gfx11=-1)),
+   ("image_gather4_lz_o",        MIMGOpInfo.gather4 | mimg_o | mimg_lz, op(0x57, gfx11=0x36)),
+   ("image_gather4_c_o",         MIMGOpInfo.gather4 | mimg_o | mimg_c, op(0x58, gfx11=-1)),
+   ("image_gather4_c_cl_o",      MIMGOpInfo.gather4 | mimg_o | mimg_c | mimg_cl, op(0x59, gfx11=-1)),
+   ("image_gather4_c_l_o",       MIMGOpInfo.gather4 | mimg_o | mimg_c | mimg_l, op(0x5c, gfx11=-1)),
+   ("image_gather4_c_b_o",       MIMGOpInfo.gather4 | mimg_o | mimg_c | mimg_b, op(0x5d, gfx11=-1)),
+   ("image_gather4_c_b_cl_o",    MIMGOpInfo.gather4 | mimg_o | mimg_c | mimg_b | mimg_cl, op(0x5e, gfx11=-1)),
+   ("image_gather4_c_lz_o",      MIMGOpInfo.gather4 | mimg_o | mimg_c | mimg_lz, op(0x5f, gfx11=0x37)),
+   ("image_bvh_intersect_ray",   MIMGOpInfo.bvh, op(gfx10=0xe6, gfx11=0x19)),
+   ("image_bvh64_intersect_ray", MIMGOpInfo.bvh64, op(gfx10=0xe7, gfx11=0x1a)),
 }
-for (name, num) in MIMG:
+mimg_opcodes = []
+for (name, info, num) in MIMG:
    insn(name, num, Format.MIMG, InstrClass.VMem, is_atomic = "atomic" in name)
+   mimg_opcodes.append((name, info))
 
 FLAT = {
    ("flat_load_ubyte",          op(0x08, gfx8=0x10, gfx10=0x08, gfx11=0x10)),

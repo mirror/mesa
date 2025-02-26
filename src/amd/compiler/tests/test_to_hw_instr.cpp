@@ -677,10 +677,10 @@ BEGIN_TEST(to_hw_instr.copy_linear_vgpr_v3)
    //>> p_unit_test 0
    bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
 
-   //! v2: %0:v[0-1] = v_lshrrev_b64 0, %0:v[4-5]
+   //! v2: %0:v[0:1] = v_lshrrev_b64 0, %0:v[4:5]
    //! v1: %0:v[2] = v_mov_b32 %0:v[6]
    //! s2: %0:exec,  s1: %0:scc = s_not_b64 %0:exec
-   //! v2: %0:v[0-1] = v_lshrrev_b64 0, %0:v[4-5]
+   //! v2: %0:v[0:1] = v_lshrrev_b64 0, %0:v[4:5]
    //! v1: %0:v[2] = v_mov_b32 %0:v[6]
    //! s2: %0:exec,  s1: %0:scc = s_not_b64 %0:exec
    Instruction* instr = bld.pseudo(aco_opcode::p_parallelcopy, Definition(reg_v0, v3_linear),
@@ -702,9 +702,9 @@ BEGIN_TEST(to_hw_instr.copy_linear_vgpr_coalesce)
    RegClass v1_linear = v1.as_linear();
 
    //>> p_unit_test 0
-   //! v2: %0:v[0-1] = v_lshrrev_b64 0, %0:v[4-5]
+   //! v2: %0:v[0:1] = v_lshrrev_b64 0, %0:v[4:5]
    //! s2: %0:exec,  s1: %0:scc = s_not_b64 %0:exec
-   //! v2: %0:v[0-1] = v_lshrrev_b64 0, %0:v[4-5]
+   //! v2: %0:v[0:1] = v_lshrrev_b64 0, %0:v[4:5]
    //! s2: %0:exec,  s1: %0:scc = s_not_b64 %0:exec
    bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
 

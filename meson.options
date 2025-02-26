@@ -522,7 +522,7 @@ option(
   value : [],
   choices : ['drm-shim', 'etnaviv', 'freedreno', 'glsl', 'intel', 'intel-ui',
              'nir', 'nouveau', 'lima', 'panfrost', 'asahi', 'imagination',
-             'all', 'dlclose-skip'],
+             'all', 'dlclose-skip', 'aco'],
   description : 'List of tools to build. (Note: `intel-ui` selects `intel`)',
 )
 

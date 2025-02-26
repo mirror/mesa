@@ -78,12 +78,22 @@ extern const aco::Info instr_info = {
       ${hex(instructions[name].operands)},
       % endfor
    },
+   {
+      % for (opcode, info) in mimg_opcodes:
+      {aco_opcode::${opcode}, (aco_mimg_op_info)${info}},
+      % endfor
+   },
+   {
+      % for (opcode, info) in mimg_opcodes:
+      {(aco_mimg_op_info)${info}, aco_opcode::${opcode}},
+      % endfor
+   },
 };
 
 }
 """
 
-from aco_opcodes import instructions
+from aco_opcodes import instructions, mimg_opcodes
 from mako.template import Template
 
-print(Template(template).render(instructions=instructions))
+print(Template(template).render(instructions=instructions, mimg_opcodes=mimg_opcodes))

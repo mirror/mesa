@@ -145,7 +145,7 @@ BEGIN_TEST(d3d11_derivs.bias)
    PipelineBuilder pbld(get_vk_device(GFX10_3));
    pbld.add_vsfs(vs, fs);
 
-   //>> s2: %_:s[0-1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0-1], v1: %bias:v[2] = p_startpgm
+   //>> s2: %_:s[0:1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0:1], v1: %bias:v[2] = p_startpgm
    //>> lv3: %wqm = p_start_linear_vgpr v1: undef, (kill)%_, (kill)%_
    //>> BB1
    //>> v4: %_ = image_sample_b (kill)%_, (kill)%_, v1: undef, (latekill)%wqm, (kill)%bias 2d
@@ -279,7 +279,7 @@ BEGIN_TEST(d3d11_derivs.bias_array)
    PipelineBuilder pbld(get_vk_device(GFX10_3));
    pbld.add_vsfs(vs, fs);
 
-   //>> s2: %_:s[0-1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0-1], v1: %bias:v[2] = p_startpgm
+   //>> s2: %_:s[0:1], s1: %_:s[2], s1: %_:s[3], s1: %_:s[4], v2: %_:v[0:1], v1: %bias:v[2] = p_startpgm
    //>> v1: %layer = v_rndne_f32 (kill)%_
    //>> lv4: %wqm = p_start_linear_vgpr v1: undef, (kill)%_, (kill)%_, (kill)%layer
    //>> BB1
@@ -608,13 +608,13 @@ BEGIN_TEST(d3d11_derivs.nsa_max)
       //>> p_unit_test 0
       bld.pseudo(aco_opcode::p_unit_test, Operand::zero());
 
-      //~gfx10! v2: %_:v[0-1] = v_lshrrev_b64 0, %_:v[6-7]
+      //~gfx10! v2: %_:v[0:1] = v_lshrrev_b64 0, %_:v[6:7]
       //~gfx10! v1: %_:v[2] = v_mov_b32 %_:v[8]
-      //~gfx10! v4: %_:v[0-3] = image_sample_c_b_o  %0:s[0-7], %0:s[8-11],  v1: undef, %_:v[0-5] 2darray da
+      //~gfx10! v4: %_:v[0:3] = image_sample_c_b_o  %0:s[0:7], %0:s[8:11],  v1: undef, %_:v[0:5] 2darray da
 
-      //~gfx10_3! v4: %_:v[0-3] = image_sample_c_b_o  %0:s[0-7], %0:s[8-11],  v1: undef, %_:v[6], %_:v[7], %_:v[8], %_:v[3], %_:v[4], %_:v[5] 2darray da
+      //~gfx10_3! v4: %_:v[0:3] = image_sample_c_b_o  %0:s[0:7], %0:s[8:11],  v1: undef, %_:v[6], %_:v[7], %_:v[8], %_:v[3], %_:v[4], %_:v[5] 2darray da
 
-      //~gfx11! v4: %_:v[0-3] = image_sample_c_b_o  %0:s[0-7], %0:s[8-11],  v1: undef, %_:v[6], %_:v[7], %_:v[8], %_:v[3], %_:v[4-5] 2darray da
+      //~gfx11! v4: %_:v[0:3] = image_sample_c_b_o  %0:s[0:7], %0:s[8:11],  v1: undef, %_:v[6], %_:v[7], %_:v[8], %_:v[3], %_:v[4:5] 2darray da
 
       Instruction* instr =
          bld.mimg(aco_opcode::image_sample_c_b_o, Definition(reg_v0, v4), Operand(reg_s0, s8),

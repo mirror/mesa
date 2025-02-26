@@ -62,7 +62,8 @@ conceptually simple:
 -  Call the real function.
 
 This can be implemented in just a few lines of C code. The file
-``src/mesa/glapi/glapitemp.h`` contains code very similar to this.
+``builddir/src/mapi/glapi/gen/glapitemp.h`` contains code very similar
+to this.
 
 .. code-block:: c
    :caption: Sample dispatch function
@@ -182,9 +183,9 @@ significant problem.
 
 Once a new assembly file is created, it must be inserted in the build
 system. There are two steps to this. The file must first be added to
-``src/mesa/sources``. That gets the file built and linked. The second
+``src/mapi/glapi``. That gets the file built and linked. The second
 step is to add the correct ``#ifdef`` magic to
-``src/mesa/glapi/glapi_dispatch.c`` to prevent the C version of the
+``src/mapi/glapi/glapi_dispatch.c`` to prevent the C version of the
 dispatch functions from being built.
 
 .. _fixedsize:
@@ -193,11 +194,11 @@ dispatch functions from being built.
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 To implement ``glXGetProcAddress``, Mesa stores a table that associates
-function names with pointers to those functions. This table is stored in
-``src/mesa/glapi/glprocs.h``. For different reasons on different
-platforms, storing all of those pointers is inefficient. On most
-platforms, including all known platforms that support TLS, we can avoid
-this added overhead.
+function names with pointers to those functions. This table is generated in
+``builddir/src/mapi/glapi/gen/glprocs.h`` if static glapi is being built.
+For different reasons on different platforms, storing all of those pointers
+is inefficient. On most platforms, including all known platforms that
+support TLS, we can avoid this added overhead.
 
 If the assembly stubs are all the same size, the pointer need not be
 stored for every function. The location of the function can instead be
@@ -206,4 +207,4 @@ the function in the table. This value is then added to the address of
 the first dispatch stub.
 
 This path is activated by adding the correct ``#ifdef`` magic to
-``src/mesa/glapi/glapi.c`` just before ``glprocs.h`` is included.
+``src/mapi/glapi/glapi_getproc.c`` just before ``glprocs.h`` is included.

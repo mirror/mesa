@@ -2284,20 +2284,22 @@ anv_physical_device_init_queue_families(struct anv_physical_device *pdevice)
        * which we read below.
        */
       const bool kernel_supports_non_render_engines = pdevice->has_vm_control;
-      /* For now we're choosing to not expose non-render engines on i915.ko
-       * even when the Kernel allows it. We have data suggesting it's not an
-       * obvious win in terms of performance.
+      /* For now we're choosing to not expose compute engines on both Kernel
+       * drivers even when they allow it. We have data suggesting it's not an
+       * obvious win in terms of performance. Copy engines seem to be fine.
        */
-      const bool can_use_non_render_engines =
+      const bool can_use_copy_engines = kernel_supports_non_render_engines;
+      const bool compute_engines_enabled_by_default = false;
+      const bool can_use_compute_engines =
          kernel_supports_non_render_engines &&
-         pdevice->info.kmd_type == INTEL_KMD_TYPE_XE;
+         compute_engines_enabled_by_default;
 
-      if (can_use_non_render_engines) {
+      if (can_use_compute_engines) {
          c_count = pdevice->info.engine_class_supported_count[INTEL_ENGINE_CLASS_COMPUTE];
       }
 
       int blit_count = 0;
-      if (pdevice->info.verx10 >= 125 && can_use_non_render_engines) {
+      if (pdevice->info.verx10 >= 125 && can_use_copy_engines) {
          blit_count = pdevice->info.engine_class_supported_count[INTEL_ENGINE_CLASS_COPY];
       }
 

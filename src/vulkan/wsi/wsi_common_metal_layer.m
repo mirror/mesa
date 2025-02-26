@@ -25,7 +25,8 @@ wsi_metal_layer_size(const CAMetalLayer *metal_layer,
 void
 wsi_metal_layer_configure(const CAMetalLayer *metal_layer,
    uint32_t width, uint32_t height, uint32_t image_count,
-   MTLPixelFormat format, bool enable_opaque, bool enable_immediate)
+   MTLPixelFormat format, const char* cg_color_space_name,
+   bool enable_opaque, bool enable_immediate)
 {
    @autoreleasepool {
       if (metal_layer.device == nil) {
@@ -39,9 +40,21 @@ wsi_metal_layer_configure(const CAMetalLayer *metal_layer,
 
       metal_layer.maximumDrawableCount = image_count;
       metal_layer.drawableSize = (CGSize){.width = width, .height = height};
-      metal_layer.pixelFormat = format;
       metal_layer.opaque = enable_opaque;
       metal_layer.displaySyncEnabled = !enable_immediate;
+      metal_layer.pixelFormat = format;
+
+      if (strlen(cg_color_space_name) > 0) {
+         CFStringRef color_space_name = CFStringCreateWithCString(NULL,
+            cg_color_space_name, kCFStringEncodingUTF8);
+         CGColorSpaceRef color_space = CGColorSpaceCreateWithName(color_space_name);
+         metal_layer.colorspace = color_space;
+         /* Needs release: https://github.com/KhronosGroup/MoltenVK/issues/940 */
+         CGColorSpaceRelease(color_space);
+         CFRelease(color_space_name);
+      } else {
+         metal_layer.colorspace = nil;
+      }
    }
 }
 

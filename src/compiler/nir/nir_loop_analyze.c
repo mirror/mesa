@@ -844,7 +844,8 @@ calculate_iterations(nir_scalar basis, nir_scalar limit_basis,
                      nir_const_value initial, nir_const_value step,
                      nir_const_value limit, nir_alu_instr *alu,
                      nir_scalar cond, nir_op alu_op, bool limit_rhs,
-                     bool invert_cond, unsigned execution_mode,
+                     bool invert_cond, bool guessed_trip_count,
+                     unsigned execution_mode,
                      unsigned max_unroll_iterations)
 {
    /* nir_op_isub should have been lowered away by this point */
@@ -890,6 +891,23 @@ calculate_iterations(nir_scalar basis, nir_scalar limit_basis,
    if (will_break_on_first_iteration(cond, basis, limit_basis, initial,
                                      limit, invert_cond, execution_mode)) {
       return 0;
+   }
+
+   if (guessed_trip_count) {
+      /* If the limit is from an array access, it needs to be an exclusive range. If
+       * the actual loop termination uses an op that would include the limit in the iterated range,
+       * then invert it (e.g. limit < i turns into !(i < limit), or i >= limit) */
+      bool is_exclusive_compare = (alu_op == nir_op_ilt || alu_op == nir_op_flt || alu_op == nir_op_ult);
+      bool is_inclusive_compare = (alu_op == nir_op_ige || alu_op == nir_op_fge || alu_op == nir_op_uge);
+      /* Don't try to handle == */
+      if (is_exclusive_compare || is_inclusive_compare) {
+         bool is_inclusive_range = limit_rhs ? is_inclusive_compare : is_exclusive_compare;
+         bool is_inclusive_limit = invert_cond ? !is_inclusive_range : is_inclusive_range;
+         if (is_inclusive_limit) {
+            limit_rhs = !limit_rhs;
+            invert_cond = !invert_cond;
+         }
+      }
    }
 
    /* For loops incremented with addition operation, it's easy to
@@ -1221,6 +1239,7 @@ find_trip_count(loop_info_state *state, unsigned execution_mode,
                                             step_alu, cond,
                                             alu_op, limit_rhs,
                                             invert_cond,
+                                            guessed_trip_count,
                                             execution_mode,
                                             max_unroll_iterations);
 

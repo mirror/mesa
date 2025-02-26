@@ -637,8 +637,13 @@ static struct radeon_bo *radeon_create_bo(struct radeon_drm_winsys *rws,
    assert(args.handle != 0);
 
    bo = CALLOC_STRUCT(radeon_bo);
-   if (!bo)
+   if (!bo) {
+      struct drm_gem_close close_args;
+      memset(&close_args, 0, sizeof(close_args));
+      close_args.handle = args.handle;
+      drmIoctl(rws->fd, DRM_IOCTL_GEM_CLOSE, &close_args);
       return NULL;
+   }
 
    pipe_reference_init(&bo->base.reference, 1);
    bo->base.alignment_log2 = util_logbase2(alignment);

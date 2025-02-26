@@ -88,7 +88,9 @@ setupLoaderExtensions(struct dri_screen *screen,
        {__DRI_MUTABLE_RENDER_BUFFER_LOADER, 1, offsetof(struct dri_screen, mutableRenderBuffer.loader), true},
        {__DRI_KOPPER_LOADER, 1, offsetof(struct dri_screen, kopper_loader), true},
    };
+#if HAVE_DRI2
    loader_bind_extensions(screen, matches, ARRAY_SIZE(matches), extensions);
+#endif
 }
 
 /**

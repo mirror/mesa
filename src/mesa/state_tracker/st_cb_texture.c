@@ -3175,11 +3175,6 @@ st_finalize_texture(struct gl_context *ctx,
       return GL_TRUE;
    }
 
-   /* If this texture comes from a window system, there is nothing else to do. */
-   if (tObj->surface_based) {
-      return GL_TRUE;
-   }
-
    firstImage = st_texture_image_const(tObj->Image[cubeMapFace]
                                        [tObj->Attrib.BaseLevel]);
    if (!firstImage)
@@ -3271,6 +3266,11 @@ st_finalize_texture(struct gl_context *ctx,
           tObj->pt->nr_samples != ptNumSamples ||
           tObj->pt->array_size != ptLayers)
       {
+         /* If this texture comes from a window system, there is nothing else to do. */
+         if (tObj->surface_based) {
+            return GL_TRUE;
+         }
+
          /* The gallium texture does not match the Mesa texture so delete the
           * gallium texture now.  We'll make a new one below.
           */

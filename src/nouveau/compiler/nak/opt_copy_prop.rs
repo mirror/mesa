@@ -566,13 +566,11 @@ impl CopyPropPass {
             }
             Op::PLop3(lop) => {
                 for i in 0..2 {
-                    let dst = match lop.dsts[i] {
-                        Dst::SSA(vec) => {
-                            assert!(vec.comps() == 1);
-                            vec[0]
-                        }
-                        _ => continue,
+                    let Some(dst) = lop.dsts[i].as_ssa() else {
+                        continue;
                     };
+                    assert!(dst.comps() == 1);
+                    let dst = dst[0];
 
                     let op = lop.ops[i];
                     if op.lut == 0 {
@@ -758,6 +756,16 @@ impl CopyPropPass {
                         };
                     };
                     self.prop_to_src(src_type, &cbuf_rule, src);
+                }
+
+                for dst in instr.dsts_mut() {
+                    if let Some(ssa) = dst.prev_ssa_mut() {
+                        loop {
+                            if !self.prop_to_ssa_ref(ssa) {
+                                break;
+                            }
+                        }
+                    }
                 }
             }
         }

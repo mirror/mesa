@@ -58,13 +58,13 @@ impl LiveSet {
         instr: &Instr,
         bl: &L,
     ) -> PerRegFile<u32> {
-        // Vector destinations go live before sources are killed.  Even
-        // in the case where the destination is immediately killed, it
+        // Non-predicated vector destinations go live before sources are killed.
+        // Even in the case where the destination is immediately killed, it
         // still may contribute to pressure temporarily.
         for dst in instr.dsts() {
-            if let Dst::SSA(vec) = dst {
-                if vec.comps() > 1 {
-                    for ssa in vec.iter() {
+            if let Dst::SSA(ssa) = dst {
+                if ssa.prev.is_none() && ssa.def.comps() > 1 {
+                    for ssa in ssa.def.iter() {
                         self.insert(*ssa);
                     }
                 }
@@ -79,11 +79,11 @@ impl LiveSet {
             }
         });
 
-        // Scalar destinations are allocated last
+        // Scalar and predicated destinations are allocated last
         for dst in instr.dsts() {
-            if let Dst::SSA(vec) = dst {
-                if vec.comps() == 1 {
-                    self.insert(vec[0]);
+            if let Dst::SSA(ssa) = dst {
+                if ssa.prev.is_some() || ssa.def.comps() == 1 {
+                    self.insert(ssa.def[0]);
                 }
             }
         }
@@ -136,11 +136,11 @@ pub trait BlockLiveness {
     fn get_instr_pressure(&self, ip: usize, instr: &Instr) -> PerRegFile<u8> {
         let mut live = PerRegFile::new_with(|_| 0_i8);
 
-        // Vector destinations go live before sources are killed.
+        // Non-predicated vector destinations go live before sources are killed.
         for dst in instr.dsts() {
-            if let Dst::SSA(vec) = dst {
-                if vec.comps() > 1 {
-                    for ssa in vec.iter() {
+            if let Dst::SSA(ssa) = dst {
+                if ssa.prev.is_none() && ssa.def.comps() > 1 {
+                    for ssa in ssa.def.iter() {
                         live[ssa.file()] += 1;
                     }
                 }
@@ -161,11 +161,11 @@ pub trait BlockLiveness {
             live[ssa.file()] -= 1;
         }
 
-        // Scalar destinations are allocated last
+        // Scalar and predicated destinations are allocated last
         for dst in instr.dsts() {
-            if let Dst::SSA(vec) = dst {
-                if vec.comps() == 1 {
-                    live[vec[0].file()] += 1;
+            if let Dst::SSA(ssa) = dst {
+                if ssa.prev.is_some() || ssa.def.comps() == 1 {
+                    live[ssa.def[0].file()] += 1;
                 }
             }
         }

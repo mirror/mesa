@@ -799,6 +799,99 @@ nak_nir_remove_barriers(nir_shader *nir)
                                      NULL);
 }
 
+static nir_intrinsic_instr *
+cf_list_as_load_global(struct exec_list *cf_list)
+{
+   if (!exec_list_is_singular(cf_list))
+      return NULL;
+
+   struct exec_node *head = exec_list_get_head(cf_list);
+   nir_block *block =
+      nir_cf_node_as_block(exec_node_data(nir_cf_node, head, node));
+
+   if (!exec_list_is_singular(&block->instr_list))
+      return NULL;
+
+   nir_instr *instr = nir_block_first_instr(block);
+   if (instr->type != nir_instr_type_intrinsic)
+      return NULL;
+
+   nir_intrinsic_instr *load = nir_instr_as_intrinsic(instr);
+   if (load->intrinsic != nir_intrinsic_load_global)
+      return NULL;
+
+   return load;
+}
+
+static bool
+nak_nir_peephole_pred_ldg(nir_shader *nir)
+{
+   nir_function_impl *impl = nir_shader_get_entrypoint(nir);
+   bool progress = false;
+
+   nir_foreach_block(block, impl) {
+      nir_if *nif = nir_block_get_following_if(block);
+      if (nif == NULL)
+         continue;
+
+      nir_intrinsic_instr *load = cf_list_as_load_global(&nif->then_list);
+      if (load == NULL)
+         continue;
+
+      if (!nir_cf_list_is_empty_block(&nif->else_list))
+         continue;
+
+      nir_block *next_block =
+         nir_cf_node_as_block(nir_cf_node_next(&nif->cf_node));
+
+      nir_def *def = NULL;
+      nir_phi_instr *phi = NULL;
+      nir_foreach_instr(instr, next_block) {
+         if (instr->type != nir_instr_type_phi)
+            break;
+
+         phi = nir_instr_as_phi(instr);
+
+         nir_def *then_val = NULL, *else_val = NULL;
+         nir_foreach_phi_src(src, phi) {
+            if (src->pred == nir_if_last_then_block(nif))
+               then_val = src->src.ssa;
+            else if (src->pred == nir_if_last_else_block(nif))
+               else_val = src->src.ssa;
+            else
+               unreachable("Invalid phi after if");
+         }
+         if (then_val == &load->def) {
+            def = else_val;
+            break;
+         }
+      }
+
+      if (def == NULL)
+         continue;
+
+      nir_builder b = nir_builder_at(nir_after_block(block));
+      nir_def *val = nir_pred_ldg_nv(&b, load->def.bit_size,
+                                     load->src[0].ssa,
+                                     nif->condition.ssa,
+                                     def,
+                                     .access = nir_intrinsic_access(load),
+                                     .align_mul = nir_intrinsic_align_mul(load),
+                                     .align_offset = nir_intrinsic_align_offset(load));
+      nir_def_rewrite_uses(&phi->def, val);
+      progress = true;
+   }
+
+   if (progress) {
+      nir_metadata_preserve(impl, nir_metadata_control_flow |
+                                  nir_metadata_divergence);
+   } else {
+      nir_metadata_preserve(impl, nir_metadata_all);
+   }
+
+   return progress;
+}
+
 static bool
 nak_mem_vectorize_cb(unsigned align_mul, unsigned align_offset,
                      unsigned bit_size, unsigned num_components,
@@ -967,6 +1060,11 @@ nak_postprocess_nir(nir_shader *nir,
    };
    OPT(nir, nir_lower_mem_access_bit_sizes, &mem_bit_size_options);
    OPT(nir, nir_lower_bit_size, lower_bit_size_cb, (void *)nak);
+
+   if (OPT(nir, nak_nir_peephole_pred_ldg)) {
+      OPT(nir, nir_opt_dce);
+      OPT(nir, nir_opt_dead_cf);
+   }
 
    OPT(nir, nir_opt_combine_barriers, NULL, NULL);
 

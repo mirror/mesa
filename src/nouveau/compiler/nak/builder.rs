@@ -23,9 +23,9 @@ pub trait Builder {
     }
 
     fn lop2_to(&mut self, dst: Dst, op: LogicOp2, mut x: Src, mut y: Src) {
-        let is_predicate = match dst {
+        let is_predicate = match &dst {
             Dst::None => panic!("No LOP destination"),
-            Dst::SSA(ssa) => ssa.is_predicate(),
+            Dst::SSA(ssa) => ssa.def.is_predicate(),
             Dst::Reg(reg) => reg.is_predicate(),
         };
         assert!(x.is_predicate() == is_predicate);

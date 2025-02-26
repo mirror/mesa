@@ -570,7 +570,8 @@ visit_intrinsic(nir_intrinsic_instr *instr, struct divergence_state *state)
    case nir_intrinsic_load_global:
    case nir_intrinsic_load_global_2x32:
    case nir_intrinsic_load_global_ir3:
-   case nir_intrinsic_load_deref: {
+   case nir_intrinsic_load_deref:
+   case nir_intrinsic_pred_ldg_nv: {
       if (load_may_tear(state, instr)) {
          is_divergent = true;
          break;

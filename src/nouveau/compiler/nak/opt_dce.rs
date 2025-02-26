@@ -42,7 +42,7 @@ impl DeadCodePass {
     fn is_dst_live(&self, dst: &Dst) -> bool {
         match dst {
             Dst::SSA(ssa) => {
-                for val in ssa.iter() {
+                for val in ssa.def.iter() {
                     if self.live_ssa.get(val).is_some() {
                         return true;
                     }
@@ -117,6 +117,23 @@ impl DeadCodePass {
                     for src in instr.srcs() {
                         self.mark_src_live(src);
                     }
+
+                    if instr.pred.is_true() {
+                        for dst in instr.dsts() {
+                            if dst.prev_ssa().is_some() {
+                                self.any_dead = true;
+                            }
+                        }
+                    } else {
+                        // The predicate might be false
+                        for dst in instr.dsts() {
+                            if let Some(prev) = dst.prev_ssa() {
+                                for ssa in prev.iter() {
+                                    self.mark_ssa_live(ssa);
+                                }
+                            }
+                        }
+                    }
                 } else {
                     self.any_dead = true;
                 }
@@ -138,7 +155,18 @@ impl DeadCodePass {
                 pcopy.dsts_srcs.retain(|dst, _| self.is_dst_live(dst));
                 !pcopy.dsts_srcs.is_empty()
             }
-            _ => self.is_instr_live(&instr),
+            _ => {
+                if instr.pred.is_true() {
+                    // If the predicate is known to be true, we don't need to
+                    // reference a previous destination value.
+                    for dst in instr.dsts_mut() {
+                        if let Dst::SSA(SSADst { prev, .. }) = dst {
+                            *prev = None
+                        }
+                    }
+                }
+                self.is_instr_live(&instr)
+            }
         };
 
         if is_live {

@@ -1918,7 +1918,7 @@ impl<'a> ShaderFromNir<'a> {
                 let Dst::SSA(fault) = fault else {
                     panic!("No fault value for sparse op");
                 };
-                nir_dst.push(b.sel(fault.into(), 0.into(), 1.into())[0]);
+                nir_dst.push(b.sel(fault.def.into(), 0.into(), 1.into())[0]);
             } else if mask & (1 << i) == 0 {
                 nir_dst.push(b.copy(0.into())[0]);
             } else {
@@ -2624,7 +2624,9 @@ impl<'a> ShaderFromNir<'a> {
             nir_intrinsic_load_barycentric_centroid => (),
             nir_intrinsic_load_barycentric_pixel => (),
             nir_intrinsic_load_barycentric_sample => (),
-            nir_intrinsic_load_global | nir_intrinsic_load_global_constant => {
+            nir_intrinsic_load_global
+            | nir_intrinsic_load_global_constant
+            | nir_intrinsic_pred_ldg_nv => {
                 let size_B =
                     (intrin.def.bit_size() / 8) * intrin.def.num_components();
                 assert!(u32::from(size_B) <= intrin.align());
@@ -2646,12 +2648,27 @@ impl<'a> ShaderFromNir<'a> {
                 let (addr, offset) = self.get_io_addr_offset(&srcs[0], 24);
                 let dst = b.alloc_ssa(RegFile::GPR, size_B.div_ceil(4));
 
-                b.push_op(OpLd {
-                    dst: dst.into(),
-                    addr: addr,
-                    offset: offset,
-                    access: access,
-                });
+                if intrin.intrinsic == nir_intrinsic_pred_ldg_nv {
+                    let pred = self.get_ssa_ref(&srcs[1])[0];
+                    let def = self.get_ssa_ref(&srcs[2]);
+                    let dst = SSADst {
+                        prev: Some(def),
+                        def: dst,
+                    };
+                    b.predicate(pred.into()).push_op(OpLd {
+                        dst: dst.into(),
+                        addr: addr,
+                        offset: offset,
+                        access: access,
+                    });
+                } else {
+                    b.push_op(OpLd {
+                        dst: dst.into(),
+                        addr: addr,
+                        offset: offset,
+                        access: access,
+                    });
+                }
                 self.set_dst(&intrin.def, dst);
             }
             nir_intrinsic_ldtram_nv => {

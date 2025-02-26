@@ -357,7 +357,7 @@ fn src_mod_is_bnot(src_mod: SrcMod) -> bool {
 fn dst_is_bar(dst: Dst) -> bool {
     match dst {
         Dst::None => false,
-        Dst::SSA(ssa) => ssa.file().unwrap() == RegFile::Bar,
+        Dst::SSA(_) => panic!("SSA values must be lowered"),
         Dst::Reg(reg) => reg.file() == RegFile::Bar,
     }
 }

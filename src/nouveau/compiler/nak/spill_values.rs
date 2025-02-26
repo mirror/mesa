@@ -498,12 +498,11 @@ fn spill_values<S: Spill>(
 
             if let Some(phi) = blocks[b_idx].phi_dsts() {
                 for (_, dst) in phi.dsts.iter() {
-                    if let Dst::SSA(vec) = dst {
-                        assert!(vec.comps() == 1);
-                        let ssa = vec[0];
-                        if ssa.file() == file {
-                            i_b.insert(ssa);
-                        }
+                    let vec = dst.as_ssa().unwrap();
+                    debug_assert!(vec.comps() == 1);
+                    let ssa = vec[0];
+                    if ssa.file() == file {
+                        i_b.insert(ssa);
                     }
                 }
             }

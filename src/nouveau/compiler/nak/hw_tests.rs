@@ -377,7 +377,7 @@ pub fn test_foldable_op_with(
     let op = op; // Drop mutability
 
     for dst in op.dsts_as_slice() {
-        let Dst::SSA(vec) = dst else {
+        let Some(vec) = dst.as_ssa() else {
             panic!("Should be an ssa value");
         };
 

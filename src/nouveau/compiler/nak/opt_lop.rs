@@ -213,7 +213,7 @@ impl LopPass {
             self.try_prop_to_src(slice::from_mut(&mut op.op), &mut op.srcs, i);
         }
 
-        if let Dst::SSA(ssa) = op.dst {
+        if let Some(ssa) = op.dst.as_ssa() {
             assert!(ssa.comps() == 1);
             self.add_lop(ssa[0], op.op, op.srcs);
         }
@@ -246,7 +246,7 @@ impl LopPass {
         }
 
         for i in 0..2 {
-            if let Dst::SSA(ssa) = op.dsts[i] {
+            if let Some(ssa) = op.dsts[i].as_ssa() {
                 assert!(ssa.comps() == 1);
                 self.add_lop(ssa[0], op.ops[i], op.srcs);
             }

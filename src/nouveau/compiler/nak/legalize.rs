@@ -409,6 +409,31 @@ fn legalize_instr(
             src.src_ref = new_vec.into();
         }
     }
+
+    for dst in instr.dsts_mut() {
+        let Dst::SSA(ssa) = dst else {
+            continue;
+        };
+
+        if let Some(prev) = &mut ssa.prev {
+            assert!(prev.comps() == ssa.def.comps());
+            for (def, prev) in ssa.def.iter().zip(prev.iter_mut()) {
+                // Register allocation MUST be able to coalesce the prev value
+                // with the definition.  In order to ensure that is possible,
+                // we insert copies as needed.  We also need to check that the
+                // previous destination value isn't used by any of our vector
+                // sources.
+                if prev.file() != def.file()
+                    || bl.is_live_after_ip(prev, ip)
+                    || vec_comps.get(prev).is_some()
+                {
+                    let copy = b.alloc_ssa(def.file(), 1)[0];
+                    b.copy_to(copy.into(), (*prev).into());
+                    *prev = copy;
+                }
+            }
+        }
+    }
 }
 
 impl Shader<'_> {
@@ -426,7 +451,7 @@ impl Shader<'_> {
                 for (ip, mut instr) in b.instrs.drain(..).enumerate() {
                     if let Op::Pin(pin) = &instr.op {
                         if let Dst::SSA(ssa) = &pin.dst {
-                            pinned.insert(*ssa);
+                            pinned.insert(ssa.def);
                         }
                     }
 

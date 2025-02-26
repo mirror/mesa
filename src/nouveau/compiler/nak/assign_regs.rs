@@ -351,6 +351,22 @@ impl RegAllocator {
         self.used.insert(reg_usize);
     }
 
+    pub fn reassign_vec_reg(
+        &mut self,
+        new_ssa: &SSARef,
+        reg: RegRef,
+        old_ssa: &SSARef,
+    ) {
+        debug_assert!(reg.file() == self.file());
+        debug_assert!(old_ssa.comps() == reg.comps());
+        debug_assert!(new_ssa.comps() == reg.comps());
+        for c in 0..reg.comps() {
+            let c_reg = self.free_ssa(old_ssa[usize::from(c)]);
+            debug_assert!(c_reg == reg.comp(c).base_idx());
+            self.assign_reg(new_ssa[usize::from(c)], c_reg);
+        }
+    }
+
     pub fn pin_reg(&mut self, reg: u32) {
         assert!(self.reg_is_used(reg));
         self.pinned.insert(reg.try_into().unwrap());
@@ -720,6 +736,25 @@ fn instr_remap_srcs_file(instr: &mut Instr, ra: &mut VecRegAllocator) {
         }
     }
 
+    // Collect vector predicated destinations since those may also pin things.
+    // We collect them after vector sources primarily on the theory that moving
+    // a destination value is probably cheaper than moving a source as it
+    // creates a WaR hazard, not RaW.
+    for dst in instr.dsts_mut() {
+        if let Dst::SSA(SSADst {
+            prev: Some(prev),
+            def,
+        }) = dst
+        {
+            assert!(def.comps() == prev.comps());
+            if prev.file().unwrap() == ra.file() && prev.comps() > 1 {
+                let reg = ra.collect_vector(prev);
+                ra.ra.reassign_vec_reg(def, reg, prev);
+                *dst = reg.into();
+            }
+        }
+    }
+
     if let PredRef::SSA(pred) = instr.pred.pred_ref {
         if pred.file() == ra.file() {
             instr.pred.pred_ref = ra.collect_vector(&pred.into()).into();
@@ -734,6 +769,21 @@ fn instr_remap_srcs_file(instr: &mut Instr, ra: &mut VecRegAllocator) {
             }
         }
     }
+
+    for dst in instr.dsts_mut() {
+        if let Dst::SSA(SSADst {
+            prev: Some(prev),
+            def,
+        }) = dst
+        {
+            assert!(def.comps() == prev.comps());
+            if prev.file().unwrap() == ra.file() && prev.comps() == 1 {
+                let reg = ra.collect_vector(prev);
+                ra.ra.reassign_vec_reg(def, reg, prev);
+                *dst = reg.into();
+            }
+        }
+    }
 }
 
 fn instr_alloc_scalar_dsts_file(
@@ -745,6 +795,9 @@ fn instr_alloc_scalar_dsts_file(
 ) {
     for dst in instr.dsts_mut() {
         if let Dst::SSA(ssa) = dst {
+            let ssa = ssa
+                .as_mut_ssa()
+                .expect("Predicated destinations already handled");
             if ssa.file().unwrap() == ra.file() {
                 assert!(ssa.comps() == 1);
                 let reg = ra.alloc_scalar(ip, sum, phi_webs, ssa[0]);
@@ -759,6 +812,7 @@ fn instr_assign_regs_file(
     ip: usize,
     sum: &SSAUseMap,
     phi_webs: &mut PhiWebs,
+    dst_prevs: &HashSet<SSAValue>,
     killed: &KillSet,
     pcopy: &mut OpParCopy,
     ra: &mut RegAllocator,
@@ -774,14 +828,17 @@ fn instr_assign_regs_file(
     let mut vec_dst_comps = 0;
     for (i, dst) in instr.dsts().iter().enumerate() {
         if let Dst::SSA(ssa) = dst {
-            if ssa.file().unwrap() == ra.file() && ssa.comps() > 1 {
+            if ssa.prev.is_none()
+                && ssa.def.file().unwrap() == ra.file()
+                && ssa.def.comps() > 1
+            {
                 vec_dsts.push(VecDst {
                     dst_idx: i,
-                    comps: ssa.comps(),
+                    comps: ssa.def.comps(),
                     killed: None,
                     reg: u32::MAX,
                 });
-                vec_dst_comps += ssa.comps();
+                vec_dst_comps += ssa.def.comps();
             }
         }
     }
@@ -805,10 +862,13 @@ fn instr_assign_regs_file(
     let mut killed_vecs = Vec::new();
     for src in instr.srcs() {
         if let Some(vec) = src_ssa_ref(src) {
-            if vec.comps() > 1 {
+            if vec.comps() == 1 {
                 let mut vec_killed = true;
                 for ssa in vec.iter() {
-                    if ssa.file() != ra.file() || !avail.contains(ssa) {
+                    if ssa.file() != ra.file()
+                        || !avail.contains(ssa)
+                        || dst_prevs.contains(ssa)
+                    {
                         vec_killed = false;
                         break;
                     }
@@ -893,6 +953,9 @@ fn instr_assign_regs_file(
         // Scalar destinations can fill in holes.
         for dst in instr.dsts_mut() {
             if let Dst::SSA(ssa) = dst {
+                let ssa = ssa
+                    .as_mut_ssa()
+                    .expect("Predicated destinations already handled");
                 if ssa.file().unwrap() == vra.file() && ssa.comps() > 1 {
                     *dst = vra.alloc_vector(*ssa).into();
                 }
@@ -957,6 +1020,16 @@ impl AssignRegsBlock {
         RegRef::new(ssa.file(), reg, 1)
     }
 
+    fn reassign_vec_reg(
+        &mut self,
+        new_ssa: &SSARef,
+        reg: RegRef,
+        old_ssa: &SSARef,
+    ) {
+        let ra = &mut self.ra[reg.file()];
+        ra.reassign_vec_reg(new_ssa, reg, old_ssa);
+    }
+
     fn pin_vector(&mut self, reg: RegRef) {
         let ra = &mut self.ra[reg.file()];
         for c in 0..reg.comps() {
@@ -1002,6 +1075,7 @@ impl AssignRegsBlock {
         ip: usize,
         sum: &SSAUseMap,
         phi_webs: &mut PhiWebs,
+        dst_prevs: &HashSet<SSAValue>,
         srcs_killed: &KillSet,
         dsts_killed: &KillSet,
         pcopy: &mut OpParCopy,
@@ -1009,6 +1083,7 @@ impl AssignRegsBlock {
         match &mut instr.op {
             Op::Undef(undef) => {
                 if let Dst::SSA(ssa) = undef.dst {
+                    let ssa = ssa.as_ssa().expect("Undef can't be predicated");
                     assert!(ssa.comps() == 1);
                     self.alloc_scalar(ip, sum, phi_webs, ssa[0]);
                 }
@@ -1035,6 +1110,8 @@ impl AssignRegsBlock {
 
                 for (id, dst) in phi.dsts.iter() {
                     if let Dst::SSA(ssa) = dst {
+                        let ssa =
+                            ssa.as_ssa().expect("Phis can't be predicated");
                         assert!(ssa.comps() == 1);
                         let reg = self.alloc_scalar(ip, sum, phi_webs, ssa[0]);
                         self.live_in.push(LiveValue {
@@ -1060,6 +1137,8 @@ impl AssignRegsBlock {
                 self.ra.free_killed(srcs_killed);
 
                 if let Dst::SSA(ssa) = &op.bar_out {
+                    let ssa =
+                        ssa.as_ssa().expect("Barrier ops can't be predicated");
                     let reg = *op.bar_in.src_ref.as_reg().unwrap();
                     self.ra.assign_reg(ssa[0], reg);
                     op.bar_out = reg.into();
@@ -1081,6 +1160,8 @@ impl AssignRegsBlock {
                 self.ra.free_killed(srcs_killed);
 
                 if let Dst::SSA(ssa) = &op.bar_out {
+                    let ssa =
+                        ssa.as_ssa().expect("Barrier ops can't be predicated");
                     let reg = *op.bar_in.src_ref.as_reg().unwrap();
                     self.ra.assign_reg(ssa[0], reg);
                     op.bar_out = reg.into();
@@ -1105,16 +1186,22 @@ impl AssignRegsBlock {
                 }
 
                 let mut del_copy = false;
-                if let Dst::SSA(dst_vec) = &mut copy.dst {
-                    debug_assert!(dst_vec.comps() == 1);
-                    let dst_ssa = &dst_vec[0];
-
-                    if self.try_coalesce(*dst_ssa, &copy.src) {
-                        del_copy = true;
+                if let Dst::SSA(dst_vec) = &copy.dst {
+                    debug_assert!(dst_vec.def.comps() == 1);
+                    if let Some(prev) = &dst_vec.prev {
+                        let reg = self.get_scalar(prev[0]);
+                        self.reassign_vec_reg(&dst_vec.def, reg, prev);
+                        copy.dst = reg.into();
                     } else {
-                        copy.dst = self
-                            .alloc_scalar(ip, sum, phi_webs, *dst_ssa)
-                            .into();
+                        let dst_ssa = &dst_vec.def[0];
+
+                        if self.try_coalesce(*dst_ssa, &copy.src) {
+                            del_copy = true;
+                        } else {
+                            copy.dst = self
+                                .alloc_scalar(ip, sum, phi_webs, *dst_ssa)
+                                .into();
+                        }
                     }
                 }
 
@@ -1143,11 +1230,7 @@ impl AssignRegsBlock {
                     let mut vra = VecRegAllocator::new(ra);
                     let reg = vra.collect_vector(src_vec);
                     vra.finish(pcopy);
-                    for c in 0..src_vec.comps() {
-                        let c_reg = ra.free_ssa(src_vec[usize::from(c)]);
-                        debug_assert!(c_reg == reg.comp(c).base_idx());
-                        ra.assign_reg(dst_vec[usize::from(c)], c_reg);
-                    }
+                    self.reassign_vec_reg(dst_vec, reg, src_vec);
 
                     if matches!(&instr.op, Op::Pin(_)) {
                         self.pin_vector(reg);
@@ -1197,6 +1280,9 @@ impl AssignRegsBlock {
                 pcopy.dsts_srcs.retain(|dst, src| match dst {
                     Dst::None => false,
                     Dst::SSA(dst_vec) => {
+                        let dst_vec = dst_vec
+                            .as_ssa()
+                            .expect("Parallel copies can't be predicated");
                         debug_assert!(dst_vec.comps() == 1);
                         !self.try_coalesce(dst_vec[0], src)
                     }
@@ -1205,6 +1291,9 @@ impl AssignRegsBlock {
 
                 for (dst, _) in pcopy.dsts_srcs.iter_mut() {
                     if let Dst::SSA(dst_vec) = dst {
+                        let dst_vec = dst_vec
+                            .as_mut_ssa()
+                            .expect("Parallel copies can't be predicated");
                         debug_assert!(dst_vec.comps() == 1);
                         *dst = self
                             .alloc_scalar(ip, sum, phi_webs, dst_vec[0])
@@ -1252,6 +1341,7 @@ impl AssignRegsBlock {
                         ip,
                         sum,
                         phi_webs,
+                        dst_prevs,
                         srcs_killed,
                         pcopy,
                         file,
@@ -1292,20 +1382,38 @@ impl AssignRegsBlock {
         let sum = SSAUseMap::for_block(b);
 
         let mut instrs = Vec::new();
+        let mut dst_prevs = HashSet::new();
         let mut srcs_killed = KillSet::new();
         let mut dsts_killed = KillSet::new();
 
         for (ip, instr) in b.instrs.drain(..).enumerate() {
+            dst_prevs.clear();
+            for dst in instr.dsts() {
+                if let Dst::SSA(SSADst {
+                    prev: Some(prev), ..
+                }) = dst
+                {
+                    for ssa in prev.iter() {
+                        assert!(!bl.is_live_after_ip(ssa, ip));
+                        dst_prevs.insert(*ssa);
+                    }
+                }
+            }
+
             // Build up the kill set
+            //
+            // We don't consider anything that's a previous destination value to
+            // be killed because it'll get killed implicitly
             srcs_killed.clear();
             if let PredRef::SSA(ssa) = &instr.pred.pred_ref {
-                if !bl.is_live_after_ip(ssa, ip) {
+                if !dst_prevs.contains(ssa) && !bl.is_live_after_ip(ssa, ip) {
                     srcs_killed.insert(*ssa);
                 }
             }
             for src in instr.srcs() {
                 for ssa in src.iter_ssa() {
-                    if !bl.is_live_after_ip(ssa, ip) {
+                    if !dst_prevs.contains(ssa) && !bl.is_live_after_ip(ssa, ip)
+                    {
                         srcs_killed.insert(*ssa);
                     }
                 }
@@ -1313,8 +1421,8 @@ impl AssignRegsBlock {
 
             dsts_killed.clear();
             for dst in instr.dsts() {
-                if let Dst::SSA(vec) = dst {
-                    for ssa in vec.iter() {
+                if let Dst::SSA(ssa) = dst {
+                    for ssa in ssa.def.iter() {
                         if !bl.is_live_after_ip(ssa, ip) {
                             dsts_killed.insert(*ssa);
                         }
@@ -1330,6 +1438,7 @@ impl AssignRegsBlock {
                 ip,
                 &sum,
                 phi_webs,
+                &dst_prevs,
                 &srcs_killed,
                 &dsts_killed,
                 &mut pcopy,

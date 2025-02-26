@@ -522,6 +522,51 @@ struct pipe_enc_roi
    struct pipe_enc_region_in_roi region[PIPE_ENC_ROI_REGION_NUM_MAX];
 };
 
+/* qp_map_mode, PIPE_ENC_QPMAP_ABSOLUTE only valid in CQP
+ * mode, because in this case, RC has been done externally. */
+enum pipe_enc_qp_map_mode
+{
+   PIPE_ENC_QPMAP_NONE  = 0x0,
+   PIPE_ENC_QPMAP_DELTA = 0x1,
+   PIPE_ENC_QPMAP_ABSOLUTE = 0x2,
+};
+
+/* qp_map_division_context, division_factor is only
+ * valid in the corresponding context. For example,
+ * if the valid QP_MAP_DIV_CTX was set to
+ * PIPE_ENC_QPMAP_DIV_CQP, then only when in CQP mode,
+ * each of the element from QP MAP will need to
+ * apply the value of division_factor, if not in CQP mode,
+ * it should not apply division_factor, otherwise it will
+ * result in the failure of apllying QPMap. */
+enum pipe_enc_qp_map_div_ctx
+{
+   PIPE_ENC_QPMAP_DIV_NONE  = 0x0,
+   PIPE_ENC_QPMAP_DIV_CQP = 0x1,
+   PIPE_ENC_QPMAP_DIV_RC = 0x2,
+   PIPE_ENC_QPMAP_DIV_BOTH = 0x3,
+};
+
+/* qp_map is a way of rate control from applications, while
+ * DELTA mode is trying to use the current RC mode with some
+ * kinds of adjustments on a portion or the whole image being
+ * processed. On the contrary, absolute mode is not using the
+ * RC mode, and doing the adjustment entirely from exteranl.
+ * Absolute mode could be used in the cases which set CQP mode
+ * in VCN and actually doing exteranl rate control, the assumption
+ * is for async operations since the feedback could come back
+ * in several frames, its reaction time might needs to consider
+ * the delay of several frames.
+ *
+ * pipe_resource should be aways avaiable, otherwise it won't
+ * perform QP_MAP operations. */
+
+struct pipe_enc_qp_map
+{
+   enum pipe_enc_qp_map_mode mode;
+   struct pipe_resource *resource;
+};
+
 struct pipe_enc_raw_header
 {
    uint8_t type; /* nal_unit_type or obu_type */
@@ -803,6 +848,7 @@ struct pipe_h264_enc_picture_desc
    struct pipe_enc_quality_modes quality_modes;
    struct pipe_enc_intra_refresh intra_refresh;
    struct pipe_enc_roi roi;
+   struct pipe_enc_qp_map qp_map;
 
    bool not_referenced;
    bool is_ltr;
@@ -1186,6 +1232,7 @@ struct pipe_h265_enc_picture_desc
    struct pipe_enc_quality_modes quality_modes;
    struct pipe_enc_intra_refresh intra_refresh;
    struct pipe_enc_roi roi;
+   struct pipe_enc_qp_map qp_map;
    unsigned num_ref_idx_l0_active_minus1;
    unsigned num_ref_idx_l1_active_minus1;
    unsigned ref_idx_l0_list[PIPE_H265_MAX_NUM_LIST_REF];
@@ -1365,6 +1412,7 @@ struct pipe_av1_enc_picture_desc
    struct pipe_enc_quality_modes quality_modes;
    struct pipe_enc_intra_refresh intra_refresh;
    struct pipe_enc_roi roi;
+   struct pipe_enc_qp_map qp_map;
    uint32_t tile_rows;
    uint32_t tile_cols;
    unsigned num_tile_groups;
@@ -2425,6 +2473,62 @@ union pipe_enc_cap_surface_alignment {
       uint32_t reserved                             : 24;
    } bits;
    uint32_t value;
+};
+
+union pipe_enc_cap_qp_map {
+    struct {
+        /** \brief QP map mode: 1, delta QP; 2, absolute QP
+         * \ref qp_map_mode = 1, the meaning of each element is
+         * a delta value, in term of each block, the final QP =
+         * current QP + delta_QP. The value of delta_QP is a
+         * signed number. In the case, \ref log2_qp_map_unit_size_in_bytes = 2,
+         * each element is using 4 bytes. If \ref qp_map_mode = 2, it is
+         * using absolute QP values, final QP = QP, only valid, when
+         * qp_map_mode & (VA_ENC_QP_MAP_MODE_DELTA | VA_ENC_QP_MAP_MODE_ABSOLUTE)
+         */
+        uint32_t qp_map_mode                : 2;
+        /** \brief supported size of qp map block, for h264, each block
+         * (16x16) has one QP, \ref log2_block_size = 4, if HEVC/AV1,
+         * and each 64x64 has a QP, \ref log2_block_size = 6*/
+        uint32_t log2_block_size            : 4;
+        /** \brief size of each qp map element per block in byte,
+         * for example 1 byte for each QP map element, then
+         * \ref unit_size_in_bytes = 1; If 4 bytes is
+         * for each QP map element, then \ref unit_size_in_bytes = 4,
+         * \ref unit_size_in_bytes = 0 is invalid. */
+        uint32_t unit_size_in_bytes         : 3;
+        /* \brief it specifies when to apply the division factor.
+         * \ref division_context has several cases, 0x00, disable
+         *  division, 0x01, only apply division on CQP mode, 0x10,
+         *  only apply divsion on rate control mode. 0x11, apply devision
+         *  on both CQP and RC mode.*/
+        uint32_t division_context           : 2;
+        /* \brief it indicates if it needs to scaling down, for example,
+         * if the qi value is 255 in AV1, with \ref division_factor, it needs
+         * to write to 255/division_factor to the memory, if scaling factor
+         * is 0, it is invalid value. The minimum \c division_factor value
+         * is 1. division_factor has to higher priority over left_shift_bits.
+         * If both of them needs to take into consideration, then the
+         * origial value has to do ((value/division_factor) << left_shit_bits).*/
+        uint32_t division_factor            : 3;
+        /* \brief it indicates if it needs to left shit the unit, for example,
+         * if we have qp_delta = 1, then with \ref left_shit_bits, this qp_map
+         * unit is qp_delta (1)  << left_shit_bits in the qp_map, it is
+         * a requirement for different HW/FW implementation. While keep it as 0,
+         * will then use original qp_delta and no need to shift. */
+        uint32_t left_shit_bits             : 4;
+        /** \brief qp_map buffer width log2 alignment in bytes, for example
+         * if buffer width is aligned on 4 bytes, \ref log2_qp_map_width_align
+         * = 2. Each row of QP map buffer will need 4 bytes aligned.*/
+        uint32_t log2_qp_map_width_align    : 4;
+        /** \brief qp_map buffer height log2 alignment in unit, for example
+         * if buffer height is aligned on 2 rows, \ref log2_qp_map_height_align
+         * = 1. If no aligned required, then \ref log2_qp_map_height_align = 0 */
+        uint32_t log2_qp_map_height_align   : 4;
+        /** \brief reserved bit for future, must be zero */
+        uint32_t reserved                   : 6;
+    } bits;
+    uint32_t value;
 };
 
 /* To be used with PIPE_VIDEO_CAP_ENC_HEVC_RANGE_EXTENSION_SUPPORT */

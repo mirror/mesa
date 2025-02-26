@@ -279,6 +279,9 @@ vk_common_WaitForFences(VkDevice _device,
    if (!waitAll)
       wait_flags |= VK_SYNC_WAIT_ANY;
 
+   if (timeout)
+      wait_flags |= VK_SYNC_WAIT_BOOST;
+
    VkResult result = vk_sync_wait_many(device, fenceCount, waits,
                                        wait_flags, abs_timeout_ns);
 

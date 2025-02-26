@@ -263,6 +263,11 @@ if with_gpuvis
   )
 endif
 
+if dep_libdrm.found()
+  files_mesa_util += 'libdrm.c'
+  deps_for_libmesa_util += dep_libdrm
+endif
+
 u_trace_py = files('perf/u_trace.py')
 
 libmesa_util_sse41 = static_library(

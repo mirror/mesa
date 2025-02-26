@@ -48,14 +48,22 @@ extern "C" {
 #define OS_TIMEOUT_INFINITE 0xffffffffffffffffull
 
 /*
- * Get the current time in nanoseconds from an unknown base.
+ * Get the current time in nanoseconds.
+ *
+ * On linux the time clock-id/time-base used is CLOCK_MONOTONIC.  (Various
+ * drm and driver ioctls which deal with timeouts require this.)  In other
+ * cases the base is undefined.
  */
 int64_t
 os_time_get_nano(void);
 
 
 /*
- * Get the current time in microseconds from an unknown base.
+ * Get the current time in microseconds.
+ *
+ * On linux the time clock-id/time-base used is CLOCK_MONOTONIC.  (Various
+ * drm and driver ioctls which deal with timeouts require this.)  In other
+ * cases the base is undefined.
  */
 static inline int64_t
 os_time_get(void)
@@ -105,6 +113,10 @@ os_time_timeout(int64_t start,
  * os_time_get_nano() must be monotonic.
  * OS_TIMEOUT_INFINITE is passed through unchanged. If the calculation
  * overflows, OS_TIMEOUT_INFINITE is returned.
+ *
+ * On linux the time clock-id/time-base used is CLOCK_MONOTONIC.  (Various
+ * drm and driver ioctls which deal with timeouts require this.)  In other
+ * cases the base is undefined.
  */
 int64_t
 os_time_get_absolute_timeout(uint64_t timeout);

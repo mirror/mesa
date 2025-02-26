@@ -150,6 +150,15 @@ enum vk_sync_wait_flags {
     * possible.
     */
    VK_SYNC_WAIT_ANY        = (1 << 1),
+
+   /** Set if DRM_SYNCOBJ_WAIT_FLAGS_WAIT_DEADLINE flag should be set
+    *
+    * This is set for WaitSemaphores/WaitForFences with a non-zero timeout
+    * to give a hint to the kernel that the application is blocking on the
+    * GPU.  Waiting on a non-signaled fence can trigger the kernel to boost
+    * the GPU frequency so that the fence is signaled sooner.
+    */
+   VK_SYNC_WAIT_BOOST      = (1 << 2),
 };
 
 struct vk_sync_type {

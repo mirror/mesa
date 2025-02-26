@@ -358,6 +358,9 @@ vk_common_WaitSemaphores(VkDevice _device,
    if (pWaitInfo->flags & VK_SEMAPHORE_WAIT_ANY_BIT)
       wait_flags |= VK_SYNC_WAIT_ANY;
 
+   if (timeout)
+      wait_flags |= VK_SYNC_WAIT_BOOST;
+
    VkResult result = vk_sync_wait_many(device, wait_count, waits,
                                        wait_flags, abs_timeout_ns);
 

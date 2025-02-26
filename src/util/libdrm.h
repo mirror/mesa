@@ -147,3 +147,14 @@ static inline void
 drmFreeVersion(struct _drmVersion *v) {}
 
 #endif
+
+int drm_syncobj_wait(int fd, uint32_t *handles, unsigned num_handles,
+                     int64_t timeout_nsec, unsigned flags,
+                     uint32_t *first_signaled,
+                     int64_t deadline_ns);
+
+int drm_syncobj_timeline_wait(int fd, uint32_t *handles, uint64_t *points,
+                              unsigned num_handles,
+                              int64_t timeout_nsec, unsigned flags,
+                              uint32_t *first_signaled,
+                              int64_t deadline_ns);

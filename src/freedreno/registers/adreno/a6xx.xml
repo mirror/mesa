@@ -803,6 +803,31 @@ by a particular renderpass/blit.
 	<value value="37" name="PERF_UCHE_READ_REQUESTS_PC"/>
 	<value value="38" name="PERF_UCHE_RAM_READ_REQ"/>
 	<value value="39" name="PERF_UCHE_RAM_WRITE_REQ"/>
+	<value value="40" name="PERF_UCHE_STARVED_CYCLES_VBIF_DECMP"/>
+	<value value="41" name="PERF_UCHE_STALL_CYCLES_DECMP"/>
+	<value value="42" name="PERF_UCHE_ARBITER_STALL_CYCLES_VBIF"/>
+	<value value="43" name="PERF_UCHE_BANK_REQ8"/>
+	<value value="44" name="PERF_UCHE_BANK_REQ9"/>
+	<value value="45" name="PERF_UCHE_BANK_REQ10"/>
+	<value value="46" name="PERF_UCHE_BANK_REQ11"/>
+	<value value="47" name="PERF_UCHE_BANK_REQ12"/>
+	<value value="48" name="PERF_UCHE_BANK_REQ13"/>
+	<value value="49" name="PERF_UCHE_BANK_REQ14"/>
+	<value value="50" name="PERF_UCHE_BANK_REQ15"/>
+	<value value="51" name="PERF_UCHE_TPH_CONFLICT_CL0"/>
+	<value value="52" name="PERF_UCHE_TPH_CONFLICT_CL1"/>
+	<value value="53" name="PERF_UCHE_TPH_CONFLICT_CL2"/>
+	<value value="54" name="PERF_UCHE_TPH_CONFLICT_CL3"/>
+	<value value="55" name="PERF_UCHE_TPH_CONFLICT_CL4"/>
+	<value value="56" name="PERF_UCHE_TPH_CONFLICT_CL5"/>
+	<value value="57" name="PERF_UCHE_TPH_CONFLICT_CL6"/>
+	<value value="58" name="PERF_UCHE_DBANK_CONFLICT_CL0"/>
+	<value value="59" name="PERF_UCHE_DBANK_CONFLICT_CL1"/>
+	<value value="60" name="PERF_UCHE_DBANK_CONFLICT_CL2"/>
+	<value value="61" name="PERF_UCHE_DBANK_CONFLICT_CL3"/>
+	<value value="62" name="PERF_UCHE_DBANK_CONFLICT_CL4"/>
+	<value value="63" name="PERF_UCHE_DBANK_CONFLICT_CL5"/>
+	<value value="64" name="PERF_UCHE_DBANK_CONFLICT_CL6"/>
 </enum>
 
 <enum name="a6xx_tp_perfcounter_select">
@@ -951,6 +976,30 @@ by a particular renderpass/blit.
 	<value value="82" name="PERF_SP_GM_LOAD_LATENCY_CYCLES"/>
 	<value value="83" name="PERF_SP_GM_LOAD_LATENCY_SAMPLES"/>
 	<value value="84" name="PERF_SP_EXECUTABLE_WAVES"/>
+	<value value="85" name="PERF_SP_ICL1_MISS_FETCH_CYCLES"/>
+	<value value="86" name="PERF_SP_WORKING_EU_LPAC"/>
+	<value value="87" name="PERF_SP_BYPASS_BUSY_CYCLES"/>
+	<value value="88" name="PERF_SP_ANY_EU_WORKING_LPAC"/>
+	<value value="89" name="PERF_SP_WAVE_ALU_CYCLES"/>
+	<value value="90" name="PERF_SP_WAVE_EFU_CYCLES"/>
+	<value value="91" name="PERF_SP_WAVE_INT_CYCLES"/>
+	<value value="92" name="PERF_SP_WAVE_CSP_CYCLES"/>
+	<value value="93" name="PERF_SP_EWAVE_CONTEXTS"/>
+	<value value="94" name="PERF_SP_EWAVE_CONTEXT_CYCLES"/>
+	<value value="95" name="PERF_SP_LPAC_BUSY_CYCLES"/>
+	<value value="96" name="PERF_SP_LPAC_INSTRUCTIONS"/>
+	<value value="97" name="PERF_SP_FS_STAGE_1X_WAVES"/>
+	<value value="98" name="PERF_SP_FS_STAGE_2X_WAVES"/>
+	<value value="99" name="PERF_SP_QUADS"/>
+	<value value="100" name="PERF_SP_CS_INVOCATIONS"/>
+	<value value="101" name="PERF_SP_PIXELS"/>
+	<value value="102" name="PERF_SP_LPAC_DRAWCALLS"/>
+	<value value="103" name="PERF_SP_PI_WORKING_CYCLES"/>
+	<value value="104" name="PERF_SP_WAVE_INPUT_CYCLES"/>
+	<value value="105" name="PERF_SP_WAVE_OUTPUT_CYCLES"/>
+	<value value="106" name="PERF_SP_WAVE_HWAVE_WAIT_CYCLES"/>
+	<value value="107" name="PERF_SP_WAVE_HWAVE_SYNC"/>
+	<value value="108" name="PERF_SP_OUTPUT_3D_PIXELS"/>
 </enum>
 
 <enum name="a6xx_rb_perfcounter_select">

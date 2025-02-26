@@ -18,6 +18,32 @@
 
 #include "vk_log.h"
 
+static void
+radv_device_memory_emit_report(struct radv_device *device,
+                               struct radv_device_memory *mem,
+                               bool is_alloc,
+                               VkResult result)
+{
+   if (likely(!device->vk.memory_reports))
+      return;
+
+   VkDeviceMemoryReportEventTypeEXT type;
+   if (result != VK_SUCCESS) {
+      type = VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT;
+   } else if (is_alloc) {
+      type = mem->import_handle_type
+             ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_IMPORT_EXT
+             : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT;
+   } else {
+      type = mem->import_handle_type
+             ? VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_UNIMPORT_EXT
+             : VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT;
+   }
+
+   vk_device_emit_device_memory_report(&device->vk, type, mem->bo->obj_id, mem->bo->size,
+                                       (uintptr_t)(mem), mem->heap_index);
+}
+
 void
 radv_free_memory(struct radv_device *device, const VkAllocationCallbacks *pAllocator, struct radv_device_memory *mem)
 {
@@ -130,11 +156,14 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
       result = radv_import_ahb_memory(device, mem, priority, ahb_import_info);
       if (result != VK_SUCCESS)
          goto fail;
+      if (ahb_import_info->sType == VK_STRUCTURE_TYPE_IMPORT_ANDROID_HARDWARE_BUFFER_INFO_ANDROID)
+         mem->import_handle_type = VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID;
    } else if (export_info &&
               (export_info->handleTypes & VK_EXTERNAL_MEMORY_HANDLE_TYPE_ANDROID_HARDWARE_BUFFER_BIT_ANDROID)) {
       result = radv_create_ahb_memory(device, mem, priority, pAllocateInfo);
       if (result != VK_SUCCESS)
          goto fail;
+      mem->export_handle_type = export_info->handleTypes;
    } else if (import_info) {
       assert(import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_OPAQUE_FD_BIT ||
              import_info->handleType == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT);
@@ -144,6 +173,7 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
       } else {
          close(import_info->fd);
       }
+      mem->import_handle_type = import_info->handleType;
 
       if (mem->image && mem->image->plane_count == 1 && !vk_format_is_depth_or_stencil(mem->image->vk.format) &&
           mem->image->vk.samples == 1 && mem->image->vk.tiling != VK_IMAGE_TILING_DRM_FORMAT_MODIFIER_EXT) {
@@ -169,6 +199,7 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
       } else {
          mem->user_ptr = host_ptr_info->pHostPointer;
       }
+      mem->import_handle_type = host_ptr_info->handleType;
    } else {
       const struct radv_physical_device *pdev = radv_device_physical(device);
       const struct radv_instance *instance = radv_physical_device_instance(pdev);
@@ -275,10 +306,12 @@ radv_alloc_memory(struct radv_device *device, const VkMemoryAllocateInfo *pAlloc
    *pMem = radv_device_memory_to_handle(mem);
    radv_rmv_log_heap_create(device, *pMem, is_internal, flags_info ? flags_info->flags : 0);
 
+   radv_device_memory_emit_report(device, mem, /* is_alloc */ true, result);
    return VK_SUCCESS;
 
 fail:
    radv_free_memory(device, pAllocator, mem);
+   radv_device_memory_emit_report(device, mem, /* is_alloc */ true, result);
 
    return result;
 }
@@ -296,6 +329,9 @@ radv_FreeMemory(VkDevice _device, VkDeviceMemory _mem, const VkAllocationCallbac
 {
    VK_FROM_HANDLE(radv_device, device, _device);
    VK_FROM_HANDLE(radv_device_memory, mem, _mem);
+
+   if (mem)
+      radv_device_memory_emit_report(device, mem, /* is_alloc */ false, VK_SUCCESS);
 
    radv_free_memory(device, pAllocator, mem);
 }

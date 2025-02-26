@@ -146,14 +146,17 @@ vlVaBeginPicture(VADriverContextP ctx, VAContextID context_id, VASurfaceID rende
             context->desc.av1enc.metadata_flags.value = 0;
             context->desc.av1enc.roi.num = 0;
             context->desc.av1enc.intra_refresh.mode = INTRA_REFRESH_MODE_NONE;
+            context->desc.av1enc.qp_map.mode = PIPE_ENC_QPMAP_NONE;
             break;
          case PIPE_VIDEO_FORMAT_HEVC:
             context->desc.h265enc.roi.num = 0;
             context->desc.h265enc.intra_refresh.mode = INTRA_REFRESH_MODE_NONE;
+            context->desc.h265enc.qp_map.mode = PIPE_ENC_QPMAP_NONE;
             break;
          case PIPE_VIDEO_FORMAT_MPEG4_AVC:
             context->desc.h264enc.roi.num = 0;
             context->desc.h264enc.intra_refresh.mode = INTRA_REFRESH_MODE_NONE;
+            context->desc.h264enc.qp_map.mode = PIPE_ENC_QPMAP_NONE;
             break;
          default:
             break;
@@ -804,8 +807,46 @@ handleVAEncMiscParameterTypeROI(vlVaContext *context, VAEncMiscParameterBuffer *
    return status;
 }
 
+#if VA_CHECK_VERSION(1, 23, 0)
 static VAStatus
-handleVAEncMiscParameterBufferType(vlVaContext *context, vlVaBuffer *buf)
+handleVAEncMiscParameterTypeQPMap(vlVaDriver *drv, vlVaContext *context, VAEncMiscParameterBuffer *misc)
+{
+   VAStatus status = VA_STATUS_SUCCESS;
+
+   VAEncMiscParameterQPMap *rc = (VAEncMiscParameterQPMap *)misc->data;
+   struct pipe_enc_qp_map *pmap= NULL;
+   vlVaBuffer *buf;
+
+   if (rc->qp_map != PIPE_ENC_QPMAP_NONE) {
+      buf = handle_table_get(drv->htab, rc->qp_map);
+      /*if qp_map buffer doesn't exist, then report invalid */
+      if (!buf || !buf->derived_surface.resource)
+         return VA_STATUS_ERROR_INVALID_BUFFER;
+
+      switch (u_reduce_video_profile(context->templat.profile)) {
+         case PIPE_VIDEO_FORMAT_MPEG4_AVC:
+            pmap = &context->desc.h264enc.qp_map;
+            break;
+         case PIPE_VIDEO_FORMAT_HEVC:
+            pmap = &context->desc.h265enc.qp_map;
+            break;
+         case PIPE_VIDEO_FORMAT_AV1:
+            pmap = &context->desc.av1enc.qp_map;
+            break;
+         default:
+            break;
+      };
+
+      pmap->resource = buf->derived_surface.resource;
+   }
+   pmap->mode = (enum pipe_enc_qp_map_mode) rc->qp_map_mode;
+
+   return status;
+}
+#endif
+
+static VAStatus
+handleVAEncMiscParameterBufferType(vlVaDriver *drv, vlVaContext *context, vlVaBuffer *buf)
 {
    VAStatus vaStatus = VA_STATUS_SUCCESS;
    VAEncMiscParameterBuffer *misc;
@@ -847,6 +888,12 @@ handleVAEncMiscParameterBufferType(vlVaContext *context, vlVaBuffer *buf)
    case VAEncMiscParameterTypeROI:
       vaStatus = handleVAEncMiscParameterTypeROI(context, misc);
       break;
+
+#if VA_CHECK_VERSION(1, 23, 0)
+   case VAEncMiscParameterTypeQPMap:
+      vaStatus = handleVAEncMiscParameterTypeQPMap(drv, context, misc);
+      break;
+#endif
 
    default:
       break;
@@ -1034,7 +1081,7 @@ vlVaRenderPicture(VADriverContextP ctx, VAContextID context_id, VABufferID *buff
          break;
 
       case VAEncMiscParameterBufferType:
-         vaStatus = handleVAEncMiscParameterBufferType(context, buf);
+         vaStatus = handleVAEncMiscParameterBufferType(drv, context, buf);
          break;
 
       case VAEncPictureParameterBufferType:
@@ -1052,6 +1099,7 @@ vlVaRenderPicture(VADriverContextP ctx, VAContextID context_id, VABufferID *buff
       case VAEncPackedHeaderParameterBufferType:
          handleVAEncPackedHeaderParameterBufferType(context, buf);
          break;
+
       case VAEncPackedHeaderDataBufferType:
          handleVAEncPackedHeaderDataBufferType(context, buf);
          break;
@@ -1164,8 +1212,8 @@ vlVaEndPicture(VADriverContextP ctx, VAContextID context_id)
    apply_av1_fg = vlVaQueryApplyFilmGrainAV1(context, &output_id, &out_target);
 
    surf = handle_table_get(drv->htab, output_id);
-   vlVaGetSurfaceBuffer(drv, surf);
-   if (!surf || !surf->buffer) {
+
+   if (!vlVaGetSurfaceBuffer(drv, surf)) {
       mtx_unlock(&drv->mutex);
       return VA_STATUS_ERROR_INVALID_SURFACE;
    }

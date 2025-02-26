@@ -63,12 +63,20 @@ vlVaCreateBuffer(VADriverContextP ctx, VAContextID context, VABufferType type,
 
    buf->type = type;
    buf->size = size;
-   buf->num_elements = num_elements;
 
    if (buf->type == VAEncCodedBufferType)
       buf->data = CALLOC(1, sizeof(VACodedBufferSegment));
+#if VA_CHECK_VERSION(1, 23, 0)
+   else if (buf->type == VAEncQPMapBufferType) {
+      buf->data = MALLOC(sizeof(buf->size)); /* dummy allocation */
+      data = NULL;        /* ignore data input */
+      num_elements = 1;   /* only a single input */
+   }
+#endif
    else
       buf->data = MALLOC(size * num_elements);
+
+   buf->num_elements = num_elements;
 
    if (!buf->data) {
       FREE(buf);
@@ -79,6 +87,18 @@ vlVaCreateBuffer(VADriverContextP ctx, VAContextID context, VABufferType type,
       memcpy(buf->data, data, size * num_elements);
 
    drv = VL_VA_DRIVER(ctx);
+
+#if VA_CHECK_VERSION(1, 23, 0)
+   /* QPMap will allocate only 1 buffer, not checking num_elements */
+   if (buf->type == VAEncQPMapBufferType) {
+      buf->derived_surface.resource =
+         pipe_buffer_create(drv->pipe->screen, PIPE_BIND_VERTEX_BUFFER, PIPE_USAGE_STREAM, buf->size);
+      if (!buf->derived_surface.resource) {
+         FREE(buf);
+         return VA_STATUS_ERROR_ALLOCATION_FAILED;
+      }
+   }
+#endif
    mtx_lock(&drv->mutex);
    *buf_id = handle_table_add(drv->htab, buf);
    mtx_unlock(&drv->mutex);

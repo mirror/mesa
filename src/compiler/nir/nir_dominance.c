@@ -135,8 +135,8 @@ calc_dom_children(nir_function_impl *impl)
    }
 
    nir_foreach_block_unstructured(block, impl) {
-      block->dom_children = ralloc_array(mem_ctx, nir_block *,
-                                         block->num_dom_children);
+      block->dom_children = reralloc(mem_ctx, block->dom_children, nir_block *,
+                                     block->num_dom_children);
       block->num_dom_children = 0;
    }
 

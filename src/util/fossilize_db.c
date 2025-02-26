@@ -45,6 +45,7 @@
 #include <sys/inotify.h>
 #endif
 
+#include "util/log.h"
 #include "util/u_debug.h"
 
 #include "crc32.h"
@@ -623,6 +624,12 @@ foz_read_entry(struct foz_db *foz_db, const uint8_t *cache_key_160bit,
 
    uint32_t data_sz = entry->header.payload_size;
    data = malloc(data_sz);
+   if (!data) {
+      mesa_loge("Failed to allocate memory for payload. Payload size = %u\n",
+                data_sz);
+      goto fail;
+   }
+
    if (fread(data, 1, data_sz, foz_db->file[file_idx]) != data_sz)
       goto fail;
 

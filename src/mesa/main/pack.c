@@ -256,7 +256,7 @@ _mesa_pack_bitmap( GLint width, GLint height, const GLubyte *source,
 static void
 extract_uint_indexes(GLuint n, GLuint indexes[],
                      GLenum srcFormat, GLenum srcType, const GLvoid *src,
-                     const struct gl_pixelstore_attrib *unpack )
+                     const struct gl_pixelstore_attrib *unpack, GLuint srcWidth)
 {
    assert(srcFormat == GL_COLOR_INDEX || srcFormat == GL_STENCIL_INDEX);
 
@@ -282,7 +282,7 @@ extract_uint_indexes(GLuint n, GLuint indexes[],
                GLuint i;
                for (i = 0; i < n; i++) {
                   indexes[i] = (*ubsrc & mask) ? 1 : 0;
-                  if (mask == 128) {
+                  if (mask == 128 || !((i + 1) % srcWidth)) {
                      mask = 1;
                      ubsrc++;
                   }
@@ -296,7 +296,7 @@ extract_uint_indexes(GLuint n, GLuint indexes[],
                GLuint i;
                for (i = 0; i < n; i++) {
                   indexes[i] = (*ubsrc & mask) ? 1 : 0;
-                  if (mask == 1) {
+                  if (mask == 1 || !((i + 1) % srcWidth)) {
                      mask = 128;
                      ubsrc++;
                   }
@@ -537,7 +537,7 @@ _mesa_unpack_stencil_span( struct gl_context *ctx, GLuint n,
       }
 
       extract_uint_indexes(n, indexes, GL_STENCIL_INDEX, srcType, source,
-                           srcPacking);
+                           srcPacking, n);
 
       if (transferOps & IMAGE_SHIFT_OFFSET_BIT) {
          /* shift and offset indexes */
@@ -1581,7 +1581,7 @@ _mesa_unpack_color_index_to_rgba_float(struct gl_context *ctx, GLuint dims,
                                                srcFormat, srcType,
                                                img, 0, 0);
 
-      extract_uint_indexes(count, indexes, srcFormat, srcType, srcPtr, srcPacking);
+      extract_uint_indexes(count, indexes, srcFormat, srcType, srcPtr, srcPacking, srcWidth);
 
       if (transferOps & IMAGE_SHIFT_OFFSET_BIT)
          _mesa_shift_and_offset_ci(ctx, count, indexes);

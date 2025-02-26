@@ -9,8 +9,11 @@ extern crate syn;
 
 use compiler_proc::as_slice::*;
 use proc_macro::TokenStream;
-use proc_macro2::{TokenStream as TokenStream2};
+use proc_macro2::TokenStream as TokenStream2;
 use syn::*;
+
+mod args;
+mod display_op;
 
 #[proc_macro_derive(SrcsAsSlice, attributes(src_type))]
 pub fn derive_srcs_as_slice(input: TokenStream) -> TokenStream {
@@ -20,43 +23,6 @@ pub fn derive_srcs_as_slice(input: TokenStream) -> TokenStream {
 #[proc_macro_derive(DstsAsSlice, attributes(dst_type))]
 pub fn derive_dsts_as_slice(input: TokenStream) -> TokenStream {
     derive_as_slice(input, "Dst", "dst_type", "DstType")
-}
-
-#[proc_macro_derive(DisplayOp)]
-pub fn enum_derive_display_op(input: TokenStream) -> TokenStream {
-    let DeriveInput { ident, data, .. } = parse_macro_input!(input);
-
-    if let Data::Enum(e) = data {
-        let mut fmt_dsts_cases = TokenStream2::new();
-        let mut fmt_op_cases = TokenStream2::new();
-        for v in e.variants {
-            let case = v.ident;
-            fmt_dsts_cases.extend(quote! {
-                #ident::#case(x) => x.fmt_dsts(f),
-            });
-            fmt_op_cases.extend(quote! {
-                #ident::#case(x) => x.fmt_op(f),
-            });
-        }
-        quote! {
-            impl DisplayOp for #ident {
-                fn fmt_dsts(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    match self {
-                        #fmt_dsts_cases
-                    }
-                }
-
-                fn fmt_op(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                    match self {
-                        #fmt_op_cases
-                    }
-                }
-            }
-        }
-        .into()
-    } else {
-        panic!("Not an enum type");
-    }
 }
 
 #[proc_macro_derive(FromVariants)]
@@ -87,4 +53,9 @@ pub fn derive_from_variants(input: TokenStream) -> TokenStream {
     }
 
     impls.into()
+}
+
+#[proc_macro_derive(DisplayOp, attributes(display_op, modifier, op_format))]
+pub fn derive_display_op(input: TokenStream) -> TokenStream {
+    display_op::derive_display_op(input)
 }

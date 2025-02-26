@@ -1618,6 +1618,9 @@ mi_goto_if(struct mi_builder *b, struct mi_value cond,
          bbs.PredicationEnable         = predicated;
          bbs.AddressSpaceIndicator     = ASI_PPGTT;
          bbs.BatchBufferStartAddress   = t->addr;
+#if GFX_VERx10 >= 125
+         bbs.EnableCommandCache        = true;
+#endif
       }
    } else {
       assert(t->num_gotos < ARRAY_SIZE(t->gotos));
@@ -1667,7 +1670,9 @@ mi_goto_target(struct mi_builder *b, struct mi_goto_target *t)
    struct GENX(MI_BATCH_BUFFER_START) bbs = { GENX(MI_BATCH_BUFFER_START_header) };
    bbs.AddressSpaceIndicator     = ASI_PPGTT;
    bbs.BatchBufferStartAddress   = t->addr;
-
+#if GFX_VERx10 >= 125
+   bbs.EnableCommandCache        = true;
+#endif
    for (unsigned i = 0; i < t->num_gotos; i++) {
       bbs.PredicationEnable = t->gotos[i].predicated;
       GENX(MI_BATCH_BUFFER_START_pack)(b->user_data, t->gotos[i].mi_bbs, &bbs);

@@ -1340,6 +1340,11 @@
   <register name="BLT_TRTT_VA_RANGE" length="1" num="0x4484">
     <field name="TR-VA Base" start="0" end="12" type="uint" />
   </register>
+  <register name="CMD_BUF_CCTL_RCSUNIT_CTX" length="1" num="0x2084">
+    <field name="MOCS" start="0" end="6" type="uint" nonzero="true" />
+    <field name="Command Buffer Cache Size" start="8" end="11" type="uint" />
+    <field name="Mask" start="16" end="31" type="uint" />
+  </register>
   <register name="COMP_CTX0_TRTT_VA_RANGE" length="1" num="0x4584">
     <field name="TR-VA Base" start="0" end="12" type="uint" />
   </register>

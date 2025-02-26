@@ -104,6 +104,9 @@ void genX(write_MI_BATCH_BUFFER_START)(global void *dst_ptr, uint64_t addr)
       GENX(MI_BATCH_BUFFER_START_header),
       .AddressSpaceIndicator = ASI_PPGTT,
       .BatchBufferStartAddress = addr,
+#if GFX_VERx10 >= 125
+      .EnableCommandCache = true,
+#endif
    };
    GENX(MI_BATCH_BUFFER_START_pack)(dst_ptr, &v);
 }

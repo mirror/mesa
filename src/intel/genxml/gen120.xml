@@ -1743,6 +1743,27 @@
     <field name="MI Command Opcode" start="23" end="28" type="uint" default="5" />
     <field name="Command Type" start="29" end="31" type="uint" default="0" />
   </instruction>
+  <instruction name="MI_BATCH_BUFFER_START" bias="2" length="3">
+    <field name="DWord Length" start="0" end="7" type="uint" default="1" />
+    <field name="Address Space Indicator" start="8" end="8" type="uint" prefix="ASI">
+      <value name="GGTT" value="0" />
+      <value name="PPGTT" value="1" />
+    </field>
+    <field name="Batch Buffer Encrypted Memory Read Enable" start="9" end="9" type="bool" />
+    <field name="Predication Enable" start="15" end="15" type="bool" />
+    <field name="Indirect Address Enable" start="18" end="18" type="bool">
+      <value name="Use Inline Address" value="0" />
+      <value name="Use GPR0" value="1" />
+    </field>
+    <field name="Enable Command Cache" start="19" end="19" type="bool"/>
+    <field name="Second Level Batch Buffer" start="22" end="22" type="uint">
+      <value name="First level batch" value="0" />
+      <value name="Second level batch" value="1" />
+    </field>
+    <field name="MI Command Opcode" start="23" end="28" type="uint" default="49" />
+    <field name="Command Type" start="29" end="31" type="uint" default="0" />
+    <field name="Batch Buffer Start Address" start="34" end="95" type="address" />
+  </instruction>
   <instruction name="MI_FORCE_WAKEUP" bias="2" length="2">
     <field name="DWord Length" start="0" end="7" type="uint" default="0" />
     <field name="MI Command Opcode" start="23" end="28" type="uint" default="29" />

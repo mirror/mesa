@@ -603,6 +603,14 @@ init_render_queue_state(struct anv_queue *queue, bool is_companion_rcs_batch)
    }
 #endif
 
+#if GFX_VER >= 20
+   anv_batch_write_reg(batch, GENX(CMD_BUF_CCTL_RCSUNIT_CTX), reg) {
+      reg.CommandBufferCacheSize = 1;
+      reg.MOCS = device->isl_dev.mocs.internal;
+      reg.Mask = 0xffff;
+   }
+#endif
+
    /* Set the "CONSTANT_BUFFER Address Offset Disable" bit, so
     * 3DSTATE_CONSTANT_XS buffer 0 is an absolute address.
     *

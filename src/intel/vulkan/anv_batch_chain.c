@@ -465,6 +465,9 @@ emit_batch_buffer_start(struct anv_batch *batch,
       bbs.SecondLevelBatchBuffer    = Firstlevelbatch;
       bbs.AddressSpaceIndicator     = ASI_PPGTT;
       bbs.BatchBufferStartAddress   = (struct anv_address) { bo, offset };
+#if GFX_VERx10 >= 125
+      bbs.EnableCommandCache        = true;
+#endif
    }
 }
 
@@ -519,6 +522,9 @@ anv_cmd_buffer_record_chain_submit(struct anv_cmd_buffer *cmd_buffer_from,
       .SecondLevelBatchBuffer    = Firstlevelbatch,
       .AddressSpaceIndicator     = ASI_PPGTT,
       .BatchBufferStartAddress   = (struct anv_address) { first_bbo->bo, 0 },
+#if GFX_VERx10 >= 125
+      .EnableCommandCache        = true,
+#endif
    };
    struct anv_batch local_batch = {
       .start  = last_bbo->bo->map,
@@ -1694,6 +1700,9 @@ anv_async_submit_extend_batch(struct anv_batch *batch, uint32_t size,
       bbs.SecondLevelBatchBuffer    = Firstlevelbatch;
       bbs.AddressSpaceIndicator     = ASI_PPGTT;
       bbs.BatchBufferStartAddress   = (struct anv_address) { bo, 0 };
+#if GFX_VERx10 >= 125
+      bbs.EnableCommandCache        = true;
+#endif
    }
 
    anv_batch_set_storage(batch,

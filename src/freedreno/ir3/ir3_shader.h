@@ -260,6 +260,12 @@ struct ir3_const_image_dims {
    uint32_t off[IR3_MAX_SHADER_IMAGES];
 };
 
+struct ir3_imm_const_state {
+   unsigned size;
+   unsigned count;
+   uint32_t *values;
+};
+
 /**
  * Describes the layout of shader consts in the const register file
  * and additional info about individual allocations.
@@ -288,10 +294,6 @@ struct ir3_const_state {
    struct ir3_const_allocations allocs;
 
    struct ir3_const_image_dims image_dims;
-
-   unsigned immediates_count;
-   unsigned immediates_size;
-   uint32_t *immediates;
 
    /* State of ubo access lowered to push consts: */
    struct ir3_ubo_analysis_state ubo_state;
@@ -674,6 +676,13 @@ struct ir3_shader_variant {
 
    struct ir3_const_state *const_state;
 
+   /* Immediate values that will be lowered to const registers. Before a7xx,
+    * this will be uploaded together with the const_state. From a7xx on (where
+    * load_shader_consts_via_preamble is true), this will be lowered to const
+    * stores in the preamble.
+    */
+   struct ir3_imm_const_state imm_state;
+
    /*
     * The following macros are used by the shader disk cache save/
     * restore paths to serialize/deserialize the variant.  Any
@@ -1045,6 +1054,10 @@ ir3_const_state_mut(const struct ir3_shader_variant *v)
 static inline unsigned
 _ir3_max_const(const struct ir3_shader_variant *v, bool safe_constlen)
 {
+   if (v->binning_pass) {
+      return v->nonbinning->constlen;
+   }
+
    const struct ir3_compiler *compiler = v->compiler;
    bool shared_consts_enable =
       ir3_const_state(v)->push_consts_type == IR3_PUSH_CONSTS_SHARED;
@@ -1083,6 +1096,9 @@ ir3_max_const(const struct ir3_shader_variant *v)
    return _ir3_max_const(v, v->key.safe_constlen);
 }
 
+bool ir3_const_ensure_imm_size(struct ir3_shader_variant *v, unsigned size);
+uint16_t ir3_const_imm_index_to_reg(const struct ir3_const_state *const_state,
+                                    unsigned i);
 uint16_t ir3_const_find_imm(struct ir3_shader_variant *v, uint32_t imm);
 uint16_t ir3_const_add_imm(struct ir3_shader_variant *v, uint32_t imm);
 

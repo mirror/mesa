@@ -770,25 +770,10 @@ add_to_address_users(struct ir3_instruction *instr)
    }
 }
 
-static struct ir3_block *
-get_block(struct ir3_cursor cursor)
-{
-   switch (cursor.option) {
-   case IR3_CURSOR_BEFORE_BLOCK:
-   case IR3_CURSOR_AFTER_BLOCK:
-      return cursor.block;
-   case IR3_CURSOR_BEFORE_INSTR:
-   case IR3_CURSOR_AFTER_INSTR:
-      return cursor.instr->block;
-   }
-
-   unreachable("illegal cursor option");
-}
-
 struct ir3_instruction *
 ir3_instr_create_at(struct ir3_cursor cursor, opc_t opc, int ndst, int nsrc)
 {
-   struct ir3_block *block = get_block(cursor);
+   struct ir3_block *block = ir3_cursor_current_block(cursor);
    struct ir3_instruction *instr = instr_create(block, opc, ndst, nsrc);
    instr->block = block;
    instr->opc = opc;
@@ -1008,6 +993,58 @@ ir3_instr_set_address(struct ir3_instruction *instr,
    } else {
       assert(instr->address->def->instr == addr);
    }
+}
+
+struct ir3_instruction *
+ir3_create_addr1(struct ir3_builder *build, unsigned const_val)
+{
+   struct ir3_instruction *immed =
+      create_immed_typed(build, const_val, TYPE_U16);
+   struct ir3_instruction *instr = ir3_MOV(build, immed, TYPE_U16);
+   instr->dsts[0]->num = regid(REG_A0, 1);
+   return instr;
+}
+
+struct ir3_instruction *
+ir3_store_const(struct ir3_shader_variant *so, struct ir3_builder *build,
+                struct ir3_instruction *src, unsigned dst)
+{
+   unsigned dst_lo = dst & 0xff;
+   unsigned dst_hi = dst >> 8;
+   unsigned components = util_last_bit(src->dsts[0]->wrmask);
+
+   struct ir3_instruction *a1 = NULL;
+   if (dst_hi) {
+      /* Encode only the high part of the destination in a1.x to increase the
+       * chance that we can reuse the a1.x value in subsequent stc
+       * instructions.
+       */
+      a1 = ir3_create_addr1(build, dst_hi << 8);
+   }
+
+   struct ir3_instruction *stc =
+      ir3_STC(build, create_immed(build, dst_lo), 0, src, 0);
+   stc->cat6.iim_val = components;
+   stc->cat6.type = TYPE_U32;
+   stc->barrier_conflict = IR3_BARRIER_CONST_W;
+
+   /* This isn't necessary for instruction encoding but is used by ir3_sched to
+    * set up dependencies between stc and const reads.
+    */
+   stc->cat6.dst_offset = dst;
+
+   if (a1) {
+      ir3_instr_set_address(stc, a1);
+      stc->flags |= IR3_INSTR_A1EN;
+   }
+
+   /* The assembler isn't aware of what value a1.x has, so make sure that
+    * constlen includes the stc here.
+    */
+   so->constlen = MAX2(so->constlen, DIV_ROUND_UP(dst + components, 4));
+   struct ir3_block *block = ir3_cursor_current_block(build->cursor);
+   array_insert(block, block->keeps, stc);
+   return stc;
 }
 
 /* Does this instruction use the scalar ALU?

@@ -1192,7 +1192,7 @@ emit_intrinsic_copy_ubo_to_uniform(struct ir3_context *ctx,
    unsigned base = nir_intrinsic_base(intr);
    unsigned size = nir_intrinsic_range(intr);
 
-   struct ir3_instruction *addr1 = ir3_get_addr1(ctx, base);
+   struct ir3_instruction *addr1 = ir3_create_addr1(&ctx->build, base);
 
    struct ir3_instruction *offset = ir3_get_src(ctx, &intr->src[1])[0];
    struct ir3_instruction *idx = ir3_get_src(ctx, &intr->src[0])[0];
@@ -1229,7 +1229,7 @@ emit_intrinsic_copy_global_to_uniform(struct ir3_context *ctx,
 
    struct ir3_instruction *a1 = NULL;
    if (dst_hi)
-      a1 = ir3_get_addr1(ctx, dst_hi << 8);
+      a1 = ir3_create_addr1(&ctx->build, dst_hi << 8);
 
    struct ir3_instruction *addr_lo = ir3_get_src(ctx, &intr->src[0])[0];
    struct ir3_instruction *addr_hi = ir3_get_src(ctx, &intr->src[0])[1];
@@ -1742,7 +1742,7 @@ emit_sam(struct ir3_context *ctx, opc_t opc, struct tex_src_info info,
 {
    struct ir3_instruction *sam, *addr;
    if (info.flags & IR3_INSTR_A1EN) {
-      addr = ir3_get_addr1(ctx, info.a1_val);
+      addr = ir3_create_addr1(&ctx->build, info.a1_val);
    }
    sam = ir3_SAM(&ctx->build, opc, type, wrmask, info.flags, info.samp_tex,
                  src0, src1);
@@ -3358,37 +3358,12 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
    case nir_intrinsic_store_const_ir3: {
       unsigned components = nir_src_num_components(intr->src[0]);
       unsigned dst = nir_intrinsic_base(intr);
-      unsigned dst_lo = dst & 0xff;
-      unsigned dst_hi = dst >> 8;
 
       struct ir3_instruction *src =
          ir3_create_collect(b, ir3_get_src_shared(ctx, &intr->src[0],
                                                   ctx->compiler->has_scalar_alu),
                             components);
-      struct ir3_instruction *a1 = NULL;
-      if (dst_hi) {
-         /* Encode only the high part of the destination in a1.x to increase the
-          * chance that we can reuse the a1.x value in subsequent stc
-          * instructions.
-          */
-         a1 = ir3_get_addr1(ctx, dst_hi << 8);
-      }
-
-      struct ir3_instruction *stc =
-         ir3_STC(b, create_immed(b, dst_lo), 0, src, 0);
-      stc->cat6.iim_val = components;
-      stc->cat6.type = TYPE_U32;
-      stc->barrier_conflict = IR3_BARRIER_CONST_W;
-      if (a1) {
-         ir3_instr_set_address(stc, a1);
-         stc->flags |= IR3_INSTR_A1EN;
-      }
-      /* The assembler isn't aware of what value a1.x has, so make sure that
-       * constlen includes the stc here.
-       */
-      ctx->so->constlen =
-         MAX2(ctx->so->constlen, DIV_ROUND_UP(dst + components, 4));
-      array_insert(ctx->block, ctx->block->keeps, stc);
+      ir3_store_const(ctx->so, b, src, dst);
       break;
    }
    case nir_intrinsic_copy_push_const_to_uniform_ir3: {
@@ -4352,9 +4327,6 @@ emit_block(struct ir3_context *ctx, nir_block *nblock)
       _mesa_hash_table_destroy(ctx->addr0_ht[i], NULL);
       ctx->addr0_ht[i] = NULL;
    }
-
-   _mesa_hash_table_u64_destroy(ctx->addr1_ht);
-   ctx->addr1_ht = NULL;
 
    nir_foreach_instr (instr, nblock) {
       ctx->cur_instr = instr;
@@ -5778,6 +5750,18 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
       so->need_full_quad = true;
    }
 
+   /* If we're uploading immediates as part of the const state, we need to make
+    * sure the binning and non-binning variants have the same size. Pre-allocate
+    * for the binning variant, ir3_const_add_imm will ensure we don't add more
+    * immediates than allowed.
+    */
+   if (so->binning_pass && !compiler->load_shader_consts_via_preamble &&
+       so->nonbinning->imm_state.size) {
+      ASSERTED bool success =
+         ir3_const_ensure_imm_size(so, so->nonbinning->imm_state.size);
+      assert(success);
+   }
+
    ir3_debug_print(ir, "AFTER: nir->ir3");
    ir3_validate(ir);
 
@@ -5809,6 +5793,7 @@ ir3_compile_shader_nir(struct ir3_compiler *compiler,
       IR3_PASS(ir, ir3_dce, so);
    }
 
+   IR3_PASS(ir, ir3_imm_const_to_preamble, so);
    IR3_PASS(ir, ir3_sched_add_deps);
 
    /* At this point, all the dead code should be long gone: */

@@ -43,6 +43,8 @@
 #include "kopper_interface.h"
 #include "loader_dri_helper.h"
 #include "dri_util.h"
+#include "mapi/glapi/glapi.h"
+#include "mesa/main/dispatch.h"
 
 static int xshm_error = 0;
 static int xshm_opcode = -1;
@@ -422,7 +424,20 @@ static const __DRIextension *kopper_extensions_noshm[] = {
 static void
 drisw_wait_gl(struct glx_context *context)
 {
+   /* TODO: Calling glFinish directly is the only thing that causes libGL.so
+    * to export all GL functions. This is fragile and needs a proper solution.
+    *
+    * On top of that, this code is only compiled with GLX_DIRECT_RENDERING,
+    * which means that indirect-only libGL (-Dglx-direct=false) doesn't export
+    * any GL functions.
+    *
+    * TODO: Always use CALL_Finish instead of glFinish.
+    */
+#if USE_LIBGLVND
+   CALL_Finish(GET_DISPATCH(), ());
+#else
    glFinish();
+#endif
 }
 
 static void
@@ -540,7 +555,7 @@ driswSwapBuffers(__GLXDRIdrawable * pdraw,
    (void) remainder;
 
    if (flush) {
-      glFlush();
+      CALL_Flush(GET_DISPATCH(), ());
    }
 
    if (psc->kopper)
@@ -556,7 +571,7 @@ drisw_copy_sub_buffer(__GLXDRIdrawable * pdraw,
                       int x, int y, int width, int height, Bool flush)
 {
    if (flush) {
-      glFlush();
+      CALL_Flush(GET_DISPATCH(), ());
    }
 
    driswCopySubBuffer(pdraw->dri_drawable, x, y, width, height);

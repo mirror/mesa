@@ -30,6 +30,7 @@ import argparse
 
 import gl_XML, glX_XML, glX_proto_common, license
 import copy
+import static_data
 
 def convertStringForXCB(str):
     tmp = ""
@@ -58,7 +59,7 @@ def hash_pixel_function(func):
     hash_suf = ""
     for param in func.parameterIterateGlxSend():
         if param.is_image():
-            [dim, junk, junk, junk, junk] = param.get_dimensions()
+            [dim, _, _, _, _] = param.get_dimensions()
 
             d = (dim + 1) & ~1
             hash_pre = "%uD%uD_" % (d - 1, d)
@@ -139,7 +140,6 @@ class glx_pixel_function_stub(glX_XML.glx_function):
         self.dimensions_in_reply = func.dimensions_in_reply
         self.img_reset = None
 
-        self.server_handcode = 0
         self.client_handcode = 0
         self.ignore = 0
 
@@ -156,7 +156,6 @@ class PrintGlxProtoStubs(glX_proto_common.glx_print_proto):
         self.license = license.bsd_license_template % ( "(C) Copyright IBM Corporation 2004, 2005", "IBM")
 
 
-        self.last_category = ""
         self.generic_sizes = [3, 4, 6, 8, 12, 16, 24, 32]
         self.pixel_stubs = {}
         self.debug = 0
@@ -660,7 +659,7 @@ generic_%u_byte( GLint rop, const void * ptr )
                 print('        %s_reply_t *reply = %s_reply(c, %s, NULL);' % (xcb_name, xcb_name, xcb_request))
                 if output:
                     if output.is_image():
-                        [dim, w, h, d, junk] = output.get_dimensions()
+                        [dim, w, h, d, _] = output.get_dimensions()
                         if f.dimensions_in_reply:
                             w = "reply->width"
                             h = "reply->height"
@@ -732,7 +731,7 @@ generic_%u_byte( GLint rop, const void * ptr )
 
             for p in f.parameterIterateOutputs():
                 if p.is_image():
-                    [dim, w, h, d, junk] = p.get_dimensions()
+                    [dim, w, h, d, _] = p.get_dimensions()
                     if f.dimensions_in_reply:
                         print("        __glXReadPixelReply(dpy, gc, %u, 0, 0, 0, %s, %s, %s, GL_TRUE);" % (dim, p.img_format, p.img_type, p.name))
                     else:
@@ -801,7 +800,7 @@ generic_%u_byte( GLint rop, const void * ptr )
                 p_string += ", " + param.name
 
                 if param.is_image():
-                    [dim, junk, junk, junk, junk] = param.get_dimensions()
+                    [dim, _, _, _, _] = param.get_dimensions()
 
                 if f.pad_after(param):
                     p_string += ", 1"
@@ -996,8 +995,6 @@ class PrintGlxProtoInit_h(gl_XML.gl_print_base):
 """Copyright 1998-1999 Precision Insight, Inc., Cedar Park, Texas.
 (C) Copyright IBM Corporation 2004""", "PRECISION INSIGHT, IBM")
         self.header_tag = "_INDIRECT_H_"
-
-        self.last_category = ""
         return
 
 
@@ -1041,7 +1038,7 @@ extern NOINLINE GLubyte * __glXSetupVendorRequest(
             for n in func.entry_points:
                 if func.has_different_protocol(n):
                     asdf = func.static_glx_name(n)
-                    if asdf not in func.static_entry_points:
+                    if asdf not in static_data.libgl_public_functions:
                         print('extern %s gl%s(%s);' % (func.return_type, asdf, params))
                         # give it a easy-to-remember name
                         if func.client_handcode:

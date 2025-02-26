@@ -28,29 +28,12 @@
  * The dispatch table (struct _glapi_table) is basically just a list
  * of function pointers.
  * There are functions to set/get the current dispatch table for the
- * current thread and to manage registration/dispatch of dynamically
- * added extension functions.
- *
- * It's intended that this file and the other glapi*.[ch] files are
- * flexible enough to be reused in several places:  XFree86, DRI-
- * based libGL.so, and perhaps the SGI SI.
- *
- * NOTE: There are no dependencies on Mesa in this code.
- *
- * Versions (API changes):
- *   2000/02/23  - original version for Mesa 3.3 and XFree86 4.0
- *   2001/01/16  - added dispatch override feature for Mesa 3.5
- *   2002/06/28  - added _glapi_set_warning_func(), Mesa 4.1.
- *   2002/10/01  - _mesa_glapi_get_proc_address() will now generate new entrypoints
- *                 itself (using offset ~0).  _glapi_add_entrypoint() can be
- *                 called afterward and it'll fill in the correct dispatch
- *                 offset.  This allows DRI libGL to avoid probing for DRI
- *                 drivers!  No changes to the public glapi interface.
+ * current thread.
  */
 
 #include "c11/threads.h"
 #include "util/u_thread.h"
-#include "u_current.h"
+#include "glapi/glapi.h"
 
 #ifndef MAPI_MODE_UTIL
 
@@ -77,12 +60,10 @@ extern void (*__glapi_noop_table[])(void);
  * purpose.
  *
  * In multi threaded case, The TLS variables \c _mesa_glapi_tls_Dispatch and
- * \c _mesa_glapi_tls_Context are used. Having \c _mesa_glapi_Dispatch and \c _glapi_Context
+ * \c _mesa_glapi_tls_Context are used. Having \c _mesa_glapi_Dispatch
  * be hardcoded to \c NULL maintains binary compatability between TLS enabled
- * loaders and non-TLS DRI drivers. When \c _mesa_glapi_Dispatch and \c _glapi_Context
- * are \c NULL, the thread state data \c ContextTSD are used. Drivers and the
- * static dispatch functions access these variables via \c _mesa_glapi_get_dispatch
- * and \c _mesa_glapi_get_context.
+ * loaders and non-TLS DRI drivers. When \c _mesa_glapi_Dispatch
+ * are \c NULL, the thread state data \c ContextTSD are used.
  */
 /*@{*/
 
@@ -91,45 +72,9 @@ __THREAD_INITIAL_EXEC struct _glapi_table *_mesa_glapi_tls_Dispatch
 
 __THREAD_INITIAL_EXEC void *_mesa_glapi_tls_Context;
 
-/* not used, but defined for compatibility */
 const struct _glapi_table *_mesa_glapi_Dispatch;
-const void *_glapi_Context;
 
 /*@}*/
-
-/* not used, but defined for compatibility */
-void
-_glapi_destroy_multithread(void)
-{
-}
-
-/* not used, but defined for compatibility */
-void
-_glapi_check_multithread(void)
-{
-}
-
-/**
- * Set the current context pointer for this thread.
- * The context pointer is an opaque type which should be cast to
- * void from the real context pointer type.
- */
-void
-_mesa_glapi_set_context(void *ptr)
-{
-   _mesa_glapi_tls_Context = ptr;
-}
-
-/**
- * Get the current context pointer for this thread.
- * The context pointer is an opaque type which should be cast from
- * void to the real context pointer type.
- */
-void *
-_mesa_glapi_get_context(void)
-{
-   return _mesa_glapi_tls_Context;
-}
 
 /**
  * Set the global or per-thread dispatch table pointer.
@@ -145,13 +90,4 @@ _mesa_glapi_set_dispatch(struct _glapi_table *tbl)
       tbl = (struct _glapi_table *) table_noop_array;
 
    _mesa_glapi_tls_Dispatch = tbl;
-}
-
-/**
- * Return pointer to current dispatch table for calling thread.
- */
-struct _glapi_table *
-_mesa_glapi_get_dispatch(void)
-{
-   return _mesa_glapi_tls_Dispatch;
 }

@@ -298,10 +298,6 @@ class gl_type( gl_item ):
         return
 
 
-    def get_type_expression(self):
-        return self.type_expr
-
-
 class gl_enum( gl_item ):
     def __init__(self, element, context, category):
         gl_item.__init__(self, element, context, category)
@@ -588,8 +584,6 @@ class gl_function( gl_item ):
         # Decimal('1.1') }.
         self.api_map = {}
 
-        self.static_entry_points = []
-
         # Track the parameter string (for the function prototype)
         # for each entry-point.  This is done because some functions
         # change their prototype slightly when promoted from extension
@@ -618,9 +612,6 @@ class gl_function( gl_item ):
         assert not alias or not element.get('marshal_call_before')
         assert not alias or not element.get('marshal_call_after')
         assert not alias or not element.get('deprecated')
-
-        if name in static_data.functions:
-            self.static_entry_points.append(name)
 
         self.entry_points.append( name )
 
@@ -651,6 +642,8 @@ class gl_function( gl_item ):
 
         if alias:
             true_name = alias
+            if name in static_data.offsets:
+                raise RuntimeError("Aliased entry-point %s shouldn't be in static_data.py." % (name))
         else:
             true_name = name
 
@@ -661,9 +654,8 @@ class gl_function( gl_item ):
 
             if name in static_data.offsets:
                 self.offset = static_data.offsets[name]
-            else:
-                if self.exec_flavor != "skip":
-                    raise RuntimeError("Entry-point %s is missing offset in static_data.py. Add one at the bottom of the list." % (name))
+            elif self.exec_flavor != "skip":
+                raise RuntimeError("Entry-point %s is missing in static_data.py. Add one into all_functions." % (name))
 
         if not self.name:
             self.name = true_name
@@ -718,29 +710,6 @@ class gl_function( gl_item ):
 
         return
 
-    def filter_entry_points(self, entry_point_list):
-        """Filter out entry points not in entry_point_list."""
-        if not self.initialized:
-            raise RuntimeError('%s is not initialized yet' % self.name)
-
-        entry_points = []
-        for ent in self.entry_points:
-            if ent not in entry_point_list:
-                if ent in self.static_entry_points:
-                    self.static_entry_points.remove(ent)
-                self.entry_point_parameters.pop(ent)
-            else:
-                entry_points.append(ent)
-
-        if not entry_points:
-            raise RuntimeError('%s has no entry point after filtering' % self.name)
-
-        self.entry_points = entry_points
-        if self.name not in entry_points:
-            # use the first remaining entry point
-            self.name = entry_points[0]
-            self.parameters = self.entry_point_parameters[entry_points[0]]
-
     def get_images(self):
         """Return potentially empty list of input images."""
         return self.images
@@ -773,17 +742,14 @@ class gl_function( gl_item ):
 
         return p_string
 
-    def is_static_entry_point(self, name):
-        return name in self.static_entry_points
-
     def dispatch_name(self):
-        if self.name in self.static_entry_points:
+        if self.name in static_data.libgl_public_functions:
             return self.name
         else:
             return "_dispatch_stub_%u" % (self.offset)
 
     def static_name(self, name):
-        if name in self.static_entry_points:
+        if name in static_data.libgl_public_functions:
             return name
         else:
             return "_dispatch_stub_%u" % (self.offset)
@@ -945,16 +911,6 @@ class gl_api(object):
         return self.functions_by_name.values()
 
 
-    def enumIterateByName(self):
-        keys = sorted(self.enums_by_name.keys())
-
-        list = []
-        for enum in keys:
-            list.append( self.enums_by_name[ enum ] )
-
-        return iter(list)
-
-
     def categoryIterate(self):
         """Iterate over categories.
 
@@ -978,10 +934,6 @@ class gl_api(object):
             return self.category_dict[name]
         else:
             return ["<unknown category>", None]
-
-
-    def typeIterate(self):
-        return self.types_by_name.values()
 
 
     def find_type( self, type_name ):

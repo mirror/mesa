@@ -28,6 +28,7 @@
 import argparse
 
 import gl_XML
+import static_data
 import license
 
 
@@ -108,21 +109,15 @@ class PrintRemapTable(gl_XML.gl_print_base):
         print('    (offset >= 0) ? (((_glapi_proc *)(disp))[offset]) : NULL')
         print('#define SET_by_offset(disp, offset, fn) \\')
         print('    do { \\')
-        print('        if ( (offset) < 0 ) { \\')
-        print('            /* fprintf( stderr, "[%s:%u] SET_by_offset(%p, %d, %s)!\\n", */ \\')
-        print('            /*         __func__, __LINE__, disp, offset, # fn); */ \\')
-        print('            /* abort(); */ \\')
-        print('        } \\')
-        print('        else { \\')
-        print('            ( (_glapi_proc *) (disp) )[offset] = (_glapi_proc) fn; \\')
-        print('        } \\')
+        print('        assert(offset >= 0 && offset < _gloffset_COUNT); \\')
+        print('        ( (_glapi_proc *) (disp) )[offset] = (_glapi_proc) fn; \\')
         print('    } while(0)')
         print('')
 
         abi_functions = [f for f in api.functionIterateByOffset()]
 
         print('/* total number of offsets below */')
-        print('#define _gloffset_COUNT %d' % (len(abi_functions)))
+        print('#define _gloffset_COUNT %d' % (static_data.function_count))
         print('')
 
         for f in abi_functions:

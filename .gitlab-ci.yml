@@ -216,7 +216,7 @@ include:
   rules:
     - !reference [.common-rules, rules]
     # Run when re-enabling a disabled farm, but not when disabling it
-    - !reference [.disable-farm-mr-rules, rules]
+    - !reference [.disable-farm-rules, rules]
     # Never run immediately after merging, as we just ran everything
     - !reference [.never-post-merge-rules, rules]
     # Build everything in merge pipelines, if any files affecting the pipeline

@@ -94,7 +94,6 @@ yaml-toml-shell-py-test:
     - section_end shellcheck
     - .gitlab-ci/run-pytest.sh
   rules:
-    - !reference [.disable-farm-mr-rules, rules]
     - !reference [.never-post-merge-rules, rules]
     - !reference [.no_scheduled_pipelines-rules, rules]
     # merge pipeline

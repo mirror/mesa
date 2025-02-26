@@ -46,6 +46,7 @@ extensions = [
     'nir',
     'redirects',
     'sphinx.ext.graphviz',
+    'sphinxcontrib.spelling',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -241,3 +242,9 @@ rst_prolog = '''
 .. |out| replace:: **[out]**
 .. |inout| replace:: **[inout]**
 '''
+
+# -- Options for spell checking -------------------------------------------
+
+spelling_exclude_patterns = [
+  'relnotes/**.rst'
+]

@@ -2353,7 +2353,8 @@ dri3_find_back_alloc(struct loader_dri3_drawable *draw)
        back != draw->buffers[draw->cur_blit_source]) {
       struct loader_dri3_buffer *source = draw->buffers[draw->cur_blit_source];
 
-      dri3_fence_await(draw->conn, draw, source);
+      if (draw->cur_blit_source == LOADER_DRI3_FRONT_ID)
+	 dri3_fence_await(draw->conn, draw, source);
       dri3_fence_await(draw->conn, draw, back);
       (void) loader_dri3_blit_image(draw,
                                     back->image,

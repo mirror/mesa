@@ -437,6 +437,13 @@ option(
 )
 
 option(
+  'libelf',
+  type : 'feature',
+  value: 'auto',
+  description : 'Build with libelf support'
+)
+
+option(
   'libunwind',
   type : 'feature',
   deprecated: {'true': 'enabled', 'false': 'disabled'},

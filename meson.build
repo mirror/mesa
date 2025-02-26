@@ -1942,7 +1942,7 @@ if host_machine.system() == 'windows'
   dep_version = cpp.find_library('version')
 endif
 
-dep_elf = dependency('libelf', required : false)
+dep_elf = dependency('libelf', required : get_option('libelf'))
 if not with_platform_windows and not dep_elf.found()
   dep_elf = cc.find_library('elf', required : false)
 endif

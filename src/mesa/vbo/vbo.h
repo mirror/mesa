@@ -148,6 +148,39 @@ struct vbo_exec_context
 #endif
 };
 
+/* Default size for the buffer holding the vertices and the indices.
+ * A bigger buffer helps reducing the number of draw calls but may
+ * waste memory.
+ * 1MB was picked because a lower value reduces viewperf snx tests
+ * performance but larger values cause high VRAM usage (because
+ * larger buffers will be shared by more display lists which reduces
+ * the likelyhood of freeing the buffer).
+ */
+#define VBO_SAVE_BUFFER_SIZE    (1024 * 1024)
+#define VBO_SAVE_BUFFER_PER_BIT    (1 * 1024)
+#define VBO_SAVE_BUFFER_N_BITS (VBO_SAVE_BUFFER_SIZE / VBO_SAVE_BUFFER_PER_BIT)
+#define VBO_SAVE_BUFFER_N_WORDS BITSET_WORDS(VBO_SAVE_BUFFER_N_BITS)
+
+struct free_bo_pool_entry {
+   /* BO status tracking:
+    *   - free_mask bitfield: if bit is set, then this range
+    *     is available for re-use.
+    *   - dirty_mask: if set, then this range has been used
+    *     previously, and we might need to wait for idle before
+    *     reusing it again.
+    *   - fence: tracks the last vbo_save_release_bo() for a
+    *     whole bo (not per range)
+    * So to be able to reuse a buffer range, free_mask bits must
+    * be set for the whole range, and if dirty_mask is set, then
+    * waiting for 'fence' is mandatory. Upon waiting, the
+    * dirty_mask for which free_mask is also set can be cleared.
+    */
+   BITSET_DECLARE(free_mask, VBO_SAVE_BUFFER_N_BITS);
+   BITSET_DECLARE(dirty_mask, VBO_SAVE_BUFFER_N_BITS);
+   struct pipe_fence_handle *release_fence;
+
+   struct gl_buffer_object *bo;
+};
 
 struct vbo_save_context {
    GLbitfield64 enabled; /**< mask of enabled vbo arrays. */
@@ -159,8 +192,6 @@ struct vbo_save_context {
 
    struct vbo_save_vertex_store *vertex_store;
    struct vbo_save_primitive_store *prim_store;
-   struct gl_buffer_object *current_bo;
-   unsigned current_bo_bytes_used;
 
    fi_type vertex[VBO_ATTRIB_MAX*4];	   /* current values */
    fi_type *attrptr[VBO_ATTRIB_MAX];
@@ -175,7 +206,9 @@ struct vbo_save_context {
 
    GLboolean dangling_attr_ref;
    GLboolean out_of_memory;  /**< True if last VBO allocation failed */
-   bool no_current_update;
+   bool restore_attrib_after_draw;
+
+   struct free_bo_pool_entry *free_bo_pool;
 };
 
 GLboolean
@@ -213,7 +246,7 @@ vbo_save_SaveFlushVertices(struct gl_context *ctx);
 
 void
 vbo_save_NotifyBegin(struct gl_context *ctx, GLenum mode,
-                     bool no_current_update);
+                     bool restore_attrib_after_draw);
 
 void
 vbo_save_NewList(struct gl_context *ctx, GLuint list, GLenum mode);

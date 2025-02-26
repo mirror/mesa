@@ -185,8 +185,6 @@ _vbo_DestroyContext(struct gl_context *ctx)
 
    if (vbo) {
       vbo_exec_destroy(ctx);
-      if (_mesa_is_desktop_gl_compat(ctx))
-         vbo_save_destroy(ctx);
       _mesa_reference_vao(ctx, &vbo->VAO, NULL);
    }
 }

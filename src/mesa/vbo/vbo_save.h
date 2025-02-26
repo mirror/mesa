@@ -94,7 +94,9 @@ struct vbo_save_vertex_list {
       struct _mesa_prim *prims;
       GLuint prim_count;
       GLuint min_index, max_index;
-      GLuint bo_bytes_used;
+      /* Bytes range [start; end[ used to store the vertices + indices */
+      GLuint bo_start;
+      GLuint bo_end;
    } *cold;
 };
 
@@ -108,15 +110,6 @@ _vbo_save_get_stride(const struct vbo_save_vertex_list *node)
    return node->cold->VAO[0]->BufferBinding[0].Stride;
 }
 
-/* Default size for the buffer holding the vertices and the indices.
- * A bigger buffer helps reducing the number of draw calls but may
- * waste memory.
- * 1MB was picked because a lower value reduces viewperf snx tests
- * performance but larger values cause high VRAM usage (because
- * larger buffers will be shared by more display lists which reduces
- * the likelyhood of freeing the buffer).
- */
-#define VBO_SAVE_BUFFER_SIZE (1024 * 1024)
 #define VBO_SAVE_PRIM_MODE_MASK 0x3f
 
 struct vbo_save_vertex_store {
@@ -148,6 +141,10 @@ vbo_save_playback_vertex_list(struct gl_context *ctx, void *data, bool copy_to_c
 
 void
 vbo_save_playback_vertex_list_loopback(struct gl_context *ctx, void *data);
+
+void
+vbo_save_release_bo(struct gl_context *ctx, struct gl_buffer_object **bo,
+                    uint32_t start, uint32_t end);
 
 void
 vbo_save_api_init(struct vbo_save_context *save);

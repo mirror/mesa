@@ -1978,6 +1978,42 @@ lp_build_round_altivec(struct lp_build_context *bld,
 
 
 static inline LLVMValueRef
+lp_build_iround_neon(struct lp_build_context *bld,
+                       LLVMValueRef a,
+                       enum lp_build_round_mode mode)
+{
+   LLVMBuilderRef builder = bld->gallivm->builder;
+   const struct lp_type type = bld->type;
+   const char *intrinsic = NULL;
+   LLVMTypeRef ret_type = lp_build_int_vec_type(bld->gallivm, type);
+
+   assert(type.floating);
+   assert(type.sign);
+
+   assert(lp_check_value(type, a));
+   assert(util_get_cpu_caps()->has_neon);
+
+   (void)type;
+
+   switch (mode) {
+   case LP_BUILD_ROUND_NEAREST:
+      intrinsic = "llvm.aarch64.neon.fcvtns.v4i32.v4f32";
+      break;
+   case LP_BUILD_ROUND_FLOOR:
+      intrinsic = "llvm.aarch64.neon.fcvtms.v4i32.v4f32";
+      break;
+   case LP_BUILD_ROUND_CEIL:
+      intrinsic = "llvm.aarch64.neon.fcvtps.v4i32.v4f32";
+      break;
+   case LP_BUILD_ROUND_TRUNCATE:
+      intrinsic = "llvm.aarch64.neon.fcvtzs.v4i32.v4f32";
+      break;
+   }
+
+   return lp_build_intrinsic_unary(builder, intrinsic, ret_type, a);
+}
+
+static inline LLVMValueRef
 lp_build_round_arch(struct lp_build_context *bld,
                     LLVMValueRef a,
                     enum lp_build_round_mode mode)
@@ -2355,6 +2391,11 @@ lp_build_itrunc(struct lp_build_context *bld,
    assert(type.floating);
    assert(lp_check_value(type, a));
 
+   if (util_get_cpu_caps()->has_neon &&
+       (type.width == 32 && type.length == 4)) {
+      return lp_build_iround_neon(bld, a, LP_BUILD_ROUND_TRUNCATE);
+   }
+
    return LLVMBuildFPToSI(builder, a, int_vec_type, "");
 }
 
@@ -2382,6 +2423,10 @@ lp_build_iround(struct lp_build_context *bld,
        ((type.width == 32) && (type.length == 1 || type.length == 4))) ||
        (util_get_cpu_caps()->has_avx && type.width == 32 && type.length == 8)) {
       return lp_build_iround_nearest_sse2(bld, a);
+   }
+   if (util_get_cpu_caps()->has_neon &&
+       (type.width == 32 && type.length == 4)) {
+      return lp_build_iround_neon(bld, a, LP_BUILD_ROUND_NEAREST);
    }
    if (arch_rounding_available(type)) {
       res = lp_build_round_arch(bld, a, LP_BUILD_ROUND_NEAREST);
@@ -2432,6 +2477,11 @@ lp_build_ifloor(struct lp_build_context *bld,
 
    assert(type.floating);
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_neon &&
+       (type.width == 32 && type.length == 4)) {
+      return lp_build_iround_neon(bld, a, LP_BUILD_ROUND_FLOOR);
+   }
 
    res = a;
    if (type.sign) {
@@ -2489,6 +2539,11 @@ lp_build_iceil(struct lp_build_context *bld,
 
    assert(type.floating);
    assert(lp_check_value(type, a));
+
+   if (util_get_cpu_caps()->has_neon &&
+       (type.width == 32 && type.length == 4)) {
+      return lp_build_iround_neon(bld, a, LP_BUILD_ROUND_CEIL);
+   }
 
    if (arch_rounding_available(type)) {
       res = lp_build_round_arch(bld, a, LP_BUILD_ROUND_CEIL);

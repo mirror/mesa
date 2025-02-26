@@ -700,7 +700,7 @@ static VkPipeline
 create_gfx_pipeline_library(struct zink_screen *screen, struct zink_shader_object *objs, unsigned stage_mask, VkPipelineLayout layout, VkPipelineCache pipeline_cache)
 {
    assert(screen->info.have_EXT_extended_dynamic_state && screen->info.have_EXT_extended_dynamic_state2);
-   VkPipelineRenderingCreateInfo rendering_info;
+   VkPipelineRenderingCreateInfo rendering_info = {0};
    rendering_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
    rendering_info.pNext = NULL;
    rendering_info.viewMask = 0;

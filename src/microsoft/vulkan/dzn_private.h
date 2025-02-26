@@ -166,7 +166,7 @@ struct dzn_meta_blit_key {
    };
 };
 
-struct dzn_meta_blit {
+struct dzn_meta_context {
    ID3D12RootSignature *root_sig;
    ID3D12PipelineState *pipeline_state;
 };
@@ -179,9 +179,29 @@ struct dzn_meta_blits {
    struct hash_table_u64 *contexts;
 };
 
-const struct dzn_meta_blit *
+const struct dzn_meta_context *
 dzn_meta_blits_get_context(struct dzn_device *device,
                            const struct dzn_meta_blit_key *key);
+
+struct dzn_meta_clears {
+   mtx_t lock;
+   D3D12_SHADER_BYTECODE vs;
+   D3D12_SHADER_BYTECODE vs_arrayed;
+   struct hash_table *fs;
+   struct hash_table *contexts;
+};
+struct dzn_meta_clear_key {
+   struct dzn_nir_clear_fs_info fs;
+   DXGI_FORMAT dsv_format;
+   uint32_t sample_count : 5;
+   uint32_t view_mask : 3;
+   uint32_t clear_stencil : 1;
+   uint32_t arrayed_clear : 1;
+};
+
+const struct dzn_meta_context *
+dzn_meta_clears_get_context(struct dzn_device *device,
+                             const struct dzn_meta_clear_key *key);
 
 #define MAX_SYNC_TYPES 3
 #define MAX_QUEUE_FAMILIES 2
@@ -226,6 +246,7 @@ struct dzn_physical_device {
    D3D12_FEATURE_DATA_D3D12_OPTIONS15 options15;
    D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16;
    D3D12_FEATURE_DATA_D3D12_OPTIONS17 options17;
+   D3D12_FEATURE_DATA_D3D12_OPTIONS18 options18;
    D3D12_FEATURE_DATA_D3D12_OPTIONS19 options19;
    D3D12_FEATURE_DATA_D3D12_OPTIONS21 options21;
    VkPhysicalDeviceMemoryProperties memory;
@@ -300,6 +321,7 @@ struct dzn_device {
    struct dzn_meta_indirect_draw indirect_draws[DZN_NUM_INDIRECT_DRAW_TYPES];
    struct dzn_meta_triangle_fan_rewrite_index triangle_fan[DZN_NUM_INDEX_TYPE];
    struct dzn_meta_blits blits;
+   struct dzn_meta_clears clears;
 
    struct {
 #define DZN_QUERY_REFS_SECTION_SIZE 4096
@@ -323,10 +345,6 @@ struct dzn_device {
 void dzn_meta_finish(struct dzn_device *device);
 
 VkResult dzn_meta_init(struct dzn_device *device);
-
-const struct dzn_meta_blit *
-dzn_meta_blits_get_context(struct dzn_device *device,
-                           const struct dzn_meta_blit_key *key);
 
 ID3D12RootSignature *
 dzn_device_create_root_sig(struct dzn_device *device,
@@ -649,6 +667,7 @@ struct dzn_cmd_buffer_state {
       uint32_t num_views;
       uint32_t view_mask;
    } multiview;
+   bool use_d3d_render_pass;
 };
 
 struct dzn_cmd_buffer_rtv_key {
@@ -1319,6 +1338,32 @@ struct dzn_query_pool {
    uint64_t *collect_map;
 };
 
+struct dzn_subpass_attachment {
+   union dzn_subpass_attachment_usage {
+      struct {
+         bool output : 1;
+         bool resolve_src : 1;
+         bool resolve_dst : 1;
+         bool input : 1;
+         bool preserve : 1;
+      };
+      uint8_t used;
+   } color_depth_usage, stencil_usage;
+   D3D12_RENDER_PASS_BEGINNING_ACCESS beginning, stencil_beginning;
+   D3D12_RENDER_PASS_ENDING_ACCESS ending, stencil_ending;
+};
+
+struct dzn_subpass {
+   struct dzn_subpass_attachment *attachments;
+   D3D12_RENDER_PASS_FLAGS flags;
+};
+
+struct dzn_render_pass {
+   struct vk_render_pass vk;
+   bool can_use_d3d_render_passes;
+   struct dzn_subpass *subpasses;
+};
+
 D3D12_QUERY_TYPE
 dzn_query_pool_get_query_type(const struct dzn_query_pool *qpool, VkQueryControlFlags flag);
 
@@ -1357,5 +1402,6 @@ VK_DEFINE_NONDISP_HANDLE_CASTS(dzn_compute_pipeline, base.base, VkPipeline, VK_O
 VK_DEFINE_NONDISP_HANDLE_CASTS(dzn_pipeline_layout, vk.base, VkPipelineLayout, VK_OBJECT_TYPE_PIPELINE_LAYOUT)
 VK_DEFINE_NONDISP_HANDLE_CASTS(dzn_query_pool, base, VkQueryPool, VK_OBJECT_TYPE_QUERY_POOL)
 VK_DEFINE_NONDISP_HANDLE_CASTS(dzn_sampler, base, VkSampler, VK_OBJECT_TYPE_SAMPLER)
+VK_DEFINE_NONDISP_HANDLE_CASTS(dzn_render_pass, vk.base, VkRenderPass, VK_OBJECT_TYPE_RENDER_PASS)
 
 #endif /* DZN_PRIVATE_H */

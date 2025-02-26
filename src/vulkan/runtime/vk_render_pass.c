@@ -325,6 +325,7 @@ num_subpass_attachments2(const VkSubpassDescription2 *desc)
    return desc->inputAttachmentCount +
           desc->colorAttachmentCount +
           (desc->pResolveAttachments ? desc->colorAttachmentCount : 0) +
+          desc->preserveAttachmentCount +
           has_depth_stencil_attachment +
           has_depth_stencil_resolve_attachment +
           has_fragment_shading_rate_attachment;
@@ -378,6 +379,7 @@ vk_subpass_attachment_init(struct vk_subpass_attachment *att,
    };
 
    switch (usage) {
+   case 0:
    case VK_IMAGE_USAGE_TRANSFER_DST_BIT:
       break; /* No special aspect requirements */
 
@@ -418,18 +420,14 @@ vk_subpass_attachment_link_resolve(struct vk_subpass_attachment *att,
    att->resolve = resolve;
 }
 
-VKAPI_ATTR VkResult VKAPI_CALL
-vk_common_CreateRenderPass2(VkDevice _device,
-                            const VkRenderPassCreateInfo2 *pCreateInfo,
-                            const VkAllocationCallbacks *pAllocator,
-                            VkRenderPass *pRenderPass)
+VkResult
+vk_init_render_pass(struct vk_device *device,
+                    const VkRenderPassCreateInfo2 *pCreateInfo,
+                    const VkAllocationCallbacks *pAllocator,
+                    struct vk_render_pass *pass)
 {
-   VK_FROM_HANDLE(vk_device, device, _device);
-
-   assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2);
 
    VK_MULTIALLOC(ma);
-   VK_MULTIALLOC_DECL(&ma, struct vk_render_pass, pass, 1);
    VK_MULTIALLOC_DECL(&ma, struct vk_render_pass_attachment, attachments,
                            pCreateInfo->attachmentCount);
    VK_MULTIALLOC_DECL(&ma, struct vk_subpass, subpasses,
@@ -452,8 +450,7 @@ vk_common_CreateRenderPass2(VkDevice _device,
    VK_MULTIALLOC_DECL(&ma, VkSampleCountFlagBits, subpass_color_samples,
                       subpass_color_attachment_count);
 
-   if (!vk_object_multizalloc(device, &ma, pAllocator,
-                              VK_OBJECT_TYPE_RENDER_PASS))
+   if (!vk_multialloc_zalloc2(&ma, &device->alloc, pAllocator, VK_SYSTEM_ALLOCATION_SCOPE_OBJECT))
       return VK_ERROR_OUT_OF_HOST_MEMORY;
 
    pass->attachment_count = pCreateInfo->attachmentCount;
@@ -613,6 +610,23 @@ vk_common_CreateRenderPass2(VkDevice _device,
             VK_PIPELINE_CREATE_RENDERING_FRAGMENT_SHADING_RATE_ATTACHMENT_BIT_KHR;
       }
 
+      subpass->preserve_count = desc->preserveAttachmentCount;
+      if (desc->preserveAttachmentCount > 0) {
+         subpass->preserve_attachments = next_subpass_attachment;
+         next_subpass_attachment += desc->preserveAttachmentCount;
+
+         for (uint32_t a = 0; a < desc->preserveAttachmentCount; ++a) {
+            VkAttachmentReference2 local_reference = {
+               .attachment = desc->pPreserveAttachments[a],
+            };
+            vk_subpass_attachment_init(&subpass->preserve_attachments[a],
+                                       pass, s,
+                                       &local_reference,
+                                       pCreateInfo->pAttachments,
+                                       0);
+         }
+      }
+
       /* Figure out any self-dependencies */
       assert(desc->colorAttachmentCount <= 32);
       for (uint32_t a = 0; a < desc->inputAttachmentCount; a++) {
@@ -636,7 +650,10 @@ vk_common_CreateRenderPass2(VkDevice _device,
                 desc->pInputAttachments[a].attachment) {
             VkImageAspectFlags aspects =
                subpass->input_attachments[a].aspects;
-            if (aspects & VK_IMAGE_ASPECT_DEPTH_BIT) {
+            if ((aspects & VK_IMAGE_ASPECT_DEPTH_BIT) &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_OPTIMAL &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_DEPTH_READ_ONLY_STENCIL_ATTACHMENT_OPTIMAL) {
                subpass->input_attachments[a].layout =
                   VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT;
                subpass->depth_stencil_attachment->layout =
@@ -644,7 +661,10 @@ vk_common_CreateRenderPass2(VkDevice _device,
                subpass->pipeline_flags |=
                   VK_PIPELINE_CREATE_DEPTH_STENCIL_ATTACHMENT_FEEDBACK_LOOP_BIT_EXT;
             }
-            if (aspects & VK_IMAGE_ASPECT_STENCIL_BIT) {
+            if ((aspects & VK_IMAGE_ASPECT_STENCIL_BIT) &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_DEPTH_STENCIL_READ_ONLY_OPTIMAL &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_STENCIL_READ_ONLY_OPTIMAL &&
+                subpass->input_attachments[a].layout != VK_IMAGE_LAYOUT_STENCIL_READ_ONLY_OPTIMAL) {
                subpass->input_attachments[a].stencil_layout =
                   VK_IMAGE_LAYOUT_ATTACHMENT_FEEDBACK_LOOP_OPTIMAL_EXT;
                subpass->depth_stencil_attachment->stencil_layout =
@@ -824,6 +844,30 @@ vk_common_CreateRenderPass2(VkDevice _device,
    } else {
       pass->fragment_density_map.attachment = VK_ATTACHMENT_UNUSED;
       pass->fragment_density_map.layout = VK_IMAGE_LAYOUT_UNDEFINED;
+   }
+
+   return VK_SUCCESS;
+}
+
+VKAPI_ATTR VkResult VKAPI_CALL
+vk_common_CreateRenderPass2(VkDevice _device,
+                            const VkRenderPassCreateInfo2 *pCreateInfo,
+                            const VkAllocationCallbacks *pAllocator,
+                            VkRenderPass *pRenderPass)
+{
+   VK_FROM_HANDLE(vk_device, device, _device);
+
+   assert(pCreateInfo->sType == VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO_2);
+
+   struct vk_render_pass *pass = vk_object_zalloc(device, pAllocator, sizeof(struct vk_render_pass),
+                                                  VK_OBJECT_TYPE_RENDER_PASS);
+   if (!pass)
+      return vk_error(device, VK_ERROR_OUT_OF_HOST_MEMORY);
+
+   VkResult result = vk_init_render_pass(device, pCreateInfo, pAllocator, pass);
+   if (result != VK_SUCCESS) {
+      vk_object_free(device, pAllocator, pass);
+      return result;
    }
 
    *pRenderPass = vk_render_pass_to_handle(pass);
@@ -1101,6 +1145,8 @@ vk_common_DestroyRenderPass(VkDevice _device,
    if (!pass)
       return;
 
+   if (pass->attachments)
+      vk_free2(&device->alloc, pAllocator, pass->attachments);
    vk_object_free(device, pAllocator, pass);
 }
 

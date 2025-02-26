@@ -507,7 +507,7 @@ dzn_meta_blits_get_fs(struct dzn_device *device,
 }
 
 static void
-dzn_meta_blit_destroy(struct dzn_device *device, struct dzn_meta_blit *blit)
+dzn_meta_context_destroy(struct dzn_device *device, struct dzn_meta_context *blit)
 {
    if (!blit)
       return;
@@ -520,10 +520,10 @@ dzn_meta_blit_destroy(struct dzn_device *device, struct dzn_meta_blit *blit)
    vk_free(&device->vk.alloc, blit);
 }
 
-static struct dzn_meta_blit *
+static struct dzn_meta_context *
 dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *key)
 {
-   struct dzn_meta_blit *blit =
+   struct dzn_meta_context *blit =
       vk_zalloc(&device->vk.alloc, sizeof(*blit), 8,
                 VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
 
@@ -663,7 +663,7 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
 
    blit->root_sig = dzn_device_create_root_sig(device, &root_sig_desc);
    if (!blit->root_sig) {
-      dzn_meta_blit_destroy(device, blit);
+      dzn_meta_context_destroy(device, blit);
       return NULL;
    }
 
@@ -673,7 +673,7 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
 
    vs = dzn_meta_blits_get_vs(device);
    if (!vs) {
-      dzn_meta_blit_destroy(device, blit);
+      dzn_meta_context_destroy(device, blit);
       return NULL;
    }
 
@@ -682,7 +682,7 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
 
    fs = dzn_meta_blits_get_fs(device, &blit_fs_info);
    if (!fs) {
-      dzn_meta_blit_destroy(device, blit);
+      dzn_meta_context_destroy(device, blit);
       return NULL;
    }
 
@@ -718,18 +718,18 @@ dzn_meta_blit_create(struct dzn_device *device, const struct dzn_meta_blit_key *
    if (FAILED(ID3D12Device1_CreateGraphicsPipelineState(device->dev, &desc,
                                                         &IID_ID3D12PipelineState,
                                                         (void **)&blit->pipeline_state))) {
-      dzn_meta_blit_destroy(device, blit);
+      dzn_meta_context_destroy(device, blit);
       return NULL;
    }
 
    return blit;
 }
 
-const struct dzn_meta_blit *
+const struct dzn_meta_context *
 dzn_meta_blits_get_context(struct dzn_device *device,
                            const struct dzn_meta_blit_key *key)
 {
-   struct dzn_meta_blit *out = NULL;
+   struct dzn_meta_context *out = NULL;
 
    STATIC_ASSERT(sizeof(*key) == sizeof(uint64_t));
 
@@ -764,7 +764,7 @@ dzn_meta_blits_finish(struct dzn_device *device)
 
    if (meta->contexts) {
       hash_table_foreach(meta->contexts->table, he)
-         dzn_meta_blit_destroy(device, he->data);
+         dzn_meta_context_destroy(device, he->data);
       _mesa_hash_table_u64_destroy(meta->contexts);
    }
 
@@ -797,6 +797,278 @@ dzn_meta_blits_init(struct dzn_device *device)
    return VK_SUCCESS;
 }
 
+static const D3D12_SHADER_BYTECODE *
+dzn_meta_clears_get_vs(struct dzn_device *device, bool arrayed)
+{
+   D3D12_SHADER_BYTECODE *vs = arrayed ? &device->clears.vs_arrayed : &device->clears.vs;
+   if (vs->pShaderBytecode == NULL) {
+      nir_shader *nir = dzn_nir_clear_vs(arrayed);
+
+      D3D12_SHADER_BYTECODE bc;
+
+      dzn_meta_compile_shader(device, nir, &bc);
+      vs->pShaderBytecode =
+         vk_alloc(&device->vk.alloc, bc.BytecodeLength, 8,
+                  VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (vs->pShaderBytecode) {
+         vs->BytecodeLength = bc.BytecodeLength;
+         memcpy((void *)vs->pShaderBytecode, bc.pShaderBytecode, bc.BytecodeLength);
+      }
+      free((void *)bc.pShaderBytecode);
+      ralloc_free(nir);
+   }
+
+   return vs;
+}
+
+static const D3D12_SHADER_BYTECODE *
+dzn_meta_clears_get_fs(struct dzn_device *device,
+                       const struct dzn_nir_clear_fs_info *key)
+{
+   D3D12_SHADER_BYTECODE *out = NULL;
+
+   struct hash_entry *he =
+      _mesa_hash_table_search(device->clears.fs, key);
+
+   if (!he) {
+      nir_shader *nir = dzn_nir_clear_fs(key);
+
+      D3D12_SHADER_BYTECODE bc;
+
+      dzn_meta_compile_shader(device, nir, &bc);
+
+      out = vk_alloc(&device->vk.alloc,
+                     sizeof(D3D12_SHADER_BYTECODE) + bc.BytecodeLength, 8,
+                     VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (out) {
+         out->pShaderBytecode = out + 1;
+         memcpy((void *)out->pShaderBytecode, bc.pShaderBytecode, bc.BytecodeLength);
+         out->BytecodeLength = bc.BytecodeLength;
+         _mesa_hash_table_insert(device->clears.fs, key, out);
+      }
+      free((void *)bc.pShaderBytecode);
+      ralloc_free(nir);
+   } else {
+      out = he->data;
+   }
+
+   return out;
+}
+
+static struct dzn_meta_context *
+dzn_meta_clear_create(struct dzn_device *device, const struct dzn_meta_clear_key *key)
+{
+#define STREAM_ENTRY(type, field) union { struct { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE enum_type; type inner; } field; void *field##_align; }
+   D3D12_VIEW_INSTANCE_LOCATION vi_locs[D3D12_MAX_VIEW_INSTANCE_COUNT];
+   struct clear_pso_desc {
+      STREAM_ENTRY(DXGI_FORMAT, dsv_format);
+      STREAM_ENTRY(D3D12_DEPTH_STENCIL_DESC, dss);
+      STREAM_ENTRY(D3D12_VIEW_INSTANCING_DESC, view_instancing);
+      STREAM_ENTRY(DXGI_SAMPLE_DESC, samples);
+      STREAM_ENTRY(struct D3D12_RT_FORMAT_ARRAY, rtv_formats);
+      STREAM_ENTRY(D3D12_SHADER_BYTECODE, vs);
+      STREAM_ENTRY(D3D12_SHADER_BYTECODE, ps);
+      STREAM_ENTRY(ID3D12RootSignature *, rs);
+   } desc = {
+      .dsv_format = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, key->dsv_format },
+      .dss = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, {
+         .DepthEnable = key->fs.write_depth,
+         .DepthWriteMask = D3D12_DEPTH_WRITE_MASK_ALL,
+         .DepthFunc = D3D12_COMPARISON_FUNC_ALWAYS,
+         .StencilEnable = key->clear_stencil,
+         .FrontFace = {
+            .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS,
+            .StencilPassOp = D3D12_STENCIL_OP_REPLACE,
+            .StencilFailOp = D3D12_STENCIL_OP_REPLACE,
+            .StencilDepthFailOp = D3D12_STENCIL_OP_REPLACE,
+         },
+         .BackFace = {
+            .StencilFunc = D3D12_COMPARISON_FUNC_ALWAYS,
+            .StencilPassOp = D3D12_STENCIL_OP_REPLACE,
+            .StencilFailOp = D3D12_STENCIL_OP_REPLACE,
+            .StencilDepthFailOp = D3D12_STENCIL_OP_REPLACE,
+         }
+      }},
+      .view_instancing = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VIEW_INSTANCING },
+      .samples = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, { .Count = key->sample_count }},
+      .rtv_formats = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS },
+      .vs = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_VS },
+      .ps = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS },
+      .rs = { D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE },
+   };
+
+   for (uint32_t i = 0; i < D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT; ++i) {
+      desc.rtv_formats.inner.RTFormats[i] = dzn_pipe_to_dxgi_format(key->fs.color_formats[i]);
+      if (key->fs.color_formats[i] != PIPE_FORMAT_NONE)
+         desc.rtv_formats.inner.NumRenderTargets++;
+   }
+
+   if (key->view_mask != 1) {
+      desc.view_instancing.inner.pViewInstanceLocations = vi_locs;
+      desc.view_instancing.inner.Flags = D3D12_VIEW_INSTANCING_FLAG_ENABLE_VIEW_INSTANCE_MASKING;
+      for (uint32_t i = 0; i < D3D12_MAX_VIEW_INSTANCE_COUNT; ++i) {
+         vi_locs[i].RenderTargetArrayIndex = i;
+         vi_locs[i].ViewportArrayIndex = 0;
+         if (key->view_mask & (1 << i))
+            desc.view_instancing.inner.ViewInstanceCount = i + 1;
+      }
+   }
+
+   struct dzn_meta_context *clear =
+      vk_zalloc(&device->vk.alloc, sizeof(*clear), 8,
+                VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+
+   if (!clear)
+      return NULL;
+
+   D3D12_ROOT_PARAMETER1 root_params[] = {
+      {
+         .ParameterType = D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+         .Constants = {
+            .ShaderRegister = 0,
+            .RegisterSpace = 0,
+            .Num32BitValues = 1,
+         },
+         .ShaderVisibility = D3D12_SHADER_VISIBILITY_VERTEX,
+      },
+   };
+
+   D3D12_VERSIONED_ROOT_SIGNATURE_DESC root_sig_desc = {
+      .Version = D3D_ROOT_SIGNATURE_VERSION_1_1,
+      .Desc_1_1 = {
+         .NumParameters = key->arrayed_clear ? ARRAY_SIZE(root_params) : 0,
+         .pParameters = root_params,
+         .Flags = D3D12_ROOT_SIGNATURE_FLAG_NONE,
+      },
+   };
+
+   clear->root_sig = dzn_device_create_root_sig(device, &root_sig_desc);
+   if (!clear->root_sig) {
+      dzn_meta_context_destroy(device, clear);
+      return NULL;
+   }
+
+   desc.rs.inner = clear->root_sig;
+
+   const D3D12_SHADER_BYTECODE *vs, *fs;
+
+   vs = dzn_meta_clears_get_vs(device, key->arrayed_clear);
+   if (!vs) {
+      dzn_meta_context_destroy(device, clear);
+      return NULL;
+   }
+
+   desc.vs.inner = *vs;
+   assert(desc.vs.inner.pShaderBytecode);
+
+   fs = dzn_meta_clears_get_fs(device, &key->fs);
+   if (!fs) {
+      dzn_meta_context_destroy(device, clear);
+      return NULL;
+   }
+
+   desc.ps.inner = *fs;
+   assert(desc.ps.inner.pShaderBytecode);
+
+   D3D12_PIPELINE_STATE_STREAM_DESC pso_desc = {
+      .pPipelineStateSubobjectStream = &desc,
+      .SizeInBytes = sizeof(desc)
+   };
+
+   if (FAILED(ID3D12Device4_CreatePipelineState(device->dev, &pso_desc,
+                                                &IID_ID3D12PipelineState,
+                                                (void **)&clear->pipeline_state))) {
+      dzn_meta_context_destroy(device, clear);
+      return NULL;
+   }
+   return clear;
+}
+
+const struct dzn_meta_context *
+dzn_meta_clears_get_context(struct dzn_device *device,
+                            const struct dzn_meta_clear_key *key)
+{
+   mtx_lock(&device->clears.lock);
+
+   struct hash_entry *he =
+      _mesa_hash_table_search(device->clears.contexts, key);
+   if (!he) {
+      struct dzn_meta_context *out = dzn_meta_clear_create(device, key);
+
+      if (out)
+         he = _mesa_hash_table_insert(device->clears.contexts, key, out);
+   }
+
+   mtx_unlock(&device->clears.lock);
+
+   return he ? he->data : NULL;
+}
+
+static void
+dzn_meta_clears_finish(struct dzn_device *device)
+{
+   vk_free(&device->vk.alloc, (void *)device->clears.vs.pShaderBytecode);
+   vk_free(&device->vk.alloc, (void *)device->clears.vs_arrayed.pShaderBytecode);
+
+   if (device->clears.fs) {
+      hash_table_foreach(device->clears.fs, entry)
+         vk_free(&device->vk.alloc, entry->data);
+      _mesa_hash_table_destroy(device->clears.fs, NULL);
+   }
+   if (device->clears.contexts) {
+      hash_table_foreach(device->clears.contexts, entry)
+         dzn_meta_context_destroy(device, entry->data);
+      _mesa_hash_table_destroy(device->clears.contexts, NULL);
+   }
+   mtx_destroy(&device->clears.lock);
+}
+
+static uint32_t
+dzn_meta_hash_fs_clear_key(const struct dzn_nir_clear_fs_info *key)
+{
+   return _mesa_hash_data(key, sizeof(*key));
+}
+
+static bool
+dzn_meta_equals_fs_clear_key(const struct dzn_nir_clear_fs_info *a, const struct dzn_nir_clear_fs_info *b)
+{
+   return memcmp(a, b, sizeof(*a)) == 0;
+}
+
+static uint32_t
+dzn_meta_hash_pso_clear_key(const struct dzn_meta_clear_key *key)
+{
+   return _mesa_hash_data(key, sizeof(*key));
+}
+
+static bool
+dzn_meta_equals_pso_clear_key(const struct dzn_meta_clear_key *a, const struct dzn_nidzn_meta_clear_keyr_clear_fs_info *b)
+{
+   return memcmp(a, b, sizeof(*a)) == 0;
+}
+
+static VkResult
+dzn_meta_clears_init(struct dzn_device *device)
+{
+   struct dzn_instance *instance =
+      container_of(device->vk.physical->instance, struct dzn_instance, vk);
+   mtx_init(&device->clears.lock, mtx_plain);
+
+   device->clears.fs = _mesa_hash_table_create(NULL, dzn_meta_hash_fs_clear_key, dzn_meta_equals_fs_clear_key);
+   if (!device->clears.fs) {
+      dzn_meta_clears_finish(device);
+      return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   device->clears.contexts = _mesa_hash_table_create(NULL, dzn_meta_hash_pso_clear_key, dzn_meta_equals_pso_clear_key);
+   if (!device->clears.fs) {
+      dzn_meta_clears_finish(device);
+      return vk_error(instance, VK_ERROR_OUT_OF_HOST_MEMORY);
+   }
+
+   return VK_SUCCESS;
+}
+
 void
 dzn_meta_finish(struct dzn_device *device)
 {
@@ -806,6 +1078,7 @@ dzn_meta_finish(struct dzn_device *device)
    for (uint32_t i = 0; i < ARRAY_SIZE(device->indirect_draws); i++)
       dzn_meta_indirect_draw_finish(device, (struct dzn_indirect_draw_type) { .value = i });
 
+   dzn_meta_clears_finish(device);
    dzn_meta_blits_finish(device);
 }
 
@@ -814,6 +1087,10 @@ dzn_meta_init(struct dzn_device *device)
 {
    struct dzn_physical_device *pdev = container_of(device->vk.physical, struct dzn_physical_device, vk);
    VkResult result = dzn_meta_blits_init(device);
+   if (result != VK_SUCCESS)
+      goto out;
+
+   result = dzn_meta_clears_init(device);
    if (result != VK_SUCCESS)
       goto out;
 

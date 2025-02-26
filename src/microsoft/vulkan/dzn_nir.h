@@ -31,6 +31,8 @@
 
 #include "nir.h"
 
+#include "vulkan/vulkan_core.h"
+
 struct dzn_indirect_draw_rewrite_params {
    uint32_t draw_buf_stride;
 };
@@ -145,5 +147,20 @@ struct dzn_nir_point_gs_info {
 };
 nir_shader *
 dzn_nir_polygon_point_mode_gs(const nir_shader *vs, struct dzn_nir_point_gs_info *info);
+
+nir_shader *
+dzn_nir_clear_vs(bool layered);
+
+struct dzn_nir_clear_fs_info {
+   /* Caller should zero out fields for color targets that are unwritten to simplify key lookup */
+   VkClearColorValue color[D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT];
+   enum pipe_format color_formats[D3D12_SIMULTANEOUS_RENDER_TARGET_COUNT];
+   float depth;
+   uint32_t write_depth;
+};
+nir_shader *
+dzn_nir_clear_fs(const struct dzn_nir_clear_fs_info *info);
+
+
 
 #endif

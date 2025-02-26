@@ -145,6 +145,12 @@ struct vk_subpass {
    /** VkFragmentShadingRateAttachmentInfoKHR::pFragmentShadingRateAttachment */
    struct vk_subpass_attachment *fragment_shading_rate_attachment;
 
+   /** VkSubpassDescription2::preserveAttachmentCount */
+   uint32_t preserve_count;
+
+   /** VkSubpassDescription2::pPreserveAttachments */
+   struct vk_subpass_attachment *preserve_attachments;
+
    /** VkSubpassDescription2::viewMask or 1 for non-multiview
     *
     * For all view masks in the vk_render_pass data structure, we use a mask
@@ -308,6 +314,12 @@ struct vk_render_pass {
 
 VK_DEFINE_NONDISP_HANDLE_CASTS(vk_render_pass, base, VkRenderPass,
                                VK_OBJECT_TYPE_RENDER_PASS);
+
+VkResult
+vk_init_render_pass(struct vk_device *device,
+                    const VkRenderPassCreateInfo2 *pCreateInfo,
+                    const VkAllocationCallbacks *pAllocator,
+                    struct vk_render_pass *pass);
 
 /** Returns the VkPipelineRenderingCreateInfo for a graphics pipeline
  *

@@ -25,10 +25,11 @@ struct vn_format_properties_entry {
 };
 
 struct vn_image_format_properties {
-   struct VkImageFormatProperties2 format;
+   VkImageFormatProperties2 format;
    VkResult cached_result;
 
    VkExternalImageFormatProperties ext_image;
+   VkHostImageCopyDevicePerformanceQuery host_copy;
    VkImageCompressionPropertiesEXT compression;
    VkSamplerYcbcrConversionImageFormatProperties ycbcr_conversion;
 };
@@ -79,6 +80,10 @@ struct vn_physical_device {
    uint32_t wa_min_fb_align;
 
    VkDriverId renderer_driver_id;
+
+   /* Static storage so that host copy properties query can be done once. */
+   VkImageLayout copy_src_layouts[64];
+   VkImageLayout copy_dst_layouts[64];
 
    VkQueueFamilyProperties2 *queue_family_properties;
    VkQueueFamilyGlobalPriorityProperties *global_priority_properties;

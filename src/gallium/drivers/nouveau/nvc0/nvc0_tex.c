@@ -355,7 +355,7 @@ gf100_create_texture_view(struct pipe_context *pipe,
          /* must be 2D texture without mip maps */
          tic[2] |= G80_TIC_2_LAYOUT_PITCH | G80_TIC_2_TEXTURE_TYPE_TWO_D_NO_MIPMAP;
          tic[3] = mt->level[0].pitch;
-         tic[4] = mt->base.base.width0;
+         tic[4] = (1 << 31) | mt->base.base.width0;
          tic[5] = (1 << 16) | mt->base.base.height0;
       }
       tic[6] =

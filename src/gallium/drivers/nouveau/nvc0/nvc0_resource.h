@@ -50,8 +50,7 @@ nvc0_choose_tiled_storage_type(struct pipe_screen *pscreen,
 
 struct pipe_resource *
 nvc0_miptree_create(struct pipe_screen *pscreen,
-                    const struct pipe_resource *tmp,
-                    const uint64_t *modifiers, unsigned int count);
+                    const struct pipe_resource *tmp);
 
 bool
 nvc0_miptree_get_handle(struct pipe_screen *pscreen,

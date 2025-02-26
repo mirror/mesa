@@ -79,6 +79,10 @@ can_fast_clear_color(struct iris_context *ice,
    if (!isl_aux_usage_has_fast_clears(res->aux.usage))
       return false;
 
+   /* Linear surfaces can't be fast-cleared. */
+   if (res->surf.tiling == ISL_TILING_LINEAR)
+      return false;
+
    /* Check for partial clear */
    if (box->x > 0 || box->y > 0 ||
        box->width < u_minify(p_res->width0, level) ||

@@ -518,6 +518,15 @@ nir_handle_add_jump(nir_block *block)
       break;
    }
 
+   case nir_jump_continue_if: {
+      nir_loop *loop = nearest_loop(&block->cf_node);
+      nir_block *cont_block = nir_loop_first_block(loop);
+      nir_cf_node *after = nir_cf_node_next(&loop->cf_node);
+      nir_block *after_block = nir_cf_node_as_block(after);
+      link_blocks(block, cont_block, after_block);
+      break;
+   }
+
    case nir_jump_goto:
       link_blocks(block, jump_instr->target, NULL);
       break;
@@ -665,7 +674,7 @@ cleanup_cf_node(nir_cf_node *node, nir_function_impl *impl)
          if (instr->type == nir_instr_type_jump) {
             nir_jump_instr *jump = nir_instr_as_jump(instr);
             unlink_jump(block, jump->type, false);
-            if (jump->type == nir_jump_goto_if)
+            if (jump->type == nir_jump_goto_if || jump->type == nir_jump_continue_if)
                nir_instr_clear_src(instr, &jump->condition);
          } else {
             nir_foreach_def(instr, replace_ssa_def_uses, impl);

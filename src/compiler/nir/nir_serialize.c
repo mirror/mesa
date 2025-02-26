@@ -1562,6 +1562,9 @@ write_jump(write_ctx *ctx, const nir_jump_instr *jmp)
    header.jump.type = jmp->type;
 
    blob_write_uint32(ctx->blob, header.u32);
+
+   if (jmp->type == nir_jump_continue_if)
+      write_src(ctx, &jmp->condition);
 }
 
 static nir_jump_instr *
@@ -1572,6 +1575,10 @@ read_jump(read_ctx *ctx, union packed_instr header)
           header.jump.type != nir_jump_goto_if);
 
    nir_jump_instr *jmp = nir_jump_instr_create(ctx->nir, header.jump.type);
+
+   if (jmp->type == nir_jump_continue_if)
+      read_src(ctx, &jmp->condition);
+
    return jmp;
 }
 

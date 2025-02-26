@@ -27,6 +27,40 @@
 #include "nir_control_flow.h"
 
 static bool
+lower_conditional_continue(nir_builder *b, nir_loop *loop)
+{
+   nir_block *block = nir_loop_has_continue_construct(loop) ?
+                      nir_loop_last_continue_block(loop) :
+                      nir_loop_last_block(loop);
+
+   if (!nir_block_ends_in_jump(block))
+      return false;
+
+   nir_jump_instr *cont = nir_instr_as_jump(nir_block_last_instr(block));
+   if (cont->type != nir_jump_continue_if)
+      return false;
+
+   nir_lower_phis_to_regs_block(nir_loop_first_block(loop));
+   nir_lower_phis_to_regs_block(nir_cf_node_cf_tree_next(&loop->cf_node));
+   b->cursor = nir_instr_remove(&cont->instr);
+
+   if (nir_src_is_const(cont->condition)) {
+      if (nir_src_as_const_value(cont->condition)->b) {
+         /* trivial continue */
+      } else {
+         nir_jump(b, nir_jump_break);
+      }
+   } else {
+      nir_if *nif = nir_push_if(b, cont->condition.ssa);
+      nir_push_else(b, nif);
+      nir_jump(b, nir_jump_break);
+      nir_pop_if(b, nif);
+   }
+
+   return true;
+}
+
+static bool
 lower_loop_continue_block(nir_builder *b, nir_loop *loop, bool *repair_ssa)
 {
    if (!nir_loop_has_continue_construct(loop))
@@ -120,6 +154,7 @@ visit_cf_list(nir_builder *b, struct exec_list *list, bool *repair_ssa)
          nir_loop *loop = nir_cf_node_as_loop(node);
          progress |= visit_cf_list(b, &loop->body, repair_ssa);
          progress |= visit_cf_list(b, &loop->continue_list, repair_ssa);
+         progress |= lower_conditional_continue(b, loop);
          progress |= lower_loop_continue_block(b, loop, repair_ssa);
          break;
       }

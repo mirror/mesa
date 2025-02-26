@@ -581,6 +581,10 @@ anv_block_pool_alloc_new(struct anv_block_pool *pool,
    if (padding)
       *padding = 0;
 
+   /* Allocations should not exceed BLOCK_POOL_MEMFD_SIZE*/
+   if(pool_state->next > BLOCK_POOL_MEMFD_SIZE)
+      return 0;
+
    while (1) {
       state.u64 = __sync_fetch_and_add(&pool_state->u64, block_size);
       if (state.next + block_size > pool->max_size) {

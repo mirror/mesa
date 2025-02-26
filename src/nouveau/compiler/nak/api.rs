@@ -416,9 +416,11 @@ fn nak_compile_shader_internal(
     pass!(s, opt_dce);
     pass!(s, opt_out);
     pass!(s, legalize);
+    let pred_info = s.opt_predication_prepare();
     pass!(s, assign_regs);
     pass!(s, lower_par_copies);
     pass!(s, lower_copy_swap);
+    s.opt_predication(pred_info);
     if nak.sm >= 70 {
         pass!(s, opt_jump_thread);
     } else {

@@ -23,18 +23,6 @@
 #ifndef __NV50_IR_INLINES_H__
 #define __NV50_IR_INLINES_H__
 
-static inline CondCode reverseCondCode(CondCode cc)
-{
-   static const uint8_t ccRev[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
-
-   return static_cast<CondCode>(ccRev[cc & 7] | (cc & ~7));
-}
-
-static inline CondCode inverseCondCode(CondCode cc)
-{
-   return static_cast<CondCode>(cc ^ 7);
-}
-
 static inline bool isMemoryFile(DataFile f)
 {
    return (f >= FILE_MEMORY_CONST && f <= FILE_MEMORY_LOCAL);
@@ -165,6 +153,37 @@ static inline DataType intTypeToSigned(DataType ty)
    default:
       return ty;
    }
+}
+
+static inline CondCode reverseCondCode(CondCode cc)
+{
+   static const uint8_t ccRev[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
+
+   return static_cast<CondCode>(ccRev[cc & 7] | (cc & ~7));
+}
+
+static inline CondCode inverseCondCodeInt(CondCode cc)
+{
+   return static_cast<CondCode>(cc ^ 7);
+}
+
+static inline CondCode inverseCondCodePred(CondCode cc)
+{
+   assert(cc == CC_NOT_P || cc == CC_P);
+   return inverseCondCodeInt(cc);
+}
+
+static inline CondCode inverseCondCodeFloat(CondCode cc)
+{
+   return static_cast<CondCode>(cc ^ 15);
+}
+
+static inline CondCode inverseCondCode(CondCode cc, DataType ty)
+{
+   if (isFloatType(ty))
+      return inverseCondCodeFloat(cc);
+   else
+      return inverseCondCodeInt(cc);
 }
 
 const ValueRef *ValueRef::getIndirect(int dim) const

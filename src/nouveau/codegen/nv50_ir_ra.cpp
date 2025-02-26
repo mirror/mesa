@@ -449,9 +449,13 @@ RegAlloc::PhiMovesPass::visit(BasicBlock *bb)
 
       for (phi = bb->getPhi(); phi && phi->op == OP_PHI; phi = phi->next) {
          LValue *tmp = new_LValue(func, phi->getDef(0)->asLValue());
-         mov = new_Instruction(func, OP_MOV, typeOfSize(tmp->reg.size));
-
-         mov->setSrc(0, phi->getSrc(j));
+         Instruction *src = phi->getSrc(j)->getInsn();
+         if (src && src->op == OP_NOP) {
+            mov = new_Instruction(func, OP_NOP, typeOfSize(tmp->reg.size));
+         } else {
+            mov = new_Instruction(func, OP_MOV, typeOfSize(tmp->reg.size));
+            mov->setSrc(0, phi->getSrc(j));
+         }
          mov->setDef(0, tmp);
          phi->setSrc(j, tmp);
 

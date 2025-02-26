@@ -240,7 +240,7 @@ LoadPropagation::checkSwapSrc01(Instruction *insn)
       insn->asCmp()->setCond = reverseCondCode(insn->asCmp()->setCond);
    else
    if (insn->op == OP_SLCT)
-      insn->asCmp()->setCond = inverseCondCode(insn->asCmp()->setCond);
+      insn->asCmp()->setCond = inverseCondCode(insn->asCmp()->setCond, insn->sType);
    else
    if (insn->op == OP_SUB) {
       insn->src(0).mod = insn->src(0).mod ^ Modifier(NV50_IR_MOD_NEG);
@@ -1368,8 +1368,8 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
       switch (ccZ) {
       case CC_LT: cc = CC_FL; break; // bool < 0 -- this is never true
       case CC_GE: cc = CC_TR; break; // bool >= 0 -- this is always true
-      case CC_EQ: cc = inverseCondCode(cc); break; // bool == 0 -- !bool
-      case CC_LE: cc = inverseCondCode(cc); break; // bool <= 0 -- !bool
+      case CC_EQ: cc = inverseCondCode(cc, i->dType); break; // bool == 0 -- !bool
+      case CC_LE: cc = inverseCondCode(cc, i->dType); break; // bool <= 0 -- !bool
       case CC_GT: break; // bool > 0 -- bool
       case CC_NE: break; // bool != 0 -- bool
       default:
@@ -1420,7 +1420,7 @@ ConstantFolding::opnd(Instruction *i, ImmediateValue &imm0, int s)
          if (i->src(t).mod != Modifier(0)) {
             assert(i->src(t).mod == Modifier(NV50_IR_MOD_NOT));
             i->src(t).mod = Modifier(0);
-            cmp->setCond = inverseCondCode(cmp->setCond);
+            cmp->setCond = inverseCondCode(cmp->setCond, cmp->dType);
          }
          i->op = OP_MOV;
          i->setSrc(s, NULL);
@@ -1810,7 +1810,8 @@ private:
    bool tryADDToMADOrSAD(Instruction *, operation toOp);
    void handleMINMAX(Instruction *);
    void handleRCP(Instruction *);
-   void handleSLCT(Instruction *);
+   void handleSLCT(CmpInstruction *);
+   bool tryMergeSLCTSET(CmpInstruction *slct, CmpInstruction *set);
    void handleLOGOP(Instruction *);
    void handleCVT_NEG(Instruction *);
    void handleCVT_CVT(Instruction *);
@@ -2000,8 +2001,12 @@ AlgebraicOpt::handleRCP(Instruction *rcp)
 }
 
 void
-AlgebraicOpt::handleSLCT(Instruction *slct)
+AlgebraicOpt::handleSLCT(CmpInstruction *slct)
 {
+   Instruction *insn = slct->getSrc(2)->getInsn();
+   while (insn && insn->op == OP_SET && tryMergeSLCTSET(slct, insn->asCmp())) {
+      insn = slct->getSrc(2)->getInsn();
+   }
    if (slct->getSrc(2)->reg.file == FILE_IMMEDIATE) {
       if (slct->getSrc(2)->asImm()->compare(slct->asCmp()->setCond, 0.0f))
          slct->setSrc(0, slct->getSrc(1));
@@ -2012,6 +2017,42 @@ AlgebraicOpt::handleSLCT(Instruction *slct)
    slct->op = OP_MOV;
    slct->setSrc(1, NULL);
    slct->setSrc(2, NULL);
+}
+
+bool
+AlgebraicOpt::tryMergeSLCTSET(CmpInstruction *slct, CmpInstruction *set)
+{
+   assert(slct->op == OP_SLCT && set->op == OP_SET);
+
+   if (typeSizeof(set->sType) != 4)
+      return false;
+
+   CondCode setCC = set->getCondition();
+   CondCode slctCC = slct->getCondition();
+   CondCode newCC = setCC;
+
+   if (slctCC != CC_NE && slctCC != CC_EQ)
+      return false;
+
+   ImmediateValue imm0;
+   int s;
+
+   if (set->src(0).getImmediate(imm0) && imm0.isInteger(0))
+      s = 1;
+   else if (set->src(1).getImmediate(imm0) && imm0.isInteger(0))
+      s = 0;
+   else
+      return false;
+
+   slct->setSrc(2, set->getSrc(s));
+   if (s)
+      newCC = reverseCondCode(newCC);
+   if (slctCC == CC_EQ)
+      newCC = inverseCondCode(newCC, set->sType);
+
+   slct->sType = set->sType;
+   slct->setCondition(newCC);
+   return true;
 }
 
 void
@@ -2385,7 +2426,7 @@ AlgebraicOpt::visit(BasicBlock *bb)
          handleMINMAX(i);
          break;
       case OP_SLCT:
-         handleSLCT(i);
+         handleSLCT(i->asCmp());
          break;
       case OP_AND:
       case OP_OR:
@@ -3514,7 +3555,7 @@ FlatteningPass::tryPredicateConditional(BasicBlock *bb)
    if (bL)
       predicateInstructions(bL, pred, bb->getExit()->cc);
    if (bR)
-      predicateInstructions(bR, pred, inverseCondCode(bb->getExit()->cc));
+      predicateInstructions(bR, pred, inverseCondCodePred(bb->getExit()->cc));
 
    if (bb->joinAt) {
       bb->remove(bb->joinAt);

@@ -153,6 +153,19 @@ static const VkFormat available_surface_formats[] = {
    VK_FORMAT_A2B10G10R10_UNORM_PACK32,
 };
 
+static const VkColorSpaceKHR available_surface_color_spaces[] = {
+   VK_COLOR_SPACE_SRGB_NONLINEAR_KHR,
+   VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT,
+   VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT,
+   VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT,
+   VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT,
+   VK_COLOR_SPACE_BT709_NONLINEAR_EXT,
+   VK_COLOR_SPACE_BT2020_LINEAR_EXT,
+   VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT,
+   VK_COLOR_SPACE_PASS_THROUGH_EXT,
+   VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT,
+};
+
 static void
 get_sorted_vk_formats(bool force_bgra8_unorm_first, VkFormat *sorted_formats)
 {
@@ -182,9 +195,11 @@ wsi_metal_surface_get_formats(VkIcdSurfaceBase *icd_surface,
    get_sorted_vk_formats(wsi_device->force_bgra8_unorm_first, sorted_formats);
 
    for (unsigned i = 0; i < ARRAY_SIZE(sorted_formats); i++) {
-      vk_outarray_append_typed(VkSurfaceFormatKHR, &out, f) {
-         f->format = sorted_formats[i];
-         f->colorSpace = VK_COLOR_SPACE_SRGB_NONLINEAR_KHR;
+      for (unsigned j = 0; j < ARRAY_SIZE(available_surface_color_spaces); j++) {
+         vk_outarray_append_typed(VkSurfaceFormatKHR, &out, f) {
+            f->format = sorted_formats[i];
+            f->colorSpace = available_surface_color_spaces[j];
+         }
       }
    }
 
@@ -401,6 +416,42 @@ wsi_metal_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
          return VK_ERROR_FORMAT_NOT_SUPPORTED;
    }
 
+   const char* cg_color_space;
+   switch (pCreateInfo->imageColorSpace) {
+      case VK_COLOR_SPACE_SRGB_NONLINEAR_KHR:
+         cg_color_space = "kCGColorSpaceSRGB";
+         break;
+      case VK_COLOR_SPACE_DISPLAY_P3_NONLINEAR_EXT:
+         cg_color_space = "kCGColorSpaceDisplayP3";
+         break;
+      case VK_COLOR_SPACE_EXTENDED_SRGB_LINEAR_EXT:
+         cg_color_space = "kCGColorSpaceExtendedLinearSRGB";
+         break;
+      case VK_COLOR_SPACE_DISPLAY_P3_LINEAR_EXT:
+         cg_color_space = "kCGColorSpaceExtendedLinearDisplayP3";
+         break;
+      case VK_COLOR_SPACE_DCI_P3_NONLINEAR_EXT:
+         cg_color_space = "kCGColorSpaceDCIP3";
+         break;
+      case VK_COLOR_SPACE_BT709_NONLINEAR_EXT:
+         cg_color_space = "kCGColorSpaceITUR_709";
+         break;
+      case VK_COLOR_SPACE_BT2020_LINEAR_EXT:
+         cg_color_space = "kCGColorSpaceExtendedLinearITUR_2020";
+         break;
+      case VK_COLOR_SPACE_ADOBERGB_NONLINEAR_EXT:
+         cg_color_space = "kCGColorSpaceAdobeRGB1998";
+         break;
+      case VK_COLOR_SPACE_PASS_THROUGH_EXT:
+         cg_color_space = "";
+         break;
+      case VK_COLOR_SPACE_EXTENDED_SRGB_NONLINEAR_EXT:
+         cg_color_space = "kCGColorSpaceExtendedSRGB";
+         break;
+      default:
+         return VK_ERROR_FORMAT_NOT_SUPPORTED;
+   }
+
    int num_images = pCreateInfo->minImageCount;
 
    struct wsi_metal_swapchain *chain;
@@ -432,7 +483,7 @@ wsi_metal_surface_create_swapchain(VkIcdSurfaceBase *icd_surface,
 
    wsi_metal_layer_configure(metal_surface->pLayer,
       pCreateInfo->imageExtent.width, pCreateInfo->imageExtent.height,
-      num_images, metal_format,
+      num_images, metal_format, cg_color_space,
       pCreateInfo->compositeAlpha & VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR,
       pCreateInfo->presentMode == VK_PRESENT_MODE_IMMEDIATE_KHR);
 

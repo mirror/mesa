@@ -35,7 +35,8 @@ wsi_metal_layer_size(const CAMetalLayer *metal_layer,
 void
 wsi_metal_layer_configure(const CAMetalLayer *metal_layer,
    uint32_t width, uint32_t height, uint32_t image_count,
-   MTLPixelFormat format, bool enable_opaque, bool enable_immediate);
+   MTLPixelFormat format, const char* cg_color_space_name,
+   bool enable_opaque, bool enable_immediate);
 
 CAMetalDrawableBridged *
 wsi_metal_layer_acquire_drawable(const CAMetalLayer *metal_layer);

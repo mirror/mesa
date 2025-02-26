@@ -1703,7 +1703,7 @@ tu_DestroyInstance(VkInstance _instance,
 static const VkQueueFamilyProperties tu_queue_family_properties = {
    .queueFlags =
       VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
-   .queueCount = 1,
+   .queueCount = 3,
    .timestampValidBits = 48,
    .minImageTransferGranularity = { 1, 1, 1 },
 };

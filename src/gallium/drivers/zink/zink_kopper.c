@@ -55,6 +55,11 @@ init_dt_type(struct kopper_displaytarget *cdt)
 {
    VkStructureType type = cdt->info.bos.sType;
    switch (type) {
+#ifdef VK_USE_PLATFORM_METAL_EXT
+   case VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT:
+      cdt->type = KOPPER_METAL;
+      break;
+#endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
    case VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR:
       cdt->type = KOPPER_X11;
@@ -84,6 +89,13 @@ kopper_CreateSurface(struct zink_screen *screen, struct kopper_displaytarget *cd
    init_dt_type(cdt);
    VkStructureType type = cdt->info.bos.sType;
    switch (type) {
+#ifdef VK_USE_PLATFORM_METAL_EXT
+   case VK_STRUCTURE_TYPE_METAL_SURFACE_CREATE_INFO_EXT: {
+      VkMetalSurfaceCreateInfoEXT *metal = (VkMetalSurfaceCreateInfoEXT *)&cdt->info.bos;
+      error = VKSCR(CreateMetalSurfaceEXT)(screen->instance, metal, NULL, &surface);
+      break;
+   }
+#endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
    case VK_STRUCTURE_TYPE_XCB_SURFACE_CREATE_INFO_KHR: {
 #ifdef GLX_USE_APPLE
@@ -198,6 +210,13 @@ find_dt_entry(struct zink_screen *screen, const struct kopper_displaytarget *cdt
 {
    struct hash_entry *he = NULL;
    switch (cdt->type) {
+#ifdef VK_USE_PLATFORM_METAL_EXT
+   case KOPPER_METAL: {
+      VkMetalSurfaceCreateInfoEXT *metal = (VkMetalSurfaceCreateInfoEXT *)&cdt->info.bos;
+      he = _mesa_hash_table_search(&screen->dts, metal->pLayer);
+      break;
+   }
+#endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
    case KOPPER_X11: {
       VkXcbSurfaceCreateInfoKHR *xcb = (VkXcbSurfaceCreateInfoKHR *)&cdt->info.bos;
@@ -295,6 +314,7 @@ kopper_CreateSwapchain(struct zink_screen *screen, struct kopper_displaytarget *
 
    /* different display platforms have, by vulkan spec, different sizing methodologies */
    switch (cdt->type) {
+   case KOPPER_METAL:
    case KOPPER_X11:
    case KOPPER_WIN32:
       /* With Xcb, minImageExtent, maxImageExtent, and currentExtent must always equal the window size.
@@ -424,6 +444,7 @@ zink_kopper_displaytarget_create(struct zink_screen *screen, unsigned tex_usage,
          case KOPPER_X11:
             _mesa_hash_table_init(&screen->dts, screen, NULL, _mesa_key_pointer_equal);
             break;
+         case KOPPER_METAL:
          case KOPPER_WAYLAND:
          case KOPPER_WIN32:
             _mesa_hash_table_init(&screen->dts, screen, _mesa_hash_pointer, _mesa_key_pointer_equal);
@@ -477,6 +498,13 @@ zink_kopper_displaytarget_create(struct zink_screen *screen, unsigned tex_usage,
 
    simple_mtx_lock(&screen->dt_lock);
    switch (cdt->type) {
+#ifdef VK_USE_PLATFORM_METAL_EXT
+   case KOPPER_METAL: {
+      VkMetalSurfaceCreateInfoEXT *metal = (VkMetalSurfaceCreateInfoEXT *)&cdt->info.bos;
+      _mesa_hash_table_insert(&screen->dts, metal->pLayer, cdt);
+      break;
+   }
+#endif
 #ifdef VK_USE_PLATFORM_XCB_KHR
    case KOPPER_X11: {
       VkXcbSurfaceCreateInfoKHR *xcb = (VkXcbSurfaceCreateInfoKHR *)&cdt->info.bos;

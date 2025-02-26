@@ -55,6 +55,17 @@ files_libglx = files(
   'xfont.c',
 )
 
+wsi_deps = []
+if with_dri_platform == 'apple'
+  files_libglx += files(
+    'drisw_glx_metal.m',
+  )
+  wsi_deps += dependency(
+    'appleframeworks',
+    modules : ['AppKit', 'QuartzCore', 'Metal']
+  )
+endif
+
 extra_libs_libglx = []
 extra_deps_libgl = []
 extra_ld_args_libgl = []
@@ -118,6 +129,7 @@ libglx = static_library(
                          inc_gallium, inc_mesa, inc_st_dri, inc_gallium_aux],
   c_args : [
     '-DGL_LIB_NAME="lib@0@.so.@1@"'.format(gl_lib_name, gl_lib_version.split('.')[0]),
+    c_args,
   ],
   gnu_symbol_visibility : 'hidden',
   link_with : [
@@ -127,6 +139,7 @@ libglx = static_library(
   dependencies : [
     idep_mesautil, idep_xmlconfig,
     dep_libdrm, dep_dri2proto, dep_glproto, dep_x11, dep_xext, dep_glvnd, dep_xxf86vm, dep_xshmfence, dep_xfixes,
+    wsi_deps
   ],
 )
 

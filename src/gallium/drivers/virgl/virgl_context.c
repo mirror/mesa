@@ -1669,6 +1669,14 @@ static void virgl_link_shader(struct pipe_context *ctx, void **handles)
    uint32_t shader_handles[PIPE_SHADER_TYPES];
    for (uint32_t i = 0; i < PIPE_SHADER_TYPES; ++i)
       shader_handles[i] = (uintptr_t)handles[i];
+   // if app would like to link program, but Gallium has not provided all proper stages.
+   // Gallium should always provide at least Vertex and Fragment shaders.
+   if (shader_handles[PIPE_SHADER_COMPUTE] != 0) {
+      // do nothing even if VERTEX and FRAGMENT shaders equal "0"
+   } else if (shader_handles[PIPE_SHADER_VERTEX] == 0 || shader_handles[PIPE_SHADER_FRAGMENT] == 0) {
+      // early return as COMPUTE equals "0" and there is lack of either VERTEX or FRAGMENT shader
+      return;
+   }
    virgl_encode_link_shader(vctx, shader_handles);
 
    /* block until shader linking is finished on host */

@@ -6387,6 +6387,37 @@ void nir_print_use_dominators(nir_use_dominance_state *state,
                               nir_instr **instructions,
                               unsigned num_instructions);
 
+typedef struct {
+   /* 1 bit per 16-bit component. */
+   BITSET_DECLARE(inputs, NUM_TOTAL_VARYING_SLOTS * 8);
+   bool uses_output_load;
+   bool uses_ssbo_reads;    /* includes atomics */
+   bool uses_image_reads;   /* includes atomics and texture reads */
+} nir_output_deps;
+
+typedef struct {
+   /* Inputs to nir_gather_output_dependencies. */
+   unsigned num_locations;
+   unsigned locations[NUM_TOTAL_VARYING_SLOTS];
+
+   /* Outputs from nir_gather_output_dependencies.
+    * For each location[i], its dependencies are stored in output[i].
+    */
+   nir_output_deps output[NUM_TOTAL_VARYING_SLOTS];
+} nir_outputs_deps;
+
+typedef struct {
+   /* 1 bit per 16-bit component. */
+   BITSET_DECLARE(pos_only, NUM_TOTAL_VARYING_SLOTS * 8);
+   BITSET_DECLARE(var_only, NUM_TOTAL_VARYING_SLOTS * 8);
+   BITSET_DECLARE(both, NUM_TOTAL_VARYING_SLOTS * 8);
+} nir_output_clipper_var_groups;
+
+void nir_gather_output_dependencies(nir_shader *nir, nir_outputs_deps *deps);
+void nir_gather_output_clipper_var_groups(nir_shader *nir,
+                                          nir_output_clipper_var_groups *groups);
+void nir_print_output_deps(nir_outputs_deps *deps, nir_shader *nir, FILE *f);
+
 #include "nir_inline_helpers.h"
 
 #ifdef __cplusplus

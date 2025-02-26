@@ -1485,7 +1485,6 @@ spec@oes_egl_image_external_essl3@oes_egl_image_external_essl3@oes_egl_image_ext
 spec@oes_shader_io_blocks@compiler@layout-location-aliasing.vert,Fail
 
 spec@!opengl 1.0@gl-1.0-dlist-bitmap,Fail
-spec@!opengl 1.0@gl-1.0-no-op-paths,Fail
 spec@!opengl 1.0@gl-1.0-user-clip-all-planes,Fail
 spec@!opengl 1.1@linestipple,Fail
 spec@!opengl 1.1@linestipple@Factor 2x,Fail
@@ -1505,11 +1504,5 @@ spec@!opengl 1.1@texwrap formats bordercolor-swizzled@GL_RGBA16- swizzled- borde
 spec@!opengl 1.1@texwrap formats bordercolor-swizzled@GL_RGBA8- swizzled- border color only,Fail
 
 spec@!opengl 2.0@gl-2.0-vertexattribpointer-size-3,Fail
-
-spec@!opengl 2.1@pbo,Fail
-
-spec@!opengl 2.1@pbo@test_polygon_stip,Fail
-
-spec@!opengl 2.1@polygon-stipple-fs,Fail
 
 spec@!opengl es 3.0@gles-3.0-transform-feedback-uniform-buffer-object,Fail

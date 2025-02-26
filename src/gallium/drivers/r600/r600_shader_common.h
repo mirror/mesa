@@ -125,6 +125,7 @@ union r600_shader_key {
 		unsigned	alpha_to_one:1;
 		unsigned        apply_sample_id_mask:1;
 		unsigned        dual_source_blend:1;
+		unsigned        poly_stipple:1;
 	} ps;
 	struct {
 		unsigned        first_atomic_counter:4;

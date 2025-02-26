@@ -71,6 +71,11 @@
  */
 #define R600_LDS_INFO_CONST_BUFFER (R600_MAX_USER_CONST_BUFFERS + 1)
 /*
+ * We only access this buffer through the fragment shader, so it could
+ * be at an index beyond 15.
+ */
+#define R600_POLY_STIPPLE_INFO_CONST_BUFFER (R600_MAX_USER_CONST_BUFFERS + 1)
+/*
  * Note GS doesn't use a constant buffer binding, just a resource index,
  * so it's fine to have it exist at index beyond 15. I.e. it's not actually
  * a const buffer, just a buffer resource.
@@ -95,6 +100,9 @@
 
 #define R600_NUM_HW_STAGES 4
 #define EG_NUM_HW_STAGES 6
+
+/* Misc */
+#define R600_POLYGON_STIPPLE_SIZE 32
 
 struct r600_context;
 struct r600_bytecode;
@@ -280,6 +288,7 @@ struct r600_rasterizer_state {
 	bool				multisample_enable;
 	bool				clip_halfz;
 	bool				rasterizer_discard;
+	bool				poly_stipple_enable;
 };
 
 struct r600_poly_offset_state {
@@ -568,6 +577,7 @@ struct r600_context {
 	enum mesa_prim		last_primitive_type; /* Last primitive type used in draw_vbo. */
 	enum mesa_prim		current_rast_prim; /* primitive type after TES, GS */
 	enum mesa_prim		last_rast_prim;
+	enum mesa_prim		early_primitive_type;
 	unsigned			last_start_instance;
 
 	struct r600_isa		*isa;
@@ -745,6 +755,8 @@ bool r600_is_format_supported(struct pipe_screen *screen,
 			      unsigned usage);
 void r600_update_db_shader_control(struct r600_context * rctx);
 void r600_setup_scratch_buffers(struct r600_context *rctx);
+void r600_set_polygon_stipple(struct pipe_context *ctx,
+			      const struct pipe_poly_stipple *state);
 
 /* r600_hw_context.c */
 void r600_context_gfx_flush(void *context, unsigned flags,

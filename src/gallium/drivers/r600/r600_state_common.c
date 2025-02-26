@@ -828,6 +828,16 @@ static inline void r600_shader_selector_key(const struct pipe_context *ctx,
 			key->ps.nr_cbufs = 2;
 			key->ps.dual_source_blend = 1;
 		}
+		key->ps.poly_stipple =
+			((1 << rctx->early_primitive_type) &
+			 ((1 << MESA_PRIM_POINTS) |
+			  (1 << MESA_PRIM_LINES) |
+			  (1 << MESA_PRIM_LINE_LOOP) |
+			  (1 << MESA_PRIM_LINE_STRIP) |
+			  (1 << MESA_PRIM_LINES_ADJACENCY) |
+			  (1 << MESA_PRIM_LINE_STRIP_ADJACENCY))) != 0 ?
+			0 :
+			rctx->rasterizer && rctx->rasterizer->poly_stipple_enable;
 		break;
 	}
 	case PIPE_SHADER_TESS_EVAL:
@@ -2188,6 +2198,9 @@ static void r600_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info 
 		if (gs_tri_strip_adj_fix != rctx->gs_tri_strip_adj_fix)
 			rctx->gs_tri_strip_adj_fix = gs_tri_strip_adj_fix;
 	}
+
+	rctx->early_primitive_type = info->mode;
+
 	if (!r600_update_derived_state(rctx)) {
 		/* useless to render because current rendering command
 		 * can't be achieved

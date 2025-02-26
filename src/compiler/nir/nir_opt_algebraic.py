@@ -3291,6 +3291,16 @@ before_ffma_optimizations = [
    (('~flrp', ('fadd(is_used_once)', a, -1.0), ('fadd(is_used_once)', a,  1.0), d), ('fadd', ('flrp', -1.0,  1.0, d), a)),
    (('~flrp', ('fadd(is_used_once)', a,  1.0), ('fadd(is_used_once)', a, -1.0), d), ('fadd', ('flrp',  1.0, -1.0, d), a)),
    (('~flrp', ('fadd(is_used_once)', a, '#b'), ('fadd(is_used_once)', a, '#c'), d), ('fadd', ('fmul', d, ('fadd', c, ('fneg', b))), ('fadd', a, b))),
+
+   # (1 + a) * b = b + ab; (-1 + a) * b = -b + ab
+   (('~fmul', ('fadd(is_used_once)',  1.0, 'a(is_not_fmul)'), 'b(is_not_const)'), ('fadd',          b , ('fmul', a, b))),
+   (('~fmul', ('fadd(is_used_once)', -1.0, 'a(is_not_fmul)'), 'b(is_not_const)'), ('fadd', ('fneg', b), ('fmul', a, b))),
+
+   # Same a above, but let b = ±0.5.
+   (('~fmul', ('fadd(is_used_once)',  1.0, 'a(is_not_fmul)'),  0.5), ('fadd',  0.5, ('fmul', a,  0.5))),
+   (('~fmul', ('fadd(is_used_once)',  1.0, 'a(is_not_fmul)'), -0.5), ('fadd', -0.5, ('fmul', a, -0.5))),
+   (('~fmul', ('fadd(is_used_once)', -1.0, 'a(is_not_fmul)'),  0.5), ('fadd', -0.5, ('fmul', a,  0.5))),
+   (('~fmul', ('fadd(is_used_once)', -1.0, 'a(is_not_fmul)'), -0.5), ('fadd',  0.5, ('fmul', a, -0.5))),
 ]
 
 # This section contains "late" optimizations that should be run after the
@@ -3592,6 +3602,21 @@ late_optimizations.extend([
     ('ffmaz', a, b, ('ffmaz', c, d, e)), '(info->stage != MESA_SHADER_VERTEX && info->stage != MESA_SHADER_GEOMETRY) && !options->intel_vec4'),
    (('~fadd', ('fneg', ('ffmaz(is_used_once)', a, b, ('ffmaz', c, d, ('fmulz(is_used_once)', 'e(is_not_const_and_not_fsign)', 'f(is_not_const_and_not_fsign)')))), 'g(is_not_const)'),
     ('ffmaz', ('fneg', a), b, ('ffmaz', ('fneg', c), d, ('ffmaz', ('fneg', e), 'f', 'g'))), '(info->stage != MESA_SHADER_VERTEX && info->stage != MESA_SHADER_GEOMETRY) && !options->intel_vec4'),
+
+   # Undoes an optimization in before_ffma_optimizations.  This enables better
+   # scheduling because the first instruction to exectue only depends on one
+   # of the values. Patterns that match ('fneg', a) or both instances of b as
+   # ('fneg', b) are not included because they are redundant.
+   #
+   # ab ± b = (a ± 1) * b; -(ab) = a(-b) = (-a)b
+   (('~fadd', ('fmul(is_used_once)', a,          b ),          b ), ('fmul', ('fadd',          a ,  1.0), b)),
+   (('~fadd', ('fmul(is_used_once)', a,          b ), ('fneg', b)), ('fmul', ('fadd',          a , -1.0), b)),
+   (('~fadd', ('fneg', ('fmul(is_used_once)', a, b)),          b ), ('fmul', ('fadd', ('fneg', a),  1.0), b)),
+   (('~fadd', ('fneg', ('fmul(is_used_once)', a, b)), ('fneg', b)), ('fmul', ('fadd', ('fneg', a), -1.0), b)),
+   (('~fadd', ('fmul(is_used_once)', a, ('fneg', b)),          b ), ('fmul', ('fadd', ('fneg', a),  1.0), b)),
+
+   (('ffma@32',  2.0, a, -1.0), ('flrp', -1.0,  1.0, a), '!options->lower_flrp32'),
+   (('ffma@32', -2.0, a,  1.0), ('flrp',  1.0, -1.0, a), '!options->lower_flrp32'),
 
    # Section 8.8 (Integer Functions) of the GLSL 4.60 spec says:
    #

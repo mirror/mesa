@@ -45,6 +45,16 @@ struct virgl_cmd_buf {
    uint32_t *buf;
 };
 
+#define VIRGL_RESOURCE_MAX_PLANES 4
+struct virgl_resource_layout {
+   uint32_t num_planes;
+   uint64_t modifier;
+   struct {
+      uint64_t offset;
+      uint32_t stride;
+   } planes[VIRGL_RESOURCE_MAX_PLANES];
+};
+
 struct virgl_winsys {
    unsigned pci_id;
    int supports_fences; /* In/Out fences are supported */
@@ -146,6 +156,14 @@ struct virgl_winsys {
 
    int (*fence_get_fd)(struct virgl_winsys *vws,
                        struct pipe_fence_handle *fence);
+
+   bool (*resource_query_layout)(struct virgl_winsys *vws,
+                                 struct virgl_hw_res *res,
+                                 struct virgl_resource_layout *layout,
+                                 uint32_t format,
+                                 uint32_t bind,
+                                 uint32_t width,
+                                 uint32_t height);
 };
 
 /* this defaults all newer caps,

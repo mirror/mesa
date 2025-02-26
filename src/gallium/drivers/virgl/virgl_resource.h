@@ -153,6 +153,8 @@ static inline unsigned pipe_to_virgl_bind(const struct virgl_screen *vs,
       outbind |= VIRGL_BIND_SHADER_BUFFER;
    if (pbind & PIPE_BIND_QUERY_BUFFER)
       outbind |= VIRGL_BIND_QUERY_BUFFER;
+   if (pbind & PIPE_BIND_LINEAR)
+      outbind |= VIRGL_BIND_LINEAR;
    if (pbind & PIPE_BIND_COMMAND_ARGS_BUFFER)
       if (vs->caps.caps.v2.capability_bits & VIRGL_CAP_BIND_COMMAND_ARGS)
          outbind |= VIRGL_BIND_COMMAND_ARGS;

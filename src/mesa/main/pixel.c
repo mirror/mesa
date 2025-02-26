@@ -408,11 +408,19 @@ _mesa_GetnPixelMapuivARB( GLenum map, GLsizei bufSize, GLuint *values )
       return;
    }
 
-   if (map == GL_PIXEL_MAP_S_TO_S) {
-      /* special case */
-      memcpy(values, ctx->PixelMaps.StoS.Map, mapsize * sizeof(GLint));
-   }
-   else {
+   switch (map) {
+   /* special cases */
+   case GL_PIXEL_MAP_I_TO_I:
+      for (i = 0; i < mapsize; i++) {
+         values[i] = (GLuint) ctx->PixelMaps.ItoI.Map[i];
+      }
+      break;
+   case GL_PIXEL_MAP_S_TO_S:
+      for (i = 0; i < mapsize; i++) {
+         values[i] = (GLuint) ctx->PixelMaps.StoS.Map[i];
+      }
+      break;
+   default:
       for (i = 0; i < mapsize; i++) {
          values[i] = FLOAT_TO_UINT( pm->Map[i] );
       }

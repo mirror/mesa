@@ -3700,6 +3700,9 @@ radv_emit_fb_color_state(struct radv_cmd_buffer *cmd_buffer, int index, struct r
       cb_color_info &= C_028C70_COMPRESSION;
    }
 
+   if (pdev->info.gfx_level >= GFX8 && pdev->info.gfx_level < GFX11 && iview->disable_tc_compat_cmask_mrt)
+      cb_color_info &= C_028C70_FMASK_COMPRESS_1FRAG_ONLY;
+
    if (pdev->info.gfx_level >= GFX12) {
       radeon_set_context_reg(cmd_buffer->cs, R_028C60_CB_COLOR0_BASE + index * 0x24, cb->ac.cb_color_base);
       radeon_set_context_reg(cmd_buffer->cs, R_028C64_CB_COLOR0_VIEW + index * 0x24, cb->ac.cb_color_view);
@@ -12590,7 +12593,8 @@ radv_handle_color_image_transition(struct radv_cmd_buffer *cmd_buffer, struct ra
                                    unsigned dst_queue_mask, const VkImageSubresourceRange *range)
 {
    struct radv_device *device = radv_cmd_buffer_device(cmd_buffer);
-   bool dcc_decompressed = false, fast_clear_flushed = false;
+   bool needs_dcc_decompress = false, needs_dcc_retile = false;
+   bool needs_fce = false, needs_fmask_decompress = false, needs_fmask_color_expand = false;
 
    if (!radv_image_has_cmask(image) && !radv_image_has_fmask(image) && !radv_dcc_enabled(image, range->baseMipLevel))
       return;
@@ -12608,56 +12612,61 @@ radv_handle_color_image_transition(struct radv_cmd_buffer *cmd_buffer, struct ra
          cmd_buffer->state.flush_bits |= radv_init_dcc(cmd_buffer, image, range, 0xffffffffu);
       } else if (radv_layout_dcc_compressed(device, image, range->baseMipLevel, src_layout, src_queue_mask) &&
                  !radv_layout_dcc_compressed(device, image, range->baseMipLevel, dst_layout, dst_queue_mask)) {
-         radv_decompress_dcc(cmd_buffer, image, range);
-         dcc_decompressed = true;
-      } else if (radv_layout_can_fast_clear(device, image, range->baseMipLevel, src_layout, src_queue_mask) &&
-                 !radv_layout_can_fast_clear(device, image, range->baseMipLevel, dst_layout, dst_queue_mask)) {
-         radv_fast_clear_flush_image_inplace(cmd_buffer, image, range);
-         fast_clear_flushed = true;
+         needs_dcc_decompress = true;
       }
 
       if (radv_image_need_retile(cmd_buffer, image))
-         radv_retile_transition(cmd_buffer, image, src_layout, dst_layout, dst_queue_mask);
-   } else if (radv_image_has_cmask(image) || radv_image_has_fmask(image)) {
-      if (radv_layout_can_fast_clear(device, image, range->baseMipLevel, src_layout, src_queue_mask) &&
-          !radv_layout_can_fast_clear(device, image, range->baseMipLevel, dst_layout, dst_queue_mask)) {
-         radv_fast_clear_flush_image_inplace(cmd_buffer, image, range);
-         fast_clear_flushed = true;
-      }
+         needs_dcc_retile = true;
    }
 
-   /* MSAA color decompress. */
+   if (radv_layout_can_fast_clear(device, image, range->baseMipLevel, src_layout, src_queue_mask) &&
+       !radv_layout_can_fast_clear(device, image, range->baseMipLevel, dst_layout, dst_queue_mask)) {
+      /* FCE is only required for color images that don't support comp-to-single fast clears. */
+      if (!image->support_comp_to_single)
+         needs_fce = true;
+
+      /* FMASK_DECOMPRESS is only required for color images that don't support TC-compatible CMASK. */
+      if (radv_image_has_fmask(image) && !image->tc_compatible_cmask)
+         needs_fmask_decompress = true;
+   }
+
    const enum radv_fmask_compression src_fmask_comp =
       radv_layout_fmask_compression(device, image, src_layout, src_queue_mask);
    const enum radv_fmask_compression dst_fmask_comp =
       radv_layout_fmask_compression(device, image, dst_layout, dst_queue_mask);
-   if (src_fmask_comp <= dst_fmask_comp)
-      return;
 
-   if (src_fmask_comp == RADV_FMASK_COMPRESSION_FULL) {
-      if (radv_dcc_enabled(image, range->baseMipLevel) && !radv_image_use_dcc_image_stores(device, image) &&
-          !dcc_decompressed) {
-         /* A DCC decompress is required before expanding FMASK
-          * when DCC stores aren't supported to avoid being in
-          * a state where DCC is compressed and the main
-          * surface is uncompressed.
-          */
-         radv_decompress_dcc(cmd_buffer, image, range);
-      } else if (!fast_clear_flushed) {
-         /* A FMASK decompress is required before expanding
-          * FMASK.
-          */
-         radv_fast_clear_flush_image_inplace(cmd_buffer, image, range);
+   if (src_fmask_comp > dst_fmask_comp) {
+      if (src_fmask_comp == RADV_FMASK_COMPRESSION_FULL) {
+         if (radv_dcc_enabled(image, range->baseMipLevel) && !radv_image_use_dcc_image_stores(device, image)) {
+            /* A DCC decompress is required before expanding FMASK when DCC stores aren't supported to
+             * avoid being in a state where DCC is compressed and the main surface is uncompressed.
+             */
+            needs_dcc_decompress = true;
+         } else {
+            /* FMASK_DECOMPRESS is always required before expanding FMASK. */
+            needs_fmask_decompress = true;
+         }
       }
+
+      if (dst_fmask_comp == RADV_FMASK_COMPRESSION_NONE)
+         needs_fmask_color_expand = true;
    }
 
-   if (dst_fmask_comp == RADV_FMASK_COMPRESSION_NONE) {
-      struct radv_barrier_data barrier = {0};
-      barrier.layout_transitions.fmask_color_expand = 1;
-      radv_describe_layout_transition(cmd_buffer, &barrier);
+   if (needs_dcc_decompress) {
+      radv_decompress_dcc(cmd_buffer, image, range);
+   } else if (needs_fce || needs_fmask_decompress) {
+      if (needs_fce)
+         radv_fast_clear_eliminate(cmd_buffer, image, range);
 
-      radv_expand_fmask_image_inplace(cmd_buffer, image, range);
+      if (needs_fmask_decompress)
+         radv_fmask_decompress(cmd_buffer, image, range);
    }
+
+   if (needs_fmask_color_expand)
+      radv_fmask_color_expand(cmd_buffer, image, range);
+
+   if (needs_dcc_retile)
+      radv_retile_transition(cmd_buffer, image, src_layout, dst_layout, dst_queue_mask);
 }
 
 static void

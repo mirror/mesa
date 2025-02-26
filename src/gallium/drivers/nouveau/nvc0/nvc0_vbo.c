@@ -252,6 +252,8 @@ nvc0_update_user_vbufs(struct nvc0_context *nvc0)
          nvc0_set_constant_vertex_attrib(nvc0, i);
          continue;
       }
+      if (unlikely(!vb->buffer.resource))
+         continue;
       nvc0_user_vbuf_range(nvc0, b, &base, &size);
 
       if (!(written & (1 << b))) {
@@ -289,7 +291,11 @@ nvc0_update_user_vbufs_shared(struct nvc0_context *nvc0)
       uint64_t address;
       uint32_t base, size;
       const int b = ffs(mask) - 1;
+      struct pipe_vertex_buffer *vb = &nvc0->vtxbuf[b];
       mask &= ~(1 << b);
+
+      if (unlikely(!vb->buffer.resource))
+         continue;
 
       nvc0_user_vbuf_range(nvc0, b, &base, &size);
 

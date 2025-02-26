@@ -2795,6 +2795,8 @@ nir_chase_binding(nir_src rsrc)
           */
          res.read_first_invocation = true;
          rsrc = intrin->src[0];
+      } else if (intrin && intrin->intrinsic == nir_intrinsic_load_deref) {
+         return nir_chase_binding(intrin->src[0]);
       } else {
          break;
       }

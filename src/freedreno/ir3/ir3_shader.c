@@ -196,7 +196,8 @@ assemble_variant(struct ir3_shader_variant *v, bool internal)
 {
    v->bin = ir3_shader_assemble(v);
 
-   bool dbg_enabled = shader_debug_enabled(v->type, internal);
+   bool dbg_enabled = shader_debug_enabled(v->type, internal) ||
+                      ir3_shader_bisect_disasm_select(v);
    if (dbg_enabled || ir3_shader_override_path || v->disasm_info.write_disasm) {
       unsigned char sha1[21];
       char sha1buf[41];
@@ -290,6 +291,7 @@ alloc_variant(struct ir3_shader *shader, const struct ir3_shader_key *key,
       return NULL;
 
    v->id = ++shader->variant_count;
+   v->shader = shader;
    v->shader_id = shader->id;
    v->binning_pass = !!nonbinning;
    v->nonbinning = nonbinning;

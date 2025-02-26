@@ -77,13 +77,10 @@ enum bi_swizzle {
 static inline uint32_t
 bi_apply_swizzle(uint32_t value, enum bi_swizzle swz)
 {
-   const uint16_t *h = (const uint16_t *)&value;
-   const uint8_t *b = (const uint8_t *)&value;
-
-#define H(h0, h1) (h[h0] | ((uint32_t)h[h1] << 16))
-#define B(b0, b1, b2, b3)                                                      \
-   (b[b0] | ((uint32_t)b[b1] << 8) | ((uint32_t)b[b2] << 16) |                 \
-    ((uint32_t)b[b3] << 24))
+#define Xl(s)             ((value >> (s * 8)) & 0xFF)
+#define B(b0, b1, b2, b3) (Xl(b0) | Xl(b1) << 8 | Xl(b2) << 16 | Xl(b3) << 24)
+#define Xh(s)             ((value >> (s * 16)) & 0xFFFF)
+#define H(h1, h2)         (Xh(h1) | Xh(h2) << 16)
 
    switch (swz) {
    case BI_SWIZZLE_H00:
@@ -95,27 +92,29 @@ bi_apply_swizzle(uint32_t value, enum bi_swizzle swz)
    case BI_SWIZZLE_H11:
       return H(1, 1);
    case BI_SWIZZLE_B0000:
-      return B(0, 0, 0, 0);
+      return Xl(0) * 0x01010101;
    case BI_SWIZZLE_B1111:
-      return B(1, 1, 1, 1);
+      return Xl(1) * 0x01010101;
    case BI_SWIZZLE_B2222:
-      return B(2, 2, 2, 2);
+      return Xl(2) * 0x01010101;
    case BI_SWIZZLE_B3333:
-      return B(3, 3, 3, 3);
+      return Xl(3) * 0x01010101;
    case BI_SWIZZLE_B0011:
-      return B(0, 0, 1, 1);
+      return Xl(0) | (Xl(1) << 16) * 0x0101;
    case BI_SWIZZLE_B2233:
-      return B(2, 2, 3, 3);
+      return Xl(2) | (Xl(3) << 16) * 0x0101;
    case BI_SWIZZLE_B1032:
-      return B(1, 0, 3, 2);
+      return B(3, 2, 1, 0) << 16 | B(3, 2, 1, 0) >> 16;
    case BI_SWIZZLE_B3210:
       return B(3, 2, 1, 0);
    case BI_SWIZZLE_B0022:
-      return B(0, 0, 2, 2);
+      return Xl(0) | (Xl(2) << 16) * 0x0101;
    }
 
 #undef H
+#undef Xl
 #undef B
+#undef Xh
 
    unreachable("Invalid swizzle");
 }

@@ -325,8 +325,8 @@ __glXGetDrawableAttribute(Display * dpy, GLXDrawable drawable,
    }
 
    length = reply.length;
-   if (length) {
-      num_attributes = reply.numAttribs;
+   num_attributes = reply.numAttribs;
+   if (length >= num_attributes * 2) {
       data = malloc(length * sizeof(CARD32));
       if (data == NULL) {
          /* Throw data on the floor */

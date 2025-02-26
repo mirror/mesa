@@ -517,6 +517,7 @@ struct crocus_context {
       uint32_t cache_next_offset;
       void *cache_bo_map;
       struct hash_table *cache;
+      mtx_t hash_mutex;
 
       unsigned urb_size;
 
@@ -918,7 +919,7 @@ struct crocus_compiled_shader *crocus_upload_shader(struct crocus_context *ice,
                                                     unsigned num_system_values,
                                                     unsigned num_cbufs,
                                                     const struct crocus_binding_table *bt);
-const void *crocus_find_previous_compile(const struct crocus_context *ice,
+const void *crocus_find_previous_compile(struct crocus_context *ice,
                                          enum crocus_program_cache_id cache_id,
                                          unsigned program_string_id);
 bool crocus_blorp_lookup_shader(struct blorp_batch *blorp_batch,

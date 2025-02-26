@@ -87,27 +87,37 @@ crocus_find_cached_shader(struct crocus_context *ice,
                           uint32_t key_size, const void *key)
 {
    struct keybox *keybox = make_keybox(NULL, cache_id, key, key_size);
+   struct crocus_compiled_shader *shader;
+
+   mtx_lock(&ice->shaders.hash_mutex);
    struct hash_entry *entry =
       _mesa_hash_table_search(ice->shaders.cache, keybox);
 
+   shader = entry ? entry->data : NULL;
+   mtx_unlock(&ice->shaders.hash_mutex);
+
    ralloc_free(keybox);
 
-   return entry ? entry->data : NULL;
+   return shader;
 }
 
 const void *
-crocus_find_previous_compile(const struct crocus_context *ice,
+crocus_find_previous_compile(struct crocus_context *ice,
                              enum crocus_program_cache_id cache_id,
                              unsigned program_string_id)
 {
+   mtx_lock(&ice->shaders.hash_mutex);
    hash_table_foreach(ice->shaders.cache, entry) {
       const struct keybox *keybox = entry->key;
       const struct elk_base_prog_key *key = (const void *)keybox->data;
       if (keybox->cache_id == cache_id &&
           key->program_string_id == program_string_id) {
-         return keybox->data;
+         const void *data = keybox->data;
+         mtx_unlock(&ice->shaders.hash_mutex);
+         return data;
       }
    }
+   mtx_unlock(&ice->shaders.hash_mutex);
 
    return NULL;
 }
@@ -196,8 +206,11 @@ crocus_upload_shader(struct crocus_context *ice,
    struct hash_table *cache = ice->shaders.cache;
    struct crocus_compiled_shader *shader =
       rzalloc_size(cache, sizeof(struct crocus_compiled_shader));
+
+   mtx_lock(&ice->shaders.hash_mutex);
    const struct crocus_compiled_shader *existing = find_existing_assembly(
       cache, ice->shaders.cache_bo_map, assembly, asm_size);
+   mtx_unlock(&ice->shaders.hash_mutex);
 
    /* If we can find a matching prog in the cache already, then reuse the
     * existing stuff without creating new copy into the underlying buffer
@@ -230,7 +243,9 @@ crocus_upload_shader(struct crocus_context *ice,
    ralloc_steal(shader, shader->system_values);
 
    struct keybox *keybox = make_keybox(shader, cache_id, key, key_size);
+   mtx_lock(&ice->shaders.hash_mutex);
    _mesa_hash_table_insert(ice->shaders.cache, keybox, shader);
+   mtx_unlock(&ice->shaders.hash_mutex);
 
    return shader;
 }
@@ -293,11 +308,15 @@ crocus_init_program_cache(struct crocus_context *ice)
    ice->shaders.cache_bo_map =
       crocus_bo_map(NULL, ice->shaders.cache_bo,
                     MAP_READ | MAP_WRITE | MAP_ASYNC | MAP_PERSISTENT);
+
+   mtx_init(&ice->shaders.hash_mutex, mtx_plain);
 }
 
 void
 crocus_destroy_program_cache(struct crocus_context *ice)
 {
+   mtx_destroy(&ice->shaders.hash_mutex);
+
    for (int i = 0; i < MESA_SHADER_STAGES; i++) {
       ice->shaders.prog[i] = NULL;
    }
@@ -336,6 +355,7 @@ crocus_print_program_cache(struct crocus_context *ice)
    struct crocus_screen *screen = (struct crocus_screen *)ice->ctx.screen;
    const struct elk_isa_info *isa = &screen->compiler->isa;
 
+   mtx_lock(&ice->shaders.hash_mutex);
    hash_table_foreach(ice->shaders.cache, entry) {
       const struct keybox *keybox = entry->key;
       struct crocus_compiled_shader *shader = entry->data;
@@ -343,4 +363,5 @@ crocus_print_program_cache(struct crocus_context *ice)
       elk_disassemble(isa, ice->shaders.cache_bo_map + shader->offset, 0,
                       shader->prog_data->program_size, NULL, stderr);
    }
+   mtx_unlock(&ice->shaders.hash_mutex);
 }

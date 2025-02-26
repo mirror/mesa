@@ -202,6 +202,11 @@ _mesa_GenerateMipmap(GLenum target)
    struct gl_texture_object *texObj;
    GET_CURRENT_CONTEXT(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API) {
+      _mesa_debug(ctx, "glGenerateMipmap(%s)\n",
+                  _mesa_enum_to_string(target));
+   }
+
    if (!_mesa_is_valid_generate_texture_mipmap_target(ctx, target)) {
       _mesa_error(ctx, GL_INVALID_ENUM, "glGenerateMipmap(target=%s)",
                   _mesa_enum_to_string(target));
@@ -251,6 +256,10 @@ _mesa_GenerateTextureMipmap(GLuint texture)
    struct gl_texture_object *texObj;
    GET_CURRENT_CONTEXT(ctx);
 
+   if (MESA_VERBOSE & VERBOSE_API) {
+      _mesa_debug(ctx, "glGenerateTextureMipmap(%u)\n", texture);
+   }
+
    texObj = _mesa_lookup_texture_err(ctx, texture, "glGenerateTextureMipmap");
    validate_params_and_generate_mipmap(texObj, "glGenerateTextureMipmap");
 }
@@ -260,6 +269,11 @@ _mesa_GenerateTextureMipmapEXT(GLuint texture, GLenum target)
 {
    struct gl_texture_object *texObj;
    GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_API) {
+      _mesa_debug(ctx, "glGenerateTextureMipmapEXT(%u, %s)\n", texture,
+                  _mesa_enum_to_string(target));
+   }
 
    texObj = _mesa_lookup_or_create_texture(ctx, target, texture,
                                            false, true,
@@ -273,6 +287,11 @@ _mesa_GenerateMultiTexMipmapEXT(GLenum texunit, GLenum target)
 {
    struct gl_texture_object *texObj;
    GET_CURRENT_CONTEXT(ctx);
+
+   if (MESA_VERBOSE & VERBOSE_API) {
+      _mesa_debug(ctx, "glGenerateMultiTexMipmapEXT(%s, %s)\n",
+                  _mesa_enum_to_string(texunit), _mesa_enum_to_string(target));
+   }
 
    texObj = _mesa_get_texobj_by_target_and_texunit(ctx, target,
                                                    texunit - GL_TEXTURE0,

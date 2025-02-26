@@ -94,7 +94,7 @@ pub extern "C" fn nak_should_print_nir() -> bool {
 }
 
 fn nir_options(dev: &nv_device_info) -> nir_shader_compiler_options {
-    let mut op: nir_shader_compiler_options = unsafe { std::mem::zeroed() };
+    let mut op: nir_shader_compiler_options = Default::default();
 
     op.lower_fdiv = true;
     op.fuse_ffma16 = true;
@@ -296,11 +296,11 @@ impl ShaderBin {
                     xfb: if let Some(xfb) = &io.xfb {
                         **xfb
                     } else {
-                        unsafe { std::mem::zeroed() }
+                        Default::default()
                     },
                     _pad: Default::default(),
                 },
-                _ => unsafe { std::mem::zeroed() },
+                _ => Default::default(),
             },
             hdr: sph::encode_header(sm, &info, fs_key),
         };

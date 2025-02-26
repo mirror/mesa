@@ -105,7 +105,7 @@ pub struct Runner {
 impl<'a> Runner {
     pub fn new(dev_id: Option<usize>) -> Runner {
         unsafe {
-            let mut drm_devices: [drmDevicePtr; 16] = std::mem::zeroed();
+            let mut drm_devices: [drmDevicePtr; 16] = [std::ptr::null_mut(); 16];
             let num_drm_devices = drmGetDevices(
                 drm_devices.as_mut_ptr(),
                 drm_devices.len().try_into().unwrap(),
@@ -299,7 +299,7 @@ impl<'a> Runner {
         );
 
         // Populate and upload the QMD
-        let mut qmd_cbufs: [nak_qmd_cbuf; 8] = unsafe { std::mem::zeroed() };
+        let mut qmd_cbufs: [nak_qmd_cbuf; 8] = Default::default();
         qmd_cbufs[0] = nak_qmd_cbuf {
             index: 0,
             size: std::mem::size_of::<CB0>()

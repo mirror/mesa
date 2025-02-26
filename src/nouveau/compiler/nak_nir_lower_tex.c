@@ -88,20 +88,16 @@ lower_tex(nir_builder *b, nir_tex_instr *tex, const struct nak_compiler *nak)
       } else {
          arr_idx = nir_channel(b, coord, --coord_components);
 
-         /* Everything but texelFetch takes a float index
-          *
-          * TODO: Use F2I.U32.RNE
-          */
+         /* Everything but texelFetch takes a float index */
          if (tex->op != nir_texop_txf && tex->op != nir_texop_txf_ms) {
-            arr_idx = nir_fadd_imm(b, arr_idx, 0.5);
-
-            // TODO: Hardware seems to clamp negative values to zero for us
-            // in f2u, but we still need this fmax for constant folding.
-            arr_idx = nir_fmax(b, arr_idx, nir_imm_float(b, 0.0));
-
-            arr_idx = nir_f2u32(b, arr_idx);
+            arr_idx = nir_convert_alu_types(b, 32, arr_idx,
+                                            nir_type_float32,
+                                            nir_type_uint32,
+                                            nir_rounding_mode_rtne,
+                                            /* saturate */ true);
          }
 
+         // TODO: Make arr_idx a u16 if that simplifies shaders
          arr_idx = nir_umin(b, arr_idx, nir_imm_int(b, UINT16_MAX));
       }
    }

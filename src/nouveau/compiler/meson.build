@@ -87,6 +87,7 @@ _nak_bindings_rs = rust.bindgen(
     '--allowlist-function', 'nak_.*',
     '--allowlist-function', 'nouveau_ws_.*',
     '--no-prepend-enum-name',
+    '--with-derive-default',
   ],
   dependencies : [
     dep_libdrm,

@@ -411,7 +411,7 @@ CLOVER_API cl_program
 clLinkProgram(cl_context d_ctx, cl_uint num_devs, const cl_device_id *d_devs,
               const char *p_opts, cl_uint num_progs, const cl_program *d_progs,
               void (CL_CALLBACK * pfn_notify) (cl_program, void *), void *user_data,
-              cl_int *r_errcode) try {
+              cl_int *r_errcode) { clover::program *clover_prog = nullptr; try {
    auto &ctx = obj(d_ctx);
    const auto opts = build_options(p_opts, "CLOVER_EXTRA_LINK_OPTIONS");
    auto progs = objs(d_progs, num_progs);
@@ -419,6 +419,7 @@ clLinkProgram(cl_context d_ctx, cl_uint num_devs, const cl_device_id *d_devs,
       (d_devs ? objs(d_devs, num_devs) : ref_vector<device>(ctx.devices()));
    auto prog = create<program>(ctx, all_devs);
    auto r_prog = ret_object(prog);
+   clover_prog = &prog();
 
    auto notifier = build_notifier(r_prog, pfn_notify, user_data);
 
@@ -437,12 +438,15 @@ clLinkProgram(cl_context d_ctx, cl_uint num_devs, const cl_device_id *d_devs,
    return r_prog;
 
 } catch (invalid_build_options_error &) {
+   delete clover_prog;
    ret_error(r_errcode, CL_INVALID_LINKER_OPTIONS);
    return NULL;
 
 } catch (error &e) {
+   delete clover_prog;
    ret_error(r_errcode, e);
    return NULL;
+}
 }
 
 CLOVER_API cl_int

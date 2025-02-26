@@ -1850,7 +1850,7 @@ _mesa_GetnCompressedTexImageARB(GLenum target, GLint level, GLsizei bufSize,
 
    if (getcompressedteximage_error_check(ctx, texObj, target, level,
                                          0, 0, 0, width, height, depth,
-                                         INT_MAX, pixels, caller)) {
+                                         bufSize, pixels, caller)) {
       return;
    }
 

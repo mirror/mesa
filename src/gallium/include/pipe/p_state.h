@@ -824,8 +824,8 @@ struct pipe_draw_indirect_info
 };
 
 struct pipe_draw_start_count_bias {
-   unsigned start;
-   unsigned count;
+   uint32_t start;
+   uint32_t count;
    int index_bias; /**< a bias to be added to each index */
 };
 

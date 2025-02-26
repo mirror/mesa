@@ -327,6 +327,18 @@ can_constant_fold(nir_scalar scalar, nir_block *loop_header)
    return false;
 }
 
+static bool
+has_phi_with_constant_src(nir_block *block, nir_block *pred)
+{
+   nir_foreach_phi(phi, block) {
+      nir_phi_src *src = nir_phi_get_src_from_block(phi, pred);
+      if (nir_src_is_const(src->src))
+         return true;
+   }
+
+   return false;
+}
+
 /**
  * This optimization tries to peel the first loop break.
  *
@@ -387,17 +399,19 @@ opt_loop_peel_initial_break(nir_loop *loop)
    if (nir_block_ends_in_jump(nir_loop_last_block(loop)))
       return false;
 
-   /* Check that there is actual work to be done after the initial break. */
-   if (!nir_block_contains_work(nir_cf_node_cf_tree_next(if_node)))
-      return false;
-
    /* For now, we restrict this optimization to cases where the outer IF
-    * can be constant-folded.
+    * can be constant-folded or where at least one phi at the loop-header
+    * has a constant loop-carried source. If it can be constant-folded,
+    * we additionally require that there is actual work to be done after
+    * the initial break. This is to avoid unconditionally unrolling long
+    * loops.
     *
     * Note: If this restriction is lifted, it might recurse infinitely.
     *       Prevent by e.g. restricting to single-exit loops.
     */
-   if (!can_constant_fold(nir_get_scalar(nif->condition.ssa, 0), header_block))
+   if (!has_phi_with_constant_src(header_block, nir_loop_last_block(loop)) &&
+       (!nir_block_contains_work(nir_cf_node_cf_tree_next(if_node)) ||
+        !can_constant_fold(nir_get_scalar(nif->condition.ssa, 0), header_block)))
       return false;
 
    /* Even though this if statement has a jump on one side, we may still have

@@ -552,12 +552,11 @@ impl Program {
         let d = info.dev_build_mut(dev);
 
         // skip compilation if we already have the right thing.
-        if self.is_bin() {
-            if d.bin_type == CL_PROGRAM_BINARY_TYPE_EXECUTABLE && !lib
-                || d.bin_type == CL_PROGRAM_BINARY_TYPE_LIBRARY && lib
-            {
-                return true;
-            }
+        if self.is_bin()
+            && (d.bin_type == CL_PROGRAM_BINARY_TYPE_EXECUTABLE && !lib
+                || d.bin_type == CL_PROGRAM_BINARY_TYPE_LIBRARY && lib)
+        {
+            return true;
         }
 
         let spirvs = [d.spirv.as_ref().unwrap()];

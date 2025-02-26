@@ -355,12 +355,6 @@ rusticl_c = static_library(
   ],
 )
 
-idep_rusticl_gen = declare_dependency(
-  sources: [
-    rusticl_opencl_bindings_rs,
-  ],
-)
-
 libmesa_rust_gen = static_library(
   'mesa_rust_gen',
   rusticl_mesa_bindings[0],
@@ -438,7 +432,28 @@ librusticl = static_library(
     rusticl_opencl_gen,
     rusticl_proc_macros,
   ],
-  dependencies : [
-    idep_rusticl_gen,
-  ],
 )
+
+if with_tests
+  # librusticl_test = static_library(
+  #   'rusticl_test',
+  #   'test/lib.rs',
+  #   rust_abi : 'c',
+  # )
+
+  rust.test('rusticl_opencl_gen_test', rusticl_opencl_gen)
+  rust.test('rusticl_llvm_gen_test', rusticl_llvm_gen)
+  rust.test('rusticl_proc_macros_test', rusticl_proc_macros)
+  rust.test('libc_rust_gen_test', libc_rust_gen)
+  rust.test('libmesa_rust_gen_test', libmesa_rust_gen)
+  rust.test('libmesa_rust_util_test', libmesa_rust_util)
+  rust.test('libmesa_rust_test', libmesa_rust)
+
+  # Due to a meson bug with the sanitizers, we can't enable tests on the librusticl crate yet
+  # rust.test('rusticl_test', librusticl,
+  #   link_with : [
+  #     librusticl_test,
+  #   ],
+  # )
+endif
+

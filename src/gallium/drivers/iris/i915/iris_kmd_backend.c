@@ -174,6 +174,8 @@ i915_bo_set_caching(struct iris_bo *bo, bool cached)
 static void *
 i915_gem_mmap_offset(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
 {
+   int fd = iris_bufmgr_get_fd(bufmgr);
+
    struct drm_i915_gem_mmap_offset mmap_arg = {
       .handle = bo->gem_handle,
    };
@@ -214,6 +216,9 @@ i915_gem_mmap_offset(struct iris_bufmgr *bufmgr, struct iris_bo *bo)
           __FILE__, __LINE__, bo->gem_handle, bo->name, strerror(errno));
       return NULL;
    }
+
+   if (is_intel_virtio_fd(fd))
+      return intel_virtio_bo_mmap(fd, bo->gem_handle, bo->size);
 
    /* And map it */
    void *map = mmap(0, bo->size, PROT_READ | PROT_WRITE, MAP_SHARED,

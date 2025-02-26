@@ -1112,8 +1112,11 @@ alloc_fresh_bo(struct iris_bufmgr *bufmgr, uint64_t bo_size, unsigned flags)
     * than 64MB should hit the BO cache or slab allocations anyway, so this
     * shouldn't waste too much memory.  We do exclude small (< 1MB) sizes to
     * be defensive in case any of those bypass the caches and end up here.
+    *
+    * For VirtioGPU this optimization has a negative performance impact
+    * due to a slower memory allocation and mapping in a VM.
     */
-   if (bo_size >= 1024 * 1024)
+   if (bo_size >= 1024 * 1024 && !is_intel_virtio_fd(bufmgr->fd))
       bo_size = align64(bo_size, 2 * 1024 * 1024);
 
    bo->real.heap = flags_to_heap(bufmgr, flags);
@@ -1882,6 +1885,8 @@ iris_bufmgr_destroy(struct iris_bufmgr *bufmgr)
 
    iris_bufmgr_destroy_global_vm(bufmgr);
 
+   intel_virtio_unref_fd(bufmgr->fd);
+
    close(bufmgr->fd);
 
    simple_mtx_unlock(&bufmgr->lock);
@@ -2342,6 +2347,8 @@ iris_bufmgr_create(struct intel_device_info *devinfo, int fd, bool bo_reuse)
    if (bufmgr->fd == -1)
       goto error_dup;
 
+   intel_virtio_ref_fd(bufmgr->fd);
+
    p_atomic_set(&bufmgr->refcount, 1);
 
    simple_mtx_init(&bufmgr->lock, mtx_plain);
@@ -2509,6 +2516,7 @@ error_bucket_cache:
       util_vma_heap_finish(&bufmgr->vma_allocator[i]);
    iris_bufmgr_destroy_global_vm(bufmgr);
 error_init_vm:
+   intel_virtio_unref_fd(bufmgr->fd);
    close(bufmgr->fd);
 error_dup:
    free(bufmgr);

@@ -55,6 +55,7 @@
 #include "compiler/brw_kernel.h"
 #include "compiler/brw_rt.h"
 #include "ds/intel_driver_ds.h"
+#include "dev/virtio/intel_virtio.h"
 #include "util/bitset.h"
 #include "util/bitscan.h"
 #include "util/detect_os.h"

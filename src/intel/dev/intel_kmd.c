@@ -24,6 +24,8 @@
 #include <string.h>
 #include "util/libdrm.h"
 
+#include "virtio/intel_virtio.h"
+
 #include "intel_kmd.h"
 
 enum intel_kmd_type
@@ -31,6 +33,9 @@ intel_get_kmd_type(int fd)
 {
    enum intel_kmd_type type = INTEL_KMD_TYPE_INVALID;
    drmVersionPtr version = drmGetVersion(fd);
+
+   if (is_intel_virtio_fd(fd))
+      type = INTEL_KMD_TYPE_I915;
 
    if (!version)
       return type;

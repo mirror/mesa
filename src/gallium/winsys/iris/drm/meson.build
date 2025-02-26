@@ -10,4 +10,5 @@ libiriswinsys = static_library(
   ],
   gnu_symbol_visibility : 'hidden',
   dependencies: idep_mesautil,
+  link_with : [libintel_dev],
 )

@@ -266,6 +266,7 @@ int afuc_util_init(enum afuc_fwid fw_id, int *gpuver_out, bool colors)
       break;
    case AFUC_A730:
    case AFUC_A740:
+   case AFUC_X1_85:
       name = "A6XX";
       variant = "A7XX";
       control_reg_name = "A7XX_CONTROL_REG";

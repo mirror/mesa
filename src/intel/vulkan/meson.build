@@ -190,6 +190,7 @@ libanv_files = files(
   'anv_nir.h',
   'anv_nir_apply_pipeline_layout.c',
   'anv_nir_compute_push_layout.c',
+  'anv_nir_lower_conservative_rasterization.c',
   'anv_nir_lower_multiview.c',
   'anv_nir_lower_load_patch_vertices_in.c',
   'anv_nir_lower_ubo_loads.c',

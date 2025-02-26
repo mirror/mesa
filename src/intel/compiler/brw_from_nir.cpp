@@ -4265,6 +4265,16 @@ brw_from_nir_emit_fs_intrinsic(nir_to_brw_state &ntb,
       break;
    }
 
+   case nir_intrinsic_load_coverage_mask: {
+      ASSERTED brw_wm_prog_key *key = (brw_wm_prog_key*) s.key;
+      struct brw_wm_prog_data *wm_prog_data = brw_wm_prog_data(s.prog_data);
+      brw_reg coverage_mask = key->vk_conservative == INTEL_SOMETIMES ?
+         dynamic_conservative_flags(wm_prog_data) :
+         brw_fetch_payload_reg(bld, s.fs_payload().sample_mask_in_reg, BRW_TYPE_UD);
+      bld.MOV(retype(dest, BRW_TYPE_UD), coverage_mask);
+      break;
+   }
+
    case nir_intrinsic_store_output: {
       const brw_reg src = get_nir_src(ntb, instr->src[0], -1);
       const unsigned store_offset = nir_src_as_uint(instr->src[1]);

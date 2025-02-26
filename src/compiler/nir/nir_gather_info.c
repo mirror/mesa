@@ -817,6 +817,10 @@ gather_intrinsic_info(nir_intrinsic_instr *instr, nir_shader *shader,
       break;
    }
 
+   case nir_intrinsic_load_coverage_mask:
+      BITSET_SET(shader->info.system_values_read, SYSTEM_VALUE_SAMPLE_MASK_IN);
+      break;
+
    default:
       shader->info.uses_bindless |= intrinsic_is_bindless(instr);
       if (nir_intrinsic_writes_external_memory(instr))

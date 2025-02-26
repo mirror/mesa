@@ -1513,7 +1513,7 @@ get_properties(const struct anv_physical_device *pdevice,
       props->conservativePointAndLineRasterization = false;
       props->degenerateTrianglesRasterized = true;
       props->degenerateLinesRasterized = false;
-      props->fullyCoveredFragmentShaderInputVariable = false;
+      props->fullyCoveredFragmentShaderInputVariable = true;
       props->conservativeRasterizationPostDepthCoverage = true;
    }
 

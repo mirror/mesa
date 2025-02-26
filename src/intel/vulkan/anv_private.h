@@ -1508,6 +1508,7 @@ enum anv_gfx_state_bits {
    ANV_GFX_STATE_FS_MSAA_FLAGS,
    ANV_GFX_STATE_TCS_INPUT_VERTICES,
    ANV_GFX_STATE_COARSE_STATE,
+   ANV_GFX_STATE_FS_CONSERVATIVE,
 
    ANV_GFX_STATE_MAX,
 };
@@ -3740,6 +3741,8 @@ struct anv_push_constants {
 
          /** Robust access pushed registers. */
          uint64_t push_reg_mask[MESA_SHADER_STAGES];
+         /** Dynamic conservative rasterization */
+         unsigned vk_conservative;
       } gfx;
 
       struct {

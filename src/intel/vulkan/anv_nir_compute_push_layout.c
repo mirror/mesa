@@ -31,6 +31,7 @@ anv_nir_compute_push_layout(nir_shader *nir,
                             const struct anv_physical_device *pdevice,
                             enum brw_robustness_flags robust_flags,
                             bool fragment_dynamic,
+                            bool conservative_dynamic,
                             struct brw_stage_prog_data *prog_data,
                             struct anv_pipeline_bind_map *map,
                             const struct anv_pipeline_push_map *push_map,
@@ -111,6 +112,15 @@ anv_nir_compute_push_layout(nir_shader *nir,
                                          anv_drv_const_size(gfx.fs_msaa_flags);
       push_start = MIN2(push_start, fs_msaa_flags_start);
       push_end = MAX2(push_end, fs_msaa_flags_end);
+   }
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT && conservative_dynamic) {
+      const uint32_t vk_conservative_start =
+         anv_drv_const_offset(gfx.vk_conservative);
+      const uint32_t vk_conservative_end = vk_conservative_start +
+                                         anv_drv_const_size(gfx.vk_conservative);
+      push_start = MIN2(push_start, vk_conservative_start);
+      push_end = MAX2(push_end, vk_conservative_end);
    }
 
    if (nir->info.stage == MESA_SHADER_COMPUTE && devinfo->verx10 < 125) {
@@ -297,6 +307,17 @@ anv_nir_compute_push_layout(nir_shader *nir,
       assert(fs_msaa_flags_offset >= push_start);
       wm_prog_data->msaa_flags_param =
          (fs_msaa_flags_offset - push_start) / 4;
+   }
+
+   if (nir->info.stage == MESA_SHADER_FRAGMENT && conservative_dynamic) {
+      struct brw_wm_prog_data *wm_prog_data =
+         container_of(prog_data, struct brw_wm_prog_data, base);
+
+      const uint32_t conservative_offset =
+         anv_drv_const_offset(gfx.vk_conservative);
+      assert(conservative_offset >= push_start);
+      wm_prog_data->conservative_param =
+         (conservative_offset - push_start) / 4;
    }
 
 #if 0

@@ -87,6 +87,18 @@ static const uint64_t priority_to_modifier[] = {
 };
 
 static bool
+tearing_enabled(void)
+{
+   const char *tearing_enabled = getenv("vblank_mode");
+   int may_tear =  atoi(tearing_enabled);
+
+   if (may_tear == 0)
+      return true;
+
+   return false;
+}
+
+static bool
 modifier_is_supported(const struct intel_device_info *devinfo,
                       enum pipe_format pfmt, unsigned bind,
                       uint64_t modifier)
@@ -111,6 +123,9 @@ modifier_is_supported(const struct intel_device_info *devinfo,
    case I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC:
       if (devinfo->verx10 != 120)
          return false;
+      if (tearing_enabled() &&
+		      (modifier & I915_FORMAT_MOD_Y_TILED_GEN12_RC_CCS_CC))
+         return false;
       break;
    case I915_FORMAT_MOD_4_TILED:
       if (devinfo->verx10 < 125)
@@ -120,6 +135,9 @@ modifier_is_supported(const struct intel_device_info *devinfo,
    case I915_FORMAT_MOD_4_TILED_DG2_MC_CCS:
    case I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC:
       if (!intel_device_info_is_dg2(devinfo))
+         return false;
+      if (tearing_enabled() &&
+		      (modifier & I915_FORMAT_MOD_4_TILED_DG2_RC_CCS_CC))
          return false;
       break;
    case I915_FORMAT_MOD_4_TILED_MTL_RC_CCS:

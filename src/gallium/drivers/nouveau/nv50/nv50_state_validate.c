@@ -26,6 +26,7 @@ nv50_validate_fb(struct nv50_context *nv50)
    uint32_t array_size = 0xffff, array_mode = 0;
 
    nouveau_bufctx_reset(nv50->bufctx_3d, NV50_BIND_3D_FB);
+   nouveau_pushbuf_bufctx(push, nv50->bufctx_3d);
 
    BEGIN_NV04(push, NV50_3D(RT_CONTROL), 1);
    PUSH_DATA (push, (076543210 << 4) | fb->nr_cbufs);
@@ -561,7 +562,6 @@ nv50_state_validate(struct nv50_context *nv50, uint32_t mask,
 
       nv50_bufctx_fence(nv50, bufctx, false);
    }
-   nouveau_pushbuf_bufctx(nv50->base.pushbuf, bufctx);
    ret = PUSH_VAL(nv50->base.pushbuf);
 
    return !ret;

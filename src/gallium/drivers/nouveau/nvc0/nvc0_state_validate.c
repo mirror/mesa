@@ -151,6 +151,7 @@ nvc0_validate_fb(struct nvc0_context *nvc0)
    bool serialize = false;
 
    nouveau_bufctx_reset(nvc0->bufctx_3d, NVC0_BIND_3D_FB);
+   nouveau_pushbuf_bufctx(push, nvc0->bufctx_3d);
 
    BEGIN_NVC0(push, NVC0_3D(SCREEN_SCISSOR_HORIZ), 2);
    PUSH_DATA (push, fb->width << 16);
@@ -937,7 +938,6 @@ nvc0_state_validate(struct nvc0_context *nvc0, uint32_t mask,
       nvc0_bufctx_fence(nvc0, bufctx, false);
    }
 
-   nouveau_pushbuf_bufctx(nvc0->base.pushbuf, bufctx);
    ret = PUSH_VAL(nvc0->base.pushbuf);
 
    return !ret;

@@ -1033,6 +1033,7 @@ iris_resource_texture_aux_usage(struct iris_context *ice,
    case ISL_AUX_USAGE_MC:
       return res->aux.usage;
 
+   case ISL_AUX_USAGE_CCS_D:
    case ISL_AUX_USAGE_CCS_E:
    case ISL_AUX_USAGE_FCV_CCS_E:
       /* If we don't have any unresolved color, report an aux usage of

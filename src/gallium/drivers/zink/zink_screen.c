@@ -3008,6 +3008,15 @@ init_driver_workarounds(struct zink_screen *screen)
       break;
    }
 
+   /* TODO: this seems to manifest with xserver somehow but only on certain platforms... */
+   switch (zink_driverid(screen)) {
+   case VK_DRIVER_ID_INTEL_OPEN_SOURCE_MESA:
+      screen->driver_workarounds.broken_modifier_exports = true;
+      break;
+   default:
+      break;
+   }
+
    if (!screen->resizable_bar)
       screen->info.have_EXT_host_image_copy = false;
 }

@@ -1254,7 +1254,7 @@ create_image(struct zink_screen *screen, struct zink_resource_object *obj,
    /* we often need to be able to mutate between srgb and linear, but we don't need general
     * image view/shader image format compatibility (that path means losing fast clears or compression on some hardware).
     */
-   if (!(templ->bind & ZINK_BIND_MUTABLE) && (!alloc_info->whandle || alloc_info->whandle->type == ZINK_EXTERNAL_MEMORY_HANDLE)) {
+   if (!(templ->bind & ZINK_BIND_MUTABLE)) {
       srgb = util_format_is_srgb(templ->format) ? util_format_linear(templ->format) : util_format_srgb(templ->format);
       /* why do these helpers have different default return values? */
       if (srgb == templ->format)
@@ -1727,16 +1727,26 @@ add_resource_bind(struct zink_context *ctx, struct zink_resource *res, unsigned 
    assert((res->base.b.bind & bind) == 0);
    res->base.b.bind |= bind;
    struct zink_resource_object *old_obj = res->obj;
-   ASSERTED uint64_t mod = DRM_FORMAT_MOD_INVALID;
+   ASSERTED uint64_t check_mod = false;
    if (bind & ZINK_BIND_DMABUF && !res->modifiers_count && !res->obj->is_buffer && screen->info.have_EXT_image_drm_format_modifier) {
-      res->modifiers_count = 1;
+      bool use_modifiers = res->base.b.target == PIPE_TEXTURE_2D && !screen->driver_workarounds.broken_modifier_exports;
+      res->modifiers_count = use_modifiers ? screen->modifier_props[res->base.b.format].drmFormatModifierCount : 1;
       res->modifiers = malloc(res->modifiers_count * sizeof(uint64_t));
       if (!res->modifiers) {
          mesa_loge("ZINK: failed to allocate res->modifiers!");
          return false;
       }
-
-      mod = res->modifiers[0] = DRM_FORMAT_MOD_LINEAR;
+      if (use_modifiers) {
+         int idx = 0;
+         for (unsigned i = 0; i < screen->modifier_props[res->base.b.format].drmFormatModifierCount; i++) {
+            if (screen->modifier_props[res->base.b.format].pDrmFormatModifierProperties[i].drmFormatModifierPlaneCount == 1)
+               res->modifiers[idx++] = screen->modifier_props[res->base.b.format].pDrmFormatModifierProperties[i].drmFormatModifier;
+         }
+         res->modifiers_count = idx;
+      } else {
+         res->modifiers[0] = DRM_FORMAT_MOD_LINEAR;
+      }
+      check_mod = true;
    }
    struct zink_resource_object *new_obj = resource_object_create(screen, &res->base.b, NULL, &res->linear, res->modifiers, res->modifiers_count, NULL, NULL);
    if (!new_obj) {
@@ -1744,7 +1754,7 @@ add_resource_bind(struct zink_context *ctx, struct zink_resource *res, unsigned 
       res->base.b.bind &= ~bind;
       return false;
    }
-   assert(mod == DRM_FORMAT_MOD_INVALID || new_obj->modifier == DRM_FORMAT_MOD_LINEAR);
+   assert(!check_mod || new_obj->modifier != DRM_FORMAT_MOD_INVALID);
    struct zink_resource staging = *res;
    staging.obj = old_obj;
    staging.all_binds = 0;

@@ -1558,6 +1558,7 @@ struct zink_screen {
       bool no_linesmooth;
       bool no_hw_gl_point;
       bool can_do_invalid_linear_modifier;
+      bool broken_modifier_exports;
       bool inconsistent_interpolation;
       bool can_2d_view_sparse;
       bool general_depth_layout;

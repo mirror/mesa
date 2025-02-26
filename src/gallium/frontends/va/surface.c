@@ -700,6 +700,64 @@ vlVaQuerySurfaceAttributes(VADriverContextP ctx, VAConfigID config_id,
    return VA_STATUS_SUCCESS;
 }
 
+#if VA_CHECK_VERSION(1, 22, 0)
+VAStatus
+vlVaGetSurfaceFormatAttributes(VADriverContextP ctx, VAConfigID config_id, uint32_t format,
+                               VASurfaceFormatAttrib *attrib_list, uint32_t num_attribs)
+{
+   vlVaDriver *drv;
+   struct pipe_screen *pscreen;
+   uint32_t i;
+
+   if (config_id == VA_INVALID_ID)
+      return VA_STATUS_ERROR_INVALID_CONFIG;
+
+   if (!attrib_list || !num_attribs)
+      return VA_STATUS_ERROR_INVALID_PARAMETER;
+
+   if (!ctx)
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   drv = VL_VA_DRIVER(ctx);
+
+   if (!drv)
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   pscreen = VL_VA_PSCREEN(ctx);
+
+   if (!pscreen)
+      return VA_STATUS_ERROR_INVALID_CONTEXT;
+
+   enum pipe_format fmt = VaFourccToPipeFormat(format);
+   if (fmt == PIPE_FORMAT_NONE)
+      return VA_STATUS_ERROR_UNSUPPORTED_RT_FORMAT;
+
+   for (i = 0; i < num_attribs; i++) {
+      VASurfaceFormatAttrib *attrib = &attrib_list[i];
+      switch (attrib->type) {
+      case VASurfaceFormatAttribDRMFormatModifiers:
+         if (pscreen->query_dmabuf_modifiers) {
+            VADRMFormatModifierList *list = attrib->value.value.p;
+            if (!list->modifiers) {
+               int count = 0;
+               pscreen->query_dmabuf_modifiers(pscreen, fmt, 0, NULL, NULL, &count);
+               list->num_modifiers = count;
+            } else {
+               int count = list->num_modifiers;
+               pscreen->query_dmabuf_modifiers(pscreen, fmt, list->num_modifiers,
+                                               list->modifiers, NULL, &count);
+            }
+         }
+         break;
+      default:
+         break;
+      }
+   }
+
+   return VA_STATUS_SUCCESS;
+}
+#endif
+
 #ifndef _WIN32
 static VAStatus
 surface_from_external_memory(VADriverContextP ctx, vlVaSurface *surface,

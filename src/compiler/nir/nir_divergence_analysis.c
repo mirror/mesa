@@ -160,7 +160,6 @@ visit_alu(nir_alu_instr *instr, struct divergence_state *state)
    return false;
 }
 
-
 /* On some HW uniform loads where there is a pending store/atomic from another
  * wave can "tear" so that different invocations see the pre-store value and
  * the post-store value even though they are loading from the same location.
@@ -1452,7 +1451,7 @@ nir_divergence_analysis_impl(nir_function_impl *impl, nir_divergence_options opt
    /* Unless this pass is called with shader->options->divergence_analysis_options,
     * it invalidates nir_metadata_divergence.
     */
-   nir_metadata_preserve(impl, ~nir_metadata_divergence);
+   nir_progress(true, impl, ~nir_metadata_divergence);
 }
 
 void
@@ -1484,7 +1483,7 @@ nir_vertex_divergence_analysis(nir_shader *shader)
       nir_metadata_require(impl, nir_metadata_block_index);
       state.impl = impl;
       visit_cf_list(&impl->body, &state);
-      nir_metadata_preserve(impl, nir_metadata_all & ~nir_metadata_divergence);
+      nir_progress(true, impl, nir_metadata_all & ~nir_metadata_divergence);
    }
 }
 

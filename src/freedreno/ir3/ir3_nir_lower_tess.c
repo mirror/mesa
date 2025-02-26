@@ -301,14 +301,8 @@ ir3_nir_lower_to_explicit_output(nir_shader *shader,
    nir_foreach_block_safe (block, impl)
       progress |= lower_block_to_explicit_output(block, &b, &state);
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
-
    v->output_size = state.map.stride;
-   return progress;
+   return nir_progress(progress, impl, nir_metadata_control_flow);
 }
 
 static bool
@@ -386,14 +380,8 @@ ir3_nir_lower_to_explicit_input(nir_shader *shader,
    nir_foreach_block_safe (block, impl)
       progress |= lower_block_to_explicit_input(block, &b, &state);
 
-   if (progress) {
-      nir_metadata_preserve(impl, nir_metadata_control_flow);
-   } else {
-      nir_metadata_preserve(impl, nir_metadata_all);
-   }
-
    v->input_size = calc_primitive_map_size(shader);
-   return progress;
+   return nir_progress(progress, impl, nir_metadata_control_flow);
 }
 
 static nir_def *
@@ -723,8 +711,7 @@ ir3_nir_lower_tess_ctrl(nir_shader *shader, struct ir3_shader_variant *v,
 
    nir_pop_if(&b, nif);
 
-   nir_metadata_preserve(impl, nir_metadata_none);
-   return true;
+   return nir_progress(true, impl, nir_metadata_none);
 }
 
 static void
@@ -812,9 +799,7 @@ ir3_nir_lower_tess_eval(nir_shader *shader, struct ir3_shader_variant *v,
       lower_tess_eval_block(block, &b, &state);
 
    v->input_size = calc_primitive_map_size(shader);
-
-   nir_metadata_preserve(impl, nir_metadata_none);
-   return true;
+   return nir_progress(true, impl, nir_metadata_none);
 }
 
 /* The hardware does not support incomplete primitives in multiple streams at
@@ -1096,7 +1081,7 @@ ir3_nir_lower_gs(nir_shader *shader)
    exec_list_append(&shader->variables, &state.emit_outputs);
    exec_list_append(&shader->variables, &state.new_outputs);
 
-   nir_metadata_preserve(impl, nir_metadata_none);
+   nir_progress(true, impl, nir_metadata_none);
 
    nir_lower_global_vars_to_local(shader);
    nir_split_var_copies(shader);
@@ -1109,6 +1094,5 @@ ir3_nir_lower_gs(nir_shader *shader)
       nir_log_shaderi(shader);
    }
 
-   nir_metadata_preserve(impl, nir_metadata_none);
-   return true;
+   return nir_progress(true, impl, nir_metadata_none);
 }

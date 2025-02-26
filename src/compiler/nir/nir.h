@@ -3286,8 +3286,7 @@ typedef enum {
     */
    nir_metadata_live_defs = 0x4,
 
-   /** A dummy metadata value to track when a pass forgot to call
-    * nir_metadata_preserve.
+   /** A dummy metadata value to track when a pass forgot to preserve metadata.
     *
     * A pass should always clear this value even if it doesn't make any
     * progress to indicate that it thought about preserving metadata.
@@ -3348,9 +3347,7 @@ typedef enum {
    /** All metadata
     *
     * This includes all nir_metadata flags except not_properly_reset.  Passes
-    * which do not change the shader in any way should call
-    *
-    *    nir_metadata_preserve(impl, nir_metadata_all);
+    * which do not change the shader in any way should use this.
     */
    nir_metadata_all = ~nir_metadata_not_properly_reset,
 } nir_metadata;
@@ -3896,12 +3893,23 @@ nir_function_impl *nir_cf_node_get_function(nir_cf_node *node);
 
 /** requests that the given pieces of metadata be generated */
 void nir_metadata_require(nir_function_impl *impl, nir_metadata required, ...);
-/** dirties all but the preserved metadata */
-void nir_metadata_preserve(nir_function_impl *impl, nir_metadata preserved);
 /** Preserves all metadata for the given shader */
 void nir_shader_preserve_all_metadata(nir_shader *shader);
 /** dirties all metadata and fills it with obviously wrong information */
 void nir_metadata_invalidate(nir_shader *shader);
+
+/**
+ * Indicate progress on an implementation, preserving only the specified
+ * metadata. The supplied progress is returned to improve ergonomics.
+ */
+bool nir_progress(bool progress, nir_function_impl *impl, nir_metadata preserved);
+
+/** Indicate that there is no progress. All metadata is preserved. */
+static inline bool
+nir_no_progress(nir_function_impl *impl)
+{
+   return nir_progress(false, impl, nir_metadata_none /* ignored */);
+}
 
 /** creates an instruction with default swizzle/writemask/etc. with NULL registers */
 nir_alu_instr *nir_alu_instr_create(nir_shader *shader, nir_op op);

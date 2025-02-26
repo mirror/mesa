@@ -240,7 +240,6 @@ if _vulkan_drivers.contains('auto')
             host_machine.cpu_family()))
     endif
   elif ['darwin', 'windows', 'cygwin', 'haiku'].contains(host_machine.system())
-    # No vulkan driver supports windows or macOS currently
     _vulkan_drivers = []
   else
     error('Unknown OS @0@. Please pass -Dvulkan-drivers to set driver options. Patches gladly accepted to fix this.'.format(

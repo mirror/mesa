@@ -7453,9 +7453,15 @@ pub enum ShaderIoInfo {
 
 #[derive(Debug)]
 pub struct ShaderInfo {
+    pub max_warps_per_sm: u32,
     pub num_gprs: u8,
     pub num_control_barriers: u8,
     pub num_instrs: u32,
+    pub num_static_cycles: u32,
+    pub num_spills_to_mem: u32,
+    pub num_fills_from_mem: u32,
+    pub num_spills_to_reg: u32,
+    pub num_fills_from_reg: u32,
     pub slm_size: u32,
     pub max_crs_depth: u32,
     pub uses_global_mem: bool,
@@ -7494,6 +7500,19 @@ pub fn gpr_limit_from_local_size(local_size: &[u16; 3]) -> u32 {
     // GPRs are allocated in multiples of 8
     let out = prev_multiple_of(out, 8);
     min(out, 255)
+}
+
+pub fn max_warps_per_sm(gprs: u32) -> u32 {
+    fn prev_multiple_of(x: u32, y: u32) -> u32 {
+        (x / y) * y
+    }
+
+    // TODO: Take local_size and shared mem limit into account for compute
+    let total_regs: u32 = 65536;
+    // GPRs are allocated in multiples of 8
+    let gprs = gprs.next_multiple_of(8);
+    let max_warps = prev_multiple_of((total_regs / 32) / gprs, 4);
+    min(max_warps, 48)
 }
 
 pub struct Shader<'a> {
@@ -7535,11 +7554,13 @@ impl Shader<'_> {
 
     pub fn gather_info(&mut self) {
         let mut num_instrs = 0;
+        let mut num_static_cycles = 0;
         let mut uses_global_mem = false;
         let mut writes_global_mem = false;
 
         self.for_each_instr(&mut |instr| {
             num_instrs += 1;
+            num_static_cycles += instr.deps.delay as u32;
 
             if !uses_global_mem {
                 uses_global_mem = instr.uses_global_mem();
@@ -7551,8 +7572,13 @@ impl Shader<'_> {
         });
 
         self.info.num_instrs = num_instrs;
+        self.info.num_static_cycles = num_static_cycles;
         self.info.uses_global_mem = uses_global_mem;
         self.info.writes_global_mem = writes_global_mem;
+
+        self.info.max_warps_per_sm = max_warps_per_sm(
+            self.info.num_gprs as u32 + self.sm.hw_reserved_gprs(),
+        );
     }
 }
 

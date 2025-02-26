@@ -238,7 +238,13 @@ impl ShaderBin {
             },
             num_control_barriers: info.num_control_barriers,
             _pad0: Default::default(),
+            max_warps_per_sm: info.max_warps_per_sm,
             num_instrs: info.num_instrs,
+            num_static_cycles: info.num_static_cycles,
+            num_spills_to_mem: info.num_spills_to_mem,
+            num_fills_from_mem: info.num_fills_from_mem,
+            num_spills_to_reg: info.num_spills_to_reg,
+            num_fills_from_reg: info.num_fills_from_reg,
             slm_size: info.slm_size,
             crs_size: sm.crs_size(info.max_crs_depth),
             __bindgen_anon_1: match &info.stage {
@@ -313,6 +319,12 @@ impl ShaderBin {
 
             eprintln!("Stage: {}", stage_name);
             eprintln!("Instruction count: {}", c_info.num_instrs);
+            eprintln!("Static cycle count: {}", c_info.num_static_cycles);
+            eprintln!("Max warps/SM: {}", c_info.max_warps_per_sm);
+            eprintln!("Spills to mem: {}", c_info.num_spills_to_mem);
+            eprintln!("Spills to reg: {}", c_info.num_spills_to_reg);
+            eprintln!("Fills from mem: {}", c_info.num_fills_from_mem);
+            eprintln!("Fills from reg: {}", c_info.num_fills_from_reg);
             eprintln!("Num GPRs: {}", c_info.num_gprs);
             eprintln!("SLM size: {}", c_info.slm_size);
 

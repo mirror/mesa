@@ -22,6 +22,10 @@ SPDX-License-Identifier: MIT
 	{NAME}{SAT}{COND}{SKPHP}{DENORM}{LOCAL}{TYPE}{LEFT_SHIFT}{PMODE}
 </template>
 
+<expr name="#true">
+	1
+</expr>
+
 <enum name="#cond">
 	<value val="0" name=".true" display=""/>
 	<value val="1" display=".gt"/>
@@ -1020,10 +1024,6 @@ SPDX-License-Identifier: MIT
 	<meta type="load_store"/>
 	<meta has_dest="true" valid_srcs="0|1|2"/>
 
-	<pattern low="12" high="16">xxxxx</pattern>
-	<pattern pos="17">x</pattern>
-	<pattern low="18" high="22">xxxxx</pattern>
-	<field name="COMPS" low="23" high="26" type="#wrmask"/>
 	<pattern low="27" high="31">xxxxx</pattern>
 	<pattern low="32" high="33">xx</pattern>
 	<field name="PMODE" pos="34" type="bool_inv" display=".pack"/>
@@ -1042,10 +1042,6 @@ SPDX-License-Identifier: MIT
 	</derived>
 
 	<field name="DST_FULL" pos="127" type="bool" display=".hp"/>
-
-	<display>
-		{INSTR_LOAD_STORE} {:align=18}mem{COMPS}, {SRC0}, {SRC1}, {SRC2}
-	</display>
 
 	<!-- SRC0 -->
 	<pattern pos="43">1</pattern> <!-- SRC0_USE -->
@@ -1318,9 +1314,37 @@ SPDX-License-Identifier: MIT
 	<pattern pos="80">0</pattern> <!-- OPCODE_BIT6 -->
 </bitset>
 
-<bitset name="store" extends="#instruction-store">
+<bitset name="store_register" extends="#instruction-store" displayname="store">
+	<meta has_dest="true"/>
+
 	<pattern low="0" high="5">110011</pattern> <!-- OPC -->
 	<pattern pos="80">0</pattern> <!-- OPCODE_BIT6 -->
+
+	<pattern pos="12">1</pattern>
+	<derived name="DST_USE" expr="#true" type="bool"/>
+	<field name="DST" low="13" high="26" type="#instruction-dst">
+		<param name="DST_USE"/>
+		<param name="COMPS"/>
+	</field>
+
+	<display>
+		{INSTR_LOAD_STORE} {DST:align=18}, {SRC0}, {SRC1}, {SRC2}
+	</display>
+</bitset>
+
+<bitset name="store_memory" extends="#instruction-store" displayname="store">
+	<meta has_dest="false"/>
+
+	<pattern low="0" high="5">110011</pattern> <!-- OPC -->
+	<pattern pos="80">0</pattern> <!-- OPCODE_BIT6 -->
+
+	<pattern pos="12">0</pattern>
+	<pattern low="13" high="22">xxxxxxxxxx</pattern>
+	<field name="COMPS" low="23" high="26" type="#wrmask"/>
+
+	<display>
+		{INSTR_LOAD_STORE} {:align=18}mem{COMPS}, {SRC0}, {SRC1}, {SRC2}
+	</display>
 </bitset>
 
 <bitset name="clamp0_max" extends="#instruction-alu-src0-src1">

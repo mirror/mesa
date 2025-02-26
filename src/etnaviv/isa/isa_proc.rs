@@ -311,7 +311,8 @@ fn generate_peg_grammar_instructions(isa: &ISA) -> String {
             .expect("has_dest must be a bool value (true|false)");
 
         let rule_part = match (has_dest, type_) {
-            (true, "load_store") => "(Dest | DstMemAddr) ~ \",\"",
+            (true, "load_store") => "Dest ~ \",\"",
+            (false, "load_store") => "DstMemAddr ~ \",\"",
             (true, _) => "Dest ~ \",\"",
             (false, _) => "DestVoid ~ \",\"",
         };

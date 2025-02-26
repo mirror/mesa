@@ -2569,7 +2569,7 @@ _mesa_base_tex_format(const struct gl_context *ctx, GLint internalFormat)
       }
    }
 
-   if (_mesa_has_EXT_texture_sRGB(ctx) || _mesa_is_gles3(ctx)) {
+   if (_mesa_has_EXT_texture_sRGB(ctx) || _mesa_has_EXT_sRGB(ctx)) {
       switch (internalFormat) {
       case GL_SRGB:
       case GL_SRGB8:

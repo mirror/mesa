@@ -2405,8 +2405,9 @@ _mesa_base_fbo_format(const struct gl_context *ctx, GLenum internalFormat)
       return _mesa_is_desktop_gl(ctx) || _mesa_has_EXT_texture_norm16(ctx)
          ? GL_RGBA : 0;
    case GL_RGB10_A2:
-   case GL_SRGB8_ALPHA8_EXT:
       return _mesa_is_desktop_gl(ctx) || _mesa_is_gles3(ctx) ? GL_RGBA : 0;
+   case GL_SRGB8_ALPHA8_EXT:
+      return (_mesa_is_desktop_gl(ctx) || _mesa_has_EXT_sRGB(ctx)) ? GL_RGBA : 0;
    case GL_STENCIL_INDEX:
    case GL_STENCIL_INDEX1_EXT:
    case GL_STENCIL_INDEX4_EXT:

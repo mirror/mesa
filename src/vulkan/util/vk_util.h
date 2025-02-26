@@ -399,6 +399,19 @@ vk_descriptor_type_is_dynamic(VkDescriptorType type)
    }
 }
 
+#define VK_PRINT_STR(field, ...) ({                            \
+   memset(field, 0, sizeof(field));                            \
+   UNUSED int i = snprintf(field, sizeof(field), __VA_ARGS__); \
+   assert(i > 0 && i < sizeof(field));                         \
+})
+
+#define VK_COPY_STR(field, str) ({                             \
+   int len = strlen(str);                                      \
+   assert(len > 0 && len < sizeof(field));                     \
+   memcpy(field, str, len);                                    \
+   memset(field + len, 0, sizeof(field) - len);                \
+})
+
 #ifdef __cplusplus
 }
 #endif

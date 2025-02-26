@@ -13,6 +13,10 @@ gallium_dri_drivers = []
 gallium_dri_link_with = []
 gallium_dri_link_whole = []
 
+if host_machine.cpu_family() == 'x86' and with_gallium_llvmpipe
+  gallium_dri_ld_args += [cc.get_supported_link_arguments('-Wl,--no-error-rwx-segments')]
+endif
+
 if with_gallium_va or with_gallium_vdpau
   gallium_dri_link_with += [libgalliumvlwinsys]
   if with_gallium_va

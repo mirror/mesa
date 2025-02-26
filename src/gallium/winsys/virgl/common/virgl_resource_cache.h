@@ -62,11 +62,21 @@ typedef bool (*virgl_resource_cache_entry_is_busy_func) (
 typedef void (*virgl_resource_cache_entry_release_func) (
    struct virgl_resource_cache_entry *entry, void *user_data);
 
+/* Pointer to a function that sets memory advise for the resource represented
+ * by the specified cache entry. Returns zero on success, negative errno if
+ * madvise IOCTL unsupported by kernel driver or resource is invalid. The
+ * `retained` argument is set accordingly to the state of the resource.
+ */
+typedef int (*virgl_resource_cache_entry_madv_func) (
+   struct virgl_resource_cache_entry *entry, void *user_data, int madv,
+   bool *retained);
+
 struct virgl_resource_cache {
    struct list_head resources;
    unsigned timeout_usecs;
    virgl_resource_cache_entry_is_busy_func entry_is_busy_func;
    virgl_resource_cache_entry_release_func entry_release_func;
+   virgl_resource_cache_entry_madv_func entry_madv_func;
    void *user_data;
 };
 
@@ -75,6 +85,7 @@ virgl_resource_cache_init(struct virgl_resource_cache *cache,
                           unsigned timeout_usecs,
                           virgl_resource_cache_entry_is_busy_func is_busy_func,
                           virgl_resource_cache_entry_release_func destroy_func,
+                          virgl_resource_cache_entry_madv_func madv_func,
                           void *user_data);
 
 /** Adds a resource to the cache.

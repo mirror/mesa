@@ -737,6 +737,15 @@ virgl_vtest_resource_cache_entry_release(struct virgl_resource_cache_entry *entr
    virgl_hw_res_destroy(vtws, res);
 }
 
+static int
+virgl_vtest_resource_cache_entry_madv(struct virgl_resource_cache_entry *entry,
+                                      void *user_data, int madv, bool *retained)
+{
+   *retained = true;
+
+   return 0;
+}
+
 struct virgl_winsys *
 virgl_vtest_winsys_wrap(struct sw_winsys *sws)
 {
@@ -753,6 +762,7 @@ virgl_vtest_winsys_wrap(struct sw_winsys *sws)
    virgl_resource_cache_init(&vtws->cache, CACHE_TIMEOUT_USEC,
                              virgl_vtest_resource_cache_entry_is_busy,
                              virgl_vtest_resource_cache_entry_release,
+                             virgl_vtest_resource_cache_entry_madv,
                              vtws);
    (void) mtx_init(&vtws->mutex, mtx_plain);
 

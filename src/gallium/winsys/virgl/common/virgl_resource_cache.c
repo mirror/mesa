@@ -21,6 +21,7 @@
  * USE OR OTHER DEALINGS IN THE SOFTWARE.
  */
 
+#include "drm-uapi/virtgpu_drm.h"
 #include "virgl_resource_cache.h"
 #include "util/os_time.h"
 
@@ -73,12 +74,14 @@ virgl_resource_cache_init(struct virgl_resource_cache *cache,
                           unsigned timeout_usecs,
                           virgl_resource_cache_entry_is_busy_func is_busy_func,
                           virgl_resource_cache_entry_release_func destroy_func,
+                          virgl_resource_cache_entry_madv_func madv_func,
                           void *user_data)
 {
    list_inithead(&cache->resources);
    cache->timeout_usecs = timeout_usecs;
    cache->entry_is_busy_func = is_busy_func;
    cache->entry_release_func = destroy_func;
+   cache->entry_madv_func = madv_func;
    cache->user_data = user_data;
 }
 
@@ -97,6 +100,9 @@ virgl_resource_cache_add(struct virgl_resource_cache *cache,
    entry->timeout_start = now;
    entry->timeout_end = entry->timeout_start + cache->timeout_usecs;
    list_addtail(&entry->head, &cache->resources);
+
+   cache->entry_madv_func(entry, cache->user_data,
+                          VIRTGPU_MADV_DONTNEED, NULL);
 }
 
 struct virgl_resource_cache_entry *
@@ -116,8 +122,14 @@ virgl_resource_cache_remove_compatible(struct virgl_resource_cache *cache,
          virgl_resource_cache_entry_is_compatible(entry, params);
 
       if (compatible) {
-         if (!cache->entry_is_busy_func(entry, cache->user_data))
-            compat_entry = entry;
+         if (!cache->entry_is_busy_func(entry, cache->user_data)) {
+            bool retained;
+
+            cache->entry_madv_func(entry, cache->user_data,
+                                   VIRTGPU_MADV_WILLNEED, &retained);
+            if (retained)
+               compat_entry = entry;
+         }
 
          /* We either have found a compatible resource, in which case we are
           * done, or the resource is busy, which means resources later in

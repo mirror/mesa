@@ -130,6 +130,29 @@ static bool virgl_drm_resource_is_busy(struct virgl_winsys *vws,
    return false;
 }
 
+static int virgl_drm_resource_madv(struct virgl_winsys *vws,
+                                   struct virgl_hw_res *res,
+                                   int madv, bool *retained)
+{
+   struct virgl_drm_winsys *vdws = virgl_drm_winsys(vws);
+   struct drm_virtgpu_madvise args;
+   int ret;
+
+   memset(&args, 0, sizeof(args));
+   args.handle = res->bo_handle;
+   args.retained = 1;
+   args.madv = madv;
+
+   ret = drmIoctl(vdws->fd, DRM_IOCTL_VIRTGPU_MADVISE, &args);
+   if (ret)
+      ret = -errno;
+
+   if (retained)
+      *retained = args.retained;
+
+   return ret;
+}
+
 static void
 virgl_drm_winsys_destroy(struct virgl_winsys *qws)
 {
@@ -1161,6 +1184,16 @@ virgl_drm_resource_cache_entry_release(struct virgl_resource_cache_entry *entry,
    virgl_hw_res_destroy(qdws, res);
 }
 
+static int
+virgl_drm_resource_cache_entry_madv(struct virgl_resource_cache_entry *entry,
+                                    void *user_data, int madv, bool *retained)
+{
+   struct virgl_drm_winsys *qdws = user_data;
+   struct virgl_hw_res *res = cache_entry_container_res(entry);
+
+   return virgl_drm_resource_madv(&qdws->base, res, madv, retained);
+}
+
 static int virgl_init_context(int drmFD)
 {
    int ret;
@@ -1248,6 +1281,7 @@ virgl_drm_winsys_create(int drmFD)
    virgl_resource_cache_init(&qdws->cache, CACHE_TIMEOUT_USEC,
                              virgl_drm_resource_cache_entry_is_busy,
                              virgl_drm_resource_cache_entry_release,
+                             virgl_drm_resource_cache_entry_madv,
                              qdws);
    (void) mtx_init(&qdws->mutex, mtx_plain);
    (void) mtx_init(&qdws->bo_handles_mutex, mtx_plain);

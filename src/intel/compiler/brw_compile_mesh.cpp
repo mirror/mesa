@@ -416,11 +416,6 @@ brw_compile_task(const struct brw_compiler *compiler,
                                              params->base.stats != NULL,
                                              debug_enabled);
 
-      if (prog_data->base.prog_mask) {
-         unsigned first = ffs(prog_data->base.prog_mask) - 1;
-         v[simd]->import_uniforms(v[first].get());
-      }
-
       const bool allow_spilling = simd == 0 ||
          (!simd_state.compiled[simd - 1] && !brw_simd_should_compile(simd_state, simd - 1));
       if (run_task_mesh(*v[simd], allow_spilling)) {
@@ -444,10 +439,10 @@ brw_compile_task(const struct brw_compiler *compiler,
       return NULL;
    }
 
-   brw_shader *selected = v[selected_simd].get();
+   brw_shader &selected = *v[selected_simd];
    prog_data->base.prog_mask = 1 << selected_simd;
    prog_data->base.base.grf_used = MAX2(prog_data->base.base.grf_used,
-                                        selected->grf_used);
+                                        selected.grf_used);
 
    if (unlikely(debug_enabled)) {
       fprintf(stderr, "Task Output ");
@@ -464,8 +459,7 @@ brw_compile_task(const struct brw_compiler *compiler,
                                      nir->info.name));
    }
 
-   g.generate_code(selected->cfg, selected->dispatch_width, selected->shader_stats,
-                   selected->performance_analysis.require(), params->base.stats);
+   g.generate_code(selected, params->base.stats);
    g.add_const_data(nir->constant_data, nir->constant_data_size);
    return g.get_assembly();
 }
@@ -1737,11 +1731,6 @@ brw_compile_mesh(const struct brw_compiler *compiler,
                                              params->base.stats != NULL,
                                              debug_enabled);
 
-      if (prog_data->base.prog_mask) {
-         unsigned first = ffs(prog_data->base.prog_mask) - 1;
-         v[simd]->import_uniforms(v[first].get());
-      }
-
       const bool allow_spilling = simd == 0 ||
          (!simd_state.compiled[simd - 1] && !brw_simd_should_compile(simd_state, simd - 1));
       if (run_task_mesh(*v[simd], allow_spilling)) {
@@ -1765,10 +1754,10 @@ brw_compile_mesh(const struct brw_compiler *compiler,
       return NULL;
    }
 
-   brw_shader *selected = v[selected_simd].get();
+   brw_shader &selected = *v[selected_simd];
    prog_data->base.prog_mask = 1 << selected_simd;
    prog_data->base.base.grf_used = MAX2(prog_data->base.base.grf_used,
-                                        selected->grf_used);
+                                        selected.grf_used);
 
    if (unlikely(debug_enabled)) {
       if (params->tue_map) {
@@ -1789,8 +1778,7 @@ brw_compile_mesh(const struct brw_compiler *compiler,
                                      nir->info.name));
    }
 
-   g.generate_code(selected->cfg, selected->dispatch_width, selected->shader_stats,
-                   selected->performance_analysis.require(), params->base.stats);
+   g.generate_code(selected, params->base.stats);
    g.add_const_data(nir->constant_data, nir->constant_data_size);
    return g.get_assembly();
 }

@@ -435,7 +435,7 @@ brw_shader::init()
    this->source_depth_to_render_target = false;
    this->first_non_payload_grf = 0;
 
-   this->uniforms = 0;
+   this->uniforms = this->nir->num_uniforms / 4;
    this->last_scratch = 0;
 
    memset(&this->shader_stats, 0, sizeof(this->shader_stats));
@@ -513,15 +513,6 @@ brw_shader::limit_dispatch_width(unsigned n, const char *msg)
                           "Shader dispatch width limited to SIMD%d: %s\n",
                           n, msg);
    }
-}
-
-/* For SIMD16, we need to follow from the uniform setup of SIMD8 dispatch.
- * This brings in those uniform definitions
- */
-void
-brw_shader::import_uniforms(brw_shader *v)
-{
-   this->uniforms = v->uniforms;
 }
 
 enum intel_barycentric_mode

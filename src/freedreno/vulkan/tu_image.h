@@ -13,6 +13,8 @@
 #include "tu_common.h"
 #include "fdl/freedreno_lrz_layout.h"
 
+#include "tu_knl.h"
+
 #define TU_MAX_PLANE_COUNT 3
 
 #define tu_fdl_view_stencil(view, x) \
@@ -35,9 +37,14 @@ struct tu_image
    uint64_t total_size;
 
    /* Set when bound */
-   struct tu_bo *bo;
-   uint64_t bo_offset;
    uint64_t iova;
+   union {
+      struct {
+         struct tu_bo *bo;
+         uint64_t bo_offset;
+      };
+      struct tu_sparse_vma vma;
+   };
 
    /* For fragment density map */
    void *map;
@@ -115,12 +122,20 @@ bool
 ubwc_possible(struct tu_device *device,
               VkFormat format,
               VkImageType type,
+              VkImageCreateFlags flags,
               VkImageUsageFlags usage,
               VkImageUsageFlags stencil_usage,
               const struct fd_dev_info *info,
               VkSampleCountFlagBits samples,
               uint32_t mip_levels,
               bool use_z24uint_s8uint);
+
+bool
+tu_is_r8g8(enum pipe_format format);
+
+bool
+tu_format_list_reinterprets_r8g8_r16(enum pipe_format format,
+                                     const VkImageFormatListCreateInfo *fmt_list);
 
 struct tu_frag_area {
    float width;
@@ -136,5 +151,10 @@ tu_fragment_density_map_sample(const struct tu_image_view *fdm,
 VkResult
 tu_image_update_layout(struct tu_device *device, struct tu_image *image,
                        uint64_t modifier, const VkSubresourceLayout *plane_layouts);
+
+void
+tu_bind_sparse_image(struct tu_device *device, void *submit,
+                     struct tu_image *image,
+                     const VkSparseImageMemoryBind *bind);
 
 #endif /* TU_IMAGE_H */

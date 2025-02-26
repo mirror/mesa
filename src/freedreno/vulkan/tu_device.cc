@@ -391,7 +391,15 @@ tu_get_features(struct tu_physical_device *pdevice,
    features->shaderFloat64 = false;
    features->shaderInt64 = true;
    features->shaderInt16 = true;
-   features->sparseBinding = false;
+   features->sparseBinding = pdevice->has_sparse;
+   features->sparseResidencyBuffer = pdevice->has_sparse;
+   features->sparseResidencyImage2D = pdevice->has_sparse &&
+      pdevice->info->a7xx.ubwc_all_formats_compatible;
+   features->sparseResidency2Samples = features->sparseResidencyImage2D;
+   features->sparseResidency4Samples = features->sparseResidencyImage2D;
+   features->sparseResidencyAliased = pdevice->has_sparse;
+   features->shaderResourceResidency = pdevice->has_sparse;
+   features->shaderResourceMinLod = true;
    features->variableMultisampleRate = true;
    features->inheritedQueries = true;
 
@@ -964,7 +972,7 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->maxMemoryAllocationCount = UINT32_MAX;
    props->maxSamplerAllocationCount = 64 * 1024;
    props->bufferImageGranularity = 64;          /* A cache line */
-   props->sparseAddressSpaceSize = 0;
+   props->sparseAddressSpaceSize = pdevice->va_size;
    props->maxBoundDescriptorSets = pdevice->usable_sets;
    props->maxPerStageDescriptorSamplers = max_descriptor_set_size;
    props->maxPerStageDescriptorUniformBuffers = max_descriptor_set_size;
@@ -1086,11 +1094,11 @@ tu_get_properties(struct tu_physical_device *pdevice,
    props->dynamicRenderingLocalReadMultisampledAttachments = true;
 
    /* sparse properties */
-   props->sparseResidencyStandard2DBlockShape = { 0 };
-   props->sparseResidencyStandard2DMultisampleBlockShape = { 0 };
-   props->sparseResidencyStandard3DBlockShape = { 0 };
-   props->sparseResidencyAlignedMipSize = { 0 };
-   props->sparseResidencyNonResidentStrict = { 0 };
+   props->sparseResidencyStandard2DBlockShape = true;
+   props->sparseResidencyStandard2DMultisampleBlockShape = true;
+   props->sparseResidencyStandard3DBlockShape = false;
+   props->sparseResidencyAlignedMipSize = false;
+   props->sparseResidencyNonResidentStrict = true;
 
    strcpy(props->deviceName, pdevice->name);
    memcpy(props->pipelineCacheUUID, pdevice->cache_uuid, VK_UUID_SIZE);
@@ -1363,6 +1371,21 @@ static const struct vk_pipeline_cache_object_ops *const cache_import_ops[] = {
    NULL,
 };
 
+static const VkQueueFamilyProperties tu_gfx_queue_family_properties = {
+   .queueFlags =
+      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
+   .queueCount = 1,
+   .timestampValidBits = 48,
+   .minImageTransferGranularity = { 1, 1, 1 },
+};
+
+static const VkQueueFamilyProperties tu_sparse_queue_family_properties = {
+   .queueFlags = VK_QUEUE_SPARSE_BINDING_BIT,
+   .queueCount = 1,
+   .timestampValidBits = 48,
+   .minImageTransferGranularity = { 1, 1, 1 },
+};
+
 VkResult
 tu_physical_device_init(struct tu_physical_device *device,
                         struct tu_instance *instance)
@@ -1522,6 +1545,20 @@ tu_physical_device_init(struct tu_physical_device *device,
    tu_get_properties(device, &device->vk.properties);
 
    device->vk.supported_sync_types = device->sync_types;
+
+   device->queue_families[device->num_queue_families++] =
+      (struct tu_queue_family) {
+         .type = TU_QUEUE_GFX,
+         .properties = &tu_gfx_queue_family_properties,
+      };
+
+   if (device->has_sparse) {
+      device->queue_families[device->num_queue_families++] =
+         (struct tu_queue_family) {
+            .type = TU_QUEUE_SPARSE,
+            .properties = &tu_sparse_queue_family_properties,
+         };
+   }
 
 #ifdef TU_USE_WSI_PLATFORM
    result = tu_wsi_init(device);
@@ -1700,18 +1737,18 @@ tu_DestroyInstance(VkInstance _instance,
    vk_free(&instance->vk.alloc, instance);
 }
 
-static const VkQueueFamilyProperties tu_queue_family_properties = {
-   .queueFlags =
-      VK_QUEUE_GRAPHICS_BIT | VK_QUEUE_COMPUTE_BIT | VK_QUEUE_TRANSFER_BIT,
-   .queueCount = 1,
-   .timestampValidBits = 48,
-   .minImageTransferGranularity = { 1, 1, 1 },
-};
-
 void
 tu_physical_device_get_global_priority_properties(const struct tu_physical_device *pdevice,
+                                                  enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props)
 {
+   /* drm/msm only supports one priority for VM_BIND queues */
+   if (type == TU_QUEUE_SPARSE) {
+      props->priorityCount = 1;
+      props->priorities[0] = VK_QUEUE_GLOBAL_PRIORITY_MEDIUM_KHR;
+      return;
+   }
+
    props->priorityCount = MIN2(pdevice->submitqueue_priority_count, 3);
    switch (props->priorityCount) {
    case 1:
@@ -1743,20 +1780,25 @@ tu_GetPhysicalDeviceQueueFamilyProperties2(
    VK_OUTARRAY_MAKE_TYPED(VkQueueFamilyProperties2, out,
                           pQueueFamilyProperties, pQueueFamilyPropertyCount);
 
-   vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p)
-   {
-      p->queueFamilyProperties = tu_queue_family_properties;
+   for (unsigned i = 0; i < pdevice->num_queue_families; i++) {
+      struct tu_queue_family *family = &pdevice->queue_families[i];
 
-      vk_foreach_struct(ext, p->pNext) {
-         switch (ext->sType) {
-         case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR: {
-            VkQueueFamilyGlobalPriorityPropertiesKHR *props =
-               (VkQueueFamilyGlobalPriorityPropertiesKHR *) ext;
-            tu_physical_device_get_global_priority_properties(pdevice, props);
-            break;
-         }
-         default:
-            break;
+      vk_outarray_append_typed(VkQueueFamilyProperties2, &out, p)
+      {
+         p->queueFamilyProperties = *family->properties;
+
+         vk_foreach_struct(ext, p->pNext) {
+            switch (ext->sType) {
+            case VK_STRUCTURE_TYPE_QUEUE_FAMILY_GLOBAL_PRIORITY_PROPERTIES_KHR: {
+               VkQueueFamilyGlobalPriorityPropertiesKHR *props =
+                  (VkQueueFamilyGlobalPriorityPropertiesKHR *) ext;
+               tu_physical_device_get_global_priority_properties(
+                  pdevice, family->type, props);
+               break;
+            }
+            default:
+               break;
+            }
          }
       }
    }
@@ -2504,6 +2546,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       const VkDeviceQueueCreateInfo *queue_create =
          &pCreateInfo->pQueueCreateInfos[i];
       uint32_t qfi = queue_create->queueFamilyIndex;
+      enum tu_queue_type type = physical_device->queue_families[qfi].type;
       device->queues[qfi] = (struct tu_queue *) vk_alloc(
          &device->vk.alloc,
          queue_create->queueCount * sizeof(struct tu_queue), 8,
@@ -2521,7 +2564,8 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
       device->queue_count[qfi] = queue_create->queueCount;
 
       for (unsigned q = 0; q < queue_create->queueCount; q++) {
-         result = tu_queue_init(device, &device->queues[qfi][q], q, queue_create);
+         result = tu_queue_init(device, &device->queues[qfi][q], type, q,
+                                queue_create);
          if (result != VK_SUCCESS) {
             device->queue_count[qfi] = q;
             goto fail_queues;
@@ -2560,8 +2604,7 @@ tu_CreateDevice(VkPhysicalDevice physicalDevice,
    /* Initialize sparse array for refcounting imported BOs */
    util_sparse_array_init(&device->bo_map, sizeof(struct tu_bo), 512);
 
-   if (physical_device->has_set_iova) {
-      STATIC_ASSERT(TU_MAX_QUEUE_FAMILIES == 1);
+   if (physical_device->has_set_iova && !physical_device->has_sparse) {
       if (!u_vector_init(&device->zombie_vmas, 64,
                          sizeof(struct tu_zombie_vma))) {
          result = vk_startup_errorf(physical_device->instance,

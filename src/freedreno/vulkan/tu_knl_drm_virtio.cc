@@ -340,6 +340,7 @@ virtio_device_check_status(struct tu_device *device)
 
 static int
 virtio_submitqueue_new(struct tu_device *dev,
+                       enum tu_queue_type type,
                        int priority,
                        uint32_t *queue_id)
 {
@@ -347,9 +348,10 @@ virtio_submitqueue_new(struct tu_device *dev,
           priority < dev->physical_device->submitqueue_priority_count);
 
    struct drm_msm_submitqueue req = {
-      .flags = dev->physical_device->info->chip >= 7 &&
-         dev->physical_device->has_preemption ?
-         MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0,
+      .flags = type == TU_QUEUE_SPARSE ? MSM_SUBMITQUEUE_VM_BIND :
+         (dev->physical_device->info->chip >= 7 &&
+          dev->physical_device->has_preemption ?
+          MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0),
       .prio = priority,
    };
 
@@ -594,7 +596,7 @@ tu_bo_init(struct tu_device *dev,
       .flags = MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE |
                COND(dump, MSM_SUBMIT_BO_DUMP),
       .handle = bo->res_id,
-      .presumed = iova,
+      .address = iova,
    };
 
    *bo = (struct tu_bo) {
@@ -848,6 +850,32 @@ virtio_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
    mtx_lock(&dev->bo_mutex);
    dev->submit_bo_list[bo->submit_bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
    mtx_unlock(&dev->bo_mutex);
+}
+
+static void
+virtio_bo_finish(struct tu_device *dev, struct tu_bo *bo)
+{
+   assert(bo->gem_handle);
+
+   u_rwlock_rdlock(&dev->dma_bo_lock);
+
+   if (!p_atomic_dec_zero(&bo->refcnt)) {
+      u_rwlock_rdunlock(&dev->dma_bo_lock);
+      return;
+   }
+
+   if (bo->map)
+      munmap(bo->map, bo->size);
+
+   tu_debug_bos_del(dev, bo);
+   tu_dump_bo_del(dev, bo);
+
+   tu_bo_list_del(dev, bo);
+
+   assert(dev->physical_device->has_set_iova);
+   tu_bo_make_zombie(dev, bo);
+
+   u_rwlock_rdunlock(&dev->dma_bo_lock);
 }
 
 static VkResult
@@ -1116,7 +1144,7 @@ static const struct tu_knl virtio_knl_funcs = {
       .bo_export_dmabuf = tu_drm_export_dmabuf,
       .bo_map = virtio_bo_map,
       .bo_allow_dump = virtio_bo_allow_dump,
-      .bo_finish = tu_drm_bo_finish,
+      .bo_finish = virtio_bo_finish,
       .submit_create = msm_submit_create,
       .submit_finish = msm_submit_finish,
       .submit_add_entries = msm_submit_add_entries,

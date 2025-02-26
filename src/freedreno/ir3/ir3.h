@@ -386,6 +386,14 @@ typedef enum ir3_instruction_flags {
     * their sources.
     */
    IR3_INSTR_IMM_OFFSET = BIT(21),
+
+   /* Residency ChecK. Returns if the equivalent access would've accesssed a
+    * non-resident page. Only allowed for cat5 texture loads and ldib.
+    */
+   IR3_INSTR_RCK = BIT(22),
+
+   /* Clamp computed LOD using the given minimum. Only for cat5. */
+   IR3_INSTR_CLP = BIT(23),
 } ir3_instruction_flags;
 
 struct ir3_instruction {

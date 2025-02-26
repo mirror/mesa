@@ -2932,7 +2932,8 @@ tu_copy_image_to_image(struct tu_cmd_buffer *cmd,
                   1,
                   layer_count,
                   extent.depth > 1,
-                  false,
+                  false, /* is_mutable */
+                  false, /* sparse */
                   NULL);
 
       struct tu_bo *staging_bo;

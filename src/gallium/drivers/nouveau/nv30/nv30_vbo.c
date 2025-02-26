@@ -98,7 +98,8 @@ nv30_prevalidate_vbufs(struct nv30_context *nv30)
    int i;
    uint32_t base, size;
 
-   nv30->vbo_fifo = nv30->vbo_user = 0;
+   nv30->vbo_user = 0;
+   nv30->vbo_fifo = (nv30->vbo_push_hint) ? ~0 : 0;
 
    for (i = 0; i < nv30->num_vtxbufs; i++) {
       vb = &nv30->vtxbuf[i];
@@ -192,11 +193,7 @@ nv30_vbo_validate(struct nv30_context *nv30)
    if (!nv30->vertex || nv30->draw_flags)
       return;
 
-#if UTIL_ARCH_BIG_ENDIAN
-   if (1) { /* Figure out where the buffers are getting messed up */
-#else
    if (unlikely(vertex->need_conversion)) {
-#endif
       nv30->vbo_fifo = ~0;
       nv30->vbo_user = 0;
    } else {

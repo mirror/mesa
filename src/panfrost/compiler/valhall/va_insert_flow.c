@@ -478,7 +478,7 @@ va_insert_flow_control_nops(bi_context *ctx)
           block->pass_flags && bi_block_terminates_helpers(block)) {
 
          bi_foreach_instr_in_block_safe_rev(block, I) {
-            if (bi_instr_uses_helpers(I)) {
+            if (bi_instr_uses_helpers(ctx, I)) {
                bi_flow(ctx, bi_after_instr(I), VA_FLOW_DISCARD);
                break;
             }

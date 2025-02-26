@@ -85,7 +85,7 @@ bi_has_skip_bit(enum bi_opcode op)
  * Other shader stages do not have a notion of helper threads. */
 
 bool
-bi_instr_uses_helpers(bi_instr *I)
+bi_instr_uses_helpers(bi_context *ctx, bi_instr *I)
 {
    switch (I->op) {
    case BI_OPCODE_TEXC:
@@ -100,6 +100,12 @@ bi_instr_uses_helpers(bi_instr *I)
    case BI_OPCODE_TEX_SINGLE:
       return (I->va_lod_mode == BI_VA_LOD_MODE_COMPUTED_LOD) ||
              (I->va_lod_mode == BI_VA_LOD_MODE_COMPUTED_BIAS);
+   case BI_OPCODE_WMASK:
+      /* Helpers are needed for subgroup operations if MaximallyReconvergesKHR
+       * or RequireFullQuadsKHR is set.
+       */
+      return ctx->nir->info.maximally_reconverges ||
+             ctx->nir->info.fs.require_full_quads;
    case BI_OPCODE_CLPER_I32:
    case BI_OPCODE_CLPER_OLD_I32:
       /* Fragment shaders require helpers to implement derivatives.
@@ -145,10 +151,10 @@ bi_add_branch_compare_values(const bi_instr *I, BITSET_WORD *deps)
 
 /* Does a block use helpers directly */
 static bool
-bi_block_uses_helpers(bi_block *block)
+bi_block_uses_helpers(bi_context *ctx, bi_block *block)
 {
    bi_foreach_instr_in_block(block, I) {
-      if (bi_instr_uses_helpers(I))
+      if (bi_instr_uses_helpers(ctx, I))
          return true;
    }
 
@@ -201,7 +207,7 @@ bi_analyze_helper_terminate(bi_context *ctx)
     * if the (unique) last block uses helpers, only that block is tested.
     */
    bi_foreach_block_rev(ctx, block) {
-      if (block->pass_flags == 0 && bi_block_uses_helpers(block))
+      if (block->pass_flags == 0 && bi_block_uses_helpers(ctx, block))
          bi_propagate_pass_flag(block);
    }
 }
@@ -219,7 +225,7 @@ bi_mark_clauses_td(bi_context *ctx)
 
       bi_foreach_clause_in_block_rev(block, clause) {
          bi_foreach_instr_in_clause_rev(block, clause, I) {
-            helpers |= bi_instr_uses_helpers(I);
+            helpers |= bi_instr_uses_helpers(ctx, I);
          }
 
          clause->td = !helpers;
@@ -260,7 +266,7 @@ bi_analyze_helper_requirements(bi_context *ctx)
     * derivatives and the sources of conditional branch instructions */
 
    bi_foreach_instr_global(ctx, I) {
-      if (bi_instr_uses_helpers(I)) {
+      if (bi_instr_uses_helpers(ctx, I)) {
          bi_foreach_ssa_src(I, s)
             BITSET_SET(deps, I->src[s].value);
       } else {

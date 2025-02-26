@@ -1151,7 +1151,7 @@ void bi_print_shader(bi_context *ctx, FILE *fp);
 
 /* BIR passes */
 
-bool bi_instr_uses_helpers(bi_instr *I);
+bool bi_instr_uses_helpers(bi_context *ctx, bi_instr *I);
 bool bi_block_terminates_helpers(bi_block *block);
 void bi_analyze_helper_terminate(bi_context *ctx);
 void bi_mark_clauses_td(bi_context *ctx);

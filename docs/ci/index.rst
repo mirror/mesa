@@ -311,6 +311,34 @@ You can work around that by adding a dummy change in a file core to what you're
 working on and then making a new push with that change, and removing that change
 before you create the MR.
 
+Test job naming
+---------------
+
+Tests are named in the following format::
+
+   {driver}-{gpu}-{test}-{suffix}:{arch}
+
+``{driver}`` should be self-explanatory, but to give a couple of examples:
+``anv``, ``iris``, ``llvmpipe``, ``radv``, ``v3dv``.
+For layered drivers, order them top-to-bottom, eg. ``zink-radv``,
+``venus-lavapipe``.
+
+``{gpu}`` is any string identifying the device that this job runs on, eg.
+``rpi4``, ``tgl``, ``vangogh``.
+For some drivers (eg. ``llvmpipe``), this concept doesn't apply and therefore
+that part is not present.
+
+``{test}`` indicates the test suite executed in this job; eg. ``vkcts``,
+``piglit``, ``traces``. If multiple suites are executed together, combine them
+with a ``-``, eg. ``glcts-piglit``.
+
+The ``-{suffix}`` part is optional; for variants of jobs that run all the
+tests instead of a subset, use the ``-full`` suffix.
+
+The ``:{arch}`` is also optional, and is useful for differentiating the
+``armhf`` from the ``aarch64`` variant of a job, for instance.
+
+
 Conformance Tests
 -----------------
 

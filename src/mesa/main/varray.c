@@ -266,6 +266,14 @@ _mesa_bind_vertex_buffer(struct gl_context *ctx,
    assert(!vao->SharedAndImmutable);
    struct gl_vertex_buffer_binding *binding = &vao->BufferBinding[index];
 
+   /* It is possible that vbo is NULL and stride is 0 with glBindVertexBuffer.
+    * When that happens, we internally consider the binding a user buffer and
+    * the stride is always positive.  To avoid failing the assumption, fix
+    * stride to be 16 (the default value).
+    */
+   if (!stride && !vbo)
+      stride = 16;
+
    if (ctx->Const.VertexBufferOffsetIsInt32 && (int)offset < 0 &&
        !offset_is_int32 && vbo) {
       /* The offset will be interpreted as a signed int, so make sure

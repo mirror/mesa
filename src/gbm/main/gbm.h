@@ -528,6 +528,9 @@ gbm_surface_has_free_buffers(struct gbm_surface *surface);
 void
 gbm_surface_destroy(struct gbm_surface *surface);
 
+void
+gbm_surface_resize(struct gbm_surface *surf, uint32_t width, uint32_t height);
+
 char *
 gbm_format_get_name(uint32_t gbm_format, struct gbm_format_name_desc *desc);
 

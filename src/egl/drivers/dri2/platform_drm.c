@@ -236,6 +236,14 @@ get_back_bo(struct dri2_egl_surface *dri2_surf)
 
    if (dri2_surf->back == NULL)
       return -1;
+
+   if (dri2_surf->back->bo != NULL
+         && (gbm_bo_get_width(dri2_surf->back->bo) != surf->base.v0.width
+         || gbm_bo_get_height(dri2_surf->back->bo) != surf->base.v0.height)) {
+      gbm_bo_destroy(dri2_surf->back->bo);
+      dri2_surf->back->bo = NULL;
+   }
+
    if (dri2_surf->back->bo == NULL) {
       if (surf->base.v0.modifiers && surf->base.v0.flags)
          dri2_surf->back->bo = gbm_bo_create_with_modifiers2(

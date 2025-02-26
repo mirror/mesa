@@ -791,6 +791,22 @@ gbm_surface_has_free_buffers(struct gbm_surface *surf)
    return surf->gbm->v0.surface_has_free_buffers(surf);
 }
 
+/**
+ * Resize a surface
+ *
+ * \param surf The surface
+ * \param width The new width
+ * \param height The new hegiht
+ */
+GBM_EXPORT void
+gbm_surface_resize(struct gbm_surface *surf, uint32_t width, uint32_t height)
+{
+   if (width > 0 && height > 0) {
+      surf->v0.width = width;
+      surf->v0.height = height;
+   }
+}
+
 /* The two GBM_BO_FORMAT_[XA]RGB8888 formats alias the GBM_FORMAT_*
  * formats of the same name. We want to accept them whenever someone
  * has a GBM format, but never return them to the user. */

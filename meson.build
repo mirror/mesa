@@ -1942,9 +1942,19 @@ if host_machine.system() == 'windows'
   dep_version = cpp.find_library('version')
 endif
 
-dep_elf = dependency('libelf', required : false)
-if not with_platform_windows and not dep_elf.found()
-  dep_elf = cc.find_library('elf', required : false)
+dep_elf = null_dep
+if with_gallium_r600 or with_gallium_radeonsi or with_amd_vk
+  dep_elf = dependency('libelf', required : false)
+
+  # r600, radeonsi or amd_vk force required libelf by default
+  dep_elf_required = true
+  if with_amd_vk and (with_platform_windows or with_platform_android)
+    # amd_vk not force required libelf on windows or android
+    dep_elf_required = false
+  endif
+  if dep_elf_required and not dep_elf.found()
+    dep_elf = cc.find_library('elf', required : true)
+  endif
 endif
 if dep_elf.found()
   pre_args += '-DUSE_LIBELF'

@@ -318,8 +318,9 @@ option(
 
 option(
   'opengl',
-  type : 'boolean',
-  value : true,
+  type : 'feature',
+  value : 'enabled',
+  deprecated: {'true': 'enabled', 'false': 'disabled'},
   description : 'Build support for desktop OpenGL'
 )
 

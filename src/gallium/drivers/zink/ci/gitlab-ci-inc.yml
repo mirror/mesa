@@ -78,6 +78,7 @@
     - !reference [.test, rules]
     - !reference [.nvk-valve-rules, rules]
     - !reference [.zink-common-rules, rules]
+    - !reference [.rusticl-rules, rules]
 
 .zink-nvk-manual-rules:
   stage: layered-backends-postmerge

@@ -231,7 +231,7 @@ static simple_mtx_t options_tbl_mtx = SIMPLE_MTX_INITIALIZER;
  * NOTE: The strings that allocated with ralloc_strdup(options_tbl, ...)
  * are freed by _mesa_hash_table_destroy automatically
  */
-static void
+static void __attribute__((destructor))
 options_tbl_fini(void)
 {
    simple_mtx_lock(&options_tbl_mtx);
@@ -257,7 +257,6 @@ os_get_option_cached(const char *name)
       if (options_tbl == NULL) {
          goto exit_mutex;
       }
-      atexit(options_tbl_fini);
    }
    struct hash_entry *entry = _mesa_hash_table_search(options_tbl, name);
    if (entry) {

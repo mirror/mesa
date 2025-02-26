@@ -42,20 +42,14 @@
  * concurrently read or write the CCS buffer, causing incorrect pixels.
  */
 static bool
-disable_rb_aux_buffer(struct iris_context *ice,
-                      bool *draw_aux_buffer_disabled,
-                      struct iris_resource *tex_res,
-                      unsigned min_level, unsigned num_levels,
-                      const char *usage)
+detect_feedback_loop(struct iris_context *ice,
+                     bool *cbuf_has_feedback_loop,
+                     struct iris_resource *tex_res,
+                     unsigned min_level, unsigned num_levels,
+                     const char *usage)
 {
    struct pipe_framebuffer_state *cso_fb = &ice->state.framebuffer;
    bool found = false;
-
-   /* We only need to worry about color compression and fast clears. */
-   if (tex_res->aux.usage != ISL_AUX_USAGE_CCS_D &&
-       tex_res->aux.usage != ISL_AUX_USAGE_CCS_E &&
-       tex_res->aux.usage != ISL_AUX_USAGE_FCV_CCS_E)
-      return false;
 
    for (unsigned i = 0; i < cso_fb->nr_cbufs; i++) {
       struct iris_surface *surf = (void *) cso_fb->cbufs[i];
@@ -67,7 +61,7 @@ disable_rb_aux_buffer(struct iris_context *ice,
       if (rb_res->bo == tex_res->bo &&
           surf->base.u.tex.level >= min_level &&
           surf->base.u.tex.level < min_level + num_levels) {
-         found = draw_aux_buffer_disabled[i] = true;
+         found = cbuf_has_feedback_loop[i] = true;
       }
    }
 
@@ -85,12 +79,13 @@ resolve_sampler_views(struct iris_context *ice,
                       struct iris_batch *batch,
                       struct iris_shader_state *shs,
                       const struct shader_info *info,
-                      bool *draw_aux_buffer_disabled,
+                      bool *cbuf_has_feedback_loop,
                       bool consider_framebuffer)
 {
    if (info == NULL)
       return;
 
+   bool found_feedback_loop = false;
    int i;
    BITSET_FOREACH_SET(i, shs->bound_sampler_views, IRIS_MAX_TEXTURES) {
       if (!BITSET_TEST(info->textures_used, i))
@@ -100,9 +95,10 @@ resolve_sampler_views(struct iris_context *ice,
 
       if (isv->res->base.b.target != PIPE_BUFFER) {
          if (consider_framebuffer) {
-            disable_rb_aux_buffer(ice, draw_aux_buffer_disabled, isv->res,
-                                  isv->view.base_level, isv->view.levels,
-                                  "for sampling");
+            found_feedback_loop |=
+               detect_feedback_loop(ice, cbuf_has_feedback_loop, isv->res,
+                                    isv->view.base_level, isv->view.levels,
+                                     "for sampling");
          }
 
          iris_resource_prepare_texture(ice, isv->res, isv->view.format,
@@ -113,6 +109,11 @@ resolve_sampler_views(struct iris_context *ice,
 
       iris_emit_buffer_barrier_for(batch, isv->res->bo,
                                    IRIS_DOMAIN_SAMPLER_READ);
+   }
+
+   if (ice->state.rendering_feedback_loop != found_feedback_loop) {
+      ice->state.rendering_feedback_loop = found_feedback_loop;
+      ice->state.dirty |= IRIS_DIRTY_RENDERING_FEEDBACK_LOOP;
    }
 }
 
@@ -174,7 +175,7 @@ resolve_image_views(struct iris_context *ice,
 void
 iris_predraw_resolve_inputs(struct iris_context *ice,
                             struct iris_batch *batch,
-                            bool *draw_aux_buffer_disabled,
+                            bool *cbuf_has_feedback_loop,
                             gl_shader_stage stage,
                             bool consider_framebuffer)
 {
@@ -185,7 +186,7 @@ iris_predraw_resolve_inputs(struct iris_context *ice,
       (consider_framebuffer ? IRIS_STAGE_DIRTY_BINDINGS_FS : 0);
 
    if (ice->state.stage_dirty & stage_dirty) {
-      resolve_sampler_views(ice, batch, shs, info, draw_aux_buffer_disabled,
+      resolve_sampler_views(ice, batch, shs, info, cbuf_has_feedback_loop,
                             consider_framebuffer);
       resolve_image_views(ice, batch, shs, info);
    }
@@ -242,7 +243,8 @@ iris_predraw_resolve_framebuffer(struct iris_context *ice,
       }
    }
 
-   if (ice->state.stage_dirty & IRIS_STAGE_DIRTY_BINDINGS_FS) {
+   if ((ice->state.stage_dirty & IRIS_STAGE_DIRTY_BINDINGS_FS) ||
+       (ice->state.dirty & IRIS_DIRTY_RENDERING_FEEDBACK_LOOP)) {
       for (unsigned i = 0; i < cso_fb->nr_cbufs; i++) {
          struct iris_surface *surf = (void *) cso_fb->cbufs[i];
          if (!surf)

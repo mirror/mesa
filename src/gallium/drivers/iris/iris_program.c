@@ -3630,6 +3630,9 @@ bind_shader_state(struct iris_context *ice,
    if ((old_info ? BITSET_LAST_BIT(old_info->samplers_used) : 0) !=
        (new_info ? BITSET_LAST_BIT(new_info->samplers_used) : 0)) {
       ice->state.stage_dirty |= IRIS_STAGE_DIRTY_SAMPLER_STATES_VS << stage;
+
+      if (stage != MESA_SHADER_COMPUTE)
+         ice->state.dirty |= IRIS_DIRTY_RENDER_RESOLVES_AND_FLUSHES;
    }
 
    ice->shaders.uncompiled[stage] = ish;

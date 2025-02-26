@@ -307,13 +307,13 @@ iris_draw_vbo(struct pipe_context *ctx, const struct pipe_draw_info *info,
    iris_update_compiled_shaders(ice);
 
    if (ice->state.dirty & IRIS_DIRTY_RENDER_RESOLVES_AND_FLUSHES) {
-      bool draw_aux_buffer_disabled[IRIS_MAX_DRAW_BUFFERS] = { };
+      bool cbuf_has_feedback_loop[IRIS_MAX_DRAW_BUFFERS] = { };
       for (gl_shader_stage stage = 0; stage < MESA_SHADER_COMPUTE; stage++) {
          if (ice->shaders.prog[stage])
-            iris_predraw_resolve_inputs(ice, batch, draw_aux_buffer_disabled,
+            iris_predraw_resolve_inputs(ice, batch, cbuf_has_feedback_loop,
                                         stage, true);
       }
-      iris_predraw_resolve_framebuffer(ice, batch, draw_aux_buffer_disabled);
+      iris_predraw_resolve_framebuffer(ice, batch, cbuf_has_feedback_loop);
    }
 
    if (ice->state.dirty & IRIS_DIRTY_RENDER_MISC_BUFFER_FLUSHES) {

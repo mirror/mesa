@@ -122,6 +122,7 @@ enum iris_param_domain {
 #define IRIS_DIRTY_COMPUTE_MISC_BUFFER_FLUSHES    (1ull << 34)
 #define IRIS_DIRTY_VFG                            (1ull << 35)
 #define IRIS_DIRTY_DS_WRITE_ENABLE                (1ull << 36)
+#define IRIS_DIRTY_RENDERING_FEEDBACK_LOOP        (1ull << 37)
 
 #define IRIS_ALL_DIRTY_FOR_COMPUTE (IRIS_DIRTY_COMPUTE_RESOLVES_AND_FLUSHES | \
                                     IRIS_DIRTY_COMPUTE_MISC_BUFFER_FLUSHES)
@@ -1049,6 +1050,9 @@ struct iris_context {
        * self-dependencies from resources bound for sampling and rendering.
        */
       enum isl_aux_usage draw_aux_usage[IRIS_MAX_DRAW_BUFFERS];
+
+      /** Have we detected a rendering feedback loop? */
+      bool rendering_feedback_loop;
 
       /** Aux usage of the fb's depth buffer (which may or may not exist). */
       enum isl_aux_usage hiz_usage;

@@ -192,6 +192,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .KHR_variable_pointers                 = true,
    .KHR_vertex_attribute_divisor          = true,
    .KHR_vulkan_memory_model               = true,
+   .KHR_workgroup_memory_explicit_layout  = true,
    .KHR_zero_initialize_workgroup_memory  = true,
    .ARM_rasterization_order_attachment_access = true,
    .EXT_4444_formats                      = true,
@@ -201,6 +202,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_calibrated_timestamps             = true,
    .EXT_color_write_enable                = true,
    .EXT_conditional_rendering             = true,
+   .EXT_depth_bias_control                = true,
    .EXT_depth_clip_enable                 = true,
    .EXT_depth_clip_control                = true,
    .EXT_depth_range_unrestricted          = true,
@@ -264,6 +266,7 @@ static const struct vk_device_extension_table lvp_device_extensions_supported = 
    .EXT_swapchain_maintenance1            = true,
 #endif
    .EXT_texel_buffer_alignment            = true,
+   .EXT_tooling_info                      = true,
    .EXT_transform_feedback                = true,
    .EXT_vertex_attribute_divisor          = true,
    .EXT_vertex_input_dynamic_state        = true,
@@ -542,6 +545,12 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       /* VK_EXT_image_sliced_view_of_3d */
       .imageSlicedViewOf3D = true,
 
+      /* VK_EXT_depth_bias_control */
+      .depthBiasControl = true,
+      .leastRepresentableValueForceUnormRepresentation = true,
+      .floatRepresentation = true,
+      .depthBiasExact = true,
+
       /* VK_EXT_depth_clip_control */
       .depthClipControl = true,
 
@@ -753,6 +762,12 @@ lvp_get_features(const struct lvp_physical_device *pdevice,
       /* VK_KHR_compute_shader_derivatives */
       .computeDerivativeGroupQuads = true,
       .computeDerivativeGroupLinear = true,
+
+      /* VK_KHR_workgroup_memory_explicit_layout */
+      .workgroupMemoryExplicitLayout = true,
+      .workgroupMemoryExplicitLayoutScalarBlockLayout = true,
+      .workgroupMemoryExplicitLayout8BitAccess = true,
+      .workgroupMemoryExplicitLayout16BitAccess = true,
    };
 }
 

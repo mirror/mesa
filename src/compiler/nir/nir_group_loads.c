@@ -50,50 +50,39 @@
 
 #include "nir.h"
 
-static bool
-is_memory_load(nir_instr *instr)
-{
-   /* Count texture_size too because it has the same latency as cache hits. */
-   if (instr->type == nir_instr_type_tex)
-      return true;
-
-   if (instr->type == nir_instr_type_intrinsic) {
-      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-      const char *name = nir_intrinsic_infos[intr->intrinsic].name;
-
-      /* TODO: nir_intrinsics.py could do this */
-      /* load_ubo is ignored because it's usually cheap. */
-      if (!nir_intrinsic_writes_external_memory(intr) &&
-          !strstr(name, "shared") &&
-          (strstr(name, "ssbo") || strstr(name, "image")))
-         return true;
-   }
-
-   return false;
-}
-
 static nir_instr *
 get_intrinsic_resource(nir_intrinsic_instr *intr)
 {
    /* This is also the list of intrinsics that are grouped. */
-   /* load_ubo is ignored because it's usually cheap. */
    switch (intr->intrinsic) {
+   /* Image loads. */
    case nir_intrinsic_image_load:
    case nir_intrinsic_image_deref_load:
+   case nir_intrinsic_bindless_image_load:
    case nir_intrinsic_image_sparse_load:
    case nir_intrinsic_image_deref_sparse_load:
-   /* Group image_size too because it has the same latency as cache hits. */
-   case nir_intrinsic_image_samples_identical:
-   case nir_intrinsic_image_deref_samples_identical:
-   case nir_intrinsic_bindless_image_samples_identical:
-   case nir_intrinsic_image_size:
-   case nir_intrinsic_image_deref_size:
-   case nir_intrinsic_bindless_image_load:
    case nir_intrinsic_bindless_image_sparse_load:
-   case nir_intrinsic_load_ssbo:
+   /* Fragment mask loads. (samples_identical also loads it) */
    case nir_intrinsic_image_fragment_mask_load_amd:
    case nir_intrinsic_image_deref_fragment_mask_load_amd:
    case nir_intrinsic_bindless_image_fragment_mask_load_amd:
+   case nir_intrinsic_image_samples_identical:
+   case nir_intrinsic_image_deref_samples_identical:
+   case nir_intrinsic_bindless_image_samples_identical:
+   /* Image queries. (group them too since they can have cache hit latency) */
+   case nir_intrinsic_image_size:
+   case nir_intrinsic_image_deref_size:
+   case nir_intrinsic_bindless_image_size:
+   case nir_intrinsic_image_levels:
+   case nir_intrinsic_image_deref_levels:
+   case nir_intrinsic_bindless_image_levels:
+   case nir_intrinsic_image_samples:
+   case nir_intrinsic_image_deref_samples:
+   case nir_intrinsic_bindless_image_samples:
+   /* Other loads. */
+   /* load_ubo is ignored because it's usually cheap. */
+   case nir_intrinsic_load_ssbo:
+   case nir_intrinsic_load_global:
       return intr->src[0].ssa->parent_instr;
    default:
       return NULL;
@@ -101,44 +90,35 @@ get_intrinsic_resource(nir_intrinsic_instr *intr)
 }
 
 /* Track only those that we want to group. */
-static bool
-is_grouped_load(nir_instr *instr)
+bool
+nir_is_grouped_load(nir_instr *instr)
 {
    /* Count texture_size too because it has the same latency as cache hits. */
    if (instr->type == nir_instr_type_tex)
       return true;
 
-   if (instr->type == nir_instr_type_intrinsic)
+   if (instr->type == nir_instr_type_intrinsic &&
+       nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)))
       return get_intrinsic_resource(nir_instr_as_intrinsic(instr)) != NULL;
 
    return false;
 }
 
 static bool
-can_move(nir_instr *instr, uint8_t current_indirection_level)
+is_part_of_group(nir_instr *instr, uint8_t current_indirection_level)
 {
-   /* Grouping is done by moving everything else out of the first/last
-    * instruction range of the indirection level.
+   /* Grouping is done by moving everything else out of the first..last
+    * instruction range of the load group corresponding to the given
+    * indirection level.
     */
-   if (is_grouped_load(instr) && instr->pass_flags == current_indirection_level)
-      return false;
+   assert(instr->type != nir_instr_type_intrinsic ||
+          nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)));
 
-   if (instr->type == nir_instr_type_alu ||
-       instr->type == nir_instr_type_deref ||
-       instr->type == nir_instr_type_tex ||
-       instr->type == nir_instr_type_load_const ||
-       instr->type == nir_instr_type_undef)
-      return true;
-
-   if (instr->type == nir_instr_type_intrinsic &&
-       nir_intrinsic_can_reorder(nir_instr_as_intrinsic(instr)))
-      return true;
-
-   return false;
+   return nir_is_grouped_load(instr) && instr->pass_flags == current_indirection_level;
 }
 
-static nir_instr *
-get_uniform_inst_resource(nir_instr *instr)
+nir_instr *
+nir_get_grouped_load_binding(nir_instr *instr)
 {
    if (instr->type == nir_instr_type_tex) {
       nir_tex_instr *tex = nir_instr_as_tex(instr);
@@ -189,8 +169,7 @@ group_loads(nir_instr *first, nir_instr *last)
                                                    last->node.prev, node);
         instr != first;
         instr = exec_node_data_backward(nir_instr, instr->node.prev, node)) {
-      /* Only move instructions without side effects. */
-      if (!can_move(instr, first->pass_flags))
+      if (is_part_of_group(instr, first->pass_flags))
          continue;
 
       nir_def *def = nir_instr_def(instr);
@@ -231,7 +210,7 @@ group_loads(nir_instr *first, nir_instr *last)
         instr != last;
         instr = exec_node_data_forward(nir_instr, instr->node.next, node)) {
       /* Only move instructions without side effects. */
-      if (!can_move(instr, first->pass_flags))
+      if (is_part_of_group(instr, first->pass_flags))
          continue;
 
       if (nir_foreach_src(instr, has_only_sources_less_than, &state)) {
@@ -271,7 +250,7 @@ set_instr_indices(nir_block *block)
       /* Make sure grouped instructions don't have the same index as pseudo
        * instructions.
        */
-      if (last && is_pseudo_inst(last) && is_grouped_load(instr))
+      if (last && is_pseudo_inst(last) && nir_is_grouped_load(instr))
          counter++;
 
       /* Set each instruction's index within the block. */
@@ -300,23 +279,6 @@ handle_load_range(nir_instr **first, nir_instr **last,
    }
 }
 
-static bool
-is_barrier(nir_instr *instr)
-{
-   if (instr->type == nir_instr_type_intrinsic) {
-      nir_intrinsic_instr *intr = nir_instr_as_intrinsic(instr);
-      const char *name = nir_intrinsic_infos[intr->intrinsic].name;
-
-      if (intr->intrinsic == nir_intrinsic_terminate ||
-          intr->intrinsic == nir_intrinsic_terminate_if ||
-          /* TODO: nir_intrinsics.py could do this */
-          strstr(name, "barrier"))
-         return true;
-   }
-
-   return false;
-}
-
 struct indirection_state {
    nir_block *block;
    unsigned indirections;
@@ -335,7 +297,7 @@ gather_indirections(nir_src *src, void *data)
    if (instr->block == state->block) {
       unsigned indirections = get_num_indirections(src->ssa->parent_instr);
 
-      if (instr->type == nir_instr_type_tex || is_memory_load(instr))
+      if (instr->type == nir_instr_type_tex || nir_is_grouped_load(instr))
          indirections++;
 
       state->indirections = MAX2(state->indirections, indirections);
@@ -389,7 +351,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
     * within this block. Store it in pass_flags.
     */
    nir_foreach_instr(instr, block) {
-      if (is_grouped_load(instr)) {
+      if (nir_is_grouped_load(instr)) {
          unsigned indirections = get_num_indirections(instr);
 
          /* pass_flags has only 8 bits */
@@ -420,8 +382,29 @@ process_block(nir_block *block, nir_load_grouping grouping,
        * between them out.
        */
       nir_foreach_instr(current, block) {
-         /* Don't group across barriers. */
-         if (is_barrier(current)) {
+         /* Don't group across non-reorderable instructions.
+          *
+          * TODO: This is overly conservative. There is a better way to do it
+          * because what we really do here is grouping reorderable instructions
+          * that can be around non-reorderable instructions, and doing that is
+          * perfectly legal.
+          *
+          * If you think about it, non-reorderable memory intrinsics have
+          * a hidden "use" on the previous non-reorderable memory intrinsic,
+          * and all non-reorderable memory intrinsics are chained that way.
+          * If we just added a chain src and a chain def to non-reorderable
+          * memory intrinsics and chained all such intrinsics that way,
+          * accidental reordering would be impossible because it would be
+          * def-after-use for the chain. Having just that would be enough
+          * to skip checking can_reorder because this algorithm would
+          * automatically do the correct thing if foreach_src and foreach_use
+          * included chain defs and srcs.
+          *
+          * Non-reorderable non-memory intrinsics that affect or are affected
+          * by e.g. load_helper_invocation could be another chain.
+          */
+         if (current->type == nir_instr_type_intrinsic &&
+             !nir_intrinsic_can_reorder(nir_instr_as_intrinsic(current))) {
             /* Group unconditionally.  */
             handle_load_range(&first_load, &last_load, NULL, 0);
             first_load = NULL;
@@ -430,7 +413,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
          }
 
          /* Only group load instructions with the same indirection level. */
-         if (is_grouped_load(current) && current->pass_flags == level) {
+         if (nir_is_grouped_load(current) && current->pass_flags == level) {
             nir_instr *current_resource;
 
             switch (grouping) {
@@ -442,7 +425,7 @@ process_block(nir_block *block, nir_load_grouping grouping,
                break;
 
             case nir_group_same_resource_only:
-               current_resource = get_uniform_inst_resource(current);
+               current_resource = nir_get_grouped_load_binding(current);
 
                if (current_resource) {
                   if (!first_load) {

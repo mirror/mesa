@@ -2605,7 +2605,8 @@ static void run_late_optimization_and_lowering_passes(struct si_nir_shader_ctx *
    /* This helps LLVM form VMEM clauses and thus get more GPU cache hits.
     * 200 is tuned for Viewperf. It should be done last.
     */
-   NIR_PASS_V(nir, nir_group_loads, nir_group_same_resource_only, 200);
+   NIR_PASS_V(nir, nir_group_loads, nir_group_all, 200);
+   NIR_PASS(_, nir, nir_reorder_adjacent_loads);
 }
 
 static void get_input_nir(struct si_shader *shader, struct si_nir_shader_ctx *ctx)

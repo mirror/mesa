@@ -390,12 +390,21 @@ os_get_available_system_memory(uint64_t *size)
    *size = status.ullAvailPhys;
    return (ret == true);
 #elif DETECT_OS_APPLE
+#  if defined(__i386__) || defined(__ppc__)
+   vm_statistics_data_t vm_stats;
+   mach_msg_type_number_t count = HOST_VM_INFO_COUNT;
+   if (host_statistics(mach_host_self(), HOST_VM_INFO,
+         (host_info_t)&vm_stats, &count) != KERN_SUCCESS) {
+      return false;
+   }
+#  else
    vm_statistics64_data_t vm_stats;
    mach_msg_type_number_t count = HOST_VM_INFO64_COUNT;
    if (host_statistics64(mach_host_self(), HOST_VM_INFO,
          (host_info64_t)&vm_stats, &count) != KERN_SUCCESS) {
       return false;
    }
+#  endif
 
    *size = ((uint64_t)vm_stats.free_count + (uint64_t)vm_stats.inactive_count) * PAGE_SIZE;
    return true;

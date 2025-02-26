@@ -30,6 +30,7 @@
 
 #include "util/u_thread.h"
 #include "util/u_memory.h"
+#include "util/u_math.h"
 #include "lp_cs_tpool.h"
 
 static int
@@ -37,6 +38,9 @@ lp_cs_tpool_worker(void *data)
 {
    struct lp_cs_tpool *pool = data;
    struct lp_cs_local_mem lmem;
+
+   unsigned fpstate = util_fpstate_get();
+   util_fpstate_set_denorms_to_zero(fpstate);
 
    memset(&lmem, 0, sizeof(lmem));
    mtx_lock(&pool->m);
@@ -134,12 +138,14 @@ lp_cs_tpool_queue_task(struct lp_cs_tpool *pool,
 
    if (pool->num_threads == 0) {
       struct lp_cs_local_mem lmem;
-
+      unsigned fpstate = util_fpstate_get();
+      util_fpstate_set_denorms_to_zero(fpstate);
       memset(&lmem, 0, sizeof(lmem));
       for (unsigned t = 0; t < num_iters; t++) {
          work(data, t, &lmem);
       }
       FREE(lmem.local_mem_ptr);
+      util_fpstate_set(fpstate);
       return NULL;
    }
    task = CALLOC_STRUCT(lp_cs_tpool_task);

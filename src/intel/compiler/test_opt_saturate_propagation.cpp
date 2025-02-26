@@ -108,50 +108,56 @@ saturate_propagation(brw_shader *v)
 TEST_F(saturate_propagation_test, basic)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  dst0
     *
     * = After =
-    * 0: add.sat(16)   dst0  src0  src1
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add.sat(16)   dst0  %0    %1
+    * 3: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, other_non_saturated_use)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
    bld.ADD(dst0, src0);
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
-    * 2: add(16)       dst2  dst0  src0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  dst0
+    * 4: add(16)       dst2  dst0  %0
     *
     * = After =
     * (no changes)
@@ -161,32 +167,34 @@ TEST_F(saturate_propagation_test, other_non_saturated_use)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
    EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 4)->opcode);
 }
 
 TEST_F(saturate_propagation_test, predicated_instruction)
 {
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    bld.ADD(dst0, src0, src1)
       ->predicate = BRW_PREDICATE_NORMAL;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: (+f0) add(16) dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: (+f0) add(16) dst0  %0    %1
+    * 3: mov.sat(16)   dst1  dst0
     *
     * = After =
     * (no changes)
@@ -196,29 +204,30 @@ TEST_F(saturate_propagation_test, predicated_instruction)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.RNDU(src0);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: rndu(16)      dst0  src0
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: rndu(16)      dst0  %0
+    * 2: mov.sat(16)   dst1  -dst0
     *
     * = After =
     * (no changes)
@@ -228,168 +237,184 @@ TEST_F(saturate_propagation_test, neg_mov_sat)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(2, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_RNDU, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_RNDU, instruction(block0, 1)->opcode);
+   EXPECT_FALSE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
+   EXPECT_TRUE(instruction(block0, 2)->saturate);
 }
 
 TEST_F(saturate_propagation_test, add_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  -dst0
     *
     * = After =
-    * 0: add.sat(16)   dst0  -src0 -src1
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add.sat(16)   dst0  -%0   -%1
+    * 3: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_TRUE(instruction(block0, 0)->src[0].negate);
-   EXPECT_TRUE(instruction(block0, 0)->src[1].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_TRUE(instruction(block0, 2)->src[0].negate);
+   EXPECT_TRUE(instruction(block0, 2)->src[1].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, add_imm_float_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, brw_imm_f(1.0f));
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  1.0f
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: add(16)       dst0  %0    1.0f
+    * 2: mov.sat(16)   dst1  -dst0
     *
     * = After =
-    * 0: add.sat(16)   dst0  -src0 -1.0f
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: add.sat(16)   dst0  -%0   -1.0f
+    * 2: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(2, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_TRUE(instruction(block0, 0)->src[0].negate);
-   EXPECT_EQ(instruction(block0, 0)->src[1].f, -1.0f);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 1)->opcode);
+   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_TRUE(instruction(block0, 1)->src[0].negate);
+   EXPECT_EQ(instruction(block0, 1)->src[1].f, -1.0f);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
 }
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.MUL(src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: mul(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: mul(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  -dst0
     *
     * = After =
-    * 0: mul.sat(16)   dst0  src0 -src1
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: mul.sat(16)   dst0  %0   -%1
+    * 3: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_TRUE(instruction(block0, 0)->src[0].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_FALSE(instruction(block0, 1)->src[0].negate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 2)->opcode);
+   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_TRUE(instruction(block0, 2)->src[0].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
+   EXPECT_FALSE(instruction(block0, 3)->src[0].negate);
 }
 
 TEST_F(saturate_propagation_test, mad_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src2 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.MAD(src0, src1, src2);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: mad(16)       dst0  src0  src1 src2
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: load_reg(16)  %2    src2
+    * 3: mad(16)       dst0  %0    %1    %2
+    * 4: mov.sat(16)   dst1  -dst0
     *
     * = After =
-    * 0: mad.sat(16)   dst0  -src0 -src1 src2
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: load_reg(16)  %2    src2
+    * 3: mad.sat(16)   dst0  -%0   -%1   %2
+    * 4: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MAD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_TRUE(instruction(block0, 0)->src[0].negate);
-   EXPECT_TRUE(instruction(block0, 0)->src[1].negate);
-   EXPECT_FALSE(instruction(block0, 0)->src[2].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_FALSE(instruction(block0, 1)->src[0].negate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MAD, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
+   EXPECT_TRUE(instruction(block0, 3)->src[0].negate);
+   EXPECT_TRUE(instruction(block0, 3)->src[1].negate);
+   EXPECT_FALSE(instruction(block0, 3)->src[2].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 4)->opcode);
+   EXPECT_FALSE(instruction(block0, 4)->saturate);
+   EXPECT_FALSE(instruction(block0, 4)->src[0].negate);
 }
 
 TEST_F(saturate_propagation_test, mad_imm_float_neg_mov_sat)
 {
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src2 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src2 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    /* The builder for MAD tries to be helpful and not put immediates as direct
     * sources. We want to test specifically that case.
     */
@@ -401,38 +426,40 @@ TEST_F(saturate_propagation_test, mad_imm_float_neg_mov_sat)
 
    /* = Before =
     *
-    * 0: mad(16)       dst0  1.0f -2.0f src2
-    * 1: mov.sat(16)   dst1  -dst0
+    * 0: load_reg(16)  %0    src2
+    * 1: mad(16)       dst0  1.0f -2.0f %0
+    * 2: mov.sat(16)   dst1  -dst0
     *
     * = After =
-    * 0: mad.sat(16)   dst0  -1.0f 2.0f src2
-    * 1: mov(16)       dst1  dst0
+    * 0: load_reg(16)  %0    src2
+    * 1: mad.sat(16)   dst0  -1.0f 2.0f %0
+    * 2: mov(16)       dst1  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(2, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MAD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(instruction(block0, 0)->src[0].f, -1.0f);
-   EXPECT_EQ(instruction(block0, 0)->src[1].f, 2.0f);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_FALSE(instruction(block0, 1)->src[0].negate);
+   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MAD, instruction(block0, 1)->opcode);
+   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(instruction(block0, 1)->src[0].f, -1.0f);
+   EXPECT_EQ(instruction(block0, 1)->src[1].f, 2.0f);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_FALSE(instruction(block0, 2)->src[0].negate);
 }
 
 TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.MUL(src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
    dst0.negate = true;
@@ -440,9 +467,11 @@ TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
 
    /* = Before =
     *
-    * 0: mul(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
-    * 2: mov.sat(16)   dst2  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: mul(16)       dst0  src0  src1
+    * 3: mov.sat(16)   dst1  dst0
+    * 4: mov.sat(16)   dst2  -dst0
     *
     * = After =
     * (no changes)
@@ -452,27 +481,27 @@ TEST_F(saturate_propagation_test, mul_mov_sat_neg_mov_sat)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_FALSE(instruction(block0, 0)->src[1].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_TRUE(instruction(block0, 2)->src[0].negate);
-   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_FALSE(instruction(block0, 2)->src[1].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 4)->opcode);
+   EXPECT_TRUE(instruction(block0, 4)->src[0].negate);
+   EXPECT_TRUE(instruction(block0, 4)->saturate);
 }
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.MUL(src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -480,9 +509,11 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
 
    /* = Before =
     *
-    * 0: mul(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  -dst0
-    * 2: mov.sat(16)   dst2  -dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: mul(16)       dst0  src0  src1
+    * 3: mov.sat(16)   dst1  -dst0
+    * 4: mov.sat(16)   dst2  -dst0
     *
     * = After =
     * (no changes)
@@ -492,35 +523,37 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_neg_mov_sat)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_FALSE(instruction(block0, 0)->src[1].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->src[0].negate);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_TRUE(instruction(block0, 2)->src[0].negate);
-   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_FALSE(instruction(block0, 2)->src[1].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->src[0].negate);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 4)->opcode);
+   EXPECT_TRUE(instruction(block0, 4)->src[0].negate);
+   EXPECT_TRUE(instruction(block0, 4)->saturate);
 }
 
 TEST_F(saturate_propagation_test, abs_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, src1);
    dst0.abs = true;
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  (abs)dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  (abs)dst0
     *
     * = After =
     * (no changes)
@@ -530,15 +563,15 @@ TEST_F(saturate_propagation_test, abs_mov_sat)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, producer_saturates)
@@ -546,85 +579,50 @@ TEST_F(saturate_propagation_test, producer_saturates)
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    set_saturate(true, bld.ADD(dst0, src0, src1));
    set_saturate(true, bld.MOV(dst1, dst0));
    bld.MOV(dst2, dst0);
 
    /* = Before =
     *
-    * 0: add.sat(16)   dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
-    * 2: mov(16)       dst2  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add.sat(16)   dst0  %0    %1
+    * 3: mov.sat(16)   dst1  dst0
+    * 4: mov(16)       dst2  dst0
     *
     * = After =
-    * 0: add.sat(16)   dst0  src0  src1
-    * 1: mov(16)       dst1  dst0
-    * 2: mov(16)       dst2  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add.sat(16)   dst0  %0    %1
+    * 3: mov(16)       dst1  dst0
+    * 4: mov(16)       dst2  dst0
     */
 
    brw_calculate_cfg(*v);
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_TRUE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-}
-
-TEST_F(saturate_propagation_test, intervening_saturating_copy)
-{
-   brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg dst0 = bld.ADD(src0, src1);
-   set_saturate(true, bld.MOV(dst1, dst0));
-   set_saturate(true, bld.MOV(dst2, dst0));
-
-   /* = Before =
-    *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
-    * 2: mov.sat(16)   dst2  dst0
-    *
-    * = After =
-    * 0: add.sat(16)   dst0  src0  src1
-    * 1: mov(16)       dst1  dst0
-    * 2: mov(16)       dst2  dst0
-    */
-
-   brw_calculate_cfg(*v);
-   bblock_t *block0 = v->cfg->blocks[0];
-
-   EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-
-   EXPECT_TRUE(saturate_propagation(v));
-   EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_TRUE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, intervening_dest_write)
 {
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F, 4);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src2 = bld.vgrf(BRW_TYPE_F, 2);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src2 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F, 2));
 
    brw_reg tex_srcs[TEX_LOGICAL_NUM_SRCS];
    tex_srcs[TEX_LOGICAL_SRC_COORDINATE] = src2;
@@ -640,9 +638,12 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
 
    /* = Before =
     *
-    * 0: add(16)        dst0+2  src0    src1
-    * 1: tex(16) rlen 4 dst0+0  src2
-    * 2: mov.sat(16)    dst1    dst0+2
+    * 0: load_reg(16)   %0      src0
+    * 1: load_reg(16)   %1      src1
+    * 2: load_reg(16)   %2      src2
+    * 3: add(16)        dst0+2  %0      %1
+    * 4: tex(16) rlen 4 dst0+0  %2
+    * 5: mov.sat(16)    dst1    dst0+2
     *
     * = After =
     * (no changes)
@@ -652,25 +653,25 @@ TEST_F(saturate_propagation_test, intervening_dest_write)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(5, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(SHADER_OPCODE_TEX_LOGICAL, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(5, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
+   EXPECT_EQ(SHADER_OPCODE_TEX_LOGICAL, instruction(block0, 4)->opcode);
+   EXPECT_FALSE(instruction(block0, 4)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 5)->opcode);
+   EXPECT_TRUE(instruction(block0, 5)->saturate);
 }
 
 TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.MUL(src0, src1);
    dst0.negate = true;
    set_saturate(true, bld.MOV(dst1, dst0));
@@ -679,9 +680,11 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
 
    /* = Before =
     *
-    * 0: mul(16)       dst0  src0  src1
-    * 1: mov.sat(16)   dst1  -dst0
-    * 2: mov.sat(16)   dst2  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: mul(16)       dst0  %0    %1
+    * 3: mov.sat(16)   dst1  -dst0
+    * 4: mov.sat(16)   dst2  dst0
     *
     * = After =
     * (no changes)
@@ -691,33 +694,35 @@ TEST_F(saturate_propagation_test, mul_neg_mov_sat_mov_sat)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_FALSE(instruction(block0, 0)->src[1].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
-   EXPECT_TRUE(instruction(block0, 1)->src[0].negate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_MUL, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_FALSE(instruction(block0, 2)->src[1].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
+   EXPECT_TRUE(instruction(block0, 3)->src[0].negate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 4)->opcode);
+   EXPECT_TRUE(instruction(block0, 4)->saturate);
 }
 
 TEST_F(saturate_propagation_test, smaller_exec_size_consumer)
 {
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    brw_reg dst0 = bld.ADD(src0, src1);
    set_saturate(true, bld.group(8, 0).MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0  src1
-    * 1: mov.sat(8)    dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  %0    %1
+    * 3: mov.sat(8)    dst1  dst0
     *
     * = After =
     * (no changes)
@@ -727,30 +732,32 @@ TEST_F(saturate_propagation_test, smaller_exec_size_consumer)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, larger_exec_size_consumer)
 {
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    bld.group(8, 0).ADD(dst0, src0, src1);
    set_saturate(true, bld.MOV(dst1, dst0));
 
    /* = Before =
     *
-    * 0: add(8)        dst0  src0  src1
-    * 1: mov.sat(16)   dst1  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(8)        dst0  src0  src1
+    * 3: mov.sat(16)   dst1  dst0
     *
     * = After =
     * (no changes)
@@ -760,15 +767,15 @@ TEST_F(saturate_propagation_test, larger_exec_size_consumer)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
+   EXPECT_EQ(3, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(1, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 1)->opcode);
-   EXPECT_TRUE(instruction(block0, 1)->saturate);
+   EXPECT_EQ(3, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 3)->opcode);
+   EXPECT_TRUE(instruction(block0, 3)->saturate);
 }
 
 TEST_F(saturate_propagation_test, offset_source_barrier)
@@ -776,17 +783,19 @@ TEST_F(saturate_propagation_test, offset_source_barrier)
    brw_reg dst0 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst1 = bld.vgrf(BRW_TYPE_F);
    brw_reg dst2 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src0 = bld.vgrf(BRW_TYPE_F);
-   brw_reg src1 = bld.vgrf(BRW_TYPE_F);
+   brw_reg src0 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
+   brw_reg src1 = bld.LOAD_REG(bld.vgrf(BRW_TYPE_F));
    bld.group(16, 0).ADD(dst0, src0, src1);
    bld.group(1, 0).ADD(dst1, component(dst0, 8), brw_imm_f(1.0f));
    set_saturate(true, bld.group(16, 0).MOV(dst2, dst0));
 
    /* = Before =
     *
-    * 0: add(16)       dst0  src0   src1
-    * 1: add(1)        dst1  dst0+8 1.0f
-    * 2: mov.sat(16)   dst2  dst0
+    * 0: load_reg(16)  %0    src0
+    * 1: load_reg(16)  %1    src1
+    * 2: add(16)       dst0  src0   src1
+    * 3: add(1)        dst1  dst0+8 1.0f
+    * 4: mov.sat(16)   dst2  dst0
     *
     * = After =
     * (no changes)
@@ -796,15 +805,15 @@ TEST_F(saturate_propagation_test, offset_source_barrier)
    bblock_t *block0 = v->cfg->blocks[0];
 
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
+   EXPECT_EQ(4, block0->end_ip);
 
    EXPECT_FALSE(saturate_propagation(v));
    EXPECT_EQ(0, block0->start_ip);
-   EXPECT_EQ(2, block0->end_ip);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 0)->opcode);
-   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 1)->opcode);
-   EXPECT_FALSE(instruction(block0, 0)->saturate);
-   EXPECT_FALSE(instruction(block0, 1)->saturate);
-   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 2)->opcode);
-   EXPECT_TRUE(instruction(block0, 2)->saturate);
+   EXPECT_EQ(4, block0->end_ip);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 2)->opcode);
+   EXPECT_EQ(BRW_OPCODE_ADD, instruction(block0, 3)->opcode);
+   EXPECT_FALSE(instruction(block0, 2)->saturate);
+   EXPECT_FALSE(instruction(block0, 3)->saturate);
+   EXPECT_EQ(BRW_OPCODE_MOV, instruction(block0, 4)->opcode);
+   EXPECT_TRUE(instruction(block0, 4)->saturate);
 }

@@ -844,6 +844,31 @@ public:
       return component(dst, 0);
    }
 
+   brw_inst *
+   LOAD_REG(const brw_reg &dst, const brw_reg &src0) const
+   {
+      assert(dst.file == VGRF && src0.file == VGRF);
+      assert(shader->alloc.sizes[dst.nr] == shader->alloc.sizes[src0.nr]);
+
+      brw_inst *inst = emit(SHADER_OPCODE_LOAD_REG, dst, src0);
+
+      inst->size_written = REG_SIZE * shader->alloc.sizes[src0.nr];
+
+      assert(shader->alloc.sizes[inst->dst.nr] * REG_SIZE == inst->size_written);
+      assert(!inst->is_partial_write());
+      return inst;
+   }
+
+   brw_reg
+   LOAD_REG(const brw_reg &src0, brw_inst **out = NULL) const
+   {
+      brw_reg dst = retype(brw_allocate_vgrf_units(*shader, shader->alloc.sizes[src0.nr]),
+                           src0.type);
+      brw_inst *inst = LOAD_REG(dst, src0);
+      if (out) *out = inst;
+      return inst->dst;
+   }
+
    brw_shader *shader;
 
    brw_inst *BREAK()    const { return emit(BRW_OPCODE_BREAK); }

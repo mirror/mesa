@@ -132,56 +132,6 @@ opt_saturate_propagation_local(brw_shader &s, bblock_t *block)
          if (block != defs.get_block(inst->src[0]))
             continue;
       }
-
-      const brw_live_variables &live = s.live_analysis.require();
-      int src_var = live.var_from_reg(inst->src[0]);
-      int src_end_ip = live.end[src_var];
-
-      bool interfered = false;
-      foreach_inst_in_block_reverse_starting_from(brw_inst, scan_inst, inst) {
-         if (scan_inst->exec_size == inst->exec_size &&
-             regions_overlap(scan_inst->dst, scan_inst->size_written,
-                             inst->src[0], inst->size_read(s.devinfo, 0))) {
-            if (scan_inst->is_partial_write() ||
-                (scan_inst->dst.type != inst->dst.type &&
-                 !scan_inst->can_change_types()))
-               break;
-
-            if (scan_inst->flags_written(s.devinfo) != 0)
-               break;
-
-            if (scan_inst->saturate) {
-               inst->saturate = false;
-               progress = true;
-            } else if (src_end_ip == ip || inst->dst.equals(inst->src[0])) {
-               if (scan_inst->can_do_saturate() &&
-                   propagate_sat(inst, scan_inst)) {
-                  progress = true;
-               }
-            }
-            break;
-         }
-         for (int i = 0; i < scan_inst->sources; i++) {
-            if (scan_inst->src[i].file == VGRF &&
-                scan_inst->src[i].nr == inst->src[0].nr &&
-                regions_overlap(
-                  scan_inst->src[i], scan_inst->size_read(s.devinfo, i),
-                  inst->src[0], inst->size_read(s.devinfo, 0))) {
-               if (scan_inst->opcode != BRW_OPCODE_MOV ||
-                   !scan_inst->saturate ||
-                   scan_inst->src[0].abs ||
-                   scan_inst->src[0].negate ||
-                   scan_inst->src[0].abs != inst->src[0].abs ||
-                   scan_inst->src[0].negate != inst->src[0].negate) {
-                  interfered = true;
-                  break;
-               }
-            }
-         }
-
-         if (interfered)
-            break;
-      }
    }
 
    return progress;

@@ -755,6 +755,16 @@ try_copy_propagate(brw_shader &s, brw_inst *inst,
    if (instruction_requires_packed_data(inst) && entry_stride != 1)
       return false;
 
+   /* load_reg loads a whole VGRF into a def. It is not allowed for the source
+    * to have a non-zero offset or a stride. It is allowed for the source to
+    * to be uniform.
+    */
+   if (inst->opcode == SHADER_OPCODE_LOAD_REG &&
+       !is_uniform(entry->src) &&
+       (entry->src.offset != 0 || entry_stride > 1)) {
+      return false;
+   }
+
    const brw_reg_type dst_type = (has_source_modifiers &&
                                   entry->dst.type != inst->src[arg].type) ?
       entry->dst.type : inst->dst.type;
@@ -1841,6 +1851,21 @@ find_value_for_offset(brw_inst *def, const brw_reg &src, unsigned src_size)
       }
       break;
    }
+   case SHADER_OPCODE_LOAD_REG: {
+      val = def->src[0];
+
+      unsigned rel_offset = src.offset - def->dst.offset;
+
+      if (val.stride == 0)
+         rel_offset %= brw_type_size_bytes(def->dst.type);
+
+      if (val.file == IMM)
+         val = extract_imm(val, src.type, rel_offset);
+      else
+         val = byte_offset(def->src[0], rel_offset);
+
+      break;
+   }
    default:
       break;
    }
@@ -1884,6 +1909,15 @@ brw_opt_copy_propagation_defs(brw_shader &s)
 
                continue;
             }
+         }
+
+         /* Only propagate through a load_reg if the source is a def. The
+          * destination of a load_reg is always a def (by
+          * definition).
+          */
+         if (def->opcode == SHADER_OPCODE_LOAD_REG &&
+             defs.get(def->src[0]) == NULL) {
+            continue;
          }
 
          brw_reg val =

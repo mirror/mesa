@@ -413,6 +413,7 @@ struct IDSet {
       Iterator& operator++();
 
       bool operator!=(const Iterator& other) const;
+      bool operator==(const Iterator& other) const;
 
       uint32_t operator*() const;
    };
@@ -599,6 +600,14 @@ IDSet::Iterator::operator!=(const IDSet::Iterator& other) const
    assert(set == other.set);
    assert(id != other.id || block == other.block);
    return id != other.id;
+}
+
+inline bool
+IDSet::Iterator::operator==(const IDSet::Iterator& other) const
+{
+   assert(set == other.set);
+   assert(id != other.id || block == other.block);
+   return id == other.id;
 }
 
 inline uint32_t

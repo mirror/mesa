@@ -2250,6 +2250,7 @@ std::vector<uint16_t> dead_code_analysis(Program* program);
 void dominator_tree(Program* program);
 void insert_exec_mask(Program* program);
 void value_numbering(Program* program);
+void split_vectors(Program* program);
 void optimize(Program* program);
 void optimize_postRA(Program* program);
 void lower_branches(Program* program);

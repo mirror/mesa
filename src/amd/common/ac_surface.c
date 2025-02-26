@@ -3928,11 +3928,17 @@ bool ac_surface_override_offset_stride(const struct radeon_info *info, struct ra
     * relaxed), or when the chip is GFX10, which is the only generation that can't override
     * the pitch.
     */
-   bool require_equal_pitch = surf->surf_size != surf->total_size ||
+   bool require_equal_pitch = false;
+
+   if(info->gfx_level >= GFX9)
+      require_equal_pitch = surf->surf_size != surf->total_size ||
                               num_layers != 1 ||
                               num_mipmap_levels != 1 ||
                               (info->gfx_level >= GFX9 && !surf->is_linear) ||
                               info->gfx_level == GFX10;
+   else
+      require_equal_pitch = surf->surf_size != surf->total_size ||
+                              num_mipmap_levels != 1;
 
    if (info->gfx_level >= GFX9) {
       if (pitch) {

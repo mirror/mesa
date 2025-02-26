@@ -1119,6 +1119,7 @@ static const struct intel_device_info intel_device_info_sg1 = {
    /* (Sub)slice info comes from the kernel topology info */    \
    XEHP_FEATURES(0, 1, 0),                                      \
    .revision = 4, /* For offline compiler */                    \
+   .has_bfloat16 = true,                                        \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
    .has_ray_tracing = true,                                     \
@@ -1214,6 +1215,7 @@ static const struct intel_device_info intel_device_info_arl_h = {
    .needs_null_push_constant_tbimr_workaround = false,          \
    .has_64bit_float = true,                                     \
    .has_64bit_int = true,                                       \
+   .has_bfloat16 = true,                                        \
    .has_integer_dword_mul = false,                              \
    .has_coarse_pixel_primitive_and_cb = true,                   \
    .has_mesh_shading = true,                                    \
@@ -1896,7 +1898,7 @@ intel_get_device_info_from_fd(int fd, struct intel_device_info *devinfo, int min
       drmFreeDevice(&drmdev);
       return false;
    }
-   
+
    if ((min_ver > 0 && devinfo->ver < min_ver) || (max_ver > 0 && devinfo->ver > max_ver)) {
       drmFreeDevice(&drmdev);
       return false;

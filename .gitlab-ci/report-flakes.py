@@ -28,17 +28,43 @@ import socket
 import time
 
 
+RETRY_ATTEMPTS = 3
+
+
 class Connection:
     def __init__(self, host, port, verbose):
-        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.s.connect((host, port))
-        self.s.setblocking(0)
+        self.host = host
+        self.port = port
+        self.connect()
         self.verbose = verbose
+
+    def connect(self):
+        self.s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        self.s.connect((self.host, self.port))
+        self.s.setblocking(0)
+
+    def disconnect(self):
+        try:
+            self.s.shutdown(socket.SHUT_WR)
+            self.s.close()
+        # Ignore any error here
+        except:
+            pass
 
     def send_line(self, line):
         if self.verbose:
             print(f"IRC: sending {line}")
-        self.s.sendall((line + '\n').encode())
+        for attempt in range(RETRY_ATTEMPTS):
+            try:
+                self.s.sendall((line + '\n').encode())
+                return
+            except BrokenPipeError:
+                retry_delay = 2 ** attempt
+                print(f"Network error during attempt {attempt + 1}, "
+                      f"waiting {retry_delay} seconds and retrying")
+                time.sleep(retry_delay)
+                self.disconnect()
+                self.connect()
 
     def wait(self, secs):
         for i in range(secs):
@@ -56,8 +82,7 @@ class Connection:
 
     def quit(self):
         self.send_line("QUIT")
-        self.s.shutdown(socket.SHUT_WR)
-        self.s.close()
+        self.disconnect()
 
 
 def read_flakes(results):

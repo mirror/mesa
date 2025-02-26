@@ -126,6 +126,20 @@ tu_drm_has_preemption(const struct tu_physical_device *dev)
    return true;
 }
 
+static int
+tu_try_enable_vm_bind(int fd)
+{
+   struct drm_msm_param param_req = {
+      .pipe = MSM_PIPE_3D0,
+      .param = MSM_PARAM_EN_VM_BIND,
+      .value = 1,
+   };
+
+   int ret = drmCommandWriteRead(fd, DRM_MSM_SET_PARAM, &param_req,
+                                 sizeof(param_req));
+   return ret;
+}
+
 static uint32_t
 tu_drm_get_priorities(const struct tu_physical_device *dev)
 {
@@ -198,7 +212,32 @@ msm_device_init(struct tu_device *dev)
             "failed to open device %s", dev->physical_device->fd_path);
    }
 
-   int ret = tu_drm_get_param(fd, MSM_PARAM_FAULTS, &dev->fault_count);
+   int ret;
+   if (dev->physical_device->has_sparse) {
+      ret = tu_try_enable_vm_bind(fd);
+      if (ret != 0) {
+         return vk_startup_errorf(dev->physical_device->instance,
+                                  VK_ERROR_INITIALIZATION_FAILED,
+                                  "Failed to enable VM_BIND mode: %d", ret);
+      }
+
+      struct drm_msm_submitqueue submit_req = {
+         .flags = MSM_SUBMITQUEUE_VM_BIND,
+      };
+
+      ret = drmCommandWriteRead(fd, DRM_MSM_SUBMITQUEUE_NEW, &submit_req,
+                                sizeof(submit_req));
+      if (ret != 0) {
+         close(fd);
+         return vk_startup_errorf(dev->physical_device->instance,
+                                  VK_ERROR_INITIALIZATION_FAILED,
+                                  "Failed to create VM_BIND queue: %d", ret);
+      }
+
+      dev->vm_bind_queue_id = submit_req.id;
+   }
+
+   ret = tu_drm_get_param(fd, MSM_PARAM_FAULTS, &dev->fault_count);
    if (ret != 0) {
       close(fd);
       return vk_startup_errorf(dev->physical_device->instance,
@@ -246,15 +285,17 @@ msm_device_check_status(struct tu_device *device)
 
 static int
 msm_submitqueue_new(struct tu_device *dev,
+                    enum tu_queue_type type,
                     int priority,
                     uint32_t *queue_id)
 {
    assert(priority >= 0 &&
           priority < dev->physical_device->submitqueue_priority_count);
    struct drm_msm_submitqueue req = {
-      .flags = dev->physical_device->info->chip >= 7 &&
-         dev->physical_device->has_preemption ?
-         MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0,
+      .flags = type == TU_QUEUE_SPARSE ? MSM_SUBMITQUEUE_VM_BIND :
+            (dev->physical_device->info->chip >= 7 &&
+             dev->physical_device->has_preemption ?
+             MSM_SUBMITQUEUE_ALLOW_PREEMPT : 0),
       .prio = priority,
    };
 
@@ -478,6 +519,98 @@ tu_allocate_kernel_iova(struct tu_device *dev,
 }
 
 static VkResult
+tu_map_vm_bind(struct tu_device *dev, uint32_t map_op_flags, uint64_t iova,
+               uint32_t gem_handle, uint64_t bo_offset, uint64_t range)
+{
+   struct drm_msm_gem_submit_bo_v2 bo = {
+      .flags = map_op_flags,
+      .handle = gem_handle,
+      .address = iova,
+      .bo_offset = bo_offset,
+      .range = range,
+   };
+
+   struct drm_msm_gem_submit req = {
+      .flags = MSM_PIPE_3D0,
+      .nr_bos = 1,
+      .bos = (__u64) &bo,
+      .queueid = dev->vm_bind_queue_id,
+      .bos_stride = sizeof(bo),
+   };
+
+   int ret = drmCommandWriteRead(dev->fd,
+                                 DRM_MSM_GEM_SUBMIT,
+                                 &req, sizeof(req));
+
+   /* When failing to map a BO, the kernel marks the VM as dead */
+   if (ret)
+      return vk_device_set_lost(&dev->vk, "BO map failed: %m");
+
+   /* TODO: batch up and wait only before mmap or submit */
+   return tu_wait_fence(dev, dev->vm_bind_queue_id, req.fence, 1000000000);
+}
+
+static VkResult
+msm_allocate_vm_bind(struct tu_device *dev,
+                     uint32_t gem_handle,
+                     uint64_t size,
+                     uint64_t client_iova,
+                     enum tu_bo_alloc_flags flags,
+                     uint64_t *iova)
+{
+   VkResult result;
+
+   *iova = 0;
+
+   result = tu_allocate_userspace_iova(dev, size, client_iova, flags, iova);
+
+   if (result != VK_SUCCESS)
+      return result;
+
+   uint32_t map_op_flags = MSM_SUBMIT_BO_OP_MAP;
+   if (flags & TU_BO_ALLOC_ALLOW_DUMP)
+      map_op_flags |= MSM_SUBMIT_BO_DUMP;
+   return tu_map_vm_bind(dev, map_op_flags, *iova, gem_handle, 0, size);
+}
+
+static VkResult
+tu_bo_add_to_bo_list(struct tu_device *dev,
+                     uint32_t gem_handle, uint32_t flags, uint64_t iova,
+                     uint32_t *bo_list_idx)
+{
+   mtx_lock(&dev->bo_mutex);
+   uint32_t idx = dev->submit_bo_count++;
+
+   /* grow the bo list if needed */
+   if (idx >= dev->submit_bo_list_size) {
+      uint32_t new_len = idx + 64;
+      struct drm_msm_gem_submit_bo *new_ptr = (struct drm_msm_gem_submit_bo *)
+         vk_realloc(&dev->vk.alloc, dev->submit_bo_list, new_len * sizeof(*dev->submit_bo_list),
+                    8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
+      if (!new_ptr) {
+         dev->submit_bo_count--;
+         mtx_unlock(&dev->bo_mutex);
+         return VK_ERROR_OUT_OF_HOST_MEMORY;
+      }
+
+      dev->submit_bo_list = new_ptr;
+      dev->submit_bo_list_size = new_len;
+   }
+
+   bool dump = flags & TU_BO_ALLOC_ALLOW_DUMP;
+   dev->submit_bo_list[idx] = (struct drm_msm_gem_submit_bo) {
+      .flags = MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE |
+               COND(dump, MSM_SUBMIT_BO_DUMP),
+      .handle = gem_handle,
+      .address = iova,
+   };
+
+   mtx_unlock(&dev->bo_mutex);
+   *bo_list_idx = idx;
+   return VK_SUCCESS;
+}
+
+static VkResult
 tu_bo_init(struct tu_device *dev,
            struct vk_object_base *base,
            struct tu_bo *bo,
@@ -492,7 +625,10 @@ tu_bo_init(struct tu_device *dev,
 
    assert(!client_iova || dev->physical_device->has_set_iova);
 
-   if (dev->physical_device->has_set_iova) {
+   if (dev->physical_device->has_sparse) {
+      result = msm_allocate_vm_bind(dev, gem_handle, size, client_iova, flags,
+                                    &iova);
+   } else if (dev->physical_device->has_set_iova) {
       result = msm_allocate_userspace_iova_locked(dev, gem_handle, size,
                                                   client_iova, flags, &iova);
    } else {
@@ -506,35 +642,17 @@ tu_bo_init(struct tu_device *dev,
 
    name = tu_debug_bos_add(dev, size, name);
 
-   mtx_lock(&dev->bo_mutex);
-   uint32_t idx = dev->submit_bo_count++;
+   uint32_t idx = 0;
 
-   /* grow the bo list if needed */
-   if (idx >= dev->submit_bo_list_size) {
-      uint32_t new_len = idx + 64;
-      struct drm_msm_gem_submit_bo *new_ptr = (struct drm_msm_gem_submit_bo *)
-         vk_realloc(&dev->vk.alloc, dev->submit_bo_list, new_len * sizeof(*dev->submit_bo_list),
-                    8, VK_SYSTEM_ALLOCATION_SCOPE_DEVICE);
-      if (!new_ptr) {
-         dev->submit_bo_count--;
-         mtx_unlock(&dev->bo_mutex);
+   if (!dev->physical_device->has_sparse) {
+      result = tu_bo_add_to_bo_list(dev, gem_handle, flags, iova, &idx);
+      if (result != VK_SUCCESS) {
          if (dev->physical_device->has_set_iova)
             util_vma_heap_free(&dev->vma, iova, size);
          tu_gem_close(dev, gem_handle);
-         return VK_ERROR_OUT_OF_HOST_MEMORY;
+         return result;
       }
-
-      dev->submit_bo_list = new_ptr;
-      dev->submit_bo_list_size = new_len;
    }
-
-   bool dump = flags & TU_BO_ALLOC_ALLOW_DUMP;
-   dev->submit_bo_list[idx] = (struct drm_msm_gem_submit_bo) {
-      .flags = MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE |
-               COND(dump, MSM_SUBMIT_BO_DUMP),
-      .handle = gem_handle,
-      .presumed = iova,
-   };
 
    *bo = (struct tu_bo) {
       .gem_handle = gem_handle,
@@ -589,14 +707,16 @@ tu_bo_set_kernel_name(struct tu_device *dev, struct tu_bo *bo, const char *name)
 static inline void
 msm_vma_lock(struct tu_device *dev)
 {
-   if (dev->physical_device->has_set_iova)
+   if (dev->physical_device->has_set_iova ||
+       dev->physical_device->has_sparse)
       mtx_lock(&dev->vma_mutex);
 }
 
 static inline void
 msm_vma_unlock(struct tu_device *dev)
 {
-   if (dev->physical_device->has_set_iova)
+   if (dev->physical_device->has_set_iova ||
+       dev->physical_device->has_sparse)
       mtx_unlock(&dev->vma_mutex);
 }
 
@@ -627,6 +747,9 @@ msm_bo_init(struct tu_device *dev,
 
    if (flags & TU_BO_ALLOC_GPU_READ_ONLY)
       req.flags |= MSM_BO_GPU_READONLY;
+
+   if (dev->physical_device->has_sparse && !(flags & TU_BO_ALLOC_SHAREABLE))
+      req.flags |= MSM_BO_NO_SHARE;
 
    int ret = drmCommandWriteRead(dev->fd,
                                  DRM_MSM_GEM_NEW, &req, sizeof(req));
@@ -755,9 +878,14 @@ msm_bo_map(struct tu_device *dev, struct tu_bo *bo, void *placed_addr)
 static void
 msm_bo_allow_dump(struct tu_device *dev, struct tu_bo *bo)
 {
-   mtx_lock(&dev->bo_mutex);
-   dev->submit_bo_list[bo->submit_bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
-   mtx_unlock(&dev->bo_mutex);
+   if (dev->physical_device->has_sparse) {
+      tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_MAP | MSM_SUBMIT_BO_DUMP,
+                     bo->iova, bo->gem_handle, 0, bo->size);
+   } else {
+      mtx_lock(&dev->bo_mutex);
+      dev->submit_bo_list[bo->submit_bo_list_idx].flags |= MSM_SUBMIT_BO_DUMP;
+      mtx_unlock(&dev->bo_mutex);
+   }
 }
 
 
@@ -799,6 +927,115 @@ msm_bo_get_metadata(struct tu_device *dev, struct tu_bo *bo,
    return ret;
 }
 
+static void
+msm_bo_gem_close(struct tu_device *dev, struct tu_bo *bo)
+{
+   /* Our BO structs are stored in a sparse array in the physical device,
+    * so we don't want to free the BO pointer, instead we want to reset it
+    * to 0, to signal that array entry as being free.
+    */
+   uint32_t gem_handle = bo->gem_handle;
+   memset(bo, 0, sizeof(*bo));
+
+   struct drm_gem_close req = {
+      .handle = gem_handle,
+   };
+
+   drmIoctl(dev->fd, DRM_IOCTL_GEM_CLOSE, &req);
+}
+
+static void
+msm_bo_finish(struct tu_device *dev, struct tu_bo *bo)
+{
+   assert(bo->gem_handle);
+
+   u_rwlock_rdlock(&dev->dma_bo_lock);
+
+   if (!p_atomic_dec_zero(&bo->refcnt)) {
+      u_rwlock_rdunlock(&dev->dma_bo_lock);
+      return;
+   }
+
+   if (bo->map) {
+      TU_RMV(bo_unmap, dev, bo);
+      munmap(bo->map, bo->size);
+   }
+
+   TU_RMV(bo_destroy, dev, bo);
+   tu_debug_bos_del(dev, bo);
+   tu_dump_bo_del(dev, bo);
+
+   if (dev->physical_device->has_sparse) {
+      tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_UNMAP, bo->iova, bo->gem_handle, 0,
+                     bo->size);
+
+      mtx_lock(&dev->bo_mutex);
+      if (bo->implicit_sync)
+         dev->implicit_sync_bo_count--;
+      mtx_unlock(&dev->bo_mutex);
+
+      mtx_lock(&dev->vma_mutex);
+      util_vma_heap_free(&dev->vma, bo->iova, bo->size);
+      mtx_unlock(&dev->vma_mutex);
+
+      msm_bo_gem_close(dev, bo);
+   } else if (dev->physical_device->has_set_iova) {
+      tu_bo_list_del(dev, bo);
+      tu_bo_make_zombie(dev, bo);
+   } else {
+      tu_bo_list_del(dev, bo);
+
+      msm_bo_gem_close(dev, bo);
+   }
+
+   u_rwlock_rdunlock(&dev->dma_bo_lock);
+}
+
+static VkResult
+msm_sparse_vma_init(struct tu_device *dev,
+                    struct vk_object_base *base,
+                    struct tu_sparse_vma *out_vma,
+                    uint64_t *out_iova,
+                    enum tu_sparse_vma_flags flags,
+                    uint64_t size, uint64_t client_iova)
+{
+   VkResult result;
+   enum tu_bo_alloc_flags bo_flags =
+      (flags & TU_SPARSE_VMA_REPLAYABLE) ? TU_BO_ALLOC_REPLAYABLE :
+      (enum tu_bo_alloc_flags)0;
+
+   out_vma->msm.size = size;
+
+   mtx_lock(&dev->vma_mutex);
+   result = tu_allocate_userspace_iova(dev, size, client_iova, bo_flags,
+                                       &out_vma->msm.iova);
+   mtx_unlock(&dev->vma_mutex);
+
+   if (result != VK_SUCCESS)
+      return result;
+
+   if (flags & TU_SPARSE_VMA_MAP_ZERO) {
+      result = tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_MAP_NULL, out_vma->msm.iova,
+                              0, 0, size);
+   }
+
+   *out_iova = out_vma->msm.iova;
+
+   return result;
+}
+
+static void
+msm_sparse_vma_finish(struct tu_device *dev,
+                      struct tu_sparse_vma *vma)
+{
+   tu_map_vm_bind(dev, MSM_SUBMIT_BO_OP_UNMAP, vma->msm.iova, 0, 0,
+                  vma->msm.size);
+
+   mtx_lock(&dev->vma_mutex);
+   util_vma_heap_free(&dev->vma, vma->msm.iova, vma->msm.size);
+   mtx_unlock(&dev->vma_mutex);
+}
+
 static VkResult
 msm_queue_submit(struct tu_queue *queue, void *_submit,
                  struct vk_sync_wait *waits, uint32_t wait_count,
@@ -814,6 +1051,7 @@ msm_queue_submit(struct tu_queue *queue, void *_submit,
    uint64_t gpu_offset = 0;
    uint32_t entry_count =
       util_dynarray_num_elements(&submit->commands, struct drm_msm_gem_submit_cmd);
+   bool has_vm_bind = queue->device->physical_device->has_sparse;
 #if HAVE_PERFETTO
    struct tu_perfetto_clocks clocks;
    uint64_t start_ts = tu_perfetto_begin_submit();
@@ -869,44 +1107,67 @@ msm_queue_submit(struct tu_queue *queue, void *_submit,
    if (signal_count)
       flags |= MSM_SUBMIT_SYNCOBJ_OUT;
 
-   mtx_lock(&queue->device->bo_mutex);
+   if (!has_vm_bind) {
+      mtx_lock(&queue->device->bo_mutex);
 
-   if (queue->device->implicit_sync_bo_count == 0)
-      flags |= MSM_SUBMIT_NO_IMPLICIT;
+      if (queue->device->implicit_sync_bo_count == 0)
+         flags |= MSM_SUBMIT_NO_IMPLICIT;
 
-   /* drm_msm_gem_submit_cmd requires index of bo which could change at any
-    * time when bo_mutex is not locked. So we update the index here under the
-    * lock.
-    */
-   util_dynarray_foreach (&submit->commands, struct drm_msm_gem_submit_cmd,
-                          cmd) {
-      unsigned i = cmd -
-         util_dynarray_element(&submit->commands,
-                               struct drm_msm_gem_submit_cmd, 0);
-      struct tu_bo **bo = util_dynarray_element(&submit->command_bos,
-                                                struct tu_bo *, i);
-      cmd->submit_idx = (*bo)->submit_bo_list_idx;
+      /* drm_msm_gem_submit_cmd requires index of bo which could change at any
+       * time when bo_mutex is not locked. So we update the index here under the
+       * lock.
+       */
+      util_dynarray_foreach (&submit->commands, struct drm_msm_gem_submit_cmd,
+                             cmd) {
+         unsigned i = cmd -
+            util_dynarray_element(&submit->commands,
+                                  struct drm_msm_gem_submit_cmd, 0);
+         struct tu_bo **bo = util_dynarray_element(&submit->command_bos,
+                                                   struct tu_bo *, i);
+         cmd->submit_idx = (*bo)->submit_bo_list_idx;
+      }
    }
 
-   req = (struct drm_msm_gem_submit) {
-      .flags = flags,
-      .nr_bos = entry_count ? queue->device->submit_bo_count : 0,
-      .nr_cmds = entry_count,
-      .bos = (uint64_t)(uintptr_t) queue->device->submit_bo_list,
-      .cmds = (uint64_t)(uintptr_t)submit->commands.data,
-      .queueid = queue->msm_queue_id,
-      .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
-      .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
-      .nr_in_syncobjs = wait_count,
-      .nr_out_syncobjs = signal_count,
-      .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
-   };
+   if (submit->binds.size == 0) {
+      req = (struct drm_msm_gem_submit) {
+         .flags = flags,
+         .nr_bos = entry_count ? queue->device->submit_bo_count : 0,
+         .nr_cmds = entry_count,
+         .bos = (uint64_t)(uintptr_t) queue->device->submit_bo_list,
+         .cmds = (uint64_t)(uintptr_t)submit->commands.data,
+         .queueid = queue->msm_queue_id,
+         .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
+         .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
+         .nr_in_syncobjs = wait_count,
+         .nr_out_syncobjs = signal_count,
+         .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
+      };
+   } else {
+      uint32_t bind_count =
+         util_dynarray_num_elements(&submit->binds,
+                                    struct drm_msm_gem_submit_bo_v2);
+      req = (struct drm_msm_gem_submit) {
+         .flags = flags,
+         .nr_bos = bind_count,
+         .nr_cmds = 0,
+         .bos = (uint64_t)(uintptr_t)submit->binds.data,
+         .cmds = 0,
+         .queueid = queue->msm_queue_id,
+         .in_syncobjs = (uint64_t)(uintptr_t)in_syncobjs,
+         .out_syncobjs = (uint64_t)(uintptr_t)out_syncobjs,
+         .nr_in_syncobjs = wait_count,
+         .nr_out_syncobjs = signal_count,
+         .syncobj_stride = sizeof(struct drm_msm_gem_submit_syncobj),
+         .bos_stride = sizeof(struct drm_msm_gem_submit_bo_v2),
+      };
+   }
 
    ret = drmCommandWriteRead(queue->device->fd,
                              DRM_MSM_GEM_SUBMIT,
                              &req, sizeof(req));
 
-   mtx_unlock(&queue->device->bo_mutex);
+   if (!has_vm_bind)
+      mtx_unlock(&queue->device->bo_mutex);
 
    if (ret) {
       result = vk_device_set_lost(&queue->device->vk, "submit failed: %m");
@@ -977,14 +1238,17 @@ static const struct tu_knl msm_knl_funcs = {
       .bo_export_dmabuf = tu_drm_export_dmabuf,
       .bo_map = msm_bo_map,
       .bo_allow_dump = msm_bo_allow_dump,
-      .bo_finish = tu_drm_bo_finish,
+      .bo_finish = msm_bo_finish,
       .bo_set_metadata = msm_bo_set_metadata,
       .bo_get_metadata = msm_bo_get_metadata,
       .submit_create = msm_submit_create,
       .submit_finish = msm_submit_finish,
       .submit_add_entries = msm_submit_add_entries,
+      .submit_add_bind = msm_submit_add_bind,
       .queue_submit = msm_queue_submit,
       .queue_wait_fence = msm_queue_wait_fence,
+      .sparse_vma_init = msm_sparse_vma_init,
+      .sparse_vma_finish = msm_sparse_vma_finish,
 };
 
 VkResult
@@ -1022,6 +1286,8 @@ tu_knl_drm_msm_load(struct tu_instance *instance,
 
    device->instance = instance;
    device->local_fd = fd;
+
+   device->has_sparse = tu_try_enable_vm_bind(fd) == 0;
 
    if (tu_drm_get_gpu_id(device, &device->dev_id.gpu_id)) {
       result = vk_startup_errorf(instance, VK_ERROR_INITIALIZATION_FAILED,

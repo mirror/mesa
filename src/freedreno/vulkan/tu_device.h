@@ -19,6 +19,7 @@
 #include "tu_cs.h"
 #include "tu_pass.h"
 #include "tu_perfetto.h"
+#include "tu_queue.h"
 #include "tu_suballoc.h"
 #include "tu_util.h"
 
@@ -31,7 +32,7 @@
 /* queue types */
 #define TU_QUEUE_GENERAL 0
 
-#define TU_MAX_QUEUE_FAMILIES 1
+#define TU_MAX_QUEUE_FAMILIES 2
 
 #define TU_BORDER_COLOR_COUNT 4096
 #define TU_BORDER_COLOR_BUILTIN 6
@@ -72,6 +73,11 @@ enum tu_kgsl_dma_type
    TU_KGSL_DMA_TYPE_ION_LEGACY,
    TU_KGSL_DMA_TYPE_ION,
    TU_KGSL_DMA_TYPE_DMAHEAP,
+};
+
+struct tu_queue_family {
+   enum tu_queue_type type;
+   const VkQueueFamilyProperties *properties;
 };
 
 extern uint64_t os_page_size;
@@ -121,6 +127,7 @@ struct tu_physical_device
 
    bool has_set_iova;
    bool has_raytracing;
+   bool has_sparse;
    uint64_t va_start;
    uint64_t va_size;
 
@@ -136,6 +143,9 @@ struct tu_physical_device
       uint32_t type_count;
       VkMemoryPropertyFlags types[VK_MAX_MEMORY_TYPES];
    } memory;
+
+   struct tu_queue_family queue_families[TU_MAX_QUEUE_FAMILIES];
+   unsigned num_queue_families;
 
    struct fd_dev_id dev_id;
    struct fd_dev_info dev_info;
@@ -442,6 +452,9 @@ struct tu_device
    bool use_lrz;
 
    struct fd_rd_output rd_output;
+
+   /* This is an internal queue for mapping/unmapping non-sparse BOs */
+   uint32_t vm_bind_queue_id;
 };
 VK_DEFINE_HANDLE_CASTS(tu_device, vk.base, VkDevice, VK_OBJECT_TYPE_DEVICE)
 
@@ -512,6 +525,7 @@ tu_physical_device_init(struct tu_physical_device *device,
 
 void
 tu_physical_device_get_global_priority_properties(const struct tu_physical_device *pdevice,
+                                                  enum tu_queue_type type,
                                                   VkQueueFamilyGlobalPriorityPropertiesKHR *props);
 
 uint64_t

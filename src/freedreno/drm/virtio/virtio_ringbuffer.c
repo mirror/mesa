@@ -131,7 +131,7 @@ flush_submit_list(struct list_head *submit_list)
 
       submit_bos[i].flags = fd_submit->bos[i]->reloc_flags;
       submit_bos[i].handle = virtio_bo->res_id;
-      submit_bos[i].presumed = 0;
+      submit_bos[i].address = 0;
    }
 
    if (virtio_pipe->next_submit_fence <= 0)

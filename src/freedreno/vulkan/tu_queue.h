@@ -12,6 +12,12 @@
 
 #include "tu_common.h"
 
+enum tu_queue_type
+{
+   TU_QUEUE_GFX,
+   TU_QUEUE_SPARSE,
+};
+
 struct tu_queue
 {
    struct vk_queue vk;
@@ -28,6 +34,7 @@ VK_DEFINE_HANDLE_CASTS(tu_queue, vk.base, VkQueue, VK_OBJECT_TYPE_QUEUE)
 VkResult
 tu_queue_init(struct tu_device *device,
               struct tu_queue *queue,
+              enum tu_queue_type type,
               int idx,
               const VkDeviceQueueCreateInfo *create_info);
 

@@ -132,7 +132,7 @@ append_bo(struct msm_submit *submit, struct fd_bo *bo)
             (struct drm_msm_gem_submit_bo){
                .flags = bo->reloc_flags & (MSM_SUBMIT_BO_READ | MSM_SUBMIT_BO_WRITE),
                .handle = bo->handle,
-               .presumed = 0,
+               .address = 0,
             });
          APPEND(submit, bos, fd_bo_ref(bo));
 

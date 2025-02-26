@@ -790,8 +790,6 @@ crocus_clear_depth_stencil(struct pipe_context *ctx,
                            unsigned width, unsigned height,
                            bool render_condition_enabled)
 {
-   return;
-#if 0
    struct crocus_context *ice = (void *) ctx;
    struct pipe_box box = {
       .x = dst_x,
@@ -801,20 +799,13 @@ crocus_clear_depth_stencil(struct pipe_context *ctx,
       .height = height,
       .depth = psurf->u.tex.last_layer - psurf->u.tex.first_layer + 1
    };
-   uint32_t blit_flags = 0;
 
    assert(util_format_is_depth_or_stencil(psurf->texture->format));
 
-   crocus_blitter_begin(ice, CROCUS_SAVE_FRAGMENT_STATE);
-   util_blitter_clear(ice->blitter, width, height,
-                      1, flags, NULL, depth, stencil, render_condition_enabled);
-#if 0
    clear_depth_stencil(ice, psurf->texture, psurf->u.tex.level, &box,
                        render_condition_enabled,
                        flags & PIPE_CLEAR_DEPTH, flags & PIPE_CLEAR_STENCIL,
                        depth, stencil);
-#endif
-#endif
 }
 
 void

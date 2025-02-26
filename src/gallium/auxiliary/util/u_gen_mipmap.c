@@ -101,6 +101,8 @@ util_gen_mipmap(struct pipe_context *pipe, struct pipe_resource *pt,
    /* don't set the stencil mask, stencil shouldn't be changed */
    blit.mask = is_zs ? PIPE_MASK_Z : PIPE_MASK_RGBA;
    blit.filter = filter;
+   blit.for_generate_mipmap = true;
+   blit.mipmap_base_level = base_level;
 
    for (dstLevel = base_level + 1; dstLevel <= last_level; dstLevel++) {
       blit.src.level = dstLevel - 1;

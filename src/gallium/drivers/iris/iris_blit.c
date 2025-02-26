@@ -498,8 +498,9 @@ iris_blit(struct pipe_context *ctx, const struct pipe_blit_info *info)
       iris_resource_prepare_texture(ice, src_res, src_fmt.fmt,
                                     info->src.level, 1, info->src.box.z,
                                     info->src.box.depth);
-      iris_emit_buffer_barrier_for(batch, src_res->bo,
-                                   IRIS_DOMAIN_SAMPLER_READ);
+      if (!info->for_generate_mipmap || info->src.level == info->mipmap_base_level)
+         iris_emit_buffer_barrier_for(batch, src_res->bo,
+                                     IRIS_DOMAIN_SAMPLER_READ);
 
       struct iris_format_info dst_fmt =
          iris_format_for_usage(devinfo, dst_pfmt,

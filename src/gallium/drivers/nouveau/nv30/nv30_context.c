@@ -164,6 +164,8 @@ nv30_context_destroy(struct pipe_context *pipe)
    if (nv30->blit_fp)
       pipe_resource_reference(&nv30->blit_fp, NULL);
 
+   nouveau_pushbuf_bufctx(nv30->base.pushbuf, NULL);
+   PUSH_KICK(nv30->base.pushbuf);
    nouveau_bufctx_del(&nv30->bufctx);
 
    if (nv30->screen->cur_ctx == nv30)

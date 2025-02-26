@@ -321,6 +321,7 @@ struct nouveau_device_priv {
    struct list_head bo_list;
    int gart_limit_percent;
    int vram_limit_percent;
+   uint32_t max_exec_pushbufs;
 };
 
 static inline struct nouveau_device_priv *
@@ -454,6 +455,12 @@ nouveau_device_new(struct nouveau_object *parent, struct nouveau_device **pdev)
    if (ret)
       goto done;
    nvdev->base.gart_size = v;
+
+   ret = nouveau_getparam(dev, NOUVEAU_GETPARAM_EXEC_PUSH_MAX, &v);
+   if (ret)
+      nvdev->max_exec_pushbufs = NOUVEAU_GEM_MAX_PUSH;
+   else
+      nvdev->max_exec_pushbufs = v;
 
    tmp = getenv("NOUVEAU_LIBDRM_VRAM_LIMIT_PERCENT");
    if (tmp)
@@ -1056,7 +1063,7 @@ struct nouveau_pushbuf_krec {
    struct nouveau_pushbuf_krec *next;
    struct drm_nouveau_gem_pushbuf_bo buffer[NOUVEAU_GEM_MAX_BUFFERS];
    struct drm_nouveau_gem_pushbuf_reloc reloc[NOUVEAU_GEM_MAX_RELOCS];
-   struct drm_nouveau_gem_pushbuf_push push[NOUVEAU_GEM_MAX_PUSH];
+   struct drm_nouveau_gem_pushbuf_push push[UINT16_MAX];
    int nr_buffer;
    int nr_reloc;
    int nr_push;
@@ -1713,9 +1720,10 @@ int
 nouveau_pushbuf_space(struct nouveau_pushbuf *push, uint32_t dwords, uint32_t relocs,
                       uint32_t pushes)
 {
-      struct nouveau_pushbuf_priv *nvpb = nouveau_pushbuf(push);
+   struct nouveau_pushbuf_priv *nvpb = nouveau_pushbuf(push);
    struct nouveau_pushbuf_krec *krec = nvpb->krec;
    struct nouveau_client *client = push->client;
+   struct nouveau_device_priv *nvdev = nouveau_device(client->device);
    struct nouveau_bo *bo = NULL;
    bool flushed = false;
    int ret = 0;
@@ -1744,7 +1752,7 @@ nouveau_pushbuf_space(struct nouveau_pushbuf *push, uint32_t dwords, uint32_t re
     */
    if (bo ||
        krec->nr_reloc + relocs >= NOUVEAU_GEM_MAX_RELOCS ||
-       krec->nr_push + pushes >= NOUVEAU_GEM_MAX_PUSH) {
+       krec->nr_push + pushes >= nvdev->max_exec_pushbufs) {
       if (nvpb->bo && krec->nr_buffer)
          pushbuf_flush(push);
       flushed = true;

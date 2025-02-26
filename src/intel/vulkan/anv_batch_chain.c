@@ -261,8 +261,16 @@ anv_batch_bo_create(struct anv_cmd_buffer *cmd_buffer,
 
    result = anv_bo_pool_alloc(&cmd_buffer->device->batch_bo_pool,
                               size, &bbo->bo);
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT,
+                                   bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
       goto fail_alloc;
+   }
+
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
 
    const bool uses_relocs = cmd_buffer->device->physical->uses_relocs;
    result = anv_reloc_list_init(&bbo->relocs, &cmd_buffer->vk.pool->alloc, uses_relocs);
@@ -275,6 +283,10 @@ anv_batch_bo_create(struct anv_cmd_buffer *cmd_buffer,
 
  fail_bo_alloc:
    anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool, bbo->bo);
+
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
  fail_alloc:
    vk_free(&cmd_buffer->vk.pool->alloc, bbo);
 
@@ -295,8 +307,16 @@ anv_batch_bo_clone(struct anv_cmd_buffer *cmd_buffer,
 
    result = anv_bo_pool_alloc(&cmd_buffer->device->batch_bo_pool,
                               other_bbo->bo->size, &bbo->bo);
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT,
+                                   bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
       goto fail_alloc;
+   }
+
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
 
    result = anv_reloc_list_init_clone(&bbo->relocs, &other_bbo->relocs);
    if (result != VK_SUCCESS)
@@ -310,6 +330,10 @@ anv_batch_bo_clone(struct anv_cmd_buffer *cmd_buffer,
 
  fail_bo_alloc:
    anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool, bbo->bo);
+
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
  fail_alloc:
    vk_free(&cmd_buffer->vk.pool->alloc, bbo);
 
@@ -375,6 +399,9 @@ anv_batch_bo_destroy(struct anv_batch_bo *bbo,
 {
    anv_reloc_list_finish(&bbo->relocs);
    anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool, bbo->bo);
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                bbo->bo->gem_handle, bbo->bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
    vk_free(&cmd_buffer->vk.pool->alloc, bbo);
 }
 
@@ -814,8 +841,15 @@ anv_cmd_buffer_alloc_space(struct anv_cmd_buffer *cmd_buffer,
                         align(size, 4096), &bo);
    if (result != VK_SUCCESS) {
       anv_batch_set_error(&cmd_buffer->batch, VK_ERROR_OUT_OF_DEVICE_MEMORY);
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT,
+                                   bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
       return ANV_EMPTY_ALLOC;
    }
+
+   vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
 
    struct anv_bo **bo_entry =
       u_vector_add(&cmd_buffer->dynamic_bos);
@@ -824,6 +858,10 @@ anv_cmd_buffer_alloc_space(struct anv_cmd_buffer *cmd_buffer,
       anv_bo_pool_free(bo->map != NULL ?
                        &cmd_buffer->device->batch_bo_pool :
                        &cmd_buffer->device->bvh_bo_pool, bo);
+
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
       return ANV_EMPTY_ALLOC;
    }
    *bo_entry = bo;
@@ -954,6 +992,10 @@ anv_cmd_buffer_fini_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->generation.ring_bo) {
       anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool,
                        cmd_buffer->generation.ring_bo);
+      struct anv_bo *bo = cmd_buffer->generation.ring_bo;
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
    }
 }
 
@@ -1008,6 +1050,10 @@ anv_cmd_buffer_reset_batch_bo_chain(struct anv_cmd_buffer *cmd_buffer)
    if (cmd_buffer->generation.ring_bo) {
       anv_bo_pool_free(&cmd_buffer->device->batch_bo_pool,
                        cmd_buffer->generation.ring_bo);
+      struct anv_bo *bo = cmd_buffer->generation.ring_bo;
+      vk_device_memory_report_emit(&cmd_buffer->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_COMMAND_BUFFER,
+                                   (uint64_t)anv_cmd_buffer_to_handle(cmd_buffer), 0 /* heap 0: device memory */);
       cmd_buffer->generation.ring_bo = NULL;
    }
 
@@ -1671,6 +1717,7 @@ anv_async_submit_extend_batch(struct anv_batch *batch, uint32_t size,
                               void *user_data)
 {
    struct anv_async_submit *submit = user_data;
+   struct anv_queue *queue = submit->queue;
 
    uint32_t alloc_size = 0;
    util_dynarray_foreach(&submit->batch_bos, struct anv_bo *, bo)
@@ -1681,8 +1728,16 @@ anv_async_submit_extend_batch(struct anv_batch *batch, uint32_t size,
    VkResult result = anv_bo_pool_alloc(submit->bo_pool,
                                        align(alloc_size, 4096),
                                        &bo);
-   if (result != VK_SUCCESS)
+   if (result != VK_SUCCESS) {
+      vk_device_memory_report_emit(&queue->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATION_FAILED_EXT,
+                                   bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_QUEUE,
+                                   (uint64_t)anv_queue_to_handle(queue), 0 /* heap 0: device memory */);
       return result;
+   }
+
+   vk_device_memory_report_emit(&queue->device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_ALLOCATE_EXT,
+                                bo->gem_handle, bo->actual_size, VK_OBJECT_TYPE_QUEUE,
+                                (uint64_t)anv_queue_to_handle(queue), 0 /* heap 0: device memory */);
 
    util_dynarray_append(&submit->batch_bos, struct anv_bo *, bo);
 
@@ -1753,12 +1808,19 @@ void
 anv_async_submit_fini(struct anv_async_submit *submit)
 {
    struct anv_device *device = submit->queue->device;
+   struct anv_queue *queue = submit->queue;
 
    if (submit->owns_sync)
       vk_sync_destroy(&device->vk, submit->signal.sync);
 
-   util_dynarray_foreach(&submit->batch_bos, struct anv_bo *, bo)
+   util_dynarray_foreach(&submit->batch_bos, struct anv_bo *, bo) {
       anv_bo_pool_free(submit->bo_pool, *bo);
+
+      vk_device_memory_report_emit(&device->vk, VK_DEVICE_MEMORY_REPORT_EVENT_TYPE_FREE_EXT,
+                                   (*bo)->gem_handle, (*bo)->actual_size, VK_OBJECT_TYPE_QUEUE,
+                                   (uint64_t)anv_queue_to_handle(queue), 0 /* heap 0: device memory */);
+   }
+
    util_dynarray_fini(&submit->batch_bos);
    anv_reloc_list_finish(&submit->relocs);
 }

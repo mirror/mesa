@@ -554,7 +554,10 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
       if ((profile == PIPE_VIDEO_PROFILE_MPEG2_SIMPLE ||
            profile == PIPE_VIDEO_PROFILE_MPEG2_MAIN ||
            profile == PIPE_VIDEO_PROFILE_MPEG4_ADVANCED_SIMPLE ||
-           profile == PIPE_VIDEO_PROFILE_VC1_ADVANCED) &&
+           profile == PIPE_VIDEO_PROFILE_VC1_ADVANCED ||
+           profile == PIPE_VIDEO_PROFILE_HEVC_MAIN ||
+           profile == PIPE_VIDEO_PROFILE_HEVC_MAIN_10 ||
+           profile == PIPE_VIDEO_PROFILE_AV1_MAIN) &&
           sscreen->info.dec_caps.codec_info[codec - 1].valid) {
          return sscreen->info.dec_caps.codec_info[codec - 1].max_level;
       } else {

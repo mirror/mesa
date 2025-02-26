@@ -99,6 +99,8 @@ if dep_libarchive.found()
     )
   endforeach
 
+  subdir('generate-rd')
+
   rddecompiler = executable(
     'rddecompiler',
     [
@@ -126,9 +128,7 @@ if dep_libarchive.found()
 
   generate_rd = executable(
     'generate_rd',
-    [
-      'generate-rd.cc'
-    ],
+    './generate-rd/generate-rd.cc',
     include_directories: [
       inc_freedreno,
       inc_freedreno_rnn,
@@ -137,6 +137,7 @@ if dep_libarchive.found()
     ],
     link_with: [
       libfreedreno_cffdec,
+      libgenerate_rd_resources,
     ],
     dependencies : [
       idep_nir,

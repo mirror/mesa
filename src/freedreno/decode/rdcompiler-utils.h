@@ -339,22 +339,22 @@ emit_shader_iova(struct replay_context *ctx, struct cmdstream *cs, uint64_t id)
    }
 }
 
-#define begin_draw_state()                                                     \
-   uint64_t subcs_iova_start = cs_get_cur_iova(ctx.state_cs);                  \
+#define begin_draw_state(_ctx)                                                 \
+   uint64_t subcs_iova_start = cs_get_cur_iova(_ctx->state_cs);                \
    struct cmdstream *prev_cs = cs;                                             \
-   struct cmdstream *cs = ctx.state_cs;
+   struct cmdstream *cs = _ctx->state_cs;
 
-#define end_draw_state(params)                                                 \
-   uint64_t subcs_iova_end = cs_get_cur_iova(ctx.state_cs);                    \
+#define end_draw_state(_ctx, params)                                           \
+   uint64_t subcs_iova_end = cs_get_cur_iova(_ctx->state_cs);                  \
    uint32_t subcs_size =                                                       \
       (subcs_iova_end - subcs_iova_start) / sizeof(uint32_t);                  \
    pkt7(prev_cs, CP_SET_DRAW_STATE, 3);                                        \
    pkt(prev_cs, (params) | subcs_size);                                        \
    pkt_qw(prev_cs, subcs_iova_start);
 
-#define begin_ib()                                                             \
+#define begin_ib(_ctx)                                                         \
    struct cmdstream *prev_cs = cs;                                             \
-   struct cmdstream *cs = cs_alloc(&ctx, 1024 * 1024);
+   struct cmdstream *cs = cs_alloc(_ctx, 1024 * 1024);
 
 #define end_ib()                                                               \
    uint64_t ibcs_size = cs->cur;                                               \

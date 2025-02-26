@@ -236,7 +236,6 @@ files_libgallium = files(
   'util/u_prim_restart.h',
   'util/u_pstipple.c',
   'util/u_pstipple.h',
-  'util/u_pwr8.h',
   'util/u_range.h',
   'util/u_rect.h',
   'util/u_resource.c',

@@ -698,6 +698,7 @@ if va_drivers_path == ''
 endif
 
 with_gallium_xa = get_option('gallium-xa') \
+  .disable_auto_if(not (with_gallium_nouveau or with_gallium_freedreno or with_gallium_i915 or with_gallium_svga)) \
   .require(system_has_kms_drm, error_message : 'XA state tracker can only be built on unix-like OSes.') \
   .require(with_gallium_nouveau or with_gallium_freedreno or with_gallium_i915 or with_gallium_svga,
            error_message : 'XA state tracker requires at least one of the following gallium drivers: nouveau, freedreno, i915, svga.') \

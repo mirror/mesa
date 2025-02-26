@@ -291,7 +291,6 @@ varying_name(elk_varying_slot slot, gl_shader_stage stage)
    static const char *elk_names[] = {
       [ELK_VARYING_SLOT_NDC - VARYING_SLOT_MAX] = "ELK_VARYING_SLOT_NDC",
       [ELK_VARYING_SLOT_PAD - VARYING_SLOT_MAX] = "ELK_VARYING_SLOT_PAD",
-      [ELK_VARYING_SLOT_PNTC - VARYING_SLOT_MAX] = "ELK_VARYING_SLOT_PNTC",
    };
 
    return elk_names[slot - VARYING_SLOT_MAX];

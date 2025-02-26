@@ -408,7 +408,7 @@ calculate_point_sprite_mask(struct elk_sf_compile *c, GLuint reg)
       if (c->key.point_sprite_coord_replace & (1 << (varying1 - VARYING_SLOT_TEX0)))
 	 pc |= 0x0f;
    }
-   if (varying1 == ELK_VARYING_SLOT_PNTC)
+   if (varying1 == VARYING_SLOT_PNTC)
       pc |= 0x0f;
 
    varying2 = vert_reg_to_varying(c, reg, 1);
@@ -417,7 +417,7 @@ calculate_point_sprite_mask(struct elk_sf_compile *c, GLuint reg)
                                                      VARYING_SLOT_TEX0)))
          pc |= 0xf0;
    }
-   if (varying2 == ELK_VARYING_SLOT_PNTC)
+   if (varying2 == VARYING_SLOT_PNTC)
       pc |= 0xf0;
 
    return pc;
@@ -825,8 +825,8 @@ elk_compile_sf(const struct elk_compiler *compiler,
        * it manually to let SF shader generate the needed interpolation
        * coefficient for FS shader.
        */
-      c.vue_map.varying_to_slot[ELK_VARYING_SLOT_PNTC] = c.vue_map.num_slots;
-      c.vue_map.slot_to_varying[c.vue_map.num_slots++] = ELK_VARYING_SLOT_PNTC;
+      c.vue_map.varying_to_slot[VARYING_SLOT_PNTC] = c.vue_map.num_slots;
+      c.vue_map.slot_to_varying[c.vue_map.num_slots++] = VARYING_SLOT_PNTC;
    }
    c.urb_entry_read_offset = ELK_SF_URB_ENTRY_READ_OFFSET;
    c.nr_attr_regs = (c.vue_map.num_slots + 1)/2 - c.urb_entry_read_offset;

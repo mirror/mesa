@@ -1162,13 +1162,6 @@ typedef enum
 {
    ELK_VARYING_SLOT_NDC = VARYING_SLOT_MAX,
    ELK_VARYING_SLOT_PAD,
-   /**
-    * Technically this is not a varying but just a placeholder that
-    * compile_sf_prog() inserts into its VUE map to cause the gl_PointCoord
-    * builtin variable to be compiled correctly. see compile_sf_prog() for
-    * more info.
-    */
-   ELK_VARYING_SLOT_PNTC,
    ELK_VARYING_SLOT_COUNT
 } elk_varying_slot;
 

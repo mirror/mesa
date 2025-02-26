@@ -147,7 +147,6 @@ st_update_framebuffer_state( struct st_context *st )
    framebuffer.nr_cbufs = fb->_NumColorDrawBuffers;
 
    unsigned num_multiview_layer = 0;
-   unsigned first_multiview_layer = 0;
    for (i = 0; i < fb->_NumColorDrawBuffers; i++) {
       framebuffer.cbufs[i] = NULL;
       rb = fb->_ColorDrawBuffers[i];
@@ -159,10 +158,7 @@ st_update_framebuffer_state( struct st_context *st )
 
             _mesa_update_renderbuffer_surface(ctx, rb);
 
-            if (rb->rtt_numviews) {
-               first_multiview_layer = rb->rtt_slice;
-               num_multiview_layer = MAX2(num_multiview_layer, rb->rtt_numviews);
-            }
+            num_multiview_layer = MAX2(num_multiview_layer, rb->rtt_numviews);
          }
 
          if (rb->surface) {
@@ -175,8 +171,6 @@ st_update_framebuffer_state( struct st_context *st )
          rb->defined = GL_TRUE; /* we'll be drawing something */
       }
    }
-   if (num_multiview_layer)
-      framebuffer.viewmask = BITFIELD_RANGE(first_multiview_layer, num_multiview_layer);
 
    for (i = framebuffer.nr_cbufs; i < PIPE_MAX_COLOR_BUFS; i++) {
       framebuffer.cbufs[i] = NULL;
@@ -199,6 +193,7 @@ st_update_framebuffer_state( struct st_context *st )
       if (rb->is_rtt) {
          /* rendering to a GL texture, may have to update surface */
          _mesa_update_renderbuffer_surface(ctx, rb);
+         num_multiview_layer = MAX2(num_multiview_layer, rb->rtt_numviews);
       }
       if (rb->surface && rb->surface->context != ctx->pipe) {
          _mesa_regen_renderbuffer_surface(ctx, rb);
@@ -209,6 +204,26 @@ st_update_framebuffer_state( struct st_context *st )
    }
    else
       framebuffer.zsbuf = NULL;
+
+   framebuffer.viewmask = BITFIELD_MASK(num_multiview_layer);
+
+   /* ensure this is the currently bound vs, not the last-used one */
+   struct gl_program *vp = st->ctx->_Shader->CurrentProgram[MESA_SHADER_VERTEX];
+   /* maybe mesh shaders... ? */
+   if (vp) {
+      /**
+       * OVR_multiview
+
+         INVALID_OPERATION is generated if a rendering command is issued and the the
+         number of views in the current draw framebuffer is not equal to the number
+         of views declared in the currently bound program.
+       */
+      unsigned num_views = util_bitcount(vp->info.view_mask);
+      if (num_multiview_layer != num_views) {
+         _mesa_error(st->ctx, GL_INVALID_OPERATION,
+                     "bound vertex shader num_views does not match framebuffer state");
+      }
+   }
 
 #ifndef NDEBUG
    /* Make sure the resource binding flags were set properly */

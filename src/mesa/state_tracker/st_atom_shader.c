@@ -209,6 +209,23 @@ st_update_vp( struct st_context *st )
    vp = st->ctx->VertexProgram._Current;
    assert(vp->Target == GL_VERTEX_PROGRAM_ARB);
 
+   /**
+    * OVR_multiview
+
+      INVALID_OPERATION is generated if a rendering command is issued and the the
+      number of views in the current draw framebuffer is not equal to the number
+      of views declared in the currently bound program.
+      */
+   unsigned num_views = util_bitcount(vp->info.view_mask);
+   for (int i = 0; i < st->ctx->DrawBuffer->_NumColorDrawBuffers; i++) {
+      gl_buffer_index buf = st->ctx->DrawBuffer->_ColorDrawBufferIndexes[i];
+      struct gl_renderbuffer *rb = st->ctx->DrawBuffer->_ColorDrawBuffers[i];
+      if (buf != BUFFER_NONE && rb && rb->rtt_numviews != num_views) {
+         _mesa_error(st->ctx, GL_INVALID_OPERATION,
+                     "bound vertex shader num_views does not match framebuffer state");
+      }
+   }
+
    if (st->shader_has_one_variant[MESA_SHADER_VERTEX] &&
        !st->ctx->Array._PerVertexEdgeFlagsEnabled) {
       st->vp_variant = st_common_variant(vp->variants);

@@ -709,6 +709,7 @@ typedef struct rvcn_enc_output_format_s
 
 #define RENCODE_QP_MAP_TYPE_NONE               0
 #define RENCODE_QP_MAP_TYPE_DELTA              1
+#define RENCODE_QP_MAP_TYPE_ABSOLUTE           2
 #define RENCODE_QP_MAP_TYPE_MAP_PA             4
 #define RENCODE_QP_MAP_MAX_REGIONS             32
 #define RENCODE_QP_MAP_UNIFIED_QP_BITS_SHIFT   7
@@ -740,6 +741,8 @@ typedef struct rvcn_enc_qp_map_s
    uint32_t width_in_block;
    uint32_t height_in_block;
    struct rvcn_enc_qp_map_region map[RENCODE_QP_MAP_MAX_REGIONS];
+   struct pb_buffer_lean *buf;
+   bool   is_roi;
 }rvcn_enc_qp_map_t;
 
 typedef struct rvcn_enc_latency_s

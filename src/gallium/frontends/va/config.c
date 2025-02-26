@@ -577,6 +577,19 @@ vlVaGetConfigAttributes(VADriverContextP ctx, VAProfile profile, VAEntrypoint en
                value = roi_support;
          } break;
 
+#if VA_CHECK_VERSION(1, 23, 0)
+         case VAConfigAttribEncQPMap:
+         {
+            int qpmap_support = pscreen->get_video_param(pscreen, ProfileToPipe(profile),
+                                             PIPE_VIDEO_ENTRYPOINT_ENCODE,
+                                             PIPE_VIDEO_CAP_ENC_QPMAP);
+            if (qpmap_support <= 0)
+               value = VA_ATTRIB_NOT_SUPPORTED;
+            else
+               value = qpmap_support;
+         } break;
+#endif
+
          default:
             value = VA_ATTRIB_NOT_SUPPORTED;
             break;

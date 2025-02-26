@@ -111,6 +111,32 @@ static int si_get_video_param_no_video_hw(struct pipe_screen *screen, enum pipe_
    }
 }
 
+/* It defines the QP_MAP requirement according to different VCN generations
+ * and codecs, failure in applying these requirements will result in
+ * failure of applying qp_map functionality. */
+static uint32_t si_video_enc_qp_map_caps(struct pipe_screen *screen,
+                                         enum pipe_video_format codec)
+{
+   bool is_vcn5 = ((struct si_screen *)screen)->info.vcn_ip_version >= VCN_5_0_0
+                                                                  ? true : false;
+   union pipe_enc_cap_qp_map attrib;
+
+   attrib.value = 0;
+   attrib.bits.log2_block_size = (codec == PIPE_VIDEO_FORMAT_MPEG4_AVC) ? 4 : 6;
+   attrib.bits.qp_map_mode = (PIPE_ENC_QPMAP_DELTA | PIPE_ENC_QPMAP_ABSOLUTE);
+   attrib.bits.unit_size_in_bytes = is_vcn5 ? 2 : 4;
+   attrib.bits.left_shit_bits = is_vcn5 ? 7 : 0;
+   attrib.bits.division_context = (codec == PIPE_VIDEO_FORMAT_AV1)
+                                   ? (is_vcn5 ? PIPE_ENC_QPMAP_DIV_BOTH : PIPE_ENC_QPMAP_DIV_RC)
+                                   : PIPE_ENC_QPMAP_DIV_NONE;
+   /* only applying division_factor in the corresponding context. */
+   attrib.bits.division_factor = (codec == PIPE_VIDEO_FORMAT_AV1) ? 5 : 1;
+   attrib.bits.log2_qp_map_width_align = 2;
+   attrib.bits.log2_qp_map_height_align = 0;
+
+   return attrib.value;
+}
+
 static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profile profile,
                               enum pipe_video_entrypoint entrypoint, enum pipe_video_cap param)
 {
@@ -394,6 +420,12 @@ static int si_get_video_param(struct pipe_screen *screen, enum pipe_video_profil
             attrib.bits.roi_rc_qp_delta_support = PIPE_ENC_FEATURE_SUPPORTED;
             return attrib.value;
          }
+         else
+            return 0;
+
+      case PIPE_VIDEO_CAP_ENC_QPMAP:
+         if (sscreen->info.vcn_ip_version >= VCN_1_0_0)
+            return si_video_enc_qp_map_caps(screen, codec);
          else
             return 0;
 

@@ -155,8 +155,10 @@ static void radeon_vcn_enc_get_roi_param(struct radeon_encoder *enc,
                              == PIPE_VIDEO_FORMAT_AV1;
    rvcn_enc_qp_map_t *qp_map = &enc->enc_pic.enc_qp_map;
 
-   if (!roi->num)
+   if (!roi->num) {
       enc->enc_pic.enc_qp_map.qp_map_type = RENCODE_QP_MAP_TYPE_NONE;
+      enc->enc_pic.enc_qp_map.is_roi = false;
+   }
    else {
       uint32_t width_in_block, height_in_block;
       uint32_t block_length;
@@ -211,6 +213,91 @@ static void radeon_vcn_enc_get_roi_param(struct radeon_encoder *enc,
             map->height_in_unit = CLAMP((region->height / block_length), 0, width_in_block);
          }
       }
+
+      enc->enc_pic.enc_qp_map.is_roi = true;
+   }
+}
+
+/* each block (MB/CTB/SB) has one QP/QI value */
+static uint32_t qp_map_buffer_size(struct radeon_encoder *enc)
+{
+   uint32_t pitch_size_in_dword = 0;
+   rvcn_enc_qp_map_t *qp_map = &enc->enc_pic.enc_qp_map;
+
+   if ( qp_map->version == RENCODE_QP_MAP_LEGACY){
+      pitch_size_in_dword = qp_map->width_in_block;
+      qp_map->qp_map_pitch = qp_map->width_in_block;
+   } else {
+      /* two units merge into 1 dword */
+      pitch_size_in_dword = DIV_ROUND_UP(qp_map->width_in_block, 2);
+      qp_map->qp_map_pitch = pitch_size_in_dword * 2;
+   }
+
+   return pitch_size_in_dword * qp_map->height_in_block * sizeof(uint32_t);
+}
+
+static uint32_t radeon_vcn_enc_get_qpmap_type(struct radeon_encoder *enc,
+                                              struct pipe_enc_qp_map *pmap)
+{
+   struct si_screen *sscreen = (struct si_screen *)enc->screen;
+   rvcn_enc_qp_map_t *qp_map = &enc->enc_pic.enc_qp_map;
+   uint32_t qp_map_type;
+
+   qp_map->version = sscreen->info.vcn_ip_version >= VCN_5_0_0
+                     ? RENCODE_QP_MAP_VCN5 : RENCODE_QP_MAP_LEGACY;
+
+   switch ( pmap->mode) {
+      case PIPE_ENC_QPMAP_DELTA:
+         if (enc->enc_pic.rc_session_init.rate_control_method &&
+            (qp_map->version == RENCODE_QP_MAP_LEGACY))
+            qp_map_type = RENCODE_QP_MAP_TYPE_MAP_PA;
+         else
+            qp_map_type = RENCODE_QP_MAP_TYPE_DELTA;
+         break;
+
+      case PIPE_ENC_QPMAP_ABSOLUTE:
+         qp_map_type = RENCODE_QP_MAP_TYPE_ABSOLUTE;
+         break;
+
+      default:
+         qp_map_type = RENCODE_QP_MAP_TYPE_NONE;
+         break;
+   }
+
+   return qp_map_type;
+}
+
+static void radeon_vcn_enc_get_qpmap_param(struct radeon_encoder *enc,
+                                           struct pipe_enc_qp_map *pmap,
+                                           struct pipe_enc_roi *roi)
+{
+   rvcn_enc_qp_map_t *qp_map = &enc->enc_pic.enc_qp_map;
+   uint32_t width_in_block, height_in_block;
+
+   /*ROI mode only */
+   if (pmap->mode == PIPE_ENC_QPMAP_NONE) {
+      radeon_vcn_enc_get_roi_param(enc, roi);
+      return;
+   }
+
+   radeon_vcn_enc_blocks_in_frame(enc, &width_in_block, &height_in_block);
+
+   /* when using qp_map, ROI feature is disabled */
+   qp_map->is_roi = false;
+   qp_map->width_in_block = width_in_block;
+   qp_map->height_in_block = height_in_block;
+
+   enc->enc_pic.enc_qp_map.qp_map_type = radeon_vcn_enc_get_qpmap_type(enc, pmap);
+
+   /* check if resource is valid  */
+   if (pmap->resource->width0 < qp_map_buffer_size(enc))
+      enc->enc_pic.enc_qp_map.qp_map_type = RENCODE_QP_MAP_TYPE_NONE;
+   else if (!pmap->resource)
+      enc->enc_pic.enc_qp_map.qp_map_type = RENCODE_QP_MAP_TYPE_NONE;
+   else {
+      enc->get_buffer(pmap->resource, &enc->enc_pic.enc_qp_map.buf, NULL);
+      if (!enc->enc_pic.enc_qp_map.buf)
+         enc->enc_pic.enc_qp_map.qp_map_type = RENCODE_QP_MAP_TYPE_NONE;
    }
 }
 
@@ -536,7 +623,7 @@ static void radeon_vcn_enc_h264_get_param(struct radeon_encoder *enc,
 
    use_filter = enc->enc_pic.h264_deblock.disable_deblocking_filter_idc != 1;
    radeon_vcn_enc_get_intra_refresh_param(enc, use_filter, &pic->intra_refresh);
-   radeon_vcn_enc_get_roi_param(enc, &pic->roi);
+   radeon_vcn_enc_get_qpmap_param(enc, &pic->qp_map, &pic->roi);
    radeon_vcn_enc_get_latency_param(enc);
    radeon_vcn_enc_quality_modes(enc, &pic->quality_modes);
 }
@@ -765,7 +852,7 @@ static void radeon_vcn_enc_hevc_get_param(struct radeon_encoder *enc,
    radeon_vcn_enc_get_intra_refresh_param(enc,
                                         !(enc->enc_pic.hevc_deblock.deblocking_filter_disabled),
                                          &pic->intra_refresh);
-   radeon_vcn_enc_get_roi_param(enc, &pic->roi);
+   radeon_vcn_enc_get_qpmap_param(enc, &pic->qp_map, &pic->roi);
    radeon_vcn_enc_hevc_get_spec_misc_param(enc, pic);
    radeon_vcn_enc_get_latency_param(enc);
    radeon_vcn_enc_quality_modes(enc, &pic->quality_modes);
@@ -1041,7 +1128,7 @@ static void radeon_vcn_enc_av1_get_param(struct radeon_encoder *enc,
    radeon_vcn_enc_get_intra_refresh_param(enc,
                                          true,
                                          &pic->intra_refresh);
-   radeon_vcn_enc_get_roi_param(enc, &pic->roi);
+   radeon_vcn_enc_get_qpmap_param(enc, &pic->qp_map, &pic->roi);
    radeon_vcn_enc_get_latency_param(enc);
    radeon_vcn_enc_quality_modes(enc, &pic->quality_modes);
 }
@@ -1363,24 +1450,6 @@ static int setup_dpb(struct radeon_encoder *enc, uint32_t num_reconstructed_pict
    return enc->dpb_size;
 }
 
-/* each block (MB/CTB/SB) has one QP/QI value */
-static uint32_t roi_buffer_size(struct radeon_encoder *enc)
-{
-   uint32_t pitch_size_in_dword = 0;
-   rvcn_enc_qp_map_t *qp_map = &enc->enc_pic.enc_qp_map;
-
-   if ( qp_map->version == RENCODE_QP_MAP_LEGACY){
-      pitch_size_in_dword = qp_map->width_in_block;
-      qp_map->qp_map_pitch = qp_map->width_in_block;
-   } else {
-      /* two units merge into 1 dword */
-      pitch_size_in_dword = DIV_ROUND_UP(qp_map->width_in_block, 2);
-      qp_map->qp_map_pitch = pitch_size_in_dword * 2;
-   }
-
-   return pitch_size_in_dword * qp_map->height_in_block * sizeof(uint32_t);
-}
-
 static void arrange_qp_map(void *start,
                            struct rvcn_enc_qp_map_region *regin,
                            rvcn_enc_qp_map_t *map)
@@ -1539,15 +1608,17 @@ static void radeon_enc_begin_frame(struct pipe_video_codec *encoder,
    }
 
    /* qp map buffer could be created here, and release at the end */
-   if (enc->enc_pic.enc_qp_map.qp_map_type != RENCODE_QP_MAP_TYPE_NONE) {
+   if (enc->enc_pic.enc_qp_map.is_roi &&
+       enc->enc_pic.enc_qp_map.qp_map_type != RENCODE_QP_MAP_TYPE_NONE) {
       if (!enc->roi) {
          enc->roi = CALLOC_STRUCT(rvid_buffer);
-         enc->roi_size = roi_buffer_size(enc);
+         enc->roi_size = qp_map_buffer_size(enc);
          if (!enc->roi || !enc->roi_size ||
              !si_vid_create_buffer(enc->screen, enc->roi, enc->roi_size, PIPE_USAGE_DYNAMIC)) {
             RADEON_ENC_ERR("Can't create ROI buffer.\n");
             goto error;
          }
+         enc->enc_pic.enc_qp_map.buf = enc->roi->res->buf;
       }
       if(generate_roi_map(enc)) {
          RADEON_ENC_ERR("Can't form roi map.\n");

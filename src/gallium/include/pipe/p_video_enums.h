@@ -173,6 +173,10 @@ enum pipe_video_cap
     */
    PIPE_VIDEO_CAP_VPP_SUPPORT_HDR_INPUT = 53,
    PIPE_VIDEO_CAP_VPP_SUPPORT_HDR_OUTPUT = 54,
+   /*
+    * Video Encoding QP MAP feature
+    */
+   PIPE_VIDEO_CAP_ENC_QPMAP = 55,
 };
 
 enum pipe_video_h264_enc_dbk_filter_mode_flags

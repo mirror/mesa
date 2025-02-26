@@ -307,6 +307,11 @@ void
 wsi_device_setup_syncobj_fd(struct wsi_device *wsi_device,
                             int fd);
 
+#ifdef HAVE_LIBDRM
+bool
+wsi_supports_sync_file_transfer(struct wsi_device *wsi, VkDevice device);
+#endif
+
 #define ICD_DEFINE_NONDISP_HANDLE_CASTS(__VkIcdType, __VkType)             \
                                                                            \
    static inline __VkIcdType *                                             \

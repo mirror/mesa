@@ -416,6 +416,50 @@ done:
 
 
 bool
+wsi_supports_sync_file_transfer(struct wsi_device *wsi, VkDevice device)
+{
+   VkResult result;
+
+   VkDeviceMemory mem;
+   const VkExportMemoryAllocateInfo export_info = {
+      .sType = VK_STRUCTURE_TYPE_EXPORT_MEMORY_ALLOCATE_INFO,
+      .handleTypes = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT
+   };
+   const VkMemoryAllocateInfo info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+      .pNext = &export_info,
+      .allocationSize = 1,
+      .memoryTypeIndex = 0,
+   };
+   result = wsi->AllocateMemory(device, &info, NULL, &mem);
+   if (result != VK_SUCCESS)
+      return false;
+
+   const VkMemoryGetFdInfoKHR memory_get_fd_info = {
+      .sType = VK_STRUCTURE_TYPE_MEMORY_GET_FD_INFO_KHR,
+      .pNext = NULL,
+      .memory = mem,
+      .handleType = VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT,
+   };
+
+   int dma_buf;
+   result = wsi->GetMemoryFdKHR(device, &memory_get_fd_info,
+                                &dma_buf);
+   wsi->FreeMemory(device, mem, NULL);
+   if (result != VK_SUCCESS)
+      return false;
+
+   int sync_file;
+   result = wsi_dma_buf_export_sync_file(dma_buf, &sync_file);
+   close(dma_buf);
+   if (result != VK_SUCCESS)
+      return false;
+
+   close(sync_file);
+   return true;
+}
+
+bool
 wsi_common_drm_devices_equal(int fd_a, int fd_b)
 {
    drmDevicePtr device_a, device_b;

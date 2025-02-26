@@ -1136,7 +1136,7 @@ do_validate_attachment(struct gl_context *ctx,
    const struct gl_texture_object *stObj = att->Texture;
    enum pipe_format format;
    mesa_format texFormat;
-   GLboolean valid;
+   GLboolean valid = GL_FALSE;
 
    /* Sanity check: we must be binding the surface as a (color) render target
     * or depth/stencil target.
@@ -1163,15 +1163,19 @@ do_validate_attachment(struct gl_context *ctx,
    if (!ctx->Extensions.EXT_sRGB && _mesa_is_format_srgb(texFormat)) {
       const mesa_format linearFormat = _mesa_get_srgb_format_linear(texFormat);
       format = st_mesa_format_to_pipe_format(st_context(ctx), linearFormat);
-   }
-
-   valid = screen->is_format_supported(screen, format,
-                                       PIPE_TEXTURE_2D,
-                                       stObj->pt->nr_samples,
-                                       stObj->pt->nr_storage_samples,
-                                       bindings);
-   if (!valid) {
-      fbo_invalid("Invalid format");
+      valid = screen->is_format_supported(screen, format,
+                                          PIPE_TEXTURE_2D,
+                                          stObj->pt->nr_samples,
+                                          stObj->pt->nr_storage_samples,
+                                          bindings);
+      if (!valid)
+         fbo_invalid("Unsupported linear format for SRGB");
+   } else {
+      /* this is the actual texture, so just check the bind flags */
+      if (stObj->pt->bind & (PIPE_BIND_RENDER_TARGET | PIPE_BIND_DEPTH_STENCIL))
+         valid = GL_TRUE;
+      else
+         fbo_invalid("Format unsupported for rendering: RENDER_TARGET bind not applied");
    }
 
    return valid;

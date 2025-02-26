@@ -2,6 +2,7 @@ use crate::api::icd::*;
 use crate::core::context::*;
 use crate::core::device::*;
 use crate::core::event::*;
+use crate::core::kernel::*;
 use crate::core::platform::*;
 use crate::impl_cl_type_trait;
 
@@ -10,16 +11,28 @@ use mesa_rust_gen::*;
 use mesa_rust_util::properties::*;
 use rusticl_opencl_gen::*;
 
+use std::cell::RefCell;
 use std::cmp;
 use std::mem;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
+use std::ptr;
 use std::sync::mpsc;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::sync::Weak;
 use std::thread;
 use std::thread::JoinHandle;
+
+struct QueueKernelState {
+    builds: Option<Arc<NirKernelBuilds>>,
+    variant: NirKernelVariant,
+    cso: Option<CSOWrapper>,
+}
+
+// SAFETY: strictly speaking we don't care if QueueKernelState is Send, because we never send it
+//         over with actual data.
+unsafe impl Send for QueueKernelState {}
 
 /// State tracking wrapper for [PipeContext]
 ///
@@ -29,6 +42,7 @@ pub struct QueueContext {
     ctx: ManuallyDrop<PipeContext>,
     pub dev: &'static Device,
     use_stream: bool,
+    kernel_state: RefCell<QueueKernelState>,
 }
 
 impl QueueContext {
@@ -39,7 +53,37 @@ impl QueueContext {
             ctx: ManuallyDrop::new(ctx),
             dev: device,
             use_stream: device.prefers_real_buffer_in_cb0(),
+            kernel_state: RefCell::new(QueueKernelState {
+                builds: None,
+                variant: NirKernelVariant::Default,
+                cso: None,
+            }),
         })
+    }
+
+    // TODO: figure out how to make it &mut self without causing tons of borrowing issues.
+    pub fn bind_kernel(&self, builds: &Arc<NirKernelBuilds>, variant: NirKernelVariant) {
+        // this should never panic, but you never know.
+        let mut state = self.kernel_state.borrow_mut();
+
+        // If we already set the CSO then we don't have to bind again.
+        if let Some(stored_builds) = &state.builds {
+            if Arc::ptr_eq(stored_builds, builds) && state.variant == variant {
+                return;
+            }
+        }
+
+        let nir_kernel_build = &builds[variant];
+        let cso = match nir_kernel_build.nir_or_cso() {
+            KernelDevStateVariant::Cso(cso) => cso,
+            // TODO: we could cache the cso here.
+            KernelDevStateVariant::Nir(nir) => state.cso.insert(CSOWrapper::new(self.dev, nir)),
+        };
+
+        cso.bind_to_ctx(self);
+
+        state.builds = Some(Arc::clone(builds));
+        state.variant = variant;
     }
 
     pub fn update_cb0(&self, data: &[u8]) -> CLResult<()> {
@@ -70,6 +114,9 @@ impl Drop for QueueContext {
     fn drop(&mut self) {
         let ctx = unsafe { ManuallyDrop::take(&mut self.ctx) };
         ctx.set_constant_buffer(0, &[]);
+        if self.kernel_state.get_mut().builds.is_some() {
+            ctx.bind_compute_state(ptr::null_mut());
+        }
         self.dev.recycle_context(ctx);
     }
 }
@@ -119,6 +166,7 @@ impl Queue {
     ) -> CLResult<Arc<Queue>> {
         // we assume that memory allocation is the only possible failure. Any other failure reason
         // should be detected earlier (e.g.: checking for CAPs).
+        // TODO: might want to create it on the thread so we don't need it to be Send.
         let ctx = QueueContext::new_for(device)?;
         let (tx_q, rx_t) = mpsc::channel::<Vec<Arc<Event>>>();
         Ok(Arc::new(Self {

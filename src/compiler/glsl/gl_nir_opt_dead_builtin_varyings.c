@@ -454,10 +454,14 @@ gl_nir_opt_dead_builtin_varyings(const struct gl_constants *consts, gl_api api,
                                  struct xfb_decl *tfeedback_decls)
 {
    /* Lowering of built-in varyings has no effect with the core context and
-    * GLES2, because they are not available there.
+    * GLES2, because they are not available there. Compatibility context need
+    * to preserve all writes from vertex shaders because they can be read by
+    * rasterpos. 
     */
    if (api == API_OPENGL_CORE ||
-       api == API_OPENGLES2) {
+       api == API_OPENGLES2 ||
+       (api == API_OPENGL_COMPAT && producer &&
+        producer->Stage == MESA_SHADER_VERTEX)) {
       goto done;
    }
 

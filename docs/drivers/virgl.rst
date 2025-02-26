@@ -22,20 +22,17 @@ implemented purely on OpenGL so you can get accelerated rendering on any
 sufficiently capable card/driver combination.
 
 The project also consists of a complete Linux guest stack, composed of a
-Linux kernel KMS driver, X.org 2D DDX driver and Mesa 3D driver.
+Linux kernel DRM/KMS driver, X.org 2D DDX driver and Mesa 3D drivers:
+:doc:`Venus <drivers/venus>`Vulkan driver and VirGL Gallium3D driver.
 
 Current status
 --------------
 
 * Many pieces are now upstreamed in various projects.
-* Kernel Linux 4.2 contains the modesetting only drivers. Linux 4.4
-  contains the 3D supported pieces.
-* Mesa main contains the VirGL 3D driver.
-* QEMU 2.4 contained the initial virtio-gpu with no acceleration
-  support. QEMU 2.5 contains 3D support only with the GTK3 frontend with
-  GL enabled.
+* Mesa contains the VirGL Gallium3D driver.
+* Mesa contains the Venus Vulkan driver.
 * The virglrenderer library seems mostly API stable.
-* Limited environment renderer (GLES2)
+* Mesa 23.2 and newers releases supports OpenGL 4.6 and GLES 3.2 features.
 
 So what can it do now?
 ^^^^^^^^^^^^^^^^^^^^^^
@@ -55,7 +52,7 @@ Future scope
 
 * Remoting rendering using a codec solution.
 * Windows guest, Direct3D drivers.
-* Other architectures
+* Other architectures.
 
 Out of scope
 ^^^^^^^^^^^^

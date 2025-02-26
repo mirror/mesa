@@ -1109,6 +1109,11 @@ v3d_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
              const struct pipe_draw_start_count_bias *draws,
              unsigned num_draws)
 {
+        struct v3d_context *v3d = v3d_context(pctx);
+
+        if (!v3d->dpy)
+                return;
+
         if (num_draws > 1) {
                 util_draw_multi(pctx, info, drawid_offset, indirect, draws, num_draws);
                 return;
@@ -1116,8 +1121,6 @@ v3d_draw_vbo(struct pipe_context *pctx, const struct pipe_draw_info *info,
 
         if (!indirect && (!draws[0].count || !info->instance_count))
            return;
-
-        struct v3d_context *v3d = v3d_context(pctx);
 
         if (!indirect &&
             !info->primitive_restart &&

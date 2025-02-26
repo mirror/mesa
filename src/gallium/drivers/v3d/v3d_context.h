@@ -25,6 +25,8 @@
 #ifndef V3D_CONTEXT_H
 #define V3D_CONTEXT_H
 
+#include <string.h>
+#include <X11/Xlib.h>
 #ifdef V3D_VERSION
 #include "broadcom/common/v3d_macros.h"
 #endif
@@ -558,6 +560,8 @@ struct v3d_job {
 
 struct v3d_context {
         struct pipe_context base;
+
+        Display *dpy;
 
         int fd;
         struct v3d_screen *screen;

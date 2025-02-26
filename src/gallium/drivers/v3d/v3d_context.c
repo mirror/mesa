@@ -378,6 +378,9 @@ v3d_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
         struct v3d_context *v3d;
         struct v3d_device_info *devinfo = &screen->devinfo;
 
+        const char *displayName = getenv("DISPLAY");
+        Display *dpy = XOpenDisplay(displayName);
+
         /* Prevent dumping of the shaders built during context setup. */
         uint32_t saved_shaderdb_flag = v3d_mesa_debug & V3D_DEBUG_SHADERDB;
         v3d_mesa_debug &= ~V3D_DEBUG_SHADERDB;
@@ -388,6 +391,7 @@ v3d_context_create(struct pipe_screen *pscreen, void *priv, unsigned flags)
         struct pipe_context *pctx = &v3d->base;
 
         v3d->screen = screen;
+        v3d->dpy = dpy;
 
         int ret = drmSyncobjCreate(screen->fd, DRM_SYNCOBJ_CREATE_SIGNALED,
                                    &v3d->out_sync);

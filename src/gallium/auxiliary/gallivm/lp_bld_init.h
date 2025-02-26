@@ -50,6 +50,7 @@ struct lp_cached_code;
 struct gallivm_state
 {
    char *module_name;
+   char *file_name;
    LLVMModuleRef module;
    LLVMTargetDataRef target;
 #if GALLIVM_USE_ORCJIT
@@ -65,6 +66,7 @@ struct gallivm_state
 #endif
    LLVMContextRef context;
    LLVMBuilderRef builder;
+   LLVMDIBuilderRef di_builder;
    struct lp_cached_code *cache;
    unsigned compiled;
    LLVMValueRef coro_malloc_hook;
@@ -73,6 +75,9 @@ struct gallivm_state
 
    LLVMTypeRef coro_malloc_hook_type;
    LLVMTypeRef coro_free_hook_type;
+
+   LLVMMetadataRef di_function;
+   LLVMMetadataRef file;
 
    LLVMValueRef get_time_hook;
 

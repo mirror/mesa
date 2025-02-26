@@ -49,7 +49,7 @@ sweep_block(nir_shader *nir, nir_block *block)
    ralloc_steal(nir, block);
 
    nir_foreach_instr(instr, block) {
-      gc_mark_live(nir->gctx, instr);
+      gc_mark_live(nir->gctx, nir_instr_get_gc_pointer(instr));
 
       switch (instr->type) {
       case nir_instr_type_tex:

@@ -58,6 +58,7 @@ static const struct debug_named_value lp_bld_debug_flags[] = {
 #if MESA_DEBUG
    { "dumpbc", GALLIVM_DEBUG_DUMP_BC, NULL },
 #endif
+   { "symbols", GALLIVM_DEBUG_SYMBOLS, NULL },
    DEBUG_NAMED_VALUE_END
 };
 

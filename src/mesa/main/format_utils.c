@@ -246,6 +246,112 @@ convert_ubyte_rgba_to_bgra(size_t width, size_t height,
    }
 }
 
+#if DETECT_ARCH_AARCH64
+void
+_mesa_rgb_convert_neon(void *void_dst, void *void_src,
+                                 int dst_num_channels, int src_num_channels,
+                              size_t dst_stride, size_t src_stride,
+                                 size_t width, size_t height, uint8_t swizzle[4])
+{
+   const uint8_t swizzle_x = swizzle[0];
+   const uint8_t swizzle_y = swizzle[1];
+   const uint8_t swizzle_z = swizzle[2];
+   const uint8_t swizzle_w = swizzle[3];
+   uint8_t *src = (uint8_t *)void_src;
+   uint8_t *dst = (uint8_t *)void_dst;
+   const int total_pixels = height * width;
+   const int stride_pixels = 16;
+   int left_pixels;
+   int multiply_pixels;
+   uint8_t dst_format = 0;
+   if(6 == swizzle_w) {
+      dst_format = 0;
+   } else if(5 == swizzle_w){
+      dst_format = UINT8_MAX;
+   }
+   int i = 0, j = 0;
+   if((src_stride == width * src_num_channels) &&
+                   (dst_stride == width * dst_num_channels)) {
+      left_pixels = total_pixels % stride_pixels;
+      multiply_pixels = total_pixels - left_pixels;
+      for (i = 0; i < multiply_pixels; i += stride_pixels)
+      {
+         const uint8_t *src_pixel = src + i * src_num_channels;
+         uint8_t *dst_pixel = dst + i * dst_num_channels;
+         uint8x16x3_t a = vld3q_u8(src_pixel);
+         uint8x16x4_t b;
+         if(0 == swizzle_x && 1 == swizzle_y && 2 == swizzle_z) {
+            b.val[0] = a.val[0];
+            b.val[1] = a.val[1];
+            b.val[2] = a.val[2];
+         } else if(2 == swizzle_x && 1 == swizzle_y && 0 == swizzle_z) {
+            b.val[0] = a.val[2];
+            b.val[1] = a.val[1];
+            b.val[2] = a.val[0];
+         } else {
+            b.val[0] = a.val[swizzle_x];
+            b.val[1] = a.val[swizzle_y];
+            b.val[2] = a.val[swizzle_z];
+         }
+         b.val[3] = vdupq_n_u8(dst_format);
+         vst4q_u8(dst_pixel, b);
+      }
+
+      // handling non-multiply array lengths
+      for (i = multiply_pixels; i < total_pixels; i++)
+      {
+         const int src_idx = i * src_num_channels;
+         const int dst_idx = i * dst_num_channels;
+         *(dst + dst_idx) = *(src + src_idx + swizzle_x);
+         *(dst + dst_idx + 1) = *(src + src_idx + swizzle_y);
+         *(dst + dst_idx + 2) = *(src + src_idx + swizzle_z);
+         *(dst + dst_idx + 3) = dst_format;
+      }
+
+   } else {
+      for(j = 0; j < height; j++)
+      {
+         left_pixels = width % stride_pixels;
+         multiply_pixels = width - left_pixels;
+         for (i = 0; i < multiply_pixels; i += stride_pixels)
+         {
+            const uint8_t *src_pixel = src + i * src_num_channels;
+            uint8_t *dst_pixel = dst + i * dst_num_channels;
+            uint8x16x3_t a = vld3q_u8(src_pixel);
+            uint8x16x4_t b;
+            if(0 == swizzle_x && 1 == swizzle_y && 2 == swizzle_z) {
+               b.val[0] = a.val[0];
+               b.val[1] = a.val[1];
+               b.val[2] = a.val[2];
+            } else if(2 == swizzle_x && 1 == swizzle_y && 0 == swizzle_z) {
+               b.val[0] = a.val[2];
+               b.val[1] = a.val[1];
+               b.val[2] = a.val[0];
+            } else {
+               b.val[0] = a.val[swizzle_x];
+               b.val[1] = a.val[swizzle_y];
+               b.val[2] = a.val[swizzle_z];
+            }
+            b.val[3] = vdupq_n_u8(dst_format);
+            vst4q_u8(dst_pixel, b);
+         }
+
+         // handling non-multiply array lengths
+         for (i = multiply_pixels; i < width; i++)
+         {
+            const int src_idx = i * src_num_channels;
+            const int dst_idx = i * dst_num_channels;
+            *(dst + dst_idx) = *(src + src_idx + swizzle_x);
+            *(dst + dst_idx + 1) = *(src + src_idx + swizzle_y);
+            *(dst + dst_idx + 2) = *(src + src_idx + swizzle_z);
+            *(dst + dst_idx + 3) = dst_format;
+         }
+         src += src_stride;
+         dst += dst_stride;
+      }
+   }
+}
+#endif
 
 /**
  * This can be used to convert between most color formats.
@@ -448,13 +554,27 @@ _mesa_format_convert(void *void_dst, uint32_t dst_format, size_t dst_stride,
       compute_src2dst_component_mapping(src2rgba, rgba2dst, rebase_swizzle,
                                         src2dst);
 
-      for (row = 0; row < height; ++row) {
-         _mesa_swizzle_and_convert(dst, dst_type, dst_num_channels,
-                                   src, src_type, src_num_channels,
-                                   src2dst, normalized, width);
-         src += src_stride;
-         dst += dst_stride;
+#if DETECT_ARCH_AARCH64
+      // RGB(2148173936), RGBX(2148173968), RGBA(2147911824), BGR(2148141680)
+      if(((2148173936 == src_array_format) || (2148141680 == src_array_format)) &&
+                      ((2148173968 == dst_array_format) || (2147911824 == dst_array_format)) &&
+                      ((src_type == dst_type) && (MESA_ARRAY_FORMAT_TYPE_UBYTE == src_type))) {
+
+         _mesa_rgb_convert_neon(dst, src, dst_num_channels, src_num_channels,
+                                               dst_stride, src_stride, width, height, src2dst);
+
+      } else {
+#endif
+        for (row = 0; row < height; ++row) {
+           _mesa_swizzle_and_convert(dst, dst_type, dst_num_channels,
+                                     src, src_type, src_num_channels,
+                                     src2dst, normalized, width);
+           src += src_stride;
+           dst += dst_stride;
+        }
+#if DETECT_ARCH_AARCH64
       }
+#endif
       return;
    }
 

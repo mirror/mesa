@@ -235,10 +235,7 @@ bool cik_sdma_copy_texture(struct si_context *sctx, struct si_texture *sdst, str
        dst_slice_pitch <= (1 << 28) && copy_width <= (1 << 14) && copy_height <= (1 << 14) &&
        /* HW limitation - GFX7: */
        (sctx->gfx_level != GFX7 ||
-        (copy_width < (1 << 14) && copy_height < (1 << 14))) &&
-       /* HW limitation - some GFX7 parts: */
-       ((sctx->family != CHIP_BONAIRE && sctx->family != CHIP_KAVERI) ||
-        (copy_width != (1 << 14) && copy_height != (1 << 14)))) {
+        (copy_width < (1 << 14) && copy_height < (1 << 14)))) {
       struct radeon_cmdbuf *cs = sctx->sdma_cs;
 
       radeon_begin(cs);

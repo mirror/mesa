@@ -37,6 +37,9 @@
 #include "util/rounding.h"
 #include "util/half_float.h"
 #include "util/format/format_utils.h"
+#if DETECT_ARCH_AARCH64
+#include "arm_neon.h"
+#endif
 
 extern const mesa_array_format RGBA32_FLOAT;
 extern const mesa_array_format RGBA8_UBYTE;
@@ -59,5 +62,14 @@ void
 _mesa_format_convert(void *void_dst, uint32_t dst_format, size_t dst_stride,
                      void *void_src, uint32_t src_format, size_t src_stride,
                      size_t width, size_t height, uint8_t *rebase_swizzle);
+
+
+#if DETECT_ARCH_AARCH64
+void _mesa_rgb_convert_neon(void *void_dst, void *void_src,
+                            int dst_num_channels, int src_num_channels,
+                            size_t dst_stride, size_t src_stride,
+                            size_t width, size_t height, uint8_t swizzle[4]);
+
+#endif
 
 #endif

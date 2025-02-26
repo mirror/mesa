@@ -181,7 +181,6 @@ files_libglsl = files(
   'opt_flatten_nested_if_blocks.cpp',
   'opt_flip_matrices.cpp',
   'opt_function_inlining.cpp',
-  'opt_if_simplification.cpp',
   'opt_minmax.cpp',
   'opt_rebalance_tree.cpp',
   'opt_tree_grafting.cpp',

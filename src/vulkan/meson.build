@@ -2,6 +2,7 @@
 # SPDX-License-Identifier: MIT
 
 vk_api_xml = files('registry/vk.xml')
+vk_video_api_xml = files('registry/video.xml')
 
 vulkan_icd_link_args = []
 vulkan_icd_link_depends = []

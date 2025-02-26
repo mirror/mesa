@@ -204,6 +204,7 @@ SOURCES = [
         'inc_folder': 'vulkan',
         'sources': [
             Source('src/vulkan/registry/vk.xml',                'https://github.com/KhronosGroup/Vulkan-Headers/raw/main/registry/vk.xml'),
+            Source('src/vulkan/registry/video.xml',             'https://github.com/KhronosGroup/Vulkan-Headers/raw/main/registry/video.xml'),
             Source('include/vulkan/vulkan.h',                   'https://github.com/KhronosGroup/Vulkan-Headers/raw/main/include/vulkan/vulkan.h'),
             Source('include/vulkan/vulkan_core.h',              'https://github.com/KhronosGroup/Vulkan-Headers/raw/main/include/vulkan/vulkan_core.h'),
             Source('include/vulkan/vulkan_beta.h',              'https://github.com/KhronosGroup/Vulkan-Headers/raw/main/include/vulkan/vulkan_beta.h'),

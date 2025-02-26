@@ -1574,6 +1574,11 @@ ntt_emit_alu(struct ntt_compile *c, nir_alu_instr *instr)
       }
    }
 
+   /* If the result is not an SSA location, the output channel might not
+    * be x or y, so we have to fix the temporay bit mask */
+   if (!instr->dest.dest.is_ssa && tgsi_64bit_downconvert)
+      dst.WriteMask = BITSET_MASK(util_bitcount(real_dst.WriteMask));
+
    bool table_op64 = src_64;
    if (instr->op < ARRAY_SIZE(op_map) && op_map[instr->op][table_op64] != 0) {
       /* The normal path for NIR to TGSI ALU op translation */

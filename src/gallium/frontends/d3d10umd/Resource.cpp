@@ -38,6 +38,7 @@
 
 #include "Debug.h"
 
+#include "pipe/p_defines.h"
 #include "util/u_math.h"
 #include "util/u_rect.h"
 #include "util/u_surface.h"
@@ -246,8 +247,14 @@ CreateResource(D3D10DDI_HDEVICE hDevice,                                // IN
 
    }
 
+   Device *device = CastDevice(hDevice);
    struct pipe_context *pipe = CastPipeContext(hDevice);
    struct pipe_screen *screen = pipe->screen;
+
+   mtx_lock(&device->CreateResourceMtx);
+   device->device.allocationVidPn = 0;
+   device->device.isPrimary = pCreateResource->pPrimaryDesc != NULL;
+   device->device.hRTResource = hRTResource.handle;
 
    Resource *pResource = CastResource(hResource);
 
@@ -293,6 +300,13 @@ CreateResource(D3D10DDI_HDEVICE hDevice,                                // IN
    templat.bind       = translate_resource_flags(pCreateResource->BindFlags);
    templat.usage      = translate_resource_usage(pCreateResource->Usage);
 
+   if (templat.bind == 0) {
+      templat.bind = PIPE_BIND_SAMPLER_VIEW;
+   }
+   if ((pCreateResource->MiscFlags & D3D10_DDI_RESOURCE_MISC_SHARED)) {
+      templat.bind |= PIPE_BIND_SHARED;
+   }
+
    if (templat.target != PIPE_BUFFER) {
       if (!screen->is_format_supported(screen,
                                        templat.format,
@@ -303,7 +317,7 @@ CreateResource(D3D10DDI_HDEVICE hDevice,                                // IN
          debug_printf("%s: unsupported format %s\n",
                      __func__, util_format_name(templat.format));
          SetError(hDevice, E_OUTOFMEMORY);
-         return;
+         goto unlock;
       }
    }
 
@@ -311,7 +325,7 @@ CreateResource(D3D10DDI_HDEVICE hDevice,                                // IN
    if (!pResource) {
       DebugPrintf("%s: failed to create resource\n", __func__);
       SetError(hDevice, E_OUTOFMEMORY);
-      return;
+      goto unlock;
    }
 
    pResource->NumSubResources = pCreateResource->MipLevels * pCreateResource->ArraySize;
@@ -378,6 +392,12 @@ CreateResource(D3D10DDI_HDEVICE hDevice,                                // IN
          }
       }
    }
+
+   device->device.allocationVidPn = 0;
+   device->device.isPrimary = false;
+   device->device.hRTResource = NULL;
+unlock:
+   mtx_unlock(&device->CreateResourceMtx);
 }
 
 
@@ -418,8 +438,44 @@ OpenResource(D3D10DDI_HDEVICE hDevice,                            // IN
              D3D10DDI_HRESOURCE hResource,                        // IN
              D3D10DDI_HRTRESOURCE hRTResource)                    // IN
 {
-   LOG_UNSUPPORTED_ENTRYPOINT();
-   SetError(hDevice, E_OUTOFMEMORY);
+   LOG_ENTRYPOINT();
+   
+   Device *pDevice = CastDevice(hDevice);
+   if (!pDevice->screen->resource_from_handle) {
+      SetError(hDevice, E_OUTOFMEMORY);
+      return;
+   }
+   
+   mtx_lock(&pDevice->CreateResourceMtx);
+   pDevice->device.pOpenResource = pOpenResource;
+   
+   Resource *pResource = CastResource(hResource);
+   memset(pResource, 0, sizeof *pResource);
+   
+   struct winsys_handle whandle;
+   memset(&whandle, 0, sizeof(whandle));
+   whandle.type = WINSYS_HANDLE_TYPE_WIN32_HANDLE;
+   whandle.handle = (HANDLE)pOpenResource->hKMResource.handle;
+   
+   pResource->resource =
+      pDevice->screen->resource_from_handle(pDevice->screen, NULL, &whandle, 0);
+   
+   if (!pResource->resource) {
+      SetError(hDevice, E_OUTOFMEMORY);
+      goto unlock;
+   }
+   
+   pResource->buffer = false;
+   pResource->Format = FormatDeTranslate(pResource->resource->format);
+   pResource->MipLevels = pResource->resource->last_level + 1;
+   pResource->NumSubResources =
+      pResource->MipLevels * pResource->resource->array_size;
+   pResource->transfers = (struct pipe_transfer **)calloc(
+      pResource->NumSubResources, sizeof *pResource->transfers);
+
+unlock:
+   pDevice->device.pOpenResource = NULL;
+   mtx_unlock(&pDevice->CreateResourceMtx);
 }
 
 

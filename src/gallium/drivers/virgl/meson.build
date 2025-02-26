@@ -28,7 +28,10 @@ virgl_deps = [libvirgl]
 if not with_platform_windows
   virgl_deps += libvirgldrm
   virgl_deps += libvirglvtest
+else 
+  virgl_deps += libvirglgdi
 endif
+
 
 driver_virgl = declare_dependency(
   compile_args : '-DGALLIUM_VIRGL',

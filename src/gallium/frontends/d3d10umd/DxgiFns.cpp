@@ -30,7 +30,11 @@
  *    DXGI related functions.
  */
 
+#include <stdint.h>
+#include <windows.h>
 #include <stdio.h>
+#include <winerror.h>
+#include <winnt.h>
 
 #include "DxgiFns.h"
 #include "Format.h"
@@ -38,8 +42,10 @@
 
 #include "Debug.h"
 
+#include "frontend/winsys_handle.h"
+#include "pipe/p_defines.h"
+#include "pipe/p_state.h"
 #include "util/format/u_format.h"
-
 
 /*
  * ----------------------------------------------------------------------
@@ -51,7 +57,6 @@
  *
  * ----------------------------------------------------------------------
  */
-
 HRESULT APIENTRY
 _Present(DXGI_DDI_ARG_PRESENT *pPresentData)
 {
@@ -113,7 +118,24 @@ _GetGammaCaps( DXGI_DDI_ARG_GET_GAMMA_CONTROL_CAPS *GetCaps )
 HRESULT APIENTRY
 _SetDisplayMode( DXGI_DDI_ARG_SETDISPLAYMODE *SetDisplayMode )
 {
-   LOG_UNSUPPORTED_ENTRYPOINT();
+   LOG_ENTRYPOINT();
+   
+   Device* device = CastDevice(SetDisplayMode->hDevice);
+   Resource *res = CastResource(SetDisplayMode->hResource);
+
+   if(!device->screen->resource_get_handle) {
+      LOG_UNSUPPORTED_ENTRYPOINT();
+      return S_OK;
+   }
+
+   struct winsys_handle handle;
+   handle.type = WINSYS_HANDLE_TYPE_D3DKMT_ALLOC;
+   if(!device->screen->resource_get_handle(device->screen, NULL, res->resource, &handle, 0)) {
+      LOG_UNSUPPORTED_ENTRYPOINT();
+      return S_OK;
+   };
+
+   device->device.base.setDisplayMode(&device->device.base, (D3DKMT_HANDLE)handle.handle);
 
    return S_OK;
 }
@@ -171,71 +193,25 @@ _QueryResourceResidency( DXGI_DDI_ARG_QUERYRESOURCERESIDENCY *QueryResourceResid
  */
 
 HRESULT APIENTRY
-_RotateResourceIdentities( DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES *RotateResourceIdentities )
+_RotateResourceIdentities(DXGI_DDI_ARG_ROTATE_RESOURCE_IDENTITIES *RotateResourceIdentities )
 {
    LOG_ENTRYPOINT();
 
    if (RotateResourceIdentities->Resources <= 1) {
       return S_OK;
    }
+   UINT NumResources = RotateResourceIdentities->Resources;
+   const DXGI_DDI_HRESOURCE *hResources = RotateResourceIdentities->pResources;
 
-   struct pipe_context *pipe = CastPipeDevice(RotateResourceIdentities->hDevice);
-   struct pipe_screen *screen = pipe->screen;
+   struct pipe_resource *firstResource = CastPipeResource(hResources[0]);
 
-   struct pipe_resource *resource0 = CastPipeResource(RotateResourceIdentities->pResources[0]);
-
-   assert(resource0);
-   LOG_UNSUPPORTED(resource0->last_level);
-
-   /*
-    * XXX: Copying is not very efficient, but it is much simpler than the
-    * alternative of recreating all views.
-    */
-
-   struct pipe_resource *temp_resource;
-   temp_resource = screen->resource_create(screen, resource0);
-   assert(temp_resource);
-   if (!temp_resource) {
-      return E_OUTOFMEMORY;
+   for (UINT i = 0; i < (NumResources - 1); ++i) {
+      Resource* resource = CastResource(hResources[i]);
+      resource->resource = CastPipeResource(hResources[i + 1]);
    }
 
-   struct pipe_box src_box;
-   src_box.x = 0;
-   src_box.y = 0;
-   src_box.z = 0;
-   src_box.width  = resource0->width0;
-   src_box.height = resource0->height0;
-   src_box.depth  = resource0->depth0;
-
-   for (UINT i = 0; i < RotateResourceIdentities->Resources + 1; ++i) {
-      struct pipe_resource *src_resource;
-      struct pipe_resource *dst_resource;
-
-      if (i < RotateResourceIdentities->Resources) {
-         src_resource = CastPipeResource(RotateResourceIdentities->pResources[i]);
-      } else {
-         src_resource = temp_resource;
-      }
-
-      if (i > 0) {
-         dst_resource = CastPipeResource(RotateResourceIdentities->pResources[i - 1]);
-      } else {
-         dst_resource = temp_resource;
-      }
-
-      assert(dst_resource);
-      assert(src_resource);
-
-      pipe->resource_copy_region(pipe,
-                                 dst_resource,
-                                 0, // dst_level
-                                 0, 0, 0, // dst_x,y,z
-                                 src_resource,
-                                 0, // src_level
-                                 &src_box);
-   }
-
-   pipe_resource_reference(&temp_resource, NULL);
+   Resource *lastResource = CastResource(hResources[NumResources - 1]);
+   lastResource->resource = firstResource;
 
    return S_OK;
 }

@@ -45,6 +45,26 @@
 #include "util/format/u_format.h"
 
 
+static inline struct pipe_sampler_view *
+GetPipeShaderResourceView(D3D10DDI_HSHADERRESOURCEVIEW hRenderTargetView)
+{
+   ShaderResourceView *pShaderResourceView = CastShaderResourceView(hRenderTargetView);
+   if (!pShaderResourceView) return NULL;
+
+   // Validate that view texture matches resource 
+   // If it is not (resource rotated) then recreate view
+   struct pipe_sampler_view *currentSurface = pShaderResourceView->handle;
+   Resource *res = pShaderResourceView->resource;
+   if (currentSurface->texture != res->resource) {
+      struct pipe_context *pipe = currentSurface->context;
+      struct pipe_sampler_view *newView = pipe->create_sampler_view(pipe, res->resource, currentSurface);
+      pipe_sampler_view_reference(&pShaderResourceView->handle, newView);
+      pipe_sampler_view_reference(&newView, NULL);
+   }
+
+   return pShaderResourceView->handle;
+}
+
 /*
  * ----------------------------------------------------------------------
  *
@@ -173,7 +193,7 @@ SetConstantBuffers(enum pipe_shader_type shader_type,    // IN
       cb.buffer_size = cb.buffer ? cb.buffer->width0 : 0;
       pipe->set_constant_buffer(pipe,
                                 shader_type,
-                                StartBuffer + i,
+                                StartBuffer + i + 1,
                                 false,
                                 &cb);
    }
@@ -235,7 +255,7 @@ SetShaderResources(enum pipe_shader_type shader_type,                  // IN
    struct pipe_sampler_view **sampler_views = pDevice->sampler_views[shader_type];
    for (UINT i = 0; i < NumViews; i++) {
       struct pipe_sampler_view *sampler_view =
-            CastPipeShaderResourceView(phShaderResourceViews[i]);
+            GetPipeShaderResourceView(phShaderResourceViews[i]);
       if (Offset + i < PIPE_MAX_SHADER_SAMPLER_VIEWS) {
          sampler_views[Offset + i] = sampler_view;
       } else {
@@ -1199,6 +1219,8 @@ CreateShaderResourceView(
    ShaderResourceView *pSRView = CastShaderResourceView(hShaderResourceView);
    struct pipe_resource *resource;
    enum pipe_format format;
+   
+   pSRView->resource = CastResource(pCreateSRView->hDrvResource);
 
    struct pipe_sampler_view desc;
    memset(&desc, 0, sizeof desc);
@@ -1279,6 +1301,8 @@ CreateShaderResourceView1(
    ShaderResourceView *pSRView = CastShaderResourceView(hShaderResourceView);
    struct pipe_resource *resource;
    enum pipe_format format;
+
+   pSRView->resource = CastResource(pCreateSRView->hDrvResource);
 
    struct pipe_sampler_view desc;
    memset(&desc, 0, sizeof desc);
@@ -1385,7 +1409,7 @@ GenMips(D3D10DDI_HDEVICE hDevice,                           // IN
    }
 
    struct pipe_context *pipe = pDevice->pipe;
-   struct pipe_sampler_view *sampler_view = CastPipeShaderResourceView(hShaderResourceView);
+   struct pipe_sampler_view *sampler_view = GetPipeShaderResourceView(hShaderResourceView);
 
    util_gen_mipmap(pipe,
                    sampler_view->texture,

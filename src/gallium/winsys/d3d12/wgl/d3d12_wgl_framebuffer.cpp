@@ -208,7 +208,7 @@ d3d12_wgl_framebuffer_resize(stw_winsys_framebuffer *fb,
 }
 
 static bool
-d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb, int interval)
+d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb, int interval, struct pipe_resource *res)
 {
    auto framebuffer = d3d12_wgl_framebuffer(fb);
    if (!framebuffer->swapchain) {

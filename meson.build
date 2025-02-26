@@ -728,12 +728,20 @@ if with_gallium_st_nine
     error('The nine state tracker requires at least one non-swrast gallium driver.')
   endif
 endif
+
 with_gallium_st_d3d10umd =  get_option('gallium-d3d10umd')
 if with_gallium_st_d3d10umd
-  if not with_gallium_swrast
-    error('The d3d10umd state tracker requires gallium softpipe/llvmpipe.')
+  if not [
+           with_gallium_swrast,
+           with_gallium_virgl,
+         ].contains(true)
+    error('The d3d10umd state tracker requires gallium softpipe/llvmpipe or virgl.')
+  endif
+  if with_gallium_softpipe and with_gallium_virgl
+    warning('The d3d10umd state trackes is built with both softpipe/llvmpipe and virgl, only virgl will be used.')
   endif
 endif
+
 _power8 = get_option('power8')
 if _power8.allowed()
   if host_machine.cpu_family() == 'ppc64' and host_machine.endian() == 'little'

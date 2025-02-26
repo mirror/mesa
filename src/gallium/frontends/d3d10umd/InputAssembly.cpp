@@ -159,7 +159,7 @@ IaSetVertexBuffers(D3D10DDI_HDEVICE hDevice,                                    
             pipe_resource_reference(&vb->buffer.resource, NULL);
             vb->is_user_buffer = true;
          }
-         vb->buffer.user = dummy;
+         vb->buffer.user = NULL;
       }
    }
 
@@ -171,7 +171,7 @@ IaSetVertexBuffers(D3D10DDI_HDEVICE hDevice,                                    
          pDevice->vertex_strides[i] = 0;
          vb->buffer_offset = 0;
          vb->is_user_buffer = true;
-         vb->buffer.user = dummy;
+         vb->buffer.user = NULL;
       }
    }
 

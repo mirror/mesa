@@ -19,6 +19,8 @@ extern "C" {
 #define WINSYS_HANDLE_TYPE_D3D12_RES 4
 #define WINSYS_HANDLE_TYPE_WIN32_NAME 5
 #define WINSYS_HANDLE_TYPE_UNBACKED 5
+/* Used in DXGI functions to resolve to d3dkmt allocation handle from resource */
+#define WINSYS_HANDLE_TYPE_D3DKMT_ALLOC 6
 
 /**
  * For use with pipe_screen::{resource_from_handle|resource_get_handle}.

@@ -38,6 +38,8 @@
 enum pipe_format
 FormatTranslate(DXGI_FORMAT Format, BOOL depth);
 
+DXGI_FORMAT FormatDeTranslate(enum pipe_format Format);
+
 const char *
 FormatToName(DXGI_FORMAT Format);
 

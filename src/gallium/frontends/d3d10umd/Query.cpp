@@ -167,11 +167,10 @@ QueryBegin(D3D10DDI_HDEVICE hDevice,   // IN
    Device *pDevice = CastDevice(hDevice);
    struct pipe_context *pipe = pDevice->pipe;
 
-   Query *pQuery = CastQuery(hQuery);
    struct pipe_query *state = CastPipeQuery(hQuery);
 
    if (state) {
-      assert(pQuery->pipe_type < PIPE_QUERY_TYPES);
+      assert(CastQuery(hQuery)->pipe_type < PIPE_QUERY_TYPES);
       pipe->begin_query(pipe, state);
    }
 }

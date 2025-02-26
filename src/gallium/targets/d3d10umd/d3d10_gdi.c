@@ -27,17 +27,19 @@
  **************************************************************************/
 
 
+#include "gdikmt/gdikmt.h"
 #include "util/u_debug.h"
 #include "target-helpers/inline_debug_helper.h"
 #include "llvmpipe/lp_public.h"
 #include "softpipe/sp_public.h"
 #include "sw/gdi/gdi_sw_winsys.h"
+#include "virgl/gdi/virgl_gdi_public.h"
 
 #include "winddk_compat.h"
 #include <d3dkmthk.h>
 
 extern struct pipe_screen *
-d3d10_create_screen(void);
+d3d10_create_screen(struct gdikmt_device* device);
 
 HDC d3d10_gdi_acquire_hdc(void *winsys_drawable_handle) {
    D3DKMT_PRESENT *pPresentInfo = (D3DKMT_PRESENT *)winsys_drawable_handle;
@@ -54,12 +56,17 @@ void d3d10_gdi_release_hdc(void *winsys_drawable_handle, HDC hDC) {
 }
 
 struct pipe_screen *
-d3d10_create_screen(void)
+d3d10_create_screen(struct gdikmt_device* device)
 {
    const char *default_driver;
    const char *driver;
    struct pipe_screen *screen = NULL;
    struct sw_winsys *winsys;
+
+#ifdef GALLIUM_VIRGL
+   return virgl_gdi_screen_create(device);
+#endif
+
 
    winsys = gdi_create_sw_winsys(d3d10_gdi_acquire_hdc, d3d10_gdi_release_hdc);
    if(!winsys)
@@ -81,9 +88,11 @@ d3d10_create_screen(void)
    (void)driver;
 #endif
 
+#ifdef GALLIUM_SOFTPIPE
    if (screen == NULL) {
       screen = softpipe_create_screen( winsys );
    }
+#endif
 
    if (screen == NULL)
       goto no_screen;

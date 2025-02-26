@@ -33,6 +33,7 @@
 #include "Debug.h"
 #include "ShaderParse.h"
 
+#include "pipe/p_shader_tokens.h"
 #include "pipe/p_state.h"
 #include "tgsi/tgsi_ureg.h"
 #include "tgsi/tgsi_dump.h"
@@ -40,6 +41,7 @@
 
 #include "ShaderDump.h"
 
+extern bool use_old_tex_ops;
 
 enum dx10_opcode_format {
    OF_FLOAT,
@@ -178,6 +180,7 @@ static struct dx10_opcode_xlate opcode_xlate[D3D10_SB_NUM_OPCODES] = {
 };
 
 #define SHADER_MAX_TEMPS 4096
+#define SHADER_MAX_ADDRS 3
 #define SHADER_MAX_INPUTS 32
 #define SHADER_MAX_OUTPUTS 32
 #define SHADER_MAX_CONSTS 4096
@@ -207,12 +210,14 @@ struct Shader_xlate {
 
    struct ureg_dst temps[SHADER_MAX_TEMPS];
    struct ureg_dst output_depth;
+   struct ureg_dst addrs[SHADER_MAX_ADDRS];
    struct Shader_resource resources[SHADER_MAX_RESOURCES];
    struct ureg_src sv[SHADER_MAX_RESOURCES];
    struct ureg_src samplers[SHADER_MAX_SAMPLERS];
    struct ureg_src imms;
    struct ureg_src prim_id;
 
+   uint addr_cur;
    uint temp_offset;
    uint indexable_temp_offsets[SHADER_MAX_INDEXABLE_TEMPS];
 
@@ -700,7 +705,14 @@ translate_relative_operand(struct Shader_xlate *sx,
    }
 
    reg = ureg_scalar(reg, operand->comp);
-   return reg;
+   
+   struct ureg_dst addr_reg = sx->addrs[sx->addr_cur];
+   ureg_UARL(sx->ureg, addr_reg, reg);
+      
+   sx->addr_cur++;
+   if(sx->addr_cur >= SHADER_MAX_ADDRS) sx->addr_cur = 0;
+
+   return ureg_src(addr_reg);
 }
 
 static struct ureg_dst
@@ -992,14 +1004,14 @@ translate_src_operand(struct Shader_xlate *sx,
       assert(operand->base.index_dim == 2);
 
       assert(operand->base.index[0].index_rep == D3D10_SB_OPERAND_INDEX_IMMEDIATE32);
-      assert(operand->base.index[0].imm < PIPE_MAX_CONSTANT_BUFFERS);
+      assert(operand->base.index[0].imm + 1 < PIPE_MAX_CONSTANT_BUFFERS);
 
       switch (operand->base.index[1].index_rep) {
       case D3D10_SB_OPERAND_INDEX_IMMEDIATE32:
          assert(operand->base.index[1].imm < SHADER_MAX_CONSTS);
 
          reg = ureg_src_register(TGSI_FILE_CONSTANT, operand->base.index[1].imm);
-         reg = ureg_src_dimension(reg, operand->base.index[0].imm);
+         reg = ureg_src_dimension(reg, operand->base.index[0].imm + 1);
          break;
       case D3D10_SB_OPERAND_INDEX_RELATIVE:
       case D3D10_SB_OPERAND_INDEX_IMMEDIATE32_PLUS_RELATIVE:
@@ -1007,7 +1019,7 @@ translate_src_operand(struct Shader_xlate *sx,
          reg = ureg_src_indirect(
             reg,
             translate_relative_operand(sx, &operand->base.index[1].rel));
-         reg = ureg_src_dimension(reg, operand->base.index[0].imm);
+         reg = ureg_src_dimension(reg, operand->base.index[0].imm + 1);
          break;
       default:
          /* XXX: Other index representations.
@@ -1288,6 +1300,11 @@ Shader_tgsi_translate(const unsigned *code,
    assert(ureg);
    sx.ureg = ureg;
 
+   for(uint i = 0; i < SHADER_MAX_ADDRS; i++) {
+      sx.addrs[i] = ureg_DECL_address(sx.ureg);
+   }
+   sx.addr_cur = 0;
+
    while (Shader_parse_opcode(&parser, &opcode)) {
       const struct dx10_opcode_xlate *ox;
 
@@ -1391,7 +1408,7 @@ Shader_tgsi_translate(const unsigned *code,
           * this opcode regardless, so we just ignore sample index operand
           * for now */
       case D3D10_SB_OPCODE_LD:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             unsigned resource = opcode.src[1].base.index[0].imm;
             assert(opcode.src[1].base.index_dim == 1);
             assert(opcode.src[1].base.index[0].imm < SHADER_MAX_RESOURCES);
@@ -1432,7 +1449,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_RESINFO:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             unsigned resource = opcode.src[1].base.index[0].imm;
             assert(opcode.src[1].base.index_dim == 1);
             assert(opcode.src[1].base.index[0].imm < SHADER_MAX_RESOURCES);
@@ -1513,7 +1530,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             assert(opcode.src[1].base.index_dim == 1);
             assert(opcode.src[1].base.index[0].imm < SHADER_MAX_RESOURCES);
 
@@ -1540,7 +1557,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE_C:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             struct ureg_dst r0 = ureg_DECL_temporary(ureg);
 
             /* XXX: Support only 2D texture targets for now.
@@ -1590,7 +1607,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE_C_LZ:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             struct ureg_dst r0 = ureg_DECL_temporary(ureg);
 
             assert(opcode.src[1].base.index_dim == 1);
@@ -1641,7 +1658,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE_L:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             struct ureg_dst r0 = ureg_DECL_temporary(ureg);
 
             assert(opcode.src[1].base.index_dim == 1);
@@ -1680,7 +1697,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE_D:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             assert(opcode.src[1].base.index_dim == 1);
             assert(opcode.src[1].base.index[0].imm < SHADER_MAX_RESOURCES);
 
@@ -1709,7 +1726,7 @@ Shader_tgsi_translate(const unsigned *code,
          break;
 
       case D3D10_SB_OPCODE_SAMPLE_B:
-         if (st_debug & ST_DEBUG_OLD_TEX_OPS) {
+         if (use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS)) {
             struct ureg_dst r0 = ureg_DECL_temporary(ureg);
 
             assert(opcode.src[1].base.index_dim == 1);
@@ -1828,7 +1845,7 @@ Shader_tgsi_translate(const unsigned *code,
 
          target = translate_resource_dimension(opcode.specific.dcl_resource_dimension);
          sx.resources[res_index].target = target;
-         if (!(st_debug & ST_DEBUG_OLD_TEX_OPS)) {
+         if (!(use_old_tex_ops || (st_debug & ST_DEBUG_OLD_TEX_OPS))) {
             sx.sv[res_index] =
                ureg_DECL_sampler_view(ureg, res_index, target,
                                       trans_dcl_ret_type(opcode.dcl_resource_ret_type[0]),
@@ -1842,7 +1859,7 @@ Shader_tgsi_translate(const unsigned *code,
       case D3D10_SB_OPCODE_DCL_CONSTANT_BUFFER: {
          unsigned num_constants = opcode.src[0].base.index[1].imm;
 
-         assert(opcode.src[0].base.index[0].imm < PIPE_MAX_CONSTANT_BUFFERS);
+         assert(opcode.src[0].base.index[0].imm + 1 < PIPE_MAX_CONSTANT_BUFFERS);
 
          if (num_constants == 0) {
             num_constants = SHADER_MAX_CONSTS;
@@ -1853,7 +1870,7 @@ Shader_tgsi_translate(const unsigned *code,
          ureg_DECL_constant2D(ureg,
                               0,
                               num_constants - 1,
-                              opcode.src[0].base.index[0].imm);
+                              opcode.src[0].base.index[0].imm + 1);
          break;
       }
 

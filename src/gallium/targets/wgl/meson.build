@@ -13,7 +13,7 @@ wgl_def = custom_target(
 gallium_wgl_name = get_option('gallium-wgl-dll-name')
 libgallium_wgl = shared_library(
   gallium_wgl_name,
-  ['wgl.c'],
+  ['wgl.c', 'dxgi_framebuffer.cpp'],
   vs_module_defs : wgl_def,
   include_directories : [
     inc_include, inc_src, inc_mapi, inc_mesa, inc_gallium, inc_gallium_aux, inc_wgl, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers,
@@ -24,7 +24,7 @@ libgallium_wgl = shared_library(
   ],
   dependencies : [
     dep_ws2_32, idep_nir, idep_mesautil, driver_swrast,
-    driver_d3d12, driver_zink, winsys_d3d12_wgl
+    driver_d3d12, driver_zink, driver_virgl, winsys_d3d12_wgl
   ],
   link_args : gallium_wgl_link_args,
   name_prefix : '',

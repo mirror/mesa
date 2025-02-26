@@ -40,10 +40,6 @@
 #include "util/u_memory.h"
 
 
-EXTERN_C struct pipe_screen *
-d3d10_create_screen(void);
-
-
 static HRESULT APIENTRY CloseAdapter(D3D10DDI_HADAPTER hAdapter);
 
 static unsigned long numAdapters = 0;
@@ -78,18 +74,14 @@ OpenAdapterCommon(__inout D3D10DDIARG_OPENADAPTER *pOpenData)   // IN
       return E_OUTOFMEMORY;
    }
 
-   pAdaptor->screen = d3d10_create_screen();
-   if (!pAdaptor->screen) {
-      free(pAdaptor);
-      --numAdapters;
-      return E_OUTOFMEMORY;
-   }
-
    pOpenData->hAdapter.pDrvPrivate = pAdaptor;
 
    pOpenData->pAdapterFuncs->pfnCalcPrivateDeviceSize = CalcPrivateDeviceSize;
    pOpenData->pAdapterFuncs->pfnCreateDevice = CreateDevice;
    pOpenData->pAdapterFuncs->pfnCloseAdapter = CloseAdapter;
+
+   pAdaptor->AdapterCallbacks = *pOpenData->pAdapterCallbacks;
+   pAdaptor->hRTAdapter = pOpenData->hRTAdapter.handle;
 
    return S_OK;
 }
@@ -259,8 +251,6 @@ CloseAdapter(D3D10DDI_HADAPTER hAdapter)  // IN
    LOG_ENTRYPOINT();
 
    Adapter *pAdapter = CastAdapter(hAdapter);
-   struct pipe_screen *screen = pAdapter->screen;
-   screen->destroy(screen);
    free(pAdapter);
 
    --numAdapters;

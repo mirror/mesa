@@ -63,6 +63,12 @@
 #include "zink/zink_public.h"
 #endif
 
+#ifdef GALLIUM_VIRGL
+#include "virgl/gdi/virgl_gdi_public.h"
+static bool use_virgl = false;
+#endif
+
+
 #ifdef GALLIUM_LLVMPIPE
 static bool use_llvmpipe = false;
 #endif
@@ -80,6 +86,13 @@ wgl_screen_create_by_name(HDC hDC, const char* driver, struct sw_winsys *winsys)
 {
    struct pipe_screen* screen = NULL;
 
+#ifdef GALLIUM_VIRGL
+   if (strcmp(driver, "virgl") == 0) {
+      screen = virgl_gdi_screen_create(gdikmt_create_from_hdc(hDC));
+      if (screen)
+         use_virgl = true;
+   }
+#endif
 #ifdef GALLIUM_LLVMPIPE
    if (strcmp(driver, "llvmpipe") == 0) {
       screen = llvmpipe_create_screen(winsys);
@@ -122,6 +135,9 @@ wgl_screen_create(HDC hDC)
 
    const char *const drivers[] = {
       debug_get_option("GALLIUM_DRIVER", ""),
+#ifdef GALLIUM_VIRGL
+      sw_only ? "" : "virgl",
+#endif
 #ifdef GALLIUM_D3D12
       sw_only ? "" : "d3d12",
 #endif
@@ -175,6 +191,13 @@ wgl_present(struct pipe_screen *screen,
    struct sw_displaytarget *dt = NULL;
 #endif
 
+#ifdef GALLIUM_VIRGL
+   if (use_virgl) {
+      screen->flush_frontbuffer(screen, ctx, res, 0, 0, hDC, 0, NULL);
+      return;
+   }
+#endif
+
 #ifdef GALLIUM_LLVMPIPE
    if (use_llvmpipe) {
       winsys = llvmpipe_screen(screen)->winsys;
@@ -221,11 +244,21 @@ wgl_get_adapter_luid(struct pipe_screen* screen,
 #endif
 
 
+
+struct stw_winsys_framebuffer *
+wgl_create_dxgi_framebuffer(struct pipe_screen *screen, HWND hWnd,
+                             int iPixelFormat);
+
 static struct stw_winsys_framebuffer *
 wgl_create_framebuffer(struct pipe_screen *screen,
                        HWND hWnd,
                        int iPixelFormat)
 {
+#ifdef GALLIUM_VIRGL 
+   if(use_virgl) {
+      return wgl_create_dxgi_framebuffer(screen, hWnd, iPixelFormat);
+   }
+#endif
 #ifdef GALLIUM_D3D12
    if (use_d3d12)
       return d3d12_wgl_create_framebuffer(screen, hWnd, iPixelFormat);

@@ -46,6 +46,10 @@
 
 #include "util/u_sampler.h"
 
+#include "gdikmt/gdikmt.h"
+
+EXTERN_C struct pipe_screen *
+d3d10_create_screen(gdikmt_device *device);
 
 static void APIENTRY DestroyDevice(D3D10DDI_HDEVICE hDevice);
 static void APIENTRY RelocateDeviceFuncs(D3D10DDI_HDEVICE hDevice,
@@ -61,6 +65,7 @@ static void APIENTRY CheckMultisampleQualityLevels(D3D10DDI_HDEVICE hDevice,
                                           __out UINT *pNumQualityLevels);
 static void APIENTRY SetTextFilterSize(D3D10DDI_HDEVICE hDevice, UINT Width, UINT Height);
 
+EXTERN_C bool use_old_tex_ops = false;
 
 /*
  * ----------------------------------------------------------------------
@@ -129,8 +134,23 @@ CreateDevice(D3D10DDI_HADAPTER hAdapter,                 // IN
    Device *pDevice = CastDevice(pCreateData->hDrvDevice);
    memset(pDevice, 0, sizeof *pDevice);
 
-   struct pipe_screen *screen = pAdapter->screen;
+   pDevice->device.hRTAdapter = (HANDLE)pAdapter->hRTAdapter;
+   pDevice->device.hRTDevice = (HANDLE)pCreateData->hRTDevice.handle;
+
+   pDevice->device.KTCallbacks = *pCreateData->pKTCallbacks;
+   pDevice->device.pAdapterCallbacks = &pAdapter->AdapterCallbacks;
+   pDevice->device.pDXGIBaseCallbacks = pCreateData->DXGIBaseDDI.pDXGIBaseCallbacks;
+
+   gdikmt_d3dddi_fill_basefuncs(&pDevice->device);
+
+   pDevice->hRTCoreLayer = pCreateData->hRTCoreLayer;
+   pDevice->UMCallbacks = *pCreateData->pUMCallbacks;
+
+   mtx_init(&pDevice->CreateResourceMtx, mtx_plain);
+
+   struct pipe_screen *screen = d3d10_create_screen(&pDevice->device.base);
    struct pipe_context *pipe = screen->context_create(screen, NULL, 0);
+   pDevice->screen = screen;
    pDevice->pipe = pipe;
    pDevice->cso = cso_create_context(pipe, CSO_NO_VBUF);
 
@@ -143,12 +163,6 @@ CreateDevice(D3D10DDI_HADAPTER hAdapter,                 // IN
    pDevice->max_dual_source_render_targets =
          screen->caps.max_dual_source_render_targets;
 
-   pDevice->hRTCoreLayer = pCreateData->hRTCoreLayer;
-   pDevice->hDevice = (HANDLE)pCreateData->hRTDevice.handle;
-   pDevice->KTCallbacks = *pCreateData->pKTCallbacks;
-   pDevice->UMCallbacks = *pCreateData->pUMCallbacks;
-   pDevice->pDXGIBaseCallbacks = pCreateData->DXGIBaseDDI.pDXGIBaseCallbacks;
-
    pDevice->draw_so_target = NULL;
 
    if (0) {
@@ -156,6 +170,11 @@ CreateDevice(D3D10DDI_HADAPTER hAdapter,                 // IN
    }
 
    st_debug_parse();
+   
+   // HACK: Use old texture operations if on virgl
+   if(strncmp(screen->get_name(screen), "virgl", 5) == 0) {
+      use_old_tex_ops = true;
+   }
 
    /*
     * Fill in the D3D10 DDI functions
@@ -293,14 +312,7 @@ CreateDevice(D3D10DDI_HADAPTER hAdapter,                 // IN
    pCreateData->DXGIBaseDDI.pDXGIDDIBaseFunctions->pfnBlt =
       _Blt;
 
-   if (0) {
-      return S_OK;
-   } else {
-      // Tell DXGI to not use the shared resource presentation path when
-      // communicating with DWM:
-      // http://msdn.microsoft.com/en-us/library/windows/hardware/ff569887(v=vs.85).aspx
-      return DXGI_STATUS_NO_REDIRECTION;
-   }
+   return S_OK;
 }
 
 
@@ -363,6 +375,9 @@ DestroyDevice(D3D10DDI_HDEVICE hDevice)   // IN
                            PIPE_MAX_SHADER_SAMPLER_VIEWS, 0, false, sampler_views);
 
    pipe->destroy(pipe);
+   pDevice->screen->destroy(pDevice->screen);
+
+   mtx_destroy(&pDevice->CreateResourceMtx);
 }
 
 

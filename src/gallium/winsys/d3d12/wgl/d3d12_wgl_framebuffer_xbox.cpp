@@ -165,7 +165,7 @@ d3d12_wgl_framebuffer_resize(stw_winsys_framebuffer *fb,
 }
 
 static bool
-d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb, int interval)
+d3d12_wgl_framebuffer_present(stw_winsys_framebuffer *fb, int interval, struct pipe_resource *res)
 {
    auto framebuffer = d3d12_wgl_framebuffer(fb);
    D3D12XBOX_PRESENT_PLANE_PARAMETERS planeParams = {};
@@ -278,6 +278,7 @@ d3d12_wgl_create_framebuffer(struct pipe_screen *screen,
    fb->base.resize = d3d12_wgl_framebuffer_resize;
    fb->base.present = d3d12_wgl_framebuffer_present;
    fb->base.get_resource = d3d12_wgl_framebuffer_get_resource;
+   fb->base.needs_fake_front = true;
 
    // Xbox applications must manually handle Suspend/Resume events on the Command Queue.
    // To allow the application to access the queue, we store a pointer in the HWND's user data.

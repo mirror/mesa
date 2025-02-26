@@ -41,6 +41,26 @@
 #include "util/format/u_format.h"
 
 
+static inline struct pipe_surface *
+GetPipeRenderTargetView(D3D10DDI_HRENDERTARGETVIEW hRenderTargetView)
+{
+   RenderTargetView *pRenderTargetView = CastRenderTargetView(hRenderTargetView);
+   if (!pRenderTargetView) return NULL;
+
+   // Validate that surface texture matches resource 
+   // If it is not (resource rotated) then recreate surface
+   struct pipe_surface *currentSurface = pRenderTargetView->surface;
+   Resource *res = pRenderTargetView->resource;
+   if (currentSurface->texture != res->resource) {
+      struct pipe_context *pipe = currentSurface->context;
+      struct pipe_surface *newSurface = pipe->create_surface(pipe, res->resource, currentSurface);
+      pipe_surface_reference(&pRenderTargetView->surface, newSurface);
+      pipe_surface_reference(&newSurface, NULL);
+   }
+
+   return pRenderTargetView->surface;
+}
+
 /*
  * ----------------------------------------------------------------------
  *
@@ -86,6 +106,7 @@ CreateRenderTargetView(
    struct pipe_context *pipe = CastPipeContext(hDevice);
    struct pipe_resource *resource = CastPipeResource(pCreateRenderTargetView->hDrvResource);
    RenderTargetView *pRTView = CastRenderTargetView(hRenderTargetView);
+   pRTView->resource = CastResource(pCreateRenderTargetView->hDrvResource);
 
    struct pipe_surface desc;
 
@@ -178,7 +199,7 @@ ClearRenderTargetView(D3D10DDI_HDEVICE hDevice,                      // IN
    LOG_ENTRYPOINT();
 
    struct pipe_context *pipe = CastPipeContext(hDevice);
-   struct pipe_surface *surface = CastPipeRenderTargetView(hRenderTargetView);
+   struct pipe_surface *surface = GetPipeRenderTargetView(hRenderTargetView);
    union pipe_color_union clear_color;
 
    /*
@@ -754,7 +775,7 @@ SetRenderTargets(D3D10DDI_HDEVICE hDevice,                              // IN
    pDevice->fb.nr_cbufs = 0;
    for (unsigned i = 0; i < RTargets; ++i) {
       pipe_surface_reference(&pDevice->fb.cbufs[i],
-                             CastPipeRenderTargetView(phRenderTargetView[i]));
+                             GetPipeRenderTargetView(phRenderTargetView[i]));
       if (pDevice->fb.cbufs[i]) {
          pDevice->fb.nr_cbufs = i + 1;
       }

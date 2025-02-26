@@ -32,8 +32,13 @@
 
 
 #include "DriverIncludes.h"
+#include "pipe/p_screen.h"
 #include "util/u_hash_table.h"
 #include "cso_cache/cso_context.h"
+#include "util/u_thread.h"
+
+#include <d3dukmdt.h>
+#include "gdikmt_d3dddi.h"
 
 #define SUPPORT_MSAA 0
 #define SUPPORT_D3D10_1 0
@@ -43,6 +48,8 @@
 struct Adapter
 {
    struct pipe_screen *screen;
+   HANDLE hRTAdapter;
+   D3DDDI_ADAPTERCALLBACKS AdapterCallbacks;
 };
 
 
@@ -66,9 +73,13 @@ struct ElementLayout;
 
 struct Device
 {
+   struct pipe_screen *screen;
    struct pipe_context *pipe;
 
+   struct gdikmt_device_d3dddi device;
+
    struct cso_context *cso;
+
    struct pipe_framebuffer_state fb;
    struct pipe_vertex_buffer vertex_buffers[PIPE_MAX_ATTRIBS];
    unsigned vertex_strides[PIPE_MAX_ATTRIBS];
@@ -90,15 +101,9 @@ struct Device
    Shader *bound_vs;
 
    unsigned max_dual_source_render_targets;
-
+   
    D3D10DDI_HRTCORELAYER  hRTCoreLayer;
-
-   HANDLE hDevice;
-   HANDLE hContext;
-
-   D3DDDI_DEVICECALLBACKS KTCallbacks;
    D3D10DDI_CORELAYER_DEVICECALLBACKS UMCallbacks;
-   DXGI_DDI_BASE_CALLBACKS *pDXGIBaseCallbacks;
 
    INT LastEmittedQuerySeqNo;
    INT LastFinishedQuerySeqNo;
@@ -109,6 +114,8 @@ struct Device
    ElementLayout *element_layout;
    BOOL velems_changed;
    BOOL vbuffers_changed;
+   
+   mtx_t CreateResourceMtx;
 };
 
 
@@ -208,6 +215,7 @@ CastPipeBuffer(D3D10DDI_HRESOURCE hResource)
 struct RenderTargetView
 {
    struct pipe_surface *surface;
+   Resource *resource;
    D3D10DDI_HRTRENDERTARGETVIEW hRTRenderTargetView;
 };
 
@@ -363,6 +371,7 @@ CastPipeSamplerState(D3D10DDI_HSAMPLER hSampler)
 struct ShaderResourceView
 {
    struct pipe_sampler_view *handle;
+   Resource *resource;
 };
 
 

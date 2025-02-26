@@ -288,6 +288,13 @@ files_libgallium = files(
   'nir/nir_draw_helpers.h',
 )
 
+if with_platform_windows 
+  files_libgallium += files(
+    'gdikmt/gdikmt.h',
+    'gdikmt/gdikmt_d3dkmt.c',
+  )
+endif
+
 if dep_libdrm.found()
   files_libgallium += files(
     'renderonly/renderonly.c',

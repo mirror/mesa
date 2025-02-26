@@ -53,7 +53,8 @@ struct stw_winsys_framebuffer
 
    bool
    (*present)(struct stw_winsys_framebuffer *fb,
-              int interval);
+              int interval,
+              struct pipe_resource *res);
 
    void
    (*resize)(struct stw_winsys_framebuffer *fb,

@@ -658,7 +658,7 @@ stw_framebuffer_present_locked(HDC hdc,
 {
    if (fb->winsys_framebuffer) {
       int interval = fb->swap_interval == -1 ? stw_dev->swap_interval : fb->swap_interval;
-      BOOL result = fb->winsys_framebuffer->present(fb->winsys_framebuffer, interval);
+      BOOL result = fb->winsys_framebuffer->present(fb->winsys_framebuffer, interval, res);
 
       stw_framebuffer_update(fb);
       stw_notify_current_locked(fb);

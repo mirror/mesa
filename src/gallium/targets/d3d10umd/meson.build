@@ -15,14 +15,14 @@ libgallium_d3d10 = shared_library(
   ['d3d10_gdi.c'],
   vs_module_defs : libgallium_d3d10_def,
   include_directories : [
-    inc_include, inc_src, inc_gallium, inc_gallium_aux, inc_d3d10umd, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers, inc_winddk
+    inc_include, inc_src, inc_mesa, inc_gallium, inc_gallium_aux, inc_d3d10umd, inc_gallium_winsys, inc_gallium_winsys_sw, inc_gallium_drivers, inc_winddk
   ],
   link_whole : [libd3d10umd],
   link_with : [
-    libgallium, libwsgdi
+    libgallium, libgalliumvl, libwsgdi
   ],
   dependencies : [
-    dep_ws2_32, idep_nir, driver_swrast, idep_mesautil
+    dep_ws2_32, idep_nir, driver_swrast, driver_virgl, idep_mesautil
   ],
   name_prefix: '',
   install : true,

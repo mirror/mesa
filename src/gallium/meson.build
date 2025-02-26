@@ -174,6 +174,8 @@ if with_gallium_virgl
   if not with_platform_windows
     subdir('winsys/virgl/drm')
     subdir('winsys/virgl/vtest')
+  else
+    subdir('winsys/virgl/gdi')
   endif
   subdir('drivers/virgl')
 else

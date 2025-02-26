@@ -4,6 +4,8 @@
 use crate::api::{GetDebugFlags, DEBUG};
 use crate::ir::*;
 
+use crate::sm75_instr_latencies::{RegLatencySM75, URegLatencySM75};
+
 use std::cmp::max;
 use std::collections::{HashMap, HashSet};
 use std::ops::{Index, IndexMut, Range};
@@ -379,7 +381,8 @@ fn assign_barriers(f: &mut Function, sm: &dyn ShaderModel) {
                     waits.extend_from_slice(u.deps());
                 });
 
-                if instr.has_fixed_latency(sm.sm()) {
+                let use_delays = !instr.op.needs_scoreboards(sm.sm());
+                if use_delays {
                     // Delays will cover us here.  We just need to make sure
                     // that we wait on any uses that we consume.
                     uses.for_each_instr_src_mut(instr, |_, u| {
@@ -436,7 +439,7 @@ fn assign_barriers(f: &mut Function, sm: &dyn ShaderModel) {
                 instr.deps.set_yield(true);
             }
 
-            if instr.has_fixed_latency(sm.sm()) {
+            if !instr.op.needs_scoreboards(sm.sm()) || instr.op.is_branch() {
                 continue;
             }
 
@@ -500,18 +503,39 @@ fn exec_latency(sm: u8, op: &Op) -> u32 {
     }
 }
 
-fn instr_latency(op: &Op, dst_idx: usize) -> u32 {
+fn instr_latency(sm: u8, op: &Op, dst_idx: usize) -> u32 {
     let file = match op.dsts_as_slice()[dst_idx] {
         Dst::None => return 0,
         Dst::SSA(vec) => vec.file().unwrap(),
         Dst::Reg(reg) => reg.file(),
     };
 
+    let (gpr_latency, pred_latency) = if sm < 80 {
+	match op {
+            // Double-precision float ALU
+            Op::DAdd(_)
+		| Op::DFma(_)
+		| Op::DMnMx(_)
+		| Op::DMul(_)
+		| Op::DSetP(_)
+            // Half-precision float ALU
+		| Op::HAdd2(_)
+		| Op::HFma2(_)
+		| Op::HMul2(_)
+		| Op::HSet2(_)
+		| Op::HSetP2(_)
+		| Op::HMnMx2(_) => (13, 14),
+	    _ => (6, 13)
+	}
+    } else {
+	(6, 13)
+    };
+
     // This is BS and we know it
     match file {
-        RegFile::GPR => 6,
+        RegFile::GPR => gpr_latency,
         RegFile::UGPR => 12,
-        RegFile::Pred => 13,
+        RegFile::Pred => pred_latency,
         RegFile::UPred => 11,
         RegFile::Bar => 0, // Barriers have a HW scoreboard
         RegFile::Carry => 6,
@@ -521,44 +545,186 @@ fn instr_latency(op: &Op, dst_idx: usize) -> u32 {
 
 /// Read-after-write latency
 fn raw_latency(
-    _sm: u8,
+    sm: u8,
     write: &Op,
     dst_idx: usize,
-    _read: &Op,
+    read: &Op,
     _src_idx: usize,
 ) -> u32 {
-    instr_latency(write, dst_idx)
+
+    if sm == 75 {
+        let dst_file = match write.dsts_as_slice()[dst_idx] {
+            Dst::None => return 0,
+            Dst::SSA(vec) => vec.file().unwrap(),
+            Dst::Reg(reg) => reg.file(),
+        };
+
+        match dst_file {
+            RegFile::GPR => {
+                let write_latency = write.get_reg_latency_category_sm75();
+                let read_latency = read.get_reg_latency_category_sm75();
+
+                return RegLatencySM75::read_after_write(write_latency,
+                                                        read_latency, 0);
+            },
+            RegFile::UGPR => {
+                let write_latency = write.get_ureg_latency_category_sm75(false);
+                let read_latency = read.get_ureg_latency_category_sm75(true);
+                return URegLatencySM75::read_after_write(write_latency,
+                                                         read_latency);
+            },
+            RegFile::Pred => {
+                let write_latency = write.get_reg_latency_category_sm75();
+                let read_latency = read.get_reg_latency_category_sm75();
+                return RegLatencySM75::pred_read_after_write(write_latency,
+                                                             read_latency);
+            },
+            RegFile::UPred => {
+                let write_latency = write.get_ureg_latency_category_sm75(false);
+                let read_latency = read.get_ureg_latency_category_sm75(true);
+                return URegLatencySM75::pred_read_after_write(write_latency,
+                                                              read_latency);
+            },
+            RegFile::Bar => 0, // Barriers have a HW scoreboard
+            RegFile::Carry => 6,
+            RegFile::Mem => panic!("Not a register"),
+        }
+    } else {
+        instr_latency(sm, write, dst_idx)
+    }
 }
 
 /// Write-after-read latency
 fn war_latency(
-    _sm: u8,
-    _read: &Op,
+    sm: u8,
+    read: &Op,
     _src_idx: usize,
-    _write: &Op,
-    _dst_idx: usize,
+    write: &Op,
+    dst_idx: usize,
 ) -> u32 {
-    // We assume the source gets read in the first 4 cycles.  We don't know how
-    // quickly the write will happen.  This is all a guess.
-    4
+    if sm == 75 {
+        let dst_file = match write.dsts_as_slice()[dst_idx] {
+            Dst::None => return 0,
+            Dst::SSA(vec) => vec.file().unwrap(),
+            Dst::Reg(reg) => reg.file(),
+        };
+
+        match dst_file {
+            RegFile::GPR => {
+                let write_latency = write.get_reg_latency_category_sm75();
+                let read_latency = read.get_reg_latency_category_sm75();
+
+                return RegLatencySM75::write_after_read(read_latency,
+                                                        write_latency);
+            },
+            RegFile::UGPR => {
+                let write_latency = write.get_ureg_latency_category_sm75(false);
+                let read_latency = read.get_ureg_latency_category_sm75(true);
+                return URegLatencySM75::write_after_read(read_latency,
+                                                         write_latency);
+            },
+            RegFile::Pred => {
+                let write_latency = write.get_reg_latency_category_sm75();
+                let read_latency = read.get_reg_latency_category_sm75();
+                return RegLatencySM75::pred_write_after_read(read_latency,
+                                                             write_latency);
+            },
+            RegFile::UPred => {
+                let write_latency = write.get_ureg_latency_category_sm75(false);
+                let read_latency = read.get_ureg_latency_category_sm75(true);
+                return URegLatencySM75::pred_write_after_read(read_latency,
+                                                              write_latency);
+            },
+            RegFile::Bar => 0, // Barriers have a HW scoreboard
+            RegFile::Carry => 6,
+            RegFile::Mem => panic!("Not a register"),
+        }
+    } else {
+        // We assume the source gets read in the first 4 cycles.  We don't know how
+        // quickly the write will happen.  This is all a guess.
+        match read {
+            _ => 14
+        }
+    }
 }
 
 /// Write-after-write latency
 fn waw_latency(
-    _sm: u8,
+    sm: u8,
     a: &Op,
     a_dst_idx: usize,
-    _b: &Op,
+    b: &Op,
     _b_dst_idx: usize,
 ) -> u32 {
-    // We know our latencies are wrong so assume the wrote could happen anywhere
-    // between 0 and instr_latency(a) cycles
-    instr_latency(a, a_dst_idx)
+    if sm == 75 {
+        let dst_file = match a.dsts_as_slice()[a_dst_idx] {
+            Dst::None => return 0,
+            Dst::SSA(vec) => vec.file().unwrap(),
+            Dst::Reg(reg) => reg.file(),
+        };
+
+        match dst_file {
+            RegFile::GPR => {
+                let write1_latency = a.get_reg_latency_category_sm75();
+                let write2_latency = b.get_reg_latency_category_sm75();
+
+                return RegLatencySM75::write_after_write(write1_latency,
+                                                         write2_latency, true);
+            },
+            RegFile::UGPR => {
+                let write1_latency = a.get_ureg_latency_category_sm75(false);
+                let write2_latency = b.get_ureg_latency_category_sm75(false);
+                return URegLatencySM75::write_after_write(write1_latency,
+                                                         write2_latency, true);
+            },
+            RegFile::Pred => {
+                let write1_latency = a.get_pred_latency_category_sm75();
+                let write2_latency = b.get_pred_latency_category_sm75();
+                return RegLatencySM75::pred_write_after_write(write1_latency,
+                                                              write2_latency, true);
+            },
+            RegFile::UPred => {
+                let write1_latency = a.get_upred_latency_category_sm75();
+                let write2_latency = b.get_upred_latency_category_sm75();
+                return URegLatencySM75::pred_write_after_write(write1_latency,
+                                                               write2_latency);
+            },
+            RegFile::Bar => 0, // Barriers have a HW scoreboard
+            RegFile::Carry => 6,
+            RegFile::Mem => panic!("Not a register"),
+        }
+    } else {
+        // We know our latencies are wrong so assume the wrote could happen anywhere
+        // between 0 and instr_latency(a) cycles
+        instr_latency(sm, a, a_dst_idx)
+    }
 }
 
 /// Predicate read-after-write latency
-fn paw_latency(_sm: u8, _write: &Op, _dst_idx: usize) -> u32 {
-    13
+fn paw_latency(sm: u8, write: &Op, dst_idx: usize) -> u32 {
+    if sm == 75 {
+        let dst_file = match write.dsts_as_slice()[dst_idx] {
+            Dst::None => return 0,
+            Dst::SSA(vec) => vec.file().unwrap(),
+            Dst::Reg(reg) => reg.file(),
+        };
+
+        match dst_file {
+            RegFile::Pred => {
+                let write_latency = write.get_reg_latency_category_sm75();
+                return RegLatencySM75::pred_read_after_write(write_latency,
+                                                             RegLatencySM75::GuardPredicate);
+            },
+            RegFile::UPred => {
+                let write_latency = write.get_ureg_latency_category_sm75(false);
+                return URegLatencySM75::pred_read_after_write(write_latency,
+                                                             URegLatencySM75::GuardPredicate);
+            }
+            _ => { panic!("Incorrect register file in paw_latencny") }
+        }
+    } else {
+        13
+    }
 }
 
 fn calc_delays(f: &mut Function, sm: &dyn ShaderModel) {
@@ -591,7 +757,7 @@ fn calc_delays(f: &mut Function, sm: &dyn ShaderModel) {
                     // We don't know how it will be used but it may be used in
                     // the next block so we need at least assume the maximum
                     // destination latency from the end of the block.
-                    let s = instr_latency(&instr.op, i);
+                    let s = instr_latency(sm.sm(), &instr.op, i);
                     min_start = max(min_start, s);
                 }
                 RegUse::Write((w_ip, w_dst_idx)) => {
@@ -652,12 +818,13 @@ fn calc_delays(f: &mut Function, sm: &dyn ShaderModel) {
             uses.for_each_instr_pred_mut(instr, |c| {
                 c.add_read((ip, usize::MAX));
             });
-            uses.for_each_instr_src_mut(instr, |i, c| {
-                c.add_read((ip, i));
-            });
             uses.for_each_instr_dst_mut(instr, |i, c| {
                 c.set_write((ip, i));
             });
+            uses.for_each_instr_src_mut(instr, |i, c| {
+                c.add_read((ip, i));
+            });
+
             for (bar, c) in bars.iter_mut().enumerate() {
                 if instr.deps.wt_bar_mask & (1 << bar) != 0 {
                     *c = min_start;

@@ -522,6 +522,8 @@ static struct pipe_context *si_create_context(struct pipe_screen *screen, unsign
                         ((sscreen->info.family == CHIP_RAVEN ||
                           sscreen->info.family == CHIP_RAVEN2) &&
                          !sscreen->info.has_dedicated_vram) ||
+                        /* Compute queue is broken on GFX1013/AMD BC-250 */
+                        sscreen->info.family == CHIP_GFX1013 ||
                         !(flags & PIPE_CONTEXT_COMPUTE_ONLY);
 
    if (flags & PIPE_CONTEXT_DEBUG)

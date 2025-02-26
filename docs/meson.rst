@@ -383,6 +383,9 @@ such a :file:`meson.build` file might look like:
 
    _deps = []
    _search = join_paths(meson.current_source_dir(), 'lib')
+   # The libraries names array from below must match the output of
+   # 'llvm-config --libnames [space separated llvm components with all assumed if none specified]'.
+   # Search mesa source code for 'llvm_modules' to find what components are needed for each driver.
    foreach d : ['libLLVMCodeGen', 'libLLVMScalarOpts', 'libLLVMAnalysis',
                 'libLLVMTransformUtils', 'libLLVMCore', 'libLLVMX86CodeGen',
                 'libLLVMSelectionDAG', 'libLLVMipo', 'libLLVMAsmPrinter',

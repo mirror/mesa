@@ -1197,12 +1197,6 @@ nvk_shader_serialize(struct vk_device *vk_dev,
    return !blob->out_of_memory;
 }
 
-#define WRITE_STR(field, ...) ({                               \
-   memset(field, 0, sizeof(field));                            \
-   UNUSED int i = snprintf(field, sizeof(field), __VA_ARGS__); \
-   assert(i > 0 && i < sizeof(field));                         \
-})
-
 static VkResult
 nvk_shader_get_executable_properties(
    UNUSED struct vk_device *device,
@@ -1217,9 +1211,9 @@ nvk_shader_get_executable_properties(
    vk_outarray_append_typed(VkPipelineExecutablePropertiesKHR, &out, props) {
       props->stages = mesa_to_vk_shader_stage(shader->info.stage);
       props->subgroupSize = 32;
-      WRITE_STR(props->name, "%s",
+      VK_COPY_STR(props->name,
                 _mesa_shader_stage_to_string(shader->info.stage));
-      WRITE_STR(props->description, "%s shader",
+      VK_PRINT_STR(props->description, "%s shader",
                 _mesa_shader_stage_to_string(shader->info.stage));
    }
 
@@ -1241,30 +1235,30 @@ nvk_shader_get_executable_statistics(
    assert(executable_index == 0);
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
-      WRITE_STR(stat->name, "Instruction count");
-      WRITE_STR(stat->description, "Number of instructions used by this shader");
+      VK_COPY_STR(stat->name, "Instruction count");
+      VK_COPY_STR(stat->description, "Number of instructions used by this shader");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = shader->info.num_instrs;
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
-      WRITE_STR(stat->name, "Code Size");
-      WRITE_STR(stat->description,
+      VK_COPY_STR(stat->name, "Code Size");
+      VK_COPY_STR(stat->description,
                 "Size of the compiled shader binary, in bytes");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = shader->code_size;
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
-      WRITE_STR(stat->name, "Number of GPRs");
-      WRITE_STR(stat->description, "Number of GPRs used by this pipeline");
+      VK_COPY_STR(stat->name, "Number of GPRs");
+      VK_COPY_STR(stat->description, "Number of GPRs used by this pipeline");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = shader->info.num_gprs;
    }
 
    vk_outarray_append_typed(VkPipelineExecutableStatisticKHR, &out, stat) {
-      WRITE_STR(stat->name, "SLM Size");
-      WRITE_STR(stat->description,
+      VK_COPY_STR(stat->name, "SLM Size");
+      VK_COPY_STR(stat->description,
                 "Size of shader local (scratch) memory, in bytes");
       stat->format = VK_PIPELINE_EXECUTABLE_STATISTIC_FORMAT_UINT64_KHR;
       stat->value.u64 = shader->info.slm_size;
@@ -1312,8 +1306,8 @@ nvk_shader_get_executable_internal_representations(
 
    if (shader->nak != NULL && shader->nak->asm_str != NULL) {
       vk_outarray_append_typed(VkPipelineExecutableInternalRepresentationKHR, &out, ir) {
-         WRITE_STR(ir->name, "NAK assembly");
-         WRITE_STR(ir->description, "NAK assembly");
+         VK_COPY_STR(ir->name, "NAK assembly");
+         VK_COPY_STR(ir->description, "NAK assembly");
          if (!write_ir_text(ir, shader->nak->asm_str))
             incomplete_text = true;
       }

@@ -1687,6 +1687,17 @@ isl_surf_choose_tiling(const struct isl_device *dev,
       CHOOSE(ISL_TILING_64);
    }
 
+   if (isl_surf_usage_is_depth_or_stencil(info->usage) &&
+       isl_format_supports_ccs_e(dev->info, info->format) &&
+       !INTEL_DEBUG(DEBUG_NO_CCS) &&
+       !(info->usage & ISL_SURF_USAGE_DISABLE_AUX_BIT) &&
+       isl_format_get_layout(info->format)->bpb > 16 &&
+       isl_align(info->height, 4) % 8 != 0) {
+
+      /* Prefer TILE64 for depth/stencil surfaces. */
+      CHOOSE(ISL_TILING_64);
+   }
+
    /* For sparse images, prefer the formats that use the standard block
     * shapes.
     */

@@ -1102,7 +1102,8 @@ static void radeon_enc_qp_map(struct radeon_encoder *enc)
    RADEON_ENC_BEGIN(enc->cmd.enc_qp_map);
    RADEON_ENC_CS(enc->enc_pic.enc_qp_map.qp_map_type);
    if (enc->enc_pic.enc_qp_map.qp_map_type != RENCODE_QP_MAP_TYPE_NONE)
-      RADEON_ENC_READWRITE(enc->roi->res->buf, enc->roi->res->domains, 0);
+      RADEON_ENC_READWRITE(enc->enc_pic.enc_qp_map.buf,
+                           RADEON_DOMAIN_VRAM_GTT, 0);
    else {
       RADEON_ENC_CS(0); /* use null for roi buffer */
       RADEON_ENC_CS(0); /* use null for roi buffer */

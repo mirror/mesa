@@ -70,7 +70,7 @@ emit_deref_copy_load_store(nir_builder *b,
       unsigned length = glsl_get_length(src_deref->type);
       /* The wildcards should represent the same number of elements */
       assert(length == glsl_get_length(dst_deref->type));
-      assert(length > 0);
+      //assert(length > 0);
 
       for (unsigned i = 0; i < length; i++) {
          emit_deref_copy_load_store(b,

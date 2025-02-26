@@ -191,18 +191,23 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    if (ctx->is_noop)
       flags |= RADEON_FLUSH_NOOP;
 
+#ifdef HAVE_PERFETTO
    uint64_t start_ts = 0, submission_id = 0;
-   if (u_trace_perfetto_active(&ctx->ds.trace_context)) {
+   const bool perfetto = ctx->perfetto_enabled;
+
+   if (unlikely(perfetto)) {
       start_ts = si_ds_begin_submit(&ctx->ds_queue);
       submission_id = ctx->ds_queue.submission_id;
    }
+#endif
 
    /* Flush the CS. */
    ws->cs_flush(cs, flags, &ctx->last_gfx_fence);
 
-   if (u_trace_perfetto_active(&ctx->ds.trace_context) && start_ts > 0) {
+#ifdef HAVE_PERFETTO
+   if (unlikely(perfetto))
       si_ds_end_submit(&ctx->ds_queue, start_ts);
-   }
+#endif
 
    tc_driver_internal_flush_notify(ctx->tc);
    if (fence)
@@ -227,8 +232,10 @@ void si_flush_gfx_cs(struct si_context *ctx, unsigned flags, struct pipe_fence_h
    if (ctx->current_saved_cs)
       si_saved_cs_reference(&ctx->current_saved_cs, NULL);
 
-   if (u_trace_perfetto_active(&ctx->ds.trace_context))
+#ifdef HAVE_PERFETTO
+   if (unlikely(perfetto))
       si_utrace_flush(ctx, submission_id);
+#endif
 
    si_begin_new_gfx_cs(ctx, false);
    ctx->gfx_flush_in_progress = false;
@@ -430,10 +437,16 @@ void si_begin_new_gfx_cs(struct si_context *ctx, bool first_cs)
 {
    bool is_secure = false;
 
+   #if HAVE_PERFETTO
    if (!first_cs)
       u_trace_fini(&ctx->trace);
 
+   #if HAVE_PERFETTO
+   ctx->perfetto_enabled = u_trace_perfetto_active(&ctx->ds.trace_context);
+   #endif
+
    u_trace_init(&ctx->trace, &ctx->ds.trace_context);
+   #endif
 
    if (unlikely(radeon_uses_secure_bos(ctx->ws))) {
       is_secure = ctx->ws->cs_is_secure(&ctx->gfx_cs);

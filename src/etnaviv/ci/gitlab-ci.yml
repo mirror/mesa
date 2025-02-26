@@ -88,6 +88,8 @@
     BOOT_METHOD: barebox
     RUNNER_TAG: mesa-ci-x86-64-lava-imx8mp-tqma8mpql-mba8mpxl
     VISIBILITY_GROUP: "mesa-ci"
+    KERNEL_REPO: "Valentine/linux"
+    EXTERNAL_KERNEL_TAG: "v6.13-rc4-pengutronix"
 
 gc2000-gles2:
   extends:

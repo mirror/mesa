@@ -14,7 +14,7 @@
 
 static const struct amdgpu_device *amdgpu_dev;
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static int
 amdgpu_ioctl_noop(int fd, unsigned long request, void *arg)
@@ -242,6 +242,7 @@ drm_shim_driver_init(void)
       "PCI_SUBSYS_ID=1028:1636\n"
       "PCI_SLOT_NAME=0000:04:00.0\n"
       "MODALIAS=pci:v00001002d000015E7sv00001002sd00001636bc03sc00i00\n";
+
    drm_shim_override_file(uevent_content, "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
                           render_node_minor);
    drm_shim_override_file("0xe9\n", "/sys/dev/char/%d:%d/device/revision", DRM_MAJOR,
@@ -254,4 +255,17 @@ drm_shim_driver_init(void)
                           render_node_minor);
    drm_shim_override_file("0x1636", "/sys/dev/char/%d:%d/device/subsystem_device", DRM_MAJOR,
                           render_node_minor);
+
+   drm_shim_override_file(uevent_content, "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
+                          primary_node_minor);
+   drm_shim_override_file("0xe9\n", "/sys/dev/char/%d:%d/device/revision", DRM_MAJOR,
+                          primary_node_minor);
+   drm_shim_override_file("0x1002", "/sys/dev/char/%d:%d/device/vendor", DRM_MAJOR,
+                          primary_node_minor);
+   drm_shim_override_file("0x15e7", "/sys/dev/char/%d:%d/device/device", DRM_MAJOR,
+                          primary_node_minor);
+   drm_shim_override_file("0x1002", "/sys/dev/char/%d:%d/device/subsystem_vendor", DRM_MAJOR,
+                          primary_node_minor);
+   drm_shim_override_file("0x1636", "/sys/dev/char/%d:%d/device/subsystem_device", DRM_MAJOR,
+                          primary_node_minor);
 }

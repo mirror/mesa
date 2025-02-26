@@ -113,15 +113,7 @@ _eglAddDRMDevice(drmDevicePtr device)
    _EGLDevice *dev;
 
    assert(device->available_nodes & ((1 << DRM_NODE_RENDER)));
-
-   /* TODO: uncomment this assert, which is a sanity check.
-    *
-    * assert(device->available_nodes & ((1 << DRM_NODE_PRIMARY)));
-    *
-    * DRM shim does not expose a primary node, so the CI would fail if we had
-    * this assert. DRM shim is being used to run shader-db. We need to
-    * investigate what should be done (probably fixing DRM shim).
-    */
+   assert(device->available_nodes & ((1 << DRM_NODE_PRIMARY)));
 
    dev = _eglGlobal.DeviceList;
 

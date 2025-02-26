@@ -50,21 +50,24 @@
 #include <drm-uapi/drm.h>
 
 #include "util/anon_file.h"
-#include "util/set.h"
+#include "util/hash_table.h"
 #include "util/simple_mtx.h"
 #include "util/u_debug.h"
 #include "drm_shim.h"
 
 #define REAL_FUNCTION_POINTER(x) __typeof__(x) *real_##x
 
+#define OPEN_DIR_READ_PRIMARY_NODE ((void *)(intptr_t)2)
+#define OPEN_DIR_READ_RENDER_NODE ((void *)(intptr_t)1)
+
 static simple_mtx_t shim_lock = SIMPLE_MTX_INITIALIZER;
-struct set *opendir_set;
+struct hash_table *opendir_table;
 bool drm_shim_debug;
 
 /* If /dev/dri doesn't exist, we'll need an arbitrary pointer that wouldn't be
  * returned by any other opendir() call so we can return just our fake node.
  */
-DIR *fake_dev_dri = (void *)&opendir_set;
+DIR *fake_dev_dri = (void *)&opendir_table;
 
 REAL_FUNCTION_POINTER(access);
 REAL_FUNCTION_POINTER(close);
@@ -96,28 +99,36 @@ REAL_FUNCTION_POINTER(fstat);
 REAL_FUNCTION_POINTER(fstat64);
 #endif
 
-static char render_node_dir[] = "/dev/dri/";
+static char nodes_dir[] = "/dev/dri/";
+/* Full path of /dev/dri/card* */
+static char *primary_node_path;
 /* Full path of /dev/dri/renderD* */
 static char *render_node_path;
 /* renderD* */
 static char *render_node_dirent_name;
+/* card* */
+static char *primary_node_dirent_name;
 /* /sys/dev/char/major: */
 static int drm_device_path_len;
 static char *drm_device_path;
 /* /sys/dev/char/major:minor/device */
-static int device_path_len;
-static char *device_path;
+static int render_device_path_len;
+static char *render_device_path;
+static int primary_device_path_len;
+static char *primary_device_path;
 /* /sys/dev/char/major:minor/device/subsystem */
-static char *subsystem_path;
+static char *render_subsystem_path;
+static char *primary_subsystem_path;
+int primary_node_minor = -1;
 int render_node_minor = -1;
 
 struct file_override {
    const char *path;
    char *contents;
 };
-static struct file_override file_overrides[10];
+static struct file_override file_overrides[20];
 static int file_overrides_count;
-extern bool drm_shim_driver_prefers_first_render_node;
+extern bool drm_shim_driver_prefers_first_nodes;
 
 static int
 nfvasprintf(char **restrict strp, const char *restrict fmt, va_list ap)
@@ -137,28 +148,36 @@ nfasprintf(char **restrict strp, const char *restrict fmt, ...)
    return ret;
 }
 
-/* Pick the minor and filename for our shimmed render node.  This can be
- * either a new one that didn't exist on the system, or if the driver wants,
- * it can replace the first render node.
+/* Pick the minor and filename for our shimmed nodes.  This can be either
+ * a new one that didn't exist on the system, or if the driver wants, it
+ * can replace the first render node.
  */
 static void
-get_dri_render_node_minor(void)
+get_dri_fake_nodes_minor(void)
 {
    for (int i = 0; i < 10; i++) {
-      UNUSED int minor = 128 + i;
-      nfasprintf(&render_node_dirent_name, "renderD%d", minor);
+      UNUSED int primary_minor = 1 + i;
+      nfasprintf(&primary_node_dirent_name, "card%d", primary_minor);
+      nfasprintf(&primary_node_path, "/dev/dri/%s",
+                 primary_node_dirent_name);
+
+      UNUSED int render_minor = 128 + i;
+      nfasprintf(&render_node_dirent_name, "renderD%d", render_minor);
       nfasprintf(&render_node_path, "/dev/dri/%s",
                  render_node_dirent_name);
-      struct stat st;
-      if (drm_shim_driver_prefers_first_render_node ||
-          stat(render_node_path, &st) == -1) {
 
-         render_node_minor = minor;
+      struct stat st;
+      if (drm_shim_driver_prefers_first_nodes ||
+          (stat(primary_node_path, &st) == -1 &&
+           stat(render_node_path, &st) == -1)) {
+
+         primary_node_minor = primary_minor;
+         render_node_minor = render_minor;
          return;
       }
    }
 
-   fprintf(stderr, "Couldn't find a spare render node slot\n");
+   fprintf(stderr, "Couldn't find a spare slot for both nodes\n");
 }
 
 static void *get_function_pointer(const char *name)
@@ -192,10 +211,13 @@ drm_shim_override_file(const char *contents, const char *path_format, ...)
 static void
 destroy_shim(void)
 {
-   _mesa_set_destroy(opendir_set, NULL);
+   _mesa_hash_table_destroy(opendir_table, NULL);
+   free(primary_node_path);
    free(render_node_path);
    free(render_node_dirent_name);
-   free(subsystem_path);
+   free(primary_node_dirent_name);
+   free(render_subsystem_path);
+   free(primary_subsystem_path);
 }
 
 /* Initialization, which will be called from the first general library call
@@ -216,9 +238,9 @@ init_shim(void)
     */
    inited = true;
 
-   opendir_set = _mesa_set_create(NULL,
-                                  _mesa_hash_string,
-                                  _mesa_key_string_equal);
+   opendir_table = _mesa_hash_table_create(NULL,
+                                           _mesa_hash_string,
+                                           _mesa_key_string_equal);
 
    GET_FUNCTION_POINTER(access);
    GET_FUNCTION_POINTER(close);
@@ -248,7 +270,7 @@ init_shim(void)
    GET_FUNCTION_POINTER(fstat64);
 #endif
 
-   get_dri_render_node_minor();
+   get_dri_fake_nodes_minor();
 
    if (drm_shim_debug) {
       fprintf(stderr, "Initializing DRM shim on %s\n",
@@ -258,14 +280,23 @@ init_shim(void)
    drm_device_path_len =
       nfasprintf(&drm_device_path, "/sys/dev/char/%d:", DRM_MAJOR);
 
-   device_path_len =
-      nfasprintf(&device_path,
+   render_device_path_len =
+      nfasprintf(&render_device_path,
                  "/sys/dev/char/%d:%d/device",
                  DRM_MAJOR, render_node_minor);
 
-   nfasprintf(&subsystem_path,
+   primary_device_path_len =
+      nfasprintf(&primary_device_path,
+                 "/sys/dev/char/%d:%d/device",
+                 DRM_MAJOR, primary_node_minor);
+
+   nfasprintf(&render_subsystem_path,
               "/sys/dev/char/%d:%d/device/subsystem",
               DRM_MAJOR, render_node_minor);
+
+   nfasprintf(&primary_subsystem_path,
+              "/sys/dev/char/%d:%d/device/subsystem",
+              DRM_MAJOR, primary_node_minor);
 
    drm_shim_device_init();
 
@@ -274,25 +305,28 @@ init_shim(void)
 
 static bool hide_drm_device_path(const char *path)
 {
-   if (render_node_minor == -1)
+   if (render_node_minor == -1 ||
+       primary_node_minor == -1)
       return false;
 
-   /* If the path looks like our fake render node device, then don't hide it.
+   /* If the path looks like any of our fake drm node device, then don't hide it.
     */
-   if (strncmp(path, device_path, device_path_len) == 0 ||
+   if (strncmp(path, render_device_path, render_device_path_len) == 0 ||
+       strncmp(path, primary_device_path, primary_device_path_len) == 0 ||
+       strcmp(path, primary_node_path) == 0 ||
        strcmp(path, render_node_path) == 0)
       return false;
 
-   /* String starts with /sys/dev/char/226: but is not the fake render node.
+   /* String starts with /sys/dev/char/226: but is not a fake drm node.
     * We want to hide all other drm devices for the shim.
     */
    if (strncmp(path, drm_device_path, drm_device_path_len) == 0)
       return true;
 
-   /* String starts with /dev/dri/ but is not the fake render node. We want to
+   /* String starts with /dev/dri/ but is not a fake drm node. We want to
     * hide all other drm devices for the shim.
     */
-   if (strncmp(path, render_node_dir, sizeof(render_node_dir) - 1) == 0)
+   if (strncmp(path, nodes_dir, sizeof(nodes_dir) - 1) == 0)
       return true;
 
    return false;
@@ -327,7 +361,7 @@ PUBLIC FILE *fopen(const char *path, const char *mode)
 PUBLIC FILE *fopen64(const char *path, const char *mode)
    __attribute__((alias("fopen")));
 
-/* Intercepts access(render_node_path) to trick drmGetMinorType */
+/* Intercepts access(node_path) to trick drmGetMinorType */
 PUBLIC int access(const char *path, int mode)
 {
    init_shim();
@@ -337,13 +371,14 @@ PUBLIC int access(const char *path, int mode)
       return -1;
    }
 
-   if (strcmp(path, render_node_path) != 0)
+   if (strcmp(path, render_node_path) != 0 &&
+       strcmp(path, primary_node_path) != 0)
       return real_access(path, mode);
 
    return 0;
 }
 
-/* Intercepts open(render_node_path) to redirect it to the simulator. */
+/* Intercepts open(node_path) to redirect it to the simulator. */
 PUBLIC int open(const char *path, int flags, ...)
 {
    init_shim();
@@ -362,7 +397,8 @@ PUBLIC int open(const char *path, int flags, ...)
       return -1;
    }
 
-   if (strcmp(path, render_node_path) != 0)
+   if (strcmp(path, render_node_path) != 0 &&
+       strcmp(path, primary_node_path) != 0)
       return real_open(path, flags, mode);
 
    fd = real_open("/dev/null", O_RDWR, 0);
@@ -390,15 +426,15 @@ PUBLIC int close(int fd)
 }
 
 #if HAS_XSTAT
-/* Fakes stat to return character device stuff for our fake render node. */
+/* Fakes stat to return character device stuff for our fake drm nodes. */
 PUBLIC int __xstat(int ver, const char *path, struct stat *st)
 {
    init_shim();
 
    /* Note: call real stat if we're in the process of probing for a free
-    * render node!
+    * primary or render node!
     */
-   if (render_node_minor == -1)
+   if (render_node_minor == -1 || primary_node_minor == -1)
       return real___xstat(ver, path, st);
 
    if (hide_drm_device_path(path)) {
@@ -417,27 +453,41 @@ PUBLIC int __xstat(int ver, const char *path, struct stat *st)
       free(sys_dev_drm_dir);
       return 0;
    }
+
+   nfasprintf(&sys_dev_drm_dir,
+              "/sys/dev/char/%d:%d/device/drm",
+              DRM_MAJOR, primary_node_minor);
+   if (strcmp(path, sys_dev_drm_dir) == 0) {
+      free(sys_dev_drm_dir);
+      return 0;
+   }
+
    free(sys_dev_drm_dir);
 
-   if (strcmp(path, render_node_path) != 0)
+   int minor;
+   if (strcmp(path, primary_node_path) == 0)
+      minor = primary_node_minor;
+   else if (strcmp(path, render_node_path) == 0)
+      minor = render_node_minor;
+   else
       return real___xstat(ver, path, st);
 
    memset(st, 0, sizeof(*st));
-   st->st_rdev = makedev(DRM_MAJOR, render_node_minor);
+   st->st_rdev = makedev(DRM_MAJOR, minor);
    st->st_mode = S_IFCHR;
 
    return 0;
 }
 
-/* Fakes stat to return character device stuff for our fake render node. */
+/* Fakes stat to return character device stuff for our fake drm nodes. */
 PUBLIC int __xstat64(int ver, const char *path, struct stat64 *st)
 {
    init_shim();
 
    /* Note: call real stat if we're in the process of probing for a free
-    * render node!
+    * primary or render node!
     */
-   if (render_node_minor == -1)
+   if (render_node_minor == -1 || primary_node_minor == -1)
       return real___xstat64(ver, path, st);
 
    if (hide_drm_device_path(path)) {
@@ -456,19 +506,33 @@ PUBLIC int __xstat64(int ver, const char *path, struct stat64 *st)
       free(sys_dev_drm_dir);
       return 0;
    }
+
+   nfasprintf(&sys_dev_drm_dir,
+              "/sys/dev/char/%d:%d/device/drm",
+              DRM_MAJOR, primary_node_minor);
+   if (strcmp(path, sys_dev_drm_dir) == 0) {
+      free(sys_dev_drm_dir);
+      return 0;
+   }
+
    free(sys_dev_drm_dir);
 
-   if (strcmp(path, render_node_path) != 0)
+   int minor;
+   if (strcmp(path, primary_node_path) == 0)
+      minor = primary_node_minor;
+   else if (strcmp(path, render_node_path) != 0)
+      minor = render_node_minor;
+   else
       return real___xstat64(ver, path, st);
 
    memset(st, 0, sizeof(*st));
-   st->st_rdev = makedev(DRM_MAJOR, render_node_minor);
+   st->st_rdev = makedev(DRM_MAJOR, minor);
    st->st_mode = S_IFCHR;
 
    return 0;
 }
 
-/* Fakes fstat to return character device stuff for our fake render node. */
+/* Fakes fstat to return character device stuff for our fake drm nodes. */
 PUBLIC int __fxstat(int ver, int fd, struct stat *st)
 {
    init_shim();
@@ -507,10 +571,9 @@ PUBLIC int stat(const char* path, struct stat* stat_buf)
 {
    init_shim();
 
-   /* Note: call real stat if we're in the process of probing for a free
-    * render node!
+   /* Note: call real stat if we're in the process of probing for free nodes!
     */
-   if (render_node_minor == -1)
+   if (render_node_minor == -1 || primary_node_minor == -1)
       return real_stat(path, stat_buf);
 
    if (hide_drm_device_path(path)) {
@@ -529,13 +592,27 @@ PUBLIC int stat(const char* path, struct stat* stat_buf)
       free(sys_dev_drm_dir);
       return 0;
    }
+
+   nfasprintf(&sys_dev_drm_dir,
+              "/sys/dev/char/%d:%d/device/drm",
+              DRM_MAJOR, primary_node_minor);
+   if (strcmp(path, sys_dev_drm_dir) == 0) {
+      free(sys_dev_drm_dir);
+      return 0;
+   }
+
    free(sys_dev_drm_dir);
 
-   if (strcmp(path, render_node_path) != 0)
+   int minor;
+   if (strcmp(path, primary_node_path) == 0)
+      minor = primary_node_minor;
+   else if (strcmp(path, render_node_path) == 0)
+      minor = render_node_minor;
+   else
       return real_stat(path, stat_buf);
 
    memset(stat_buf, 0, sizeof(*stat_buf));
-   stat_buf->st_rdev = makedev(DRM_MAJOR, render_node_minor);
+   stat_buf->st_rdev = makedev(DRM_MAJOR, minor);
    stat_buf->st_mode = S_IFCHR;
 
    return 0;
@@ -545,10 +622,9 @@ PUBLIC int stat64(const char* path, struct stat64* stat_buf)
 {
    init_shim();
 
-   /* Note: call real stat if we're in the process of probing for a free
-    * render node!
+   /* Note: call real stat if we're in the process of probing for free nodes!
     */
-   if (render_node_minor == -1)
+   if (render_node_minor == -1 || primary_node_minor == -1)
       return real_stat64(path, stat_buf);
 
    if (hide_drm_device_path(path)) {
@@ -567,13 +643,27 @@ PUBLIC int stat64(const char* path, struct stat64* stat_buf)
       free(sys_dev_drm_dir);
       return 0;
    }
+
+   nfasprintf(&sys_dev_drm_dir,
+              "/sys/dev/char/%d:%d/device/drm",
+              DRM_MAJOR, primary_node_minor);
+   if (strcmp(path, sys_dev_drm_dir) == 0) {
+      free(sys_dev_drm_dir);
+      return 0;
+   }
+
    free(sys_dev_drm_dir);
 
-   if (strcmp(path, render_node_path) != 0)
+   int minor;
+   if (strcmp(path, primary_node_path) == 0)
+      minor = primary_node_minor;
+   else if (strcmp(path, render_node_path) == 0)
+      minor = render_node_minor;
+   else
       return real_stat64(path, stat_buf);
 
    memset(stat_buf, 0, sizeof(*stat_buf));
-   stat_buf->st_rdev = makedev(DRM_MAJOR, render_node_minor);
+   stat_buf->st_rdev = makedev(DRM_MAJOR, minor);
    stat_buf->st_mode = S_IFCHR;
 
    return 0;
@@ -622,21 +712,21 @@ opendir(const char *name)
    if (strcmp(name, "/dev/dri") == 0) {
       if (!dir) {
          /* If /dev/dri didn't exist, we still want to be able to return our
-          * fake /dev/dri/render* even though we probably can't
-          * mkdir("/dev/dri").  Return a fake DIR pointer for that.
+          * fake /dev/dri/render* and /dev/dri/primary* even though we probably
+          * can't mkdir("/dev/dri").  Return a fake DIR pointer for that.
           */
          dir = fake_dev_dri;
       }
 
       simple_mtx_lock(&shim_lock);
-      _mesa_set_add(opendir_set, dir);
+      _mesa_hash_table_insert(opendir_table, dir, OPEN_DIR_READ_PRIMARY_NODE);
       simple_mtx_unlock(&shim_lock);
    }
 
    return dir;
 }
 
-/* If we're looking at /dev/dri, add our render node to the list
+/* If we're looking at /dev/dri, add our render and primary nodes to the list
  * before the real entries in the directory.
  */
 PUBLIC struct dirent *
@@ -646,15 +736,24 @@ readdir(DIR *dir)
 
    struct dirent *ent = NULL;
 
-   static struct dirent render_node_dirent = { 0 };
+   static struct dirent fake_node_dirent = { 0 };
 
    simple_mtx_lock(&shim_lock);
-   if (_mesa_set_search(opendir_set, dir)) {
-      strcpy(render_node_dirent.d_name,
-             render_node_dirent_name);
-      render_node_dirent.d_type = DT_CHR;
-      ent = &render_node_dirent;
-      _mesa_set_remove_key(opendir_set, dir);
+   struct hash_entry *entry = _mesa_hash_table_search(opendir_table, dir);
+   if (entry != NULL) {
+      if (entry->data == OPEN_DIR_READ_PRIMARY_NODE) {
+         strcpy(fake_node_dirent.d_name,
+                primary_node_dirent_name);
+         fake_node_dirent.d_type = DT_CHR;
+         ent = &fake_node_dirent;
+         entry->data = OPEN_DIR_READ_RENDER_NODE;
+      } else if (entry->data == OPEN_DIR_READ_RENDER_NODE) {
+         strcpy(fake_node_dirent.d_name,
+                render_node_dirent_name);
+         fake_node_dirent.d_type = DT_CHR;
+         ent = &fake_node_dirent;
+         _mesa_hash_table_remove(opendir_table, entry);
+      }
    }
    simple_mtx_unlock(&shim_lock);
 
@@ -664,7 +763,7 @@ readdir(DIR *dir)
    return ent;
 }
 
-/* If we're looking at /dev/dri, add our render node to the list
+/* If we're looking at /dev/dri, add our render and primary nodes to the list
  * before the real entries in the directory.
  */
 PUBLIC struct dirent64 *
@@ -674,15 +773,24 @@ readdir64(DIR *dir)
 
    struct dirent64 *ent = NULL;
 
-   static struct dirent64 render_node_dirent = { 0 };
+   static struct dirent64 fake_node_dirent = { 0 };
 
    simple_mtx_lock(&shim_lock);
-   if (_mesa_set_search(opendir_set, dir)) {
-      strcpy(render_node_dirent.d_name,
-             render_node_dirent_name);
-      render_node_dirent.d_type = DT_CHR;
-      ent = &render_node_dirent;
-      _mesa_set_remove_key(opendir_set, dir);
+   struct hash_entry *entry = _mesa_hash_table_search(opendir_table, dir);
+   if (entry != NULL) {
+      if (entry->data == OPEN_DIR_READ_PRIMARY_NODE) {
+         strcpy(fake_node_dirent.d_name,
+                primary_node_dirent_name);
+         fake_node_dirent.d_type = DT_CHR;
+         ent = &fake_node_dirent;
+         entry->data = OPEN_DIR_READ_RENDER_NODE;
+      } else if (entry->data == OPEN_DIR_READ_RENDER_NODE) {
+         strcpy(fake_node_dirent.d_name,
+                render_node_dirent_name);
+         fake_node_dirent.d_type = DT_CHR;
+         ent = &fake_node_dirent;
+         _mesa_hash_table_remove(opendir_table, entry);
+      }
    }
    simple_mtx_unlock(&shim_lock);
 
@@ -699,7 +807,7 @@ closedir(DIR *dir)
    init_shim();
 
    simple_mtx_lock(&shim_lock);
-   _mesa_set_remove_key(opendir_set, dir);
+   _mesa_hash_table_remove_key(opendir_table, dir);
    simple_mtx_unlock(&shim_lock);
 
    if (dir != fake_dev_dri)
@@ -719,7 +827,8 @@ readlink(const char *path, char *buf, size_t size)
       return -1;
    }
 
-   if (strcmp(path, subsystem_path) != 0)
+   if (strcmp(path, render_subsystem_path) != 0 &&
+       strcmp(path, primary_subsystem_path) != 0)
       return real_readlink(path, buf, size);
 
    static const struct {
@@ -762,7 +871,8 @@ realpath(const char *path, char *resolved_path)
 {
    init_shim();
 
-   if (strcmp(path, device_path) != 0)
+   if (strcmp(path, render_device_path) != 0 &&
+       strcmp(path, primary_device_path) != 0)
       return real_realpath(path, resolved_path);
 
    strcpy(resolved_path, path);

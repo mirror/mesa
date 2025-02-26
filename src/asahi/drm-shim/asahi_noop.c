@@ -9,7 +9,7 @@
 #include "../lib/unstable_asahi_drm.h"
 #include "drm-shim/drm_shim.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static const struct drm_asahi_params_global params = {
    .unstable_uabi_version = DRM_ASAHI_UNSTABLE_UABI_VERSION,
@@ -126,10 +126,17 @@ drm_shim_driver_init(void)
    shim_device.driver_ioctls = driver_ioctls;
    shim_device.driver_ioctl_count = ARRAY_SIZE(driver_ioctls);
 
-   drm_shim_override_file("DRIVER=asahi\n"
-                          "OF_FULLNAME=/soc/agx\n"
-                          "OF_COMPATIBLE_0=apple,gpu-g13g\n"
-                          "OF_COMPATIBLE_N=1\n",
-                          "/sys/dev/char/%d:%d/device/uevent", DRM_MAJOR,
-                          render_node_minor);
+   static const char uevent_content[] =
+      "DRIVER=asahi\n"
+      "OF_FULLNAME=/soc/agx\n"
+      "OF_COMPATIBLE_0=apple,gpu-g13g\n"
+      "OF_COMPATIBLE_N=1\n";
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, render_node_minor);
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, primary_node_minor);
 }

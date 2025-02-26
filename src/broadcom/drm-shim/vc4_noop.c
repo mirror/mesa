@@ -28,7 +28,7 @@
 #include "drm-uapi/vc4_drm.h"
 #include "drm-shim/drm_shim.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static int
 vc4_ioctl_noop(int fd, unsigned long request, void *arg)
@@ -130,9 +130,16 @@ drm_shim_driver_init(void)
         shim_device.driver_ioctls = driver_ioctls;
         shim_device.driver_ioctl_count = ARRAY_SIZE(driver_ioctls);
 
-        drm_shim_override_file("OF_FULLNAME=/rdb/vc4\n"
-                               "OF_COMPATIBLE_N=1\n"
-                               "OF_COMPATIBLE_0=brcm,7278-vc4\n",
+        static const char uevent_content[] =
+                "OF_FULLNAME=/rdb/vc4\n"
+                "OF_COMPATIBLE_N=1\n"
+                "OF_COMPATIBLE_0=brcm,7278-vc4\n";
+
+        drm_shim_override_file(uevent_content,
                                "/sys/dev/char/%d:%d/device/uevent",
                                DRM_MAJOR, render_node_minor);
+
+        drm_shim_override_file(uevent_content,
+                               "/sys/dev/char/%d:%d/device/uevent",
+                               DRM_MAJOR, primary_node_minor);
 }

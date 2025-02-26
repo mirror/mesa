@@ -31,7 +31,7 @@
 #include "drm-shim/drm_shim.h"
 #include "util/u_debug.h"
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 struct etna_shim_gpu
 {
@@ -227,10 +227,17 @@ drm_shim_driver_init(void)
    shim_device.version_minor = 1;
    shim_device.version_patchlevel = 0;
 
-   drm_shim_override_file("DRIVER=etnaviv\n"
-         "MODALIAS=platform:etnaviv\n",
+   static const char uevent_content[] =
+         "DRIVER=etnaviv\n"
+         "MODALIAS=platform:etnaviv\n";
+
+   drm_shim_override_file(uevent_content,
          "/sys/dev/char/%d:%d/device/uevent",
          DRM_MAJOR, render_node_minor);
+
+   drm_shim_override_file(uevent_content,
+         "/sys/dev/char/%d:%d/device/uevent",
+         DRM_MAJOR, primary_node_minor);
 
    /* decide what GPU to emulate */
    const char *gpu = debug_get_option("ETNA_SHIM_GPU", "GC2000");

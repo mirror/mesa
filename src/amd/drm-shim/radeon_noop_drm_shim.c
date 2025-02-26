@@ -7,7 +7,7 @@
 #include <util/u_math.h>
 #include <radeon_drm.h>
 
-bool drm_shim_driver_prefers_first_render_node = true;
+bool drm_shim_driver_prefers_first_nodes = true;
 
 static enum radeon_family radeon_family = CHIP_RV515;
 static uint16_t device_id = 0x7140;
@@ -196,6 +196,7 @@ drm_shim_driver_init(void)
       "PCI_SUBSYS_ID=1028:075B\n"
       "PCI_SLOT_NAME=0000:01:00.0\n"
       "MODALIAS=pci:v000010ded00005916sv00001028sd0000075Bbc03sc00i00\n";
+
    drm_shim_override_file(uevent_content,
                           "/sys/dev/char/%d:%d/device/uevent",
                           DRM_MAJOR, render_node_minor);
@@ -222,4 +223,23 @@ drm_shim_driver_init(void)
                           DRM_MAJOR, render_node_minor);
    drm_shim_override_file("0x1234",
                           "/sys/devices/pci0000:00/0000:01:00.0/subsystem_device");
+
+   drm_shim_override_file(uevent_content,
+                          "/sys/dev/char/%d:%d/device/uevent",
+                          DRM_MAJOR, primary_node_minor);
+   drm_shim_override_file("0x0\n",
+                          "/sys/dev/char/%d:%d/device/revision",
+                          DRM_MAJOR, primary_node_minor);
+   drm_shim_override_file("0x1002",
+                          "/sys/dev/char/%d:%d/device/vendor",
+                          DRM_MAJOR, primary_node_minor);
+   drm_shim_override_file("0x7140",
+                          "/sys/dev/char/%d:%d/device/device",
+                          DRM_MAJOR, primary_node_minor);
+   drm_shim_override_file("0x1234",
+                          "/sys/dev/char/%d:%d/device/subsystem_vendor",
+                          DRM_MAJOR, primary_node_minor);
+   drm_shim_override_file("0x1234",
+                          "/sys/dev/char/%d:%d/device/subsystem_device",
+                          DRM_MAJOR, primary_node_minor);
 }

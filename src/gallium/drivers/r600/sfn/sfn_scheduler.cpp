@@ -584,6 +584,16 @@ BlockScheduler::schedule_alu(Shader::ShaderBlocks& out_blocks)
       }
    }
 
+   if (success && !alu_groups_ready.empty()) {
+      for (auto next_group  = alu_groups_ready.begin();
+	   next_group != alu_groups_ready.end(); ++next_group) {
+	 if (group->merge(**next_group)) {
+	    alu_groups_ready.erase(next_group);
+	    break;
+	 }
+      }
+   }
+
    if (!group && has_alu_ready) {
       group = new AluGroup();
       sfn_log << SfnLog::schedule << "START new ALU group\n";

@@ -54,12 +54,19 @@ AluInstr::AluInstr(EAluOp opcode,
       switch (m_opcode) {
       case op2_dot_ieee: m_allowed_dest_mask = (1 << (5 - slots)) - 1;
          break;
+      case op2_sete_64:
+      case op2_setge_64:
+      case op2_setgt_64:
+      case op2_setne_64:
+      case op1v_flt64_to_flt32: m_allowed_dest_mask = 1 | 4;
+	 break;
       default:
          if (has_alu_flag(alu_is_cayman_trans)) {
             m_allowed_dest_mask = (1 << slots) - 1;
          }
       }
    }
+
    assert(!dest || (m_allowed_dest_mask & (1 << dest->chan())));
 }
 
@@ -611,6 +618,13 @@ AluInstr::replace_dest(PRegister new_dest, AluInstr *move_instr)
    if (m_dest->pin() == pin_chan && new_dest->chan() != m_dest->chan())
       return false;
 
+   bool new_chan_in_mask = m_allowed_dest_mask & (1 << new_dest->chan());
+   bool can_extend_cayman_trans = has_alu_flag(alu_is_cayman_trans) &&
+				  m_alu_slots == 3 && new_dest->chan() == 3;
+
+   if (!new_chan_in_mask && !can_extend_cayman_trans)
+      return false;
+
    if (m_dest->pin() == pin_chan) {
       if (new_dest->pin() == pin_group)
          new_dest->set_pin(pin_chgr);
@@ -629,6 +643,7 @@ AluInstr::replace_dest(PRegister new_dest, AluInstr *move_instr)
          m_alu_slots = 4;
          assert(m_src.size() == 3);
          m_src.push_back(m_src[0]);
+	 m_allowed_dest_mask |= 0x8;
       }
    }
 
@@ -795,14 +810,22 @@ AluInstr::split(ValueFactory& vf)
    m_dest->del_parent(this);
 
    int start_slot = 0;
-   bool is_dot = m_opcode == op2_dot_ieee;
    auto last_opcode = m_opcode;
 
-   if (is_dot) {
-      start_slot = m_dest->chan();
+   switch (m_opcode) {
+   case op2_dot_ieee:
       last_opcode = op2_mul_ieee;
+      FALLTHROUGH;
+   case op2_sete_64:
+   case op2_setge_64:
+   case op2_setgt_64:
+   case op2_setne_64:
+   case op1v_flt64_to_flt32:
+      start_slot = m_dest->chan();
+      break;
+   default:
+      ;
    }
-
 
    for (int k = 0; k < m_alu_slots; ++k) {
       int s = k + start_slot;
@@ -2199,9 +2222,8 @@ emit_alu_b2f64(const nir_alu_instr& alu, Shader& shader)
    auto& value_factory = shader.value_factory();
 
    for (unsigned i = 0; i < alu.def.num_components; ++i) {
-      auto ir = new AluInstr(op2_and_int,
+      auto ir = new AluInstr(op1_mov,
                         value_factory.dest(alu.def, 2 * i, pin_group),
-                        value_factory.src(alu.src[0], i),
                         value_factory.zero(),
                         {alu_write});
       shader.emit_instruction(ir);
@@ -2306,20 +2328,24 @@ static bool
 emit_alu_f2f32(const nir_alu_instr& alu, Shader& shader)
 {
    auto& value_factory = shader.value_factory();
-   auto group = new AluGroup();
-   AluInstr *ir = nullptr;
 
-   ir = new AluInstr(op1v_flt64_to_flt32,
-                     value_factory.dest(alu.def, 0, pin_chan),
-                     value_factory.src64(alu.src[0], 0, 1),
-                     {alu_write});
-   group->add_instruction(ir);
-   ir = new AluInstr(op1v_flt64_to_flt32,
-                     value_factory.dummy_dest(1),
-                     value_factory.src64(alu.src[0], 0, 0),
-                     AluInstr::last);
-   group->add_instruction(ir);
-   shader.emit_instruction(group);
+   /* The scheduler is currently not capable of switching dest channels
+    * for instructions that use mre than one slot, so randomize the
+    * slots from the start to give it a chance to merge fp64 groups.
+    */
+   int mask = rand() & 1  ? 1 : 4;
+
+   auto dest = value_factory.dest(alu.def, 0, pin_free, mask);
+
+   AluInstr::SrcValues srcs = {
+      value_factory.src64(alu.src[0], 0, 1),
+      value_factory.src64(alu.src[0], 0, 0),
+   };
+
+   auto ir = new AluInstr(op1v_flt64_to_flt32, dest,
+			  srcs, AluInstr::last_write, 2);
+
+   shader.emit_instruction(ir);
    return true;
 }
 

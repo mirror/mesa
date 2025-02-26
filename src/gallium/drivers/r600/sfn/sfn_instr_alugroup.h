@@ -25,6 +25,8 @@ public:
    bool add_trans_instructions(AluInstr *instr);
    bool add_vec_instructions(AluInstr *instr);
 
+   bool merge(const AluGroup& g);
+
    bool is_equal_to(const AluGroup& other) const;
 
    void accept(ConstInstrVisitor& visitor) const override;

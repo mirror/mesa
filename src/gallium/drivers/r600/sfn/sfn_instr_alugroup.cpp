@@ -7,6 +7,7 @@
 #include "sfn_instr_alugroup.h"
 
 #include "sfn_debug.h"
+#include "sfn_instr_alu.h"
 #include "sfn_instr_export.h"
 #include "sfn_instr_mem.h"
 #include "sfn_instr_tex.h"
@@ -136,6 +137,62 @@ AluGroup::free_slots() const
          free_mask |= 1 << i;
    }
    return free_mask;
+}
+
+bool AluGroup::merge(const AluGroup& g)
+{
+   if (0xf & ~free_slots() & ~g.free_slots()) {
+      return false;
+   }
+
+   // op2_interp_x and op2_interp_z can't be group merged.
+   if (m_slots[0] && !m_slots[0]->has_alu_flag(alu_is_lds) &&
+	m_slots[0]->opcode() == op2_interp_x &&
+       g.m_slots[2] && g.m_slots[2]->opcode() == op2_interp_z)
+      return false;
+
+   if (g.m_slots[0] && !g.m_slots[0]->has_alu_flag(alu_is_lds) &&
+	g.m_slots[0]->opcode() == op2_interp_x &&
+       m_slots[2] && m_slots[2]->opcode() == op2_interp_z)
+      return false;
+
+   AluBankSwizzle bank_swizzles[4] = {alu_vec_unknown, alu_vec_unknown,
+				     alu_vec_unknown, alu_vec_unknown};
+
+   AluReadportReservation readports_evaluator = m_readports_evaluator;
+   for (int i = 0; i < 4; ++i) {
+      auto instr = g.m_slots[i];
+      if (instr) {
+	 if (instr->bank_swizzle() != alu_vec_unknown) {
+	    if (!readports_evaluator.schedule_vec_instruction(*instr, instr->bank_swizzle())) {
+	       return false;
+	    }
+	    bank_swizzles[i] = instr->bank_swizzle();
+	 } else {
+	    bool found = false;
+	    for (AluBankSwizzle bs = alu_vec_012; !found && bs != alu_vec_unknown; ++bs) {
+	       AluReadportReservation re = readports_evaluator;
+	       found = re.schedule_vec_instruction(*instr, bs);
+	       if (found) {
+		  bank_swizzles[i] = bs;
+		  readports_evaluator = re;
+	       }
+	    }
+	    if (!found) {
+	       return false;
+	    }
+	 }
+      }
+   }
+   for (int i = 0; i < 4; ++i) {
+      if (g.m_slots[i]) {
+	 assert(!m_slots[i]);
+	 m_slots[i] = g.m_slots[i];
+	 bool success = m_readports_evaluator.schedule_vec_instruction(*g.m_slots[i], bank_swizzles[i]);
+	 assert(success);
+      }
+   }
+   return true;
 }
 
 bool

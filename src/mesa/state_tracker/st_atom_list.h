@@ -8,6 +8,13 @@ ST_STATE(ST_NEW_TES_STATE, st_update_tep)
 ST_STATE(ST_NEW_TCS_STATE, st_update_tcp)
 ST_STATE(ST_NEW_VS_STATE, st_update_vp)
 
+/* Update constants after shaders, so that any dangling constant buffer 0 userptrs are removed */
+ST_STATE(ST_NEW_VS_CONSTANTS, st_update_vs_constants)
+ST_STATE(ST_NEW_TCS_CONSTANTS, st_update_tcs_constants)
+ST_STATE(ST_NEW_TES_CONSTANTS, st_update_tes_constants)
+ST_STATE(ST_NEW_GS_CONSTANTS, st_update_gs_constants)
+ST_STATE(ST_NEW_FS_CONSTANTS, st_update_fs_constants)
+
 ST_STATE(ST_NEW_POLY_STIPPLE, st_update_polygon_stipple)
 ST_STATE(ST_NEW_WINDOW_RECTANGLES, st_update_window_rectangles)
 ST_STATE(ST_NEW_BLEND_COLOR, st_update_blend_color)
@@ -38,12 +45,6 @@ ST_STATE(ST_NEW_SAMPLE_STATE, st_update_sample_state) /* depends on update_frame
 ST_STATE(ST_NEW_SAMPLE_SHADING, st_update_sample_shading)
 ST_STATE(ST_NEW_SCISSOR, st_update_scissor) /* depends on update_framebuffer_state */
 ST_STATE(ST_NEW_VIEWPORT, st_update_viewport) /* depends on update_framebuffer_state */
-
-ST_STATE(ST_NEW_VS_CONSTANTS, st_update_vs_constants)
-ST_STATE(ST_NEW_TCS_CONSTANTS, st_update_tcs_constants)
-ST_STATE(ST_NEW_TES_CONSTANTS, st_update_tes_constants)
-ST_STATE(ST_NEW_GS_CONSTANTS, st_update_gs_constants)
-ST_STATE(ST_NEW_FS_CONSTANTS, st_update_fs_constants)
 
 ST_STATE(ST_NEW_VS_UBOS, st_bind_vs_ubos)
 ST_STATE(ST_NEW_TCS_UBOS, st_bind_tcs_ubos)

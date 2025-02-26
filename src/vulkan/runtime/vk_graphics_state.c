@@ -1449,8 +1449,15 @@ vk_graphics_pipeline_state_fill(const struct vk_device *device,
       allowed_stages = 0;
    }
 
-   for (uint32_t i = 0; i < info->stageCount; i++) {
-      state->shader_stages |= info->pStages[i].stage & allowed_stages;
+   /* Do not dereference an invalid pStages pointer. The Vulkan 1.3.262 spec
+    * requires pStages and stageCount to be valid only if the GPL flags admit
+    * shaders.  See VUID-VkGraphicsPipelineCreateInfo-flags-06600,
+    * VUID-VkGraphicsPipelineCreateInfo-flags-06640.
+    */
+   if (allowed_stages) {
+      for (uint32_t i = 0; i < info->stageCount; i++) {
+         state->shader_stages |= info->pStages[i].stage & allowed_stages;
+      }
    }
 
    /* In case we return early */

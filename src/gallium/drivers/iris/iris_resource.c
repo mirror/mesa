@@ -1167,6 +1167,24 @@ iris_resource_create_for_image(struct pipe_screen *pscreen,
                 iris_get_aux_clear_color_state_size(screen, res);
    }
 
+   /* The I915_FORMAT_MOD_4_TILED_BMG_CCS modifier defined in drm_fourcc.h
+    * has a requirement on size:
+    *
+    *    The GEM object must be stored in contiguous memory with a size
+    *    aligned to 64KB.
+    *
+    * Xe kernel driver will provide continuous allocation on scanout buffers
+    * with CCS AND when the bo's size is a multiple of 64KB, so we need to
+    * set the scanout flag and also adjust the size to make it happen.
+    *
+    * Assuming the kernel display driver doesn't enable compression without
+    * modifiers, we can limit the requirement to MOD_4_TILED_BMG_CCS.
+    */
+   if (res->mod_info->modifier == I915_FORMAT_MOD_4_TILED_BMG_CCS) {
+      flags |= BO_ALLOC_SCANOUT;
+      bo_size = align64(bo_size, 64 * 1024);
+   }
+
    /* The ISL alignment already includes AUX-TT requirements, so no additional
     * attention required here :)
     */

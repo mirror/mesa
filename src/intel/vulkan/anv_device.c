@@ -1650,6 +1650,23 @@ VkResult anv_AllocateMemory(
 
    /* Regular allocate (not importing memory). */
 
+   /* The I915_FORMAT_MOD_4_TILED_BMG_CCS modifier defined in drm_fourcc.h
+    * has a requirement on size:
+    *
+    *    The GEM object must be stored in contiguous memory with a size
+    *    aligned to 64KB.
+    *
+    * Xe kernel driver will provide continuous allocation on scanout buffers
+    * with CCS AND when the bo's size is a multiple of 64KB that is addressed
+    * in add_primary_surface).
+    *
+    * But we don't have the info about modifier here, so we have to apply this
+    * requirement to all compressed allocation on BMG and newer discrete GPUs.
+    */
+   if (device->info->ver >= 20 && device->info->has_local_mem &&
+       (alloc_flags & ANV_BO_ALLOC_COMPRESSED))
+      alloc_flags |= ANV_BO_ALLOC_SCANOUT;
+
    result = anv_device_alloc_bo(device, "user", pAllocateInfo->allocationSize,
                                 alloc_flags, client_address, &mem->bo);
    if (result != VK_SUCCESS)

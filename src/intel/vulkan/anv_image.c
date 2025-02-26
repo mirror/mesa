@@ -966,6 +966,23 @@ add_primary_surface(struct anv_device *device,
 
    image->planes[plane].aux_usage = ISL_AUX_USAGE_NONE;
 
+   /* The I915_FORMAT_MOD_4_TILED_BMG_CCS modifier defined in drm_fourcc.h
+    * has a requirement on size:
+    *
+    *    The GEM object must be stored in contiguous memory with a size
+    *    aligned to 64KB.
+    *
+    * Xe kernel driver will provide continuous allocation on scanout buffers
+    * with CCS AND when the bo's size is a multiple of 64KB, so we also need
+    * to set the scanout to make it happen in anv_AllocateMemory.
+    *
+    * Assuming the kernel display driver doesn't enable compression without
+    * modifiers, we can limit the requirement to MOD_4_TILED_BMG_CCS.
+    */
+   if (image->vk.drm_format_mod == I915_FORMAT_MOD_4_TILED_BMG_CCS) {
+      anv_surf->isl.size_B = align64(anv_surf->isl.size_B, 64 * 1024);
+   }
+
    return add_surface(device, image, anv_surf,
                       ANV_IMAGE_MEMORY_BINDING_PLANE_0 + plane, offset);
 }

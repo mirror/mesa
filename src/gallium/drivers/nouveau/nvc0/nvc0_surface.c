@@ -701,7 +701,16 @@ nvc0_clear(struct pipe_context *pipe, unsigned buffers,
    struct nouveau_pushbuf *push = nvc0->base.pushbuf;
    struct pipe_framebuffer_state *fb = &nvc0->framebuffer;
    unsigned i, j, k;
-   uint32_t mode = 0;
+   uint32_t mode, minx, maxx, miny, maxy = 0;
+
+   if (scissor_state) {
+      minx = scissor_state->minx;
+      maxx = MIN2(fb->width, scissor_state->maxx);
+      miny = scissor_state->miny;
+      maxy = MIN2(fb->height, scissor_state->maxy);
+      if (maxx <= minx || maxy <= miny)
+         return;
+   }
 
    simple_mtx_lock(&nvc0->screen->state_lock);
 
@@ -710,13 +719,6 @@ nvc0_clear(struct pipe_context *pipe, unsigned buffers,
       goto out;
 
    if (scissor_state) {
-      uint32_t minx = scissor_state->minx;
-      uint32_t maxx = MIN2(fb->width, scissor_state->maxx);
-      uint32_t miny = scissor_state->miny;
-      uint32_t maxy = MIN2(fb->height, scissor_state->maxy);
-      if (maxx <= minx || maxy <= miny)
-         goto out;
-
       BEGIN_NVC0(push, NVC0_3D(SCREEN_SCISSOR_HORIZ), 2);
       PUSH_DATA (push, minx | (maxx - minx) << 16);
       PUSH_DATA (push, miny | (maxy - miny) << 16);

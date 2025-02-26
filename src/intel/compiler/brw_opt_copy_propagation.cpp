@@ -637,6 +637,14 @@ can_take_stride(brw_inst *inst, brw_reg_type dst_type,
       return stride == inst->dst.stride || stride == 0;
    }
 
+   /* The payload register should have a stride of 1 since the HW will pull a
+    * value per lane.
+    */
+   if (inst->opcode == SHADER_OPCODE_SEND) {
+      if (arg >= 2 && stride != 1)
+         return false;
+   }
+
    return true;
 }
 
@@ -750,8 +758,7 @@ try_copy_propagate(brw_shader &s, brw_inst *inst,
     * derivatives, assume that their operands are packed so we can't
     * generally propagate strided regions to them.
     */
-   const unsigned entry_stride = (entry->src.file == FIXED_GRF ? 1 :
-                                  entry->src.stride);
+   const unsigned entry_stride = entry->src.stride;
    if (instruction_requires_packed_data(inst) && entry_stride != 1)
       return false;
 
@@ -878,7 +885,7 @@ try_copy_propagate(brw_shader &s, brw_inst *inst,
    inst->src[arg].offset = entry->src.offset;
 
    /* Compose the strides of both regions. */
-   if (entry->src.file == FIXED_GRF) {
+   if (entry->src.file == FIXED_GRF && entry->src.stride) {
       if (inst->src[arg].stride) {
          const unsigned orig_width = 1 << entry->src.width;
          const unsigned reg_width =
@@ -1630,7 +1637,7 @@ try_copy_propagate_def(brw_shader &s,
     * derivatives, assume that their operands are packed so we can't
     * generally propagate strided regions to them.
     */
-   const unsigned entry_stride = val.file == FIXED_GRF ? 1 : val.stride;
+   const unsigned entry_stride = val.stride;
    if (instruction_requires_packed_data(inst) && entry_stride != 1)
       return false;
 
@@ -1716,7 +1723,7 @@ try_copy_propagate_def(brw_shader &s,
    inst->src[arg].offset = val.offset;
 
    /* Compose the strides of both regions. */
-   if (val.file == FIXED_GRF) {
+   if (val.file == FIXED_GRF && val.stride) {
       if (inst->src[arg].stride) {
          const unsigned orig_width = 1 << val.width;
          const unsigned reg_width =

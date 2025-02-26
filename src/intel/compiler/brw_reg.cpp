@@ -301,8 +301,9 @@ brw_reg::is_contiguous() const
    case ADDRESS:
    case ARF:
    case FIXED_GRF:
-      return hstride == BRW_HORIZONTAL_STRIDE_1 &&
-             vstride == width + hstride;
+      return (hstride == 0 && vstride == 0) ||
+         (hstride == BRW_HORIZONTAL_STRIDE_1 &&
+          vstride == width + hstride);
    case VGRF:
    case ATTR:
       return stride == 1;

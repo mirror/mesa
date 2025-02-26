@@ -86,6 +86,7 @@ vulkan_wsi_deps += idep_vulkan_wsi_defines
 subdir('util')
 subdir('runtime')
 subdir('wsi')
+subdir('rust')
 if with_vulkan_overlay_layer
   subdir('overlay-layer')
 endif

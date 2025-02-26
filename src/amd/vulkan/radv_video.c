@@ -25,7 +25,13 @@
 #include "radv_image_view.h"
 #include "radv_video.h"
 
-#define NUM_H2645_REFS               16
+#define RADV_VIDEO_H264_MAX_DPB_SLOTS         17
+#define RADV_VIDEO_H264_MAX_NUM_REF_FRAME     16
+#define RADV_VIDEO_H265_MAX_DPB_SLOTS         17
+#define RADV_VIDEO_H265_MAX_NUM_REF_FRAME     15
+#define RADV_VIDEO_AV1_MAX_DPB_SLOTS          9
+#define RADV_VIDEO_AV1_MAX_NUM_REF_FRAME      7
+
 #define FB_BUFFER_OFFSET             0x1000
 #define FB_BUFFER_SIZE               2048
 #define FB_BUFFER_SIZE_TONGA         (2048 * 64)
@@ -656,8 +662,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
       if (pVideoProfile->lumaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR)
          return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
-      pCapabilities->maxDpbSlots = NUM_H2645_REFS + 1;
-      pCapabilities->maxActiveReferencePictures = NUM_H2645_REFS;
+      pCapabilities->maxDpbSlots = RADV_VIDEO_H264_MAX_DPB_SLOTS;
+      pCapabilities->maxActiveReferencePictures = RADV_VIDEO_H264_MAX_NUM_REF_FRAME;
 
       /* for h264 on navi21+ separate dpb images should work */
       if (radv_enable_tier2(pdev))
@@ -689,8 +695,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
           pVideoProfile->lumaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_10_BIT_KHR)
          return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
-      pCapabilities->maxDpbSlots = NUM_H2645_REFS + 1;
-      pCapabilities->maxActiveReferencePictures = NUM_H2645_REFS;
+      pCapabilities->maxDpbSlots = RADV_VIDEO_H264_MAX_DPB_SLOTS;
+      pCapabilities->maxActiveReferencePictures = RADV_VIDEO_H264_MAX_NUM_REF_FRAME;
       /* for h265 on navi21+ separate dpb images should work */
       if (radv_enable_tier2(pdev))
          pCapabilities->flags |= VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR;
@@ -721,8 +727,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
           (!have_12bit || pVideoProfile->lumaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_12_BIT_KHR))
          return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
-      pCapabilities->maxDpbSlots = 9;
-      pCapabilities->maxActiveReferencePictures = STD_VIDEO_AV1_NUM_REF_FRAMES;
+      pCapabilities->maxDpbSlots = RADV_VIDEO_AV1_MAX_DPB_SLOTS;
+      pCapabilities->maxActiveReferencePictures = RADV_VIDEO_AV1_MAX_NUM_REF_FRAME;
       pCapabilities->flags |= VK_VIDEO_CAPABILITY_SEPARATE_REFERENCE_IMAGES_BIT_KHR;
       ext->maxLevel = STD_VIDEO_AV1_LEVEL_6_1; /* For VCN3/4, the only h/w currently with AV1 decode support */
       strcpy(pCapabilities->stdHeaderVersion.extensionName, VK_STD_VULKAN_VIDEO_CODEC_AV1_DECODE_EXTENSION_NAME);
@@ -744,8 +750,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
       if (pVideoProfile->lumaBitDepth != VK_VIDEO_COMPONENT_BIT_DEPTH_8_BIT_KHR)
          return VK_ERROR_VIDEO_PROFILE_FORMAT_NOT_SUPPORTED_KHR;
 
-      pCapabilities->maxDpbSlots = NUM_H2645_REFS;
-      pCapabilities->maxActiveReferencePictures = NUM_H2645_REFS;
+      pCapabilities->maxDpbSlots = RADV_VIDEO_H264_MAX_DPB_SLOTS;
+      pCapabilities->maxActiveReferencePictures = MAX2(ext->maxPPictureL0ReferenceCount, ext->maxBPictureL0ReferenceCount + ext->maxL1ReferenceCount);
       ext->flags = VK_VIDEO_ENCODE_H264_CAPABILITY_HRD_COMPLIANCE_BIT_KHR |
                    VK_VIDEO_ENCODE_H264_CAPABILITY_PER_PICTURE_TYPE_MIN_MAX_QP_BIT_KHR;
       ext->maxLevelIdc = cap ? cap->max_level : 0;
@@ -790,8 +796,8 @@ radv_GetPhysicalDeviceVideoCapabilitiesKHR(VkPhysicalDevice physicalDevice, cons
       if (enc_caps)
          enc_caps->encodeInputPictureGranularity = pCapabilities->pictureAccessGranularity;
 
-      pCapabilities->maxDpbSlots = NUM_H2645_REFS;
-      pCapabilities->maxActiveReferencePictures = NUM_H2645_REFS;
+      pCapabilities->maxDpbSlots = RADV_VIDEO_H265_MAX_DPB_SLOTS;
+      pCapabilities->maxActiveReferencePictures = MAX2(ext->maxPPictureL0ReferenceCount, ext->maxBPictureL0ReferenceCount + ext->maxL1ReferenceCount);
       ext->flags = VK_VIDEO_ENCODE_H265_CAPABILITY_PER_PICTURE_TYPE_MIN_MAX_QP_BIT_KHR;
       ext->maxLevelIdc = cap ? cap->max_level : 0;
       ext->maxSliceSegmentCount = 1;
@@ -1289,6 +1295,7 @@ get_h264_msg(struct radv_video_session *vid, struct radv_video_session_params *p
    memset(result.frame_num_list, 0, sizeof(unsigned int) * 16);
    for (unsigned i = 0; i < frame_info->referenceSlotCount; i++) {
       int idx = frame_info->pReferenceSlots[i].slotIndex;
+      assert(idx < RADV_VIDEO_H264_MAX_DPB_SLOTS);
       const struct VkVideoDecodeH264DpbSlotInfoKHR *dpb_slot =
          vk_find_struct_const(frame_info->pReferenceSlots[i].pNext, VIDEO_DECODE_H264_DPB_SLOT_INFO_KHR);
 
@@ -1453,6 +1460,7 @@ get_h265_msg(struct radv_device *device, struct radv_video_session *vid, struct 
       const struct VkVideoDecodeH265DpbSlotInfoKHR *dpb_slot =
          vk_find_struct_const(frame_info->pReferenceSlots[i].pNext, VIDEO_DECODE_H265_DPB_SLOT_INFO_KHR);
       int idx = frame_info->pReferenceSlots[i].slotIndex;
+      assert(idx < RADV_VIDEO_H265_MAX_DPB_SLOTS);
       result.poc_list[i] = dpb_slot->pStdReferenceInfo->PicOrderCntVal;
       result.ref_pic_list[i] = idx;
       idxs[idx] = i;
@@ -1749,6 +1757,7 @@ get_av1_msg(struct radv_device *device, struct radv_video_session *vid, struct r
       (void)ref_dpb_slot; /* Again, the FW is tracking this information for us, so no need for it. */
       (void)ref_dpb_slot; /* the FW is tracking this information for us, so no need for it. */
       int32_t slotIndex = frame_info->pReferenceSlots[i].slotIndex;
+      assert(slotIndex < RADV_VIDEO_AV1_MAX_DPB_SLOTS);
       result.ref_frame_map[i] = slotIndex;
       used_slots |= 1 << slotIndex;
    }
@@ -2089,8 +2098,6 @@ rvcn_dec_message_decode(struct radv_cmd_buffer *cmd_buffer, struct radv_video_se
    }
 
    for (int i = 0; i < frame_info->referenceSlotCount; i++) {
-      int32_t slot_idx = frame_info->pReferenceSlots[i].slotIndex;
-      assert(slot_idx >= 0 && slot_idx < 16);
       struct radv_image_view *f_dpb_iv =
          radv_image_view_from_handle(frame_info->pReferenceSlots[i].pPictureResource->imageViewBinding);
       assert(f_dpb_iv != NULL);

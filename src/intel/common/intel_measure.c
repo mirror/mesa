@@ -65,7 +65,7 @@ intel_measure_init(struct intel_measure_device *device)
          return;
 
       char env_copy[1024];
-      strncpy(env_copy, env, 1024);
+      strncpy(env_copy, env, 1023);
       env_copy[1023] = '\0';
 
       config.file = stderr;

@@ -363,6 +363,7 @@ static void *
 nvc0_zsa_state_create(struct pipe_context *pipe,
                       const struct pipe_depth_stencil_alpha_state *cso)
 {
+   struct nvc0_context *nvc0 = nvc0_context(pipe);
    struct nvc0_zsa_stateobj *so = CALLOC_STRUCT(nvc0_zsa_stateobj);
 
    so->pipe = *cso;
@@ -409,6 +410,12 @@ nvc0_zsa_state_create(struct pipe_context *pipe,
    } else
    if (cso->stencil[0].enabled) {
       SB_IMMED_3D(so, STENCIL_TWO_SIDE_ENABLE, 0);
+   }
+
+   /* Stencil compression, from clb197.h */
+   if ((cso->stencil[1].enabled | cso->stencil[0].enabled) && nvc0->base.screen->device->chipset >= 0x120) {
+      SB_DATA(so, NVC0_FIFO_PKHDR_SQ(SUBC_3D(0x111c), 1));
+      SB_DATA(so, 0x00000001);
    }
 
    SB_IMMED_3D(so, ALPHA_TEST_ENABLE, cso->alpha_enabled);

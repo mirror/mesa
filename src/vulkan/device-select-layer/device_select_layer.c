@@ -256,7 +256,7 @@ static bool fill_drm_device_info(const struct instance_info *info,
       properties.pNext = &ext_pci_properties;
    get_device_properties(info, device, &properties);
 
-   drm_device->cpu_device = properties.properties.deviceType == VK_PHYSICAL_DEVICE_TYPE_CPU;
+   drm_device->device_type = properties.properties.deviceType;
    drm_device->dev_info.vendor_id = properties.properties.vendorID;
    drm_device->dev_info.device_id = properties.properties.deviceID;
    if (info->has_vulkan11 && info->has_pci_bus) {
@@ -266,7 +266,37 @@ static bool fill_drm_device_info(const struct instance_info *info,
      drm_device->bus_info.dev = ext_pci_properties.pciDevice;
      drm_device->bus_info.func = ext_pci_properties.pciFunction;
    }
-   return drm_device->cpu_device;
+   return drm_device->device_type == VK_PHYSICAL_DEVICE_TYPE_CPU;
+}
+
+static int device_select_find_typed_default(struct device_pci_info *pci_infos,
+                                            uint32_t device_count,
+                                            const char *selection)
+{
+   static struct {
+      const char *name;
+      VkPhysicalDeviceType type;
+   } names[] = {
+      { "other", VK_PHYSICAL_DEVICE_TYPE_OTHER },
+      { "integrated", VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU },
+      { "igpu", VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU },
+      { "discrete", VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU },
+      { "dgpu", VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU },
+      { "virtual", VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU },
+      { "vgpu", VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU },
+      { "cpu", VK_PHYSICAL_DEVICE_TYPE_CPU },
+   };
+
+   for (unsigned i = 0; i < ARRAY_SIZE (names); ++i) {
+      if (strncmp(names[i].name, selection, strlen(names[i].name)) == 0) {
+         for (unsigned j = 0; j < device_count; ++j) {
+            if (pci_infos[j].device_type == names[i].type)
+               return j;
+         }
+      }
+   }
+
+   return -1;
 }
 
 static int device_select_find_explicit_default(struct device_pci_info *pci_infos,
@@ -404,7 +434,7 @@ static int device_select_find_non_cpu(struct device_pci_info *pci_infos,
 
    /* pick first GPU device */
    for (unsigned i = 0; i < device_count; ++i) {
-      if (!pci_infos[i].cpu_device){
+      if (pci_infos[i].device_type != VK_PHYSICAL_DEVICE_TYPE_CPU){
          default_idx = i;
          break;
       }
@@ -420,7 +450,7 @@ static int find_non_cpu_skip(struct device_pci_info *pci_infos,
    for (unsigned i = 0; i < device_count; ++i) {
       if (i == skip_idx)
          continue;
-      if (pci_infos[i].cpu_device)
+      if (pci_infos[i].device_type == VK_PHYSICAL_DEVICE_TYPE_CPU)
          continue;
       skip_count--;
       if (skip_count > 0)
@@ -468,8 +498,18 @@ static uint32_t get_default_device(const struct instance_info *info,
       cpu_count += fill_drm_device_info(info, &pci_infos[i], pPhysicalDevices[i]) ? 1 : 0;
    }
 
-   if (selection)
-      default_idx = device_select_find_explicit_default(pci_infos, physical_device_count, selection);
+   if (selection) {
+      default_idx = device_select_find_typed_default(pci_infos, physical_device_count, selection);
+      if (default_idx != -1)
+        fprintf(stderr, "device-select: device_select_find_typed_default for MESA_VK_DEVICE_SELECT selected %i\n", default_idx);
+      else {
+          default_idx = device_select_find_explicit_default(pci_infos, physical_device_count, selection);
+          if (default_idx != -1) {
+             if (debug)
+                fprintf(stderr, "device-select: device_select_find_explicit_default for MESA_VK_DEVICE_SELECT selected %i\n", default_idx);
+          }
+      }
+   }
    if (default_idx != -1) {
       *expose_only_one_dev = ends_with_exclamation_mark(selection);
    }

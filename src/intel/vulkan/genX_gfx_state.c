@@ -959,6 +959,35 @@ update_provoking_vertex(struct anv_gfx_dynamic_state *hw_state,
    }
 }
 
+static unsigned
+vertex_count_for_vk_topology(VkPrimitiveTopology primitive_topology)
+{
+   switch (primitive_topology) {
+      case VK_PRIMITIVE_TOPOLOGY_POINT_LIST:
+         return 1;
+
+      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST:
+      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP:
+         return 2;
+
+      case VK_PRIMITIVE_TOPOLOGY_LINE_LIST_WITH_ADJACENCY:
+      case VK_PRIMITIVE_TOPOLOGY_LINE_STRIP_WITH_ADJACENCY:
+         return 4;
+
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+         return 3;
+
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_WITH_ADJACENCY:
+      case VK_PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_WITH_ADJACENCY:
+         return 6;
+
+      default:
+         unreachable("Unsupported primitive topology");
+   }
+}
+
 ALWAYS_INLINE static void
 update_topology(struct anv_gfx_dynamic_state *hw_state,
                 const struct vk_dynamic_graphics_state *dyn,
@@ -970,6 +999,15 @@ update_topology(struct anv_gfx_dynamic_state *hw_state,
       vk_to_intel_primitive_type[dyn->ia.primitive_topology];
 
    SET(VF_TOPOLOGY, vft.PrimitiveTopologyType, topology);
+
+   const struct brw_gs_prog_data *gs_prog_data = get_gs_prog_data(pipeline);
+
+   if (gs_prog_data) {
+      SET(GS, gs.ExpectedVertexCount,
+          pipeline->base.base.device->physical->instance->anv_gs_use_pipeline_topology ?
+          vertex_count_for_vk_topology(dyn->ia.primitive_topology) :
+          gs_prog_data->vertices_in);
+   }
 }
 
 #if GFX_VER >= 11
@@ -2474,6 +2512,7 @@ cmd_buffer_gfx_state_emission(struct anv_cmd_buffer *cmd_buffer)
       anv_batch_emit_merge_protected(&cmd_buffer->batch, GENX(3DSTATE_GS),
                                      pipeline, partial.gs, gs, protected) {
          SET(gs, gs, ReorderMode);
+         SET(gs, gs, ExpectedVertexCount);
       }
    }
 

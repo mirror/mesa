@@ -847,6 +847,10 @@
    DRI_CONF_OPT_B(anv_enable_buffer_comp, def, \
                   "Enable CCS on buffers where possible")
 
+#define DRI_CONF_ANV_GS_USE_PIPELINE_TOPOLOGY(def) \
+   DRI_CONF_OPT_B(anv_gs_use_pipeline_topology, def, \
+                  "Use pipeline topology instead of GS shader's declared input topology")
+
 #define DRI_CONF_ANV_EXTERNAL_MEMORY_IMPLICIT_SYNC(def) \
    DRI_CONF_OPT_B(anv_external_memory_implicit_sync, def, "Implicit sync on external BOs")
 

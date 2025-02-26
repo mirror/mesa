@@ -13,6 +13,7 @@
 #include <inttypes.h>
 #include "util.h"
 #include "util/compiler.h"
+#include "util/u_math.h"
 
 struct rnndeccontext *rnndec_newcontext(struct rnndb *db) {
 	struct rnndeccontext *res = calloc (sizeof *res, 1);
@@ -100,8 +101,8 @@ static uint32_t float16i(uint16_t val)
 }
 static float float16(uint16_t val)
 {
-	union { uint32_t i; float f; } u;
-	u.i = float16i(val);
+	union fi u;
+	u.ui = float16i(val);
 	return u.f;
 }
 

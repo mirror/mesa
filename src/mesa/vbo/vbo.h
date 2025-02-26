@@ -77,7 +77,7 @@ struct vbo_exec_eval2_map {
 };
 
 struct vbo_exec_copied_vtx {
-   fi_type buffer[VBO_ATTRIB_MAX * 4 * VBO_MAX_COPIED_VERTS];
+   union fi buffer[VBO_ATTRIB_MAX * 4 * VBO_MAX_COPIED_VERTS];
    GLuint nr;
 };
 
@@ -114,11 +114,11 @@ struct vbo_exec_context
       GLuint vertex_size;       /* in dwords */
       GLuint vertex_size_no_pos;
 
-      fi_type *buffer_map;
-      fi_type *buffer_ptr;              /* cursor, points into buffer */
+      union fi *buffer_map;
+      union fi *buffer_ptr;              /* cursor, points into buffer */
       GLuint   buffer_used;             /* in bytes */
       unsigned buffer_offset;           /* only for persistent mappings */
-      fi_type vertex[VBO_ATTRIB_MAX*4]; /* current vertex */
+      union fi vertex[VBO_ATTRIB_MAX*4]; /* current vertex */
 
       GLuint vert_count;   /**< Number of vertices currently in buffer */
       GLuint max_vert;     /**< Max number of vertices allowed in buffer */
@@ -134,7 +134,7 @@ struct vbo_exec_context
       } attr[VBO_ATTRIB_MAX];
 
       /** pointers into the current 'vertex' array, declared above */
-      fi_type *attrptr[VBO_ATTRIB_MAX];
+      union fi *attrptr[VBO_ATTRIB_MAX];
    } vtx;
 
    struct {
@@ -162,15 +162,15 @@ struct vbo_save_context {
    struct gl_buffer_object *current_bo;
    unsigned current_bo_bytes_used;
 
-   fi_type vertex[VBO_ATTRIB_MAX*4];	   /* current values */
-   fi_type *attrptr[VBO_ATTRIB_MAX];
+   union fi vertex[VBO_ATTRIB_MAX*4];	   /* current values */
+   union fi *attrptr[VBO_ATTRIB_MAX];
 
    struct {
-      fi_type *buffer;
+      union fi *buffer;
       GLuint nr;
    } copied;
 
-   fi_type *current[VBO_ATTRIB_MAX]; /* points into ctx->ListState */
+   union fi *current[VBO_ATTRIB_MAX]; /* points into ctx->ListState */
    GLubyte *currentsz[VBO_ATTRIB_MAX];
 
    GLboolean dangling_attr_ref;

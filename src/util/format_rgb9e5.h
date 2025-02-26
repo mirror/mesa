@@ -30,6 +30,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <math.h>
+#include "util/u_math.h"
 
 #define RGB9E5_EXPONENT_BITS          5
 #define RGB9E5_MANTISSA_BITS          9
@@ -43,17 +44,17 @@
 
 static inline int rgb9e5_ClampRange(float x)
 {
-   union { float f; uint32_t u; } f, max;
+   union fi f, max;
    f.f = x;
    max.f = MAX_RGB9E5;
 
-   if (f.u > 0x7f800000)
+   if (f.ui > 0x7f800000)
   /* catches neg, NaNs */
       return 0;
-   else if (f.u >= max.u)
-      return max.u;
+   else if (f.ui >= max.ui)
+      return max.ui;
    else
-      return f.u;
+      return f.ui;
 }
 
 static inline uint32_t float3_to_rgb9e5(const float rgb[3])
@@ -61,24 +62,24 @@ static inline uint32_t float3_to_rgb9e5(const float rgb[3])
    int rm, gm, bm;
    uint32_t exp_shared;
    uint32_t revdenom_biasedexp;
-   union { float f; uint32_t u; } rc, bc, gc, maxrgb, revdenom;
+   union fi rc, bc, gc, maxrgb, revdenom;
 
-   rc.u = rgb9e5_ClampRange(rgb[0]);
-   gc.u = rgb9e5_ClampRange(rgb[1]);
-   bc.u = rgb9e5_ClampRange(rgb[2]);
-   maxrgb.u = MAX3(rc.u, gc.u, bc.u);
+   rc.ui = rgb9e5_ClampRange(rgb[0]);
+   gc.ui = rgb9e5_ClampRange(rgb[1]);
+   bc.ui = rgb9e5_ClampRange(rgb[2]);
+   maxrgb.ui = MAX3(rc.ui, gc.ui, bc.ui);
 
    /*
     * Compared to what the spec suggests, instead of conditionally adjusting
     * the exponent after the fact do it here by doing the equivalent of +0.5 -
     * the int add will spill over into the exponent in this case.
     */
-   maxrgb.u += maxrgb.u & (1 << (23-9));
-   exp_shared = MAX2((maxrgb.u >> 23), -RGB9E5_EXP_BIAS - 1 + 127) +
+   maxrgb.ui += maxrgb.ui & (1 << (23-9));
+   exp_shared = MAX2((maxrgb.ui >> 23), -RGB9E5_EXP_BIAS - 1 + 127) +
                 1 + RGB9E5_EXP_BIAS - 127;
    revdenom_biasedexp = 127 - (exp_shared - RGB9E5_EXP_BIAS -
                                RGB9E5_MANTISSA_BITS) + 1;
-   revdenom.u = revdenom_biasedexp << 23;
+   revdenom.ui = revdenom_biasedexp << 23;
    assert(exp_shared <= RGB9E5_MAX_VALID_BIASED_EXP);
 
    /*
@@ -107,10 +108,10 @@ static inline uint32_t float3_to_rgb9e5(const float rgb[3])
 static inline void rgb9e5_to_float3(uint32_t rgb, float retval[3])
 {
    int exponent;
-   union { float f; uint32_t u; } scale;
+   union fi scale;
 
    exponent = (rgb >> 27) - RGB9E5_EXP_BIAS - RGB9E5_MANTISSA_BITS;
-   scale.u = (exponent + 127) << 23;
+   scale.ui = (exponent + 127) << 23;
 
    retval[0] = ( rgb        & 0x1ff) * scale.f;
    retval[1] = ((rgb >> 9)  & 0x1ff) * scale.f;

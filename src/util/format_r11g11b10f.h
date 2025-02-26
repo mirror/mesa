@@ -31,6 +31,7 @@
 #define FORMAT_R11G11B10F_H
 
 #include <stdint.h>
+#include "u_math.h"
 
 #include "rounding.h"
 
@@ -54,10 +55,7 @@
 
 static inline uint32_t f32_to_uf11(float val)
 {
-   union {
-      float f;
-      uint32_t ui;
-   } f32 = {val};
+   union fi f32 = {val};
 
    uint16_t uf11 = 0;
 
@@ -129,10 +127,7 @@ static inline uint32_t f32_to_uf11(float val)
 
 static inline float uf11_to_f32(uint16_t val)
 {
-   union {
-      float f;
-      uint32_t ui;
-   } f32;
+   union fi f32;
 
    int exponent = (val & 0x07c0) >> UF11_EXPONENT_SHIFT;
    int mantissa = (val & 0x003f);
@@ -163,10 +158,7 @@ static inline float uf11_to_f32(uint16_t val)
 
 static inline uint32_t f32_to_uf10(float val)
 {
-   union {
-      float f;
-      uint32_t ui;
-   } f32 = {val};
+   union fi f32 = {val};
 
    uint16_t uf10 = 0;
 
@@ -238,10 +230,7 @@ static inline uint32_t f32_to_uf10(float val)
 
 static inline float uf10_to_f32(uint16_t val)
 {
-   union {
-      float f;
-      uint32_t ui;
-   } f32;
+   union fi f32;
 
    int exponent = (val & 0x03e0) >> UF10_EXPONENT_SHIFT;
    int mantissa = (val & 0x001f);

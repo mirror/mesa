@@ -32,7 +32,6 @@
 #include "main/bufferobj.h"
 #include "main/context.h"
 #include "main/enable.h"
-#include "main/mesa_private.h"
 #include "main/macros.h"
 #include "main/light.h"
 #include "main/state.h"
@@ -46,7 +45,7 @@
 static void
 copy_vao(struct gl_context *ctx, const struct gl_vertex_array_object *vao,
          GLbitfield mask, GLbitfield state, GLbitfield pop_state,
-         int shift, fi_type **data, bool *color0_changed)
+         int shift, union fi **data, bool *color0_changed)
 {
    struct vbo_context *vbo = vbo_context(ctx);
 
@@ -58,7 +57,7 @@ copy_vao(struct gl_context *ctx, const struct gl_vertex_array_object *vao,
       struct gl_array_attributes *currval = &vbo->current[current_index];
       const GLubyte size = attrib->Format.User.Size;
       const GLenum16 type = attrib->Format.User.Type;
-      fi_type tmp[8];
+      union fi tmp[8];
       int dmul_shift = 0;
 
       if (type == GL_DOUBLE ||
@@ -70,7 +69,7 @@ copy_vao(struct gl_context *ctx, const struct gl_vertex_array_object *vao,
       }
 
       if (memcmp(currval->Ptr, tmp, 4 * sizeof(GLfloat) << dmul_shift) != 0) {
-         memcpy((fi_type*)currval->Ptr, tmp, 4 * sizeof(GLfloat) << dmul_shift);
+         memcpy((union fi*)currval->Ptr, tmp, 4 * sizeof(GLfloat) << dmul_shift);
 
          if (current_index == VBO_ATTRIB_COLOR0)
             *color0_changed = true;
@@ -110,7 +109,7 @@ playback_copy_to_current(struct gl_context *ctx,
    if (!node->cold->current_data)
       return;
 
-   fi_type *data = node->cold->current_data;
+   union fi *data = node->cold->current_data;
    bool color0_changed = false;
 
    /* Copy conventional attribs and generics except pos */

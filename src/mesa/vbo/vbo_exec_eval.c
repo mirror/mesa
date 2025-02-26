@@ -132,7 +132,7 @@ void vbo_exec_do_EvalCoord1f(struct vbo_exec_context *exec, GLfloat u)
       struct gl_1d_map *map = exec->eval.map1[attr].map;
       if (map) {
 	 GLfloat uu = (u - map->u1) * map->du;
-	 fi_type data[4];
+	 union fi data[4];
 
 	 ASSIGN_4V(data, FLOAT_AS_UNION(0), FLOAT_AS_UNION(0),
 		   FLOAT_AS_UNION(0), FLOAT_AS_UNION(1));
@@ -180,7 +180,7 @@ void vbo_exec_do_EvalCoord2f( struct vbo_exec_context *exec,
       if (map) {
 	 GLfloat uu = (u - map->u1) * map->du;
 	 GLfloat vv = (v - map->v1) * map->dv;
-	 fi_type data[4];
+	 union fi data[4];
 
 	 ASSIGN_4V(data, FLOAT_AS_UNION(0), FLOAT_AS_UNION(0),
 		   FLOAT_AS_UNION(0), FLOAT_AS_UNION(1));
@@ -208,7 +208,7 @@ void vbo_exec_do_EvalCoord2f( struct vbo_exec_context *exec,
       ASSIGN_4V(vertex, 0, 0, 0, 1);
 
       if (ctx->Eval.AutoNormal) {
-	 fi_type normal[4];
+	 union fi normal[4];
          GLfloat du[4], dv[4];
 
          _math_de_casteljau_surf(map->Points, vertex, du, dv, uu, vv, 

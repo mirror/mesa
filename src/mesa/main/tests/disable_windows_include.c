@@ -80,7 +80,6 @@
 #include <mesa/main/macros.h>
 #include <mesa/main/matrix.h>
 #include <mesa/main/menums.h>
-#include <mesa/main/mesa_private.h>
 #include <mesa/main/mipmap.h>
 #include <mesa/main/mtypes.h>
 #include <mesa/main/multisample.h>

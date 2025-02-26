@@ -22,6 +22,7 @@
  */
 
 #include <stdint.h>
+#include "util/u_math.h"
 
 #define __gen_address_type uint64_t
 #define __gen_user_data void
@@ -415,9 +416,9 @@ isl_genX(emit_depth_stencil_hiz_s)(const struct isl_device *dev, void *batch,
 #else
       switch (info->depth_surf->format) {
       case ISL_FORMAT_R32_FLOAT: {
-         union { float f; uint32_t u; } fu;
+         union fi fu;
          fu.f = info->depth_clear_value;
-         clear.DepthClearValue = fu.u;
+         clear.DepthClearValue = fu.ui;
          break;
       }
       case ISL_FORMAT_R24_UNORM_X8_TYPELESS:

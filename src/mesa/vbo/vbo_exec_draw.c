@@ -67,10 +67,10 @@ vbo_exec_copy_vertices(struct vbo_exec_context *exec)
 {
    struct gl_context *ctx = gl_context_from_vbo_exec(exec);
    const GLuint sz = exec->vtx.vertex_size;
-   fi_type *dst = exec->vtx.copied.buffer;
+   union fi *dst = exec->vtx.copied.buffer;
    unsigned last = exec->vtx.prim_count - 1;
    unsigned start = exec->vtx.draw[last].start;
-   const fi_type *src = exec->vtx.buffer_map + start * sz;
+   const union fi *src = exec->vtx.buffer_map + start * sz;
 
    return vbo_copy_vertices(ctx, ctx->Driver.CurrentExecPrimitive,
                             start,
@@ -234,7 +234,7 @@ vbo_exec_vtx_map(struct vbo_exec_context *exec)
    if (vbo_exec_buffer_has_space(exec)) {
       /* The VBO exists and there's room for more */
       if (exec->vtx.bufferobj->Size > 0) {
-         exec->vtx.buffer_map = (fi_type *)
+         exec->vtx.buffer_map = (union fi *)
             _mesa_bufferobj_map_range(ctx,
                                       exec->vtx.buffer_used,
                                       ctx->Const.glBeginEndBufferSize
@@ -266,7 +266,7 @@ vbo_exec_vtx_map(struct vbo_exec_context *exec)
                                exec->vtx.bufferobj)) {
          /* buffer allocation worked, now map the buffer */
          exec->vtx.buffer_map =
-            (fi_type *)_mesa_bufferobj_map_range(ctx,
+            (union fi *)_mesa_bufferobj_map_range(ctx,
                                                  0, ctx->Const.glBeginEndBufferSize,
                                                  accessRange,
                                                  exec->vtx.bufferobj,

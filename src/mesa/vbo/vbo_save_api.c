@@ -148,7 +148,7 @@ _save_EvalCoord2f(GLfloat u, GLfloat v);
 static GLuint
 copy_vertices(struct gl_context *ctx,
               const struct vbo_save_vertex_list *node,
-              const fi_type * src_buffer)
+              const union fi * src_buffer)
 {
    struct vbo_save_context *save = &vbo_context(ctx)->save;
    struct _mesa_prim *prim = &node->cold->prims[node->cold->prim_count - 1];
@@ -157,9 +157,9 @@ copy_vertices(struct gl_context *ctx,
    if (prim->end || !prim->count || !sz)
       return 0;
 
-   const fi_type *src = src_buffer + prim->start * sz;
+   const union fi *src = src_buffer + prim->start * sz;
    assert(save->copied.buffer == NULL);
-   save->copied.buffer = malloc(sizeof(fi_type) * sz * prim->count);
+   save->copied.buffer = malloc(sizeof(union fi) * sz * prim->count);
 
    unsigned r = vbo_copy_vertices(ctx, prim->mode, prim->start, &prim->count,
                                   prim->begin, sz, true, save->copied.buffer, src);
@@ -257,9 +257,9 @@ convert_line_loop_to_strip(struct vbo_save_context *save,
        */
       const GLuint sz = save->vertex_size;
       /* 0th vertex: */
-      const fi_type *src = save->vertex_store->buffer_in_ram + prim->start * sz;
+      const union fi *src = save->vertex_store->buffer_in_ram + prim->start * sz;
       /* end of buffer: */
-      fi_type *dst = save->vertex_store->buffer_in_ram + (prim->start + prim->count) * sz;
+      union fi *dst = save->vertex_store->buffer_in_ram + (prim->start + prim->count) * sz;
 
       memcpy(dst, src, sz * sizeof(float));
 
@@ -424,7 +424,7 @@ grow_vertex_storage(struct gl_context *ctx, int vertex_count)
 
 struct vertex_key {
    unsigned vertex_size;
-   fi_type *vertex_attributes;
+   union fi *vertex_attributes;
 };
 
 static uint32_t _hash_vertex_key(const void *key)
@@ -457,13 +457,13 @@ static void _free_entry(struct hash_entry *entry)
  */
 static uint32_t
 add_vertex(struct vbo_save_context *save, struct hash_table *hash_to_index,
-           uint32_t index, fi_type *new_buffer, uint32_t *max_index)
+           uint32_t index, union fi *new_buffer, uint32_t *max_index)
 {
    /* If vertex deduplication is disabled return the original index. */
    if (!hash_to_index)
       return index;
 
-   fi_type *vert = save->vertex_store->buffer_in_ram + save->vertex_size * index;
+   union fi *vert = save->vertex_store->buffer_in_ram + save->vertex_size * index;
 
    struct vertex_key *key = malloc(sizeof(struct vertex_key));
    key->vertex_size = save->vertex_size;
@@ -484,7 +484,7 @@ add_vertex(struct vbo_save_context *save, struct hash_table *hash_to_index,
 
       memcpy(&new_buffer[save->vertex_size * n],
              vert,
-             save->vertex_size * sizeof(fi_type));
+             save->vertex_size * sizeof(union fi));
 
       _mesa_hash_table_insert(hash_to_index, key, (void*)(uintptr_t)(n));
 
@@ -607,7 +607,7 @@ compile_vertex_list(struct gl_context *ctx)
 
    int idx = 0;
    struct hash_table *vertex_to_index = NULL;
-   fi_type *temp_vertices_buffer = NULL;
+   union fi *temp_vertices_buffer = NULL;
 
    /* The loopback replay code doesn't use the index buffer, so we can't
     * dedup vertices in this case.
@@ -768,7 +768,7 @@ compile_vertex_list(struct gl_context *ctx)
    /* How many bytes do we need to store the indices and the vertices */
    total_vert_count = vertex_to_index ? (max_index + 1) : idx;
    unsigned total_bytes_needed = idx * sizeof(uint32_t) +
-                                 total_vert_count * save->vertex_size * sizeof(fi_type);
+                                 total_vert_count * save->vertex_size * sizeof(union fi);
 
    const GLintptr old_offset = save->VAO[0] ?
       save->VAO[0]->BufferBinding[0].Offset + save->VAO[0]->VertexAttrib[VERT_ATTRIB_POS].RelativeOffset : 0;
@@ -846,10 +846,10 @@ compile_vertex_list(struct gl_context *ctx)
    /* Upload the vertices first (see buffer_offset) */
    _mesa_bufferobj_subdata(ctx,
                            save->current_bo_bytes_used,
-                           total_vert_count * save->vertex_size * sizeof(fi_type),
+                           total_vert_count * save->vertex_size * sizeof(union fi),
                            vertex_to_index ? temp_vertices_buffer : save->vertex_store->buffer_in_ram,
                            node->cold->ib.obj);
-   save->current_bo_bytes_used += total_vert_count * save->vertex_size * sizeof(fi_type);
+   save->current_bo_bytes_used += total_vert_count * save->vertex_size * sizeof(union fi);
    node->cold->bo_bytes_used = save->current_bo_bytes_used;
 
   if (vertex_to_index) {
@@ -1052,12 +1052,12 @@ wrap_filled_vertex(struct gl_context *ctx)
     */
    numComponents = save->copied.nr * save->vertex_size;
 
-   fi_type *buffer_ptr = save->vertex_store->buffer_in_ram;
+   union fi *buffer_ptr = save->vertex_store->buffer_in_ram;
    if (numComponents) {
       assert(save->copied.buffer);
       memcpy(buffer_ptr,
              save->copied.buffer,
-             numComponents * sizeof(fi_type));
+             numComponents * sizeof(union fi));
       free(save->copied.buffer);
       save->copied.buffer = NULL;
    }
@@ -1126,7 +1126,7 @@ upgrade_vertex(struct gl_context *ctx, GLuint attr, GLuint newsz)
    struct vbo_save_context *save = &vbo_context(ctx)->save;
    GLuint oldsz;
    GLuint i;
-   fi_type *tmp;
+   union fi *tmp;
 
    /* Store the current run of vertices, and emit a GL_END.  Emit a
     * BEGIN in the new buffer.
@@ -1175,9 +1175,9 @@ upgrade_vertex(struct gl_context *ctx, GLuint attr, GLuint newsz)
     */
    if (save->copied.nr) {
       assert(save->copied.buffer);
-      const fi_type *data = save->copied.buffer;
+      const union fi *data = save->copied.buffer;
       grow_vertex_storage(ctx, save->copied.nr);
-      fi_type *dest = save->vertex_store->buffer_in_ram;
+      union fi *dest = save->vertex_store->buffer_in_ram;
 
       /* Need to note this and fix up later. This can be done in
        * ATTR_UNION (by copying the new attribute values to the
@@ -1195,7 +1195,7 @@ upgrade_vertex(struct gl_context *ctx, GLuint attr, GLuint newsz)
             assert(save->attrsz[j]);
             if (j == attr) {
                int k;
-               const fi_type *src = oldsz ? data : save->current[attr];
+               const union fi *src = oldsz ? data : save->current[attr];
                int copy = oldsz ? oldsz : newsz;
                for (k = 0; k < copy; k++)
                   dest[k] = src[k];
@@ -1256,7 +1256,7 @@ fixup_vertex(struct gl_context *ctx, GLuint attr,
    }
    else if (sz < save->active_sz[attr]) {
       GLuint i;
-      const fi_type *id = vbo_get_default_vals_as_union(save->attrtype[attr]);
+      const union fi *id = vbo_get_default_vals_as_union(save->attrtype[attr]);
 
       /* New size is equal or smaller - just need to fill in some
        * zeros.
@@ -1328,7 +1328,7 @@ do {                                                            \
       if (fixup_vertex(ctx, A, N * sz, T) &&                    \
           !had_dangling_ref && save->dangling_attr_ref &&       \
           A != VBO_ATTRIB_POS) {                                \
-         fi_type *dest = save->vertex_store->buffer_in_ram;     \
+         union fi *dest = save->vertex_store->buffer_in_ram;     \
          /* Copy the new attr values to the already copied      \
           * vertices.                                           \
           */                                                    \
@@ -1359,7 +1359,7 @@ do {                                                            \
    }                                                            \
                                                                 \
    if ((A) == VBO_ATTRIB_POS) {                                 \
-      fi_type *buffer_ptr = save->vertex_store->buffer_in_ram + \
+      union fi *buffer_ptr = save->vertex_store->buffer_in_ram + \
                             save->vertex_store->used;           \
                                                                 \
       for (int i = 0; i < save->vertex_size; i++)               \
@@ -2057,14 +2057,14 @@ current_init(struct gl_context *ctx)
 
    for (i = VBO_ATTRIB_POS; i <= VBO_ATTRIB_EDGEFLAG; i++) {
       save->currentsz[i] = &ctx->ListState.ActiveAttribSize[i];
-      save->current[i] = (fi_type *) ctx->ListState.CurrentAttrib[i];
+      save->current[i] = (union fi *) ctx->ListState.CurrentAttrib[i];
    }
 
    for (i = VBO_ATTRIB_FIRST_MATERIAL; i <= VBO_ATTRIB_LAST_MATERIAL; i++) {
       const GLuint j = i - VBO_ATTRIB_FIRST_MATERIAL;
       assert(j < MAT_ATTRIB_MAX);
       save->currentsz[i] = &ctx->ListState.ActiveMaterialSize[j];
-      save->current[i] = (fi_type *) ctx->ListState.CurrentMaterial[j];
+      save->current[i] = (union fi *) ctx->ListState.CurrentMaterial[j];
    }
 }
 

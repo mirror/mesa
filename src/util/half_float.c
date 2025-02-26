@@ -33,8 +33,6 @@
 #include "macros.h"
 #include "u_math.h"
 
-typedef union { float f; int32_t i; uint32_t u; } fi_type;
-
 /**
  * Convert a 4-byte float to a 2-byte half float.
  *
@@ -56,7 +54,7 @@ typedef union { float f; int32_t i; uint32_t u; } fi_type;
 uint16_t
 _mesa_float_to_half_slow(float val)
 {
-   const fi_type fi = {val};
+   const union fi fi = {val};
    const int flt_m = fi.i & 0x7fffff;
    const int flt_e = (fi.i >> 23) & 0xff;
    const int flt_s = (fi.i >> 31) & 0x1;

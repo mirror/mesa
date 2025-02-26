@@ -145,7 +145,7 @@ vbo_exec_vtx_wrap(struct vbo_exec_context *exec)
    numComponents = exec->vtx.copied.nr * exec->vtx.vertex_size;
    memcpy(exec->vtx.buffer_ptr,
           exec->vtx.copied.buffer,
-          numComponents * sizeof(fi_type));
+          numComponents * sizeof(union fi));
    exec->vtx.buffer_ptr += numComponents;
    exec->vtx.vert_count += exec->vtx.copied.nr;
 
@@ -171,7 +171,7 @@ vbo_exec_copy_to_current(struct vbo_exec_context *exec)
        * ctx->Current.Attrib and ctx->Light.Material.Attrib arrays.
        */
       GLfloat *current = (GLfloat *)vbo->current[i].Ptr;
-      fi_type tmp[8]; /* space for doubles */
+      union fi tmp[8]; /* space for doubles */
       int dmul_shift = 0;
 
       assert(exec->vtx.attr[i].size);
@@ -256,7 +256,7 @@ vbo_exec_wrap_upgrade_vertex(struct vbo_exec_context *exec,
    struct gl_context *ctx = gl_context_from_vbo_exec(exec);
    struct vbo_context *vbo = vbo_context(ctx);
    const GLint lastcount = exec->vtx.vert_count;
-   fi_type *old_attrptr[VBO_ATTRIB_MAX];
+   union fi *old_attrptr[VBO_ATTRIB_MAX];
    const GLuint old_vtx_size_no_pos = exec->vtx.vertex_size_no_pos;
    const GLuint old_vtx_size = exec->vtx.vertex_size; /* floats per vertex */
    const GLuint oldSize = exec->vtx.attr[attr].size;
@@ -312,18 +312,18 @@ vbo_exec_wrap_upgrade_vertex(struct vbo_exec_context *exec,
          /* If there are attribs after the resized attrib... */
          if (offset + oldSize < old_vtx_size_no_pos) {
             int size_diff = newSize - oldSize;
-            fi_type *old_first = exec->vtx.attrptr[attr] + oldSize;
-            fi_type *new_first = exec->vtx.attrptr[attr] + newSize;
-            fi_type *old_last = exec->vtx.vertex + old_vtx_size_no_pos - 1;
-            fi_type *new_last = exec->vtx.vertex + exec->vtx.vertex_size_no_pos - 1;
+            union fi *old_first = exec->vtx.attrptr[attr] + oldSize;
+            union fi *new_first = exec->vtx.attrptr[attr] + newSize;
+            union fi *old_last = exec->vtx.vertex + old_vtx_size_no_pos - 1;
+            union fi *new_last = exec->vtx.vertex + exec->vtx.vertex_size_no_pos - 1;
 
             if (size_diff < 0) {
                /* Decreasing the size: Copy from first to last to move
                 * elements to the left.
                 */
-               fi_type *old_end = old_last + 1;
-               fi_type *old = old_first;
-               fi_type *new = new_first;
+               union fi *old_end = old_last + 1;
+               union fi *old = old_first;
+               union fi *new = new_first;
 
                do {
                   *new++ = *old++;
@@ -332,9 +332,9 @@ vbo_exec_wrap_upgrade_vertex(struct vbo_exec_context *exec,
                /* Increasing the size: Copy from last to first to move
                 * elements to the right.
                 */
-               fi_type *old_end = old_first - 1;
-               fi_type *old = old_last;
-               fi_type *new = new_last;
+               union fi *old_end = old_first - 1;
+               union fi *old = old_last;
+               union fi *new = new_last;
 
                do {
                   *new-- = *old--;
@@ -368,8 +368,8 @@ vbo_exec_wrap_upgrade_vertex(struct vbo_exec_context *exec,
     * -- No need to replay - just copy piecewise
     */
    if (unlikely(exec->vtx.copied.nr)) {
-      fi_type *data = exec->vtx.copied.buffer;
-      fi_type *dest = exec->vtx.buffer_ptr;
+      union fi *data = exec->vtx.copied.buffer;
+      union fi *dest = exec->vtx.buffer_ptr;
 
       assert(exec->vtx.buffer_ptr == exec->vtx.buffer_map);
 
@@ -385,13 +385,13 @@ vbo_exec_wrap_upgrade_vertex(struct vbo_exec_context *exec,
 
             if (j == attr) {
                if (oldSize) {
-                  fi_type tmp[4];
+                  union fi tmp[4];
                   COPY_CLEAN_4V_TYPE_AS_UNION(tmp, oldSize,
                                               data + old_offset,
                                               exec->vtx.attr[j].type);
                   COPY_SZ_4V(dest + new_offset, newSize, tmp);
                } else {
-                  fi_type *current = (fi_type *)vbo->current[j].Ptr;
+                  union fi *current = (union fi *)vbo->current[j].Ptr;
                   COPY_SZ_4V(dest + new_offset, sz, current);
                }
             }
@@ -435,7 +435,7 @@ vbo_exec_fixup_vertex(struct gl_context *ctx, GLuint attr,
    }
    else if (newSize < exec->vtx.attr[attr].active_size) {
       GLuint i;
-      const fi_type *id =
+      const union fi *id =
             vbo_get_default_vals_as_union(exec->vtx.attr[attr].type);
 
       /* New size is smaller - just need to fill in some
@@ -555,7 +555,7 @@ do {                                                                    \
       }                                                                 \
                                                                         \
       /* dst now points at the beginning of the next vertex */          \
-      exec->vtx.buffer_ptr = (fi_type*)dst;                             \
+      exec->vtx.buffer_ptr = (union fi*)dst;                             \
                                                                         \
       /* Don't set FLUSH_UPDATE_CURRENT because */                      \
       /* Current.Attrib[VBO_ATTRIB_POS] is never used. */               \
@@ -954,13 +954,13 @@ _mesa_End(void)
          /* We're finishing drawing a line loop.  Append 0th vertex onto
           * end of vertex buffer so we can draw it as a line strip.
           */
-         const fi_type *src = exec->vtx.buffer_map +
+         const union fi *src = exec->vtx.buffer_map +
             last_draw->start * exec->vtx.vertex_size;
-         fi_type *dst = exec->vtx.buffer_map +
+         union fi *dst = exec->vtx.buffer_map +
             exec->vtx.vert_count * exec->vtx.vertex_size;
 
          /* copy 0th vertex to end of buffer */
-         memcpy(dst, src, exec->vtx.vertex_size * sizeof(fi_type));
+         memcpy(dst, src, exec->vtx.vertex_size * sizeof(union fi));
 
          if (exec->vtx.markers[last].begin == 0)
             last_draw->start++; /* skip vertex0 */

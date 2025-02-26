@@ -137,10 +137,10 @@ vbo_set_vertex_format(struct gl_vertex_format* vertex_format,
 
 /**
  * Return default component values for the given format.
- * The return type is an array of fi_types, because that's how we declare
+ * The return type is an array of union fis, because that's how we declare
  * the vertex storage : floats , integers or unsigned integers.
  */
-static inline const fi_type *
+static inline const union fi *
 vbo_get_default_vals_as_union(GLenum format)
 {
    static const GLfloat default_float[4] = { 0, 0, 0, 1 };
@@ -150,14 +150,14 @@ vbo_get_default_vals_as_union(GLenum format)
 
    switch (format) {
    case GL_FLOAT:
-      return (fi_type *)default_float;
+      return (union fi *)default_float;
    case GL_INT:
    case GL_UNSIGNED_INT:
-      return (fi_type *)default_int;
+      return (union fi *)default_int;
    case GL_DOUBLE:
-      return (fi_type *)default_double;
+      return (union fi *)default_double;
    case GL_UNSIGNED_INT64_ARB:
-      return (fi_type *)default_uint64;
+      return (union fi *)default_uint64;
    default:
       unreachable("Bad vertex format");
       return NULL;
@@ -203,8 +203,8 @@ vbo_copy_vertices(struct gl_context *ctx,
                   unsigned start, unsigned *count, bool begin,
                   unsigned vertex_size,
                   bool in_dlist,
-                  fi_type *dst,
-                  const fi_type *src);
+                  union fi *dst,
+                  const union fi *src);
 
 /**
  * Get the filter mask for vbo draws depending on the vertex_processing_mode.

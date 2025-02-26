@@ -107,9 +107,9 @@ ALWAYS_INLINE static uint32_t
 util_bitpack_float(float v)
 {
    util_bitpack_validate_value(v);
-   union { float f; uint32_t dw; } x;
+   union fi x;
    x.f = v;
-   return x.dw;
+   return x.ui;
 }
 
 ALWAYS_INLINE static uint32_t

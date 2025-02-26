@@ -46,6 +46,7 @@
 #include "rounding.h"
 #include "bitscan.h"
 #include "softfloat.h"
+#include "util/u_math.h"
 
 #if defined(BIG_ENDIAN)
 #define word_incr -1
@@ -66,9 +67,6 @@
 #define index_multiword_hi_but(total, n) (n)
 #define index_multiword_lo_but(total, n) 0
 #endif
-
-typedef union { double f; int64_t i; uint64_t u; } di_type;
-typedef union { float f; int32_t i; uint32_t u; } fi_type;
 
 /**
  * \brief Shifts 'a' right by the number of bits given in 'dist', which must be in
@@ -126,7 +124,7 @@ uint32_t _mesa_shift_right_jam32(uint32_t a, uint16_t dist)
 static inline
 double _mesa_roundtozero_f64(int64_t s, int64_t e, int64_t m)
 {
-    di_type result;
+    union di result;
 
     if ((uint64_t) e >= 0x7fd) {
         if (e < 0) {
@@ -135,9 +133,9 @@ double _mesa_roundtozero_f64(int64_t s, int64_t e, int64_t m)
         } else if ((e > 0x7fd) || (0x8000000000000000 <= m)) {
             e = 0x7ff;
             m = 0;
-            result.u = (s << 63) + (e << 52) + m;
-            result.u -= 1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + m;
+            result.ui -= 1;
+            return result.d;
         }
     }
 
@@ -145,8 +143,8 @@ double _mesa_roundtozero_f64(int64_t s, int64_t e, int64_t m)
     if (m == 0)
         e = 0;
 
-    result.u = (s << 63) + (e << 52) + m;
-    return result.f;
+    result.ui = (s << 63) + (e << 52) + m;
+    return result.d;
 }
 
 /**
@@ -155,7 +153,7 @@ double _mesa_roundtozero_f64(int64_t s, int64_t e, int64_t m)
 static inline
 float _mesa_round_f32(int32_t s, int32_t e, int32_t m, bool rtz)
 {
-    fi_type result;
+    union fi result;
     uint8_t round_increment = rtz ? 0 : 0x40;
 
     if ((uint32_t) e >= 0xfd) {
@@ -165,8 +163,8 @@ float _mesa_round_f32(int32_t s, int32_t e, int32_t m, bool rtz)
         } else if ((e > 0xfd) || (0x80000000 <= m + round_increment)) {
             e = 0xff;
             m = 0;
-            result.u = (s << 31) + (e << 23) + m;
-            result.u -= !round_increment;
+            result.ui = (s << 31) + (e << 23) + m;
+            result.ui -= !round_increment;
             return result.f;
         }
     }
@@ -178,7 +176,7 @@ float _mesa_round_f32(int32_t s, int32_t e, int32_t m, bool rtz)
     if (m == 0)
         e = 0;
 
-    result.u = (s << 31) + (e << 23) + m;
+    result.ui = (s << 31) + (e << 23) + m;
     return result.f;
 }
 
@@ -433,14 +431,14 @@ _mesa_shift_right_jam_m(uint8_t size_words, const uint32_t *a, uint32_t dist, ui
 double
 _mesa_double_add_rtz(double a, double b)
 {
-    const di_type a_di = {a};
-    uint64_t a_flt_m = a_di.u & 0x0fffffffffffff;
-    uint64_t a_flt_e = (a_di.u >> 52) & 0x7ff;
-    uint64_t a_flt_s = (a_di.u >> 63) & 0x1;
-    const di_type b_di = {b};
-    uint64_t b_flt_m = b_di.u & 0x0fffffffffffff;
-    uint64_t b_flt_e = (b_di.u >> 52) & 0x7ff;
-    uint64_t b_flt_s = (b_di.u >> 63) & 0x1;
+    const union di a_di = {a};
+    uint64_t a_flt_m = a_di.ui & 0x0fffffffffffff;
+    uint64_t a_flt_e = (a_di.ui >> 52) & 0x7ff;
+    uint64_t a_flt_s = (a_di.ui >> 63) & 0x1;
+    const union di b_di = {b};
+    uint64_t b_flt_m = b_di.ui & 0x0fffffffffffff;
+    uint64_t b_flt_e = (b_di.ui >> 52) & 0x7ff;
+    uint64_t b_flt_s = (b_di.ui >> 63) & 0x1;
     int64_t s, e, m = 0;
 
     s = a_flt_s;
@@ -470,9 +468,9 @@ _mesa_double_add_rtz(double a, double b)
         /* x + Inf = Inf */
         return b;
     } else if (exp_diff == 0 && a_flt_e == 0) {
-        di_type result_di;
-        result_di.u = a_di.u + b_flt_m;
-        return result_di.f;
+        union di result_di;
+        result_di.ui = a_di.ui + b_flt_m;
+        return result_di.d;
     } else if (exp_diff == 0) {
         e = a_flt_e;
         m = 0x0020000000000000 + a_flt_m + b_flt_m;
@@ -542,9 +540,9 @@ _mesa_norm_round_pack_f64(int64_t s, int64_t e, int64_t m)
     shift_dist = _mesa_count_leading_zeros64(m) - 1;
     e -= shift_dist;
     if ((10 <= shift_dist) && ((unsigned) e < 0x7fd)) {
-        di_type result;
-        result.u = (s << 63) + ((m ? e : 0) << 52) + (m << (shift_dist - 10));
-        return result.f;
+        union di result;
+        result.ui = (s << 63) + ((m ? e : 0) << 52) + (m << (shift_dist - 10));
+        return result.d;
     } else {
         return _mesa_roundtozero_f64(s, e, m << shift_dist);
     }
@@ -654,14 +652,14 @@ _mesa_sub_m(uint8_t size_words, const uint32_t *a, const uint32_t *b, uint32_t *
 double
 _mesa_double_sub_rtz(double a, double b)
 {
-    const di_type a_di = {a};
-    uint64_t a_flt_m = a_di.u & 0x0fffffffffffff;
-    uint64_t a_flt_e = (a_di.u >> 52) & 0x7ff;
-    uint64_t a_flt_s = (a_di.u >> 63) & 0x1;
-    const di_type b_di = {b};
-    uint64_t b_flt_m = b_di.u & 0x0fffffffffffff;
-    uint64_t b_flt_e = (b_di.u >> 52) & 0x7ff;
-    uint64_t b_flt_s = (b_di.u >> 63) & 0x1;
+    const union di a_di = {a};
+    uint64_t a_flt_m = a_di.ui & 0x0fffffffffffff;
+    uint64_t a_flt_e = (a_di.ui >> 52) & 0x7ff;
+    uint64_t a_flt_s = (a_di.ui >> 63) & 0x1;
+    const union di b_di = {b};
+    uint64_t b_flt_m = b_di.ui & 0x0fffffffffffff;
+    uint64_t b_flt_e = (b_di.ui >> 52) & 0x7ff;
+    uint64_t b_flt_s = (b_di.ui >> 63) & 0x1;
     int64_t s, e, m = 0;
     int64_t m_diff = 0;
     unsigned shift_dist = 0;
@@ -689,10 +687,10 @@ _mesa_double_sub_rtz(double a, double b)
     } else if (a_flt_e == 0x7ff && a_flt_m == 0) {
         if (b_flt_e == 0x7ff && b_flt_m == 0) {
             /* Inf - Inf =  NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
         /* Inf - x = Inf */
         return a;
@@ -718,9 +716,9 @@ _mesa_double_sub_rtz(double a, double b)
             e = 0;
         }
 
-        di_type result;
-        result.u = (s << 63) + (e << 52) + (m_diff << shift_dist);
-        return result.f;
+        union di result;
+        result.ui = (s << 63) + (e << 52) + (m_diff << shift_dist);
+        return result.d;
     } else if (exp_diff < 0) {
         a_flt_m <<= 10;
         b_flt_m <<= 10;
@@ -809,14 +807,14 @@ _mesa_softfloat_mul_f64_to_f128_m(uint64_t a, uint64_t b, uint32_t *m_out)
 double
 _mesa_double_mul_rtz(double a, double b)
 {
-    const di_type a_di = {a};
-    uint64_t a_flt_m = a_di.u & 0x0fffffffffffff;
-    uint64_t a_flt_e = (a_di.u >> 52) & 0x7ff;
-    uint64_t a_flt_s = (a_di.u >> 63) & 0x1;
-    const di_type b_di = {b};
-    uint64_t b_flt_m = b_di.u & 0x0fffffffffffff;
-    uint64_t b_flt_e = (b_di.u >> 52) & 0x7ff;
-    uint64_t b_flt_s = (b_di.u >> 63) & 0x1;
+    const union di a_di = {a};
+    uint64_t a_flt_m = a_di.ui & 0x0fffffffffffff;
+    uint64_t a_flt_e = (a_di.ui >> 52) & 0x7ff;
+    uint64_t a_flt_s = (a_di.ui >> 63) & 0x1;
+    const union di b_di = {b};
+    uint64_t b_flt_m = b_di.ui & 0x0fffffffffffff;
+    uint64_t b_flt_e = (b_di.ui >> 52) & 0x7ff;
+    uint64_t b_flt_s = (b_di.ui >> 63) & 0x1;
     int64_t s, e, m = 0;
 
     s = a_flt_s ^ b_flt_s;
@@ -832,16 +830,16 @@ _mesa_double_mul_rtz(double a, double b)
 
         if (!(b_flt_e | b_flt_m)) {
             /* Inf * 0 = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
         /* Inf * x = Inf */
-        di_type result;
+        union di result;
         e = 0x7ff;
-        result.u = (s << 63) + (e << 52) + 0;
-        return result.f;
+        result.ui = (s << 63) + (e << 52) + 0;
+        return result.d;
     }
 
     if (b_flt_e == 0x7ff) {
@@ -851,33 +849,33 @@ _mesa_double_mul_rtz(double a, double b)
         }
         if (!(a_flt_e | a_flt_m)) {
             /* 0 * Inf = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
         /* x * Inf = Inf */
-        di_type result;
+        union di result;
         e = 0x7ff;
-        result.u = (s << 63) + (e << 52) + 0;
-        return result.f;
+        result.ui = (s << 63) + (e << 52) + 0;
+        return result.d;
     }
 
     if (a_flt_e == 0) {
         if (a_flt_m == 0) {
             /* 'a' is zero. Return zero */
-            di_type result;
-            result.u = (s << 63) + 0;
-            return result.f;
+            union di result;
+            result.ui = (s << 63) + 0;
+            return result.d;
         }
         _mesa_norm_subnormal_mantissa_f64(a_flt_m , &a_flt_e, &a_flt_m);
     }
     if (b_flt_e == 0) {
         if (b_flt_m == 0) {
             /* 'b' is zero. Return zero */
-            di_type result;
-            result.u = (s << 63) + 0;
-            return result.f;
+            union di result;
+            result.ui = (s << 63) + 0;
+            return result.d;
         }
         _mesa_norm_subnormal_mantissa_f64(b_flt_m , &b_flt_e, &b_flt_m);
     }
@@ -915,18 +913,18 @@ _mesa_double_mul_rtz(double a, double b)
 double
 _mesa_double_fma_rtz(double a, double b, double c)
 {
-    const di_type a_di = {a};
-    uint64_t a_flt_m = a_di.u & 0x0fffffffffffff;
-    uint64_t a_flt_e = (a_di.u >> 52) & 0x7ff;
-    uint64_t a_flt_s = (a_di.u >> 63) & 0x1;
-    const di_type b_di = {b};
-    uint64_t b_flt_m = b_di.u & 0x0fffffffffffff;
-    uint64_t b_flt_e = (b_di.u >> 52) & 0x7ff;
-    uint64_t b_flt_s = (b_di.u >> 63) & 0x1;
-    const di_type c_di = {c};
-    uint64_t c_flt_m = c_di.u & 0x0fffffffffffff;
-    uint64_t c_flt_e = (c_di.u >> 52) & 0x7ff;
-    uint64_t c_flt_s = (c_di.u >> 63) & 0x1;
+    const union di a_di = {a};
+    uint64_t a_flt_m = a_di.ui & 0x0fffffffffffff;
+    uint64_t a_flt_e = (a_di.ui >> 52) & 0x7ff;
+    uint64_t a_flt_s = (a_di.ui >> 63) & 0x1;
+    const union di b_di = {b};
+    uint64_t b_flt_m = b_di.ui & 0x0fffffffffffff;
+    uint64_t b_flt_e = (b_di.ui >> 52) & 0x7ff;
+    uint64_t b_flt_s = (b_di.ui >> 63) & 0x1;
+    const union di c_di = {c};
+    uint64_t c_flt_m = c_di.ui & 0x0fffffffffffff;
+    uint64_t c_flt_e = (c_di.ui >> 52) & 0x7ff;
+    uint64_t c_flt_s = (c_di.ui >> 63) & 0x1;
     int64_t s, e, m = 0;
 
     c_flt_s ^= 0;
@@ -946,25 +944,25 @@ _mesa_double_fma_rtz(double a, double b, double c)
 
         if (!(b_flt_e | b_flt_m)) {
             /* Inf * 0 + y = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
 
         if ((c_flt_e == 0x7ff && c_flt_m == 0) && (s != c_flt_s)) {
             /* Inf * x - Inf = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
 
         /* Inf * x + y = Inf */
-        di_type result;
+        union di result;
         e = 0x7ff;
-        result.u = (s << 63) + (e << 52) + 0;
-        return result.f;
+        result.ui = (s << 63) + (e << 52) + 0;
+        return result.d;
     }
 
     if (b_flt_e == 0x7ff) {
@@ -978,25 +976,25 @@ _mesa_double_fma_rtz(double a, double b, double c)
 
         if (!(a_flt_e | a_flt_m)) {
             /* 0 * Inf + y = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
 
         if ((c_flt_e == 0x7ff && c_flt_m == 0) && (s != c_flt_s)) {
             /* x * Inf - Inf = NaN */
-            di_type result;
+            union di result;
             e = 0x7ff;
-            result.u = (s << 63) + (e << 52) + 0x1;
-            return result.f;
+            result.ui = (s << 63) + (e << 52) + 0x1;
+            return result.d;
         }
 
         /* x * Inf + y = Inf */
-        di_type result;
+        union di result;
         e = 0x7ff;
-        result.u = (s << 63) + (e << 52) + 0;
-        return result.f;
+        result.ui = (s << 63) + (e << 52) + 0;
+        return result.d;
     }
 
     if (c_flt_e == 0x7ff) {
@@ -1119,9 +1117,9 @@ _mesa_double_fma_rtz(double a, double b, double c)
             m -= c_flt_m;
             if (!m && !m_128[index_word(4, 1)] && !m_128[index_word(4, 0)]) {
                 /* Return zero */
-                di_type result;
-                result.u = (s << 63) + 0;
-                return result.f;
+                union di result;
+                result.ui = (s << 63) + 0;
+                return result.d;
             }
             m_128[index_word(4, 3)] = m >> 32;
             m_128[index_word(4, 2)] = m;
@@ -1180,18 +1178,18 @@ _mesa_double_fma_rtz(double a, double b, double c)
 float
 _mesa_float_fma_rtz(float a, float b, float c)
 {
-    const fi_type a_fi = {a};
-    uint32_t a_flt_m = a_fi.u & 0x07fffff;
-    uint32_t a_flt_e = (a_fi.u >> 23) & 0xff;
-    uint32_t a_flt_s = (a_fi.u >> 31) & 0x1;
-    const fi_type b_fi = {b};
-    uint32_t b_flt_m = b_fi.u & 0x07fffff;
-    uint32_t b_flt_e = (b_fi.u >> 23) & 0xff;
-    uint32_t b_flt_s = (b_fi.u >> 31) & 0x1;
-    const fi_type c_fi = {c};
-    uint32_t c_flt_m = c_fi.u & 0x07fffff;
-    uint32_t c_flt_e = (c_fi.u >> 23) & 0xff;
-    uint32_t c_flt_s = (c_fi.u >> 31) & 0x1;
+    const union fi a_fi = {a};
+    uint32_t a_flt_m = a_fi.ui & 0x07fffff;
+    uint32_t a_flt_e = (a_fi.ui >> 23) & 0xff;
+    uint32_t a_flt_s = (a_fi.ui >> 31) & 0x1;
+    const union fi b_fi = {b};
+    uint32_t b_flt_m = b_fi.ui & 0x07fffff;
+    uint32_t b_flt_e = (b_fi.ui >> 23) & 0xff;
+    uint32_t b_flt_s = (b_fi.ui >> 31) & 0x1;
+    const union fi c_fi = {c};
+    uint32_t c_flt_m = c_fi.ui & 0x07fffff;
+    uint32_t c_flt_e = (c_fi.ui >> 23) & 0xff;
+    uint32_t c_flt_s = (c_fi.ui >> 31) & 0x1;
     int32_t s, e, m = 0;
 
     c_flt_s ^= 0;
@@ -1211,24 +1209,24 @@ _mesa_float_fma_rtz(float a, float b, float c)
 
         if (!(b_flt_e | b_flt_m)) {
             /* Inf * 0 + y = NaN */
-            fi_type result;
+            union fi result;
             e = 0xff;
-            result.u = (s << 31) + (e << 23) + 0x1;
+            result.ui = (s << 31) + (e << 23) + 0x1;
             return result.f;
         }
 
         if ((c_flt_e == 0xff && c_flt_m == 0) && (s != c_flt_s)) {
             /* Inf * x - Inf = NaN */
-            fi_type result;
+            union fi result;
             e = 0xff;
-            result.u = (s << 31) + (e << 23) + 0x1;
+            result.ui = (s << 31) + (e << 23) + 0x1;
             return result.f;
         }
 
         /* Inf * x + y = Inf */
-        fi_type result;
+        union fi result;
         e = 0xff;
-        result.u = (s << 31) + (e << 23) + 0;
+        result.ui = (s << 31) + (e << 23) + 0;
         return result.f;
     }
 
@@ -1243,24 +1241,24 @@ _mesa_float_fma_rtz(float a, float b, float c)
 
         if (!(a_flt_e | a_flt_m)) {
             /* 0 * Inf + y = NaN */
-            fi_type result;
+            union fi result;
             e = 0xff;
-            result.u = (s << 31) + (e << 23) + 0x1;
+            result.ui = (s << 31) + (e << 23) + 0x1;
             return result.f;
         }
 
         if ((c_flt_e == 0xff && c_flt_m == 0) && (s != c_flt_s)) {
             /* x * Inf - Inf = NaN */
-            fi_type result;
+            union fi result;
             e = 0xff;
-            result.u = (s << 31) + (e << 23) + 0x1;
+            result.ui = (s << 31) + (e << 23) + 0x1;
             return result.f;
         }
 
         /* x * Inf + y = Inf */
-        fi_type result;
+        union fi result;
         e = 0xff;
-        result.u = (s << 31) + (e << 23) + 0;
+        result.ui = (s << 31) + (e << 23) + 0;
         return result.f;
     }
 
@@ -1333,8 +1331,8 @@ _mesa_float_fma_rtz(float a, float b, float c)
             m_64 -= c_flt_m_64;
             if (!m_64) {
                 /* Return zero */
-                fi_type result;
-                result.u = (s << 31) + 0;
+                union fi result;
+                result.ui = (s << 31) + 0;
                 return result.f;
             }
             if (m_64 & 0x8000000000000000) {
@@ -1367,10 +1365,10 @@ _mesa_float_fma_rtz(float a, float b, float c)
 float
 _mesa_double_to_f32(double val, bool rtz)
 {
-    const di_type di = {val};
-    uint64_t flt_m = di.u & 0x0fffffffffffff;
-    uint64_t flt_e = (di.u >> 52) & 0x7ff;
-    uint64_t flt_s = (di.u >> 63) & 0x1;
+    const union di di = {val};
+    uint64_t flt_m = di.ui & 0x0fffffffffffff;
+    uint64_t flt_e = (di.ui >> 52) & 0x7ff;
+    uint64_t flt_s = (di.ui >> 63) & 0x1;
     int32_t s, e, m = 0;
 
     s = flt_s;
@@ -1378,34 +1376,34 @@ _mesa_double_to_f32(double val, bool rtz)
     if (flt_e == 0x7ff) {
         if (flt_m != 0) {
             /* 'val' is a NaN, return NaN */
-            fi_type result;
+            union fi result;
             e = 0xff;
             m = 0x1;
-            result.u = (s << 31) + (e << 23) + m;
+            result.ui = (s << 31) + (e << 23) + m;
             return result.f;
         }
 
         /* 'val' is Inf, return Inf */
-        fi_type result;
+        union fi result;
         e = 0xff;
-        result.u = (s << 31) + (e << 23) + m;
+        result.ui = (s << 31) + (e << 23) + m;
         return result.f;
     }
 
     if (!(flt_e | flt_m)) {
         /* 'val' is zero, return zero */
-        fi_type result;
+        union fi result;
         e = 0;
-        result.u = (s << 31) + (e << 23) + m;
+        result.ui = (s << 31) + (e << 23) + m;
         return result.f;
     }
 
     m = _mesa_short_shift_right_jam64(flt_m, 22);
     if ( ! (flt_e | m) ) {
         /* 'val' is denorm, return zero */
-        fi_type result;
+        union fi result;
         e = 0;
-        result.u = (s << 31) + (e << 23) + m;
+        result.ui = (s << 31) + (e << 23) + m;
         return result.f;
     }
 
@@ -1421,10 +1419,10 @@ _mesa_double_to_f32(double val, bool rtz)
 uint16_t
 _mesa_float_to_half_rtz_slow(float val)
 {
-    const fi_type fi = {val};
-    const uint32_t flt_m = fi.u & 0x7fffff;
-    const uint32_t flt_e = (fi.u >> 23) & 0xff;
-    const uint32_t flt_s = (fi.u >> 31) & 0x1;
+    const union fi fi = {val};
+    const uint32_t flt_m = fi.ui & 0x7fffff;
+    const uint32_t flt_e = (fi.ui >> 23) & 0xff;
+    const uint32_t flt_s = (fi.ui >> 31) & 0x1;
     int16_t s, e, m = 0;
 
     s = flt_s;

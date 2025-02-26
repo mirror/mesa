@@ -263,8 +263,8 @@ vbo_copy_vertices(struct gl_context *ctx,
                   unsigned start, unsigned *pcount, bool begin,
                   unsigned vertex_size,
                   bool in_dlist,
-                  fi_type *dst,
-                  const fi_type *src)
+                  union fi *dst,
+                  const union fi *src)
 {
    const unsigned count = *pcount;
    unsigned copy = 0;

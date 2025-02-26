@@ -36,7 +36,6 @@
 #include "util/rounding.h"
 #include "util/compiler.h"
 #include "util/glheader.h"
-#include "mesa_private.h"
 
 
 /**
@@ -151,7 +150,7 @@ extern GLfloat _mesa_ubyte_to_float_color_tab[256];
  */
 #define UNCLAMPED_FLOAT_TO_UBYTE(UB, FLT)				\
         do {								\
-           fi_type __tmp;						\
+           union fi __tmp;						\
            __tmp.f = (FLT);						\
            if (__tmp.i < 0)						\
               UB = (GLubyte) 0;						\
@@ -164,7 +163,7 @@ extern GLfloat _mesa_ubyte_to_float_color_tab[256];
         } while (0)
 #define CLAMPED_FLOAT_TO_UBYTE(UB, FLT)					\
         do {								\
-           fi_type __tmp;						\
+           union fi __tmp;						\
            __tmp.f = (FLT) * (255.0F/256.0F) + 32768.0F;		\
            UB = (GLubyte) __tmp.i;					\
         } while (0)
@@ -175,23 +174,23 @@ extern GLfloat _mesa_ubyte_to_float_color_tab[256];
 	ub = ((GLubyte) _mesa_lroundevenf((f) * 255.0F))
 #endif
 
-static fi_type UINT_AS_UNION(GLuint u)
+static union fi UINT_AS_UNION(GLuint u)
 {
-   fi_type tmp;
-   tmp.u = u;
+   union fi tmp;
+   tmp.ui = u;
    return tmp;
 }
 
-static inline fi_type INT_AS_UNION(GLint i)
+static inline union fi INT_AS_UNION(GLint i)
 {
-   fi_type tmp;
+   union fi tmp;
    tmp.i = i;
    return tmp;
 }
 
-static inline fi_type FLOAT_AS_UNION(GLfloat f)
+static inline union fi FLOAT_AS_UNION(GLfloat f)
 {
-   fi_type tmp;
+   union fi tmp;
    tmp.f = f;
    return tmp;
 }
@@ -218,7 +217,7 @@ static inline double UINT64_AS_DOUBLE(uint64_t u)
 
 /* First sign-extend x, then return uint32_t. */
 #define INT_AS_UINT(x) ((uint32_t)((int32_t)(x)))
-#define FLOAT_AS_UINT(x) (FLOAT_AS_UNION(x).u)
+#define FLOAT_AS_UINT(x) (FLOAT_AS_UNION(x).ui)
 
 /**
  * Convert a floating point value to an unsigned fixed point value.
@@ -635,7 +634,7 @@ do {				\
  * The default values are chosen based on \p type.
  */
 static inline void
-COPY_CLEAN_4V_TYPE_AS_UNION(fi_type dst[4], int sz, const fi_type src[4],
+COPY_CLEAN_4V_TYPE_AS_UNION(union fi dst[4], int sz, const union fi src[4],
                             GLenum type)
 {
    switch (type) {

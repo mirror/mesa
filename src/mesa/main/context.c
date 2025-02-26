@@ -466,7 +466,7 @@ _mesa_init_constants(struct gl_constants *consts, gl_api api)
    consts->MaxSamples = 0;
 
    /* GLSL default if NativeIntegers == FALSE */
-   consts->UniformBooleanTrue = FLOAT_AS_UNION(1.0f).u;
+   consts->UniformBooleanTrue = FLOAT_AS_UNION(1.0f).ui;
 
    /* GL_ARB_sync */
    consts->MaxServerWaitTimeout = 0x7fffffff7fffffffULL;

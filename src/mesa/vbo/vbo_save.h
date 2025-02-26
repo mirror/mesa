@@ -86,7 +86,7 @@ struct vbo_save_vertex_list {
        * Keep this in regular (non-VBO) memory to avoid repeated
        * map/unmap of the VBO when updating GL current data.
        */
-      fi_type *current_data;
+      union fi *current_data;
 
       GLuint vertex_count;         /**< number of vertices in this list */
       GLuint wrap_count;		/* number of copied vertices at start */
@@ -120,7 +120,7 @@ _vbo_save_get_stride(const struct vbo_save_vertex_list *node)
 #define VBO_SAVE_PRIM_MODE_MASK 0x3f
 
 struct vbo_save_vertex_store {
-   fi_type *buffer_in_ram;
+   union fi *buffer_in_ram;
    GLuint buffer_in_ram_size;
    GLuint used;           /**< Number of 4-byte words used in buffer */
 };
@@ -139,7 +139,7 @@ void vbo_save_destroy(struct gl_context *ctx);
  */
 void _vbo_loopback_vertex_list(struct gl_context *ctx,
                                const struct vbo_save_vertex_list* node,
-                               fi_type *buffer);
+                               union fi *buffer);
 
 /* Callbacks:
  */

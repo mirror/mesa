@@ -8,6 +8,7 @@
 
 #include "iunknown.h"
 #include "nine_lock.h"
+#include "util/u_math.h"
 
 /*
  * Note: we use these function rather than the MIN2, MAX2, CLAMP macros to
@@ -136,11 +137,8 @@ static inline void _nine_bind(void **dst, void *obj)
 
 static inline float asfloat(DWORD value)
 {
-    union {
-        float f;
-        DWORD w;
-    } u;
-    u.w = value;
+    union fi u;
+    u.ui = value;
     return u.f;
 }
 

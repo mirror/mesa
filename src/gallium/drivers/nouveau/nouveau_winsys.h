@@ -6,6 +6,7 @@
 
 #include "pipe/p_defines.h"
 #include "util/os_misc.h"
+#include "util/u_math.h"
 
 #include "drm-uapi/drm.h"
 #include "nouveau.h"
@@ -67,9 +68,9 @@ PUSH_DATAb(struct nouveau_pushbuf *push, const void *data, uint32_t size)
 static inline void
 PUSH_DATAf(struct nouveau_pushbuf *push, float f)
 {
-   union { float f; uint32_t i; } u;
+   union fi u;
    u.f = f;
-   PUSH_DATA(push, u.i);
+   PUSH_DATA(push, u.ui);
 }
 
 static inline int

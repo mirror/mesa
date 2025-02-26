@@ -349,13 +349,12 @@ intel_device_info_i915_query_regions(struct intel_device_info *devinfo, int fd, 
             devinfo->mem.sram.mem.klass = mem->region.memory_class;
             devinfo->mem.sram.mem.instance = mem->region.memory_instance;
             /* i915 reports the whole RAM as SRAM size but Xe KMD only reports
-             * half, so adjusting i915 to follow Xe KMD.
+             * half.
              */
-            devinfo->mem.sram.mappable.size = mem->probed_size / 2;
+            devinfo->mem.sram.mappable.size = mem->probed_size;
          } else {
             assert(devinfo->mem.sram.mem.klass == mem->region.memory_class);
             assert(devinfo->mem.sram.mem.instance == mem->region.memory_instance);
-            assert(devinfo->mem.sram.mappable.size == mem->probed_size / 2);
          }
          /* if running without elevated privileges i915 reports
           * unallocated_size == probed_size

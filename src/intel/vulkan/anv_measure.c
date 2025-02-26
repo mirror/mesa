@@ -94,6 +94,7 @@ anv_measure_init(struct anv_cmd_buffer *cmd_buffer)
    ASSERTED VkResult result =
       anv_device_alloc_bo(device, "measure data",
                           config->batch_size * sizeof(uint64_t),
+                          0,
                           ANV_BO_ALLOC_MAPPED |
                           ANV_BO_ALLOC_HOST_CACHED_COHERENT |
                           ANV_BO_ALLOC_INTERNAL,

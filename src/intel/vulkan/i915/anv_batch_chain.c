@@ -95,6 +95,7 @@ anv_execbuf_add_bo(struct anv_device *device,
 {
    struct drm_i915_gem_exec_object2 *obj = NULL;
 
+   bo = anv_bo_get_real(bo);
    if (bo->exec_obj_index < exec->bo_count &&
        exec->bos[bo->exec_obj_index] == bo)
       obj = &exec->objects[bo->exec_obj_index];
@@ -940,7 +941,7 @@ i915_queue_exec_locked(struct anv_queue *queue,
          }
       }
 
-      struct anv_bo *pass_batch_bo = perf_query_pool->bo;
+      struct anv_bo *pass_batch_bo = anv_bo_get_real(perf_query_pool->bo);
 
       struct drm_i915_gem_exec_object2 query_pass_object = {
          .handle = pass_batch_bo->gem_handle,

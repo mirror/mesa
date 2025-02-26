@@ -345,6 +345,7 @@ trtt_make_page_table_bo(struct anv_device *device, struct anv_bo **bo)
 
    result = anv_device_alloc_bo(device, "trtt-page-table",
                                 ANV_TRTT_PAGE_TABLE_BO_SIZE,
+                                0,
                                 ANV_BO_ALLOC_INTERNAL,
                                 0 /* explicit_address */, bo);
    if (result != VK_SUCCESS)

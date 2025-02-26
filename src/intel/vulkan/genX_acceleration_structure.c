@@ -113,7 +113,7 @@ add_bvh_dump(struct anv_cmd_buffer *cmd_buffer,
    struct anv_device *device = cmd_buffer->device;
    struct anv_bo *bo = NULL;
 
-   VkResult result = anv_device_alloc_bo(device, "bvh_dump", dump_size,
+   VkResult result = anv_device_alloc_bo(device, "bvh_dump", dump_size, 0,
                                          ANV_BO_ALLOC_MAPPED |
                                          ANV_BO_ALLOC_HOST_CACHED_COHERENT, 0,
                                          &bo);

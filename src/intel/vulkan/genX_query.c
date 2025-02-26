@@ -250,7 +250,7 @@ VkResult genX(CreateQueryPool)(
       size += (uint64_t)pool->n_passes * pool->khr_perf_preamble_stride;
    }
 
-   result = anv_device_alloc_bo(device, "query-pool", size,
+   result = anv_device_alloc_bo(device, "query-pool", size, 0,
                                 ANV_BO_ALLOC_MAPPED |
                                 ANV_BO_ALLOC_HOST_CACHED_COHERENT |
                                 ANV_BO_ALLOC_CAPTURE,

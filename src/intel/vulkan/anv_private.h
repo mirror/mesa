@@ -61,9 +61,9 @@
 #include "util/macros.h"
 #include "util/hash_table.h"
 #include "util/list.h"
+#include "util/pb_slab.h"
 #include "util/perf/u_trace.h"
 #include "util/set.h"
-#include "util/sparse_array.h"
 #include "util/u_atomic.h"
 #if DETECT_OS_ANDROID
 #include "util/u_gralloc/u_gralloc.h"
@@ -453,12 +453,19 @@ enum anv_bo_alloc_flags {
 
    /** Compressed buffer, only supported in Xe2+ */
    ANV_BO_ALLOC_COMPRESSED =              (1 << 21),
+
+   /** This bo will be used as batch buffer */
+   ANV_BO_ALLOC_BATCH_BUFFER =            (1 << 22),
 };
 
 /** Specifies that the BO should be cached and coherent. */
 #define ANV_BO_ALLOC_HOST_CACHED_COHERENT (ANV_BO_ALLOC_HOST_COHERENT | \
                                            ANV_BO_ALLOC_HOST_CACHED)
 
+#define ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL_FLAGS (ANV_BO_ALLOC_CAPTURE | \
+                                                 ANV_BO_ALLOC_MAPPED | \
+                                                 ANV_BO_ALLOC_HOST_CACHED_COHERENT | \
+                                                 ANV_BO_ALLOC_DYNAMIC_VISIBLE_POOL)
 
 struct anv_bo {
    const char *name;
@@ -479,9 +486,6 @@ struct anv_bo {
     * in the validation list so that we can ensure uniqueness.
     */
    uint32_t exec_obj_index;
-
-   /* Index for use with util_sparse_array_free_list */
-   uint32_t free_index;
 
    /* Last known offset.  This value is provided by the kernel when we
     * execbuf and is used as the presumed offset for the next bunch of
@@ -512,12 +516,23 @@ struct anv_bo {
 
    enum anv_bo_alloc_flags alloc_flags;
 
+   /** If slab_parent is set, this bo is a slab */
+   struct anv_bo *slab_parent;
+   struct pb_slab_entry slab_entry;
+
    /** True if this BO wraps a host pointer */
    bool from_host_ptr:1;
 
    /** True if this BO is mapped in the GTT (only used for RMV) */
    bool gtt_mapped:1;
 };
+
+/* If bo is a slab, return the real/slab_parent bo */
+static inline struct anv_bo *
+anv_bo_get_real(struct anv_bo *bo)
+{
+   return bo->slab_parent ? bo->slab_parent : bo;
+}
 
 static inline bool
 anv_bo_is_external(const struct anv_bo *bo)
@@ -900,6 +915,12 @@ anv_state_table_get(struct anv_state_table *table, uint32_t idx)
 {
    return &table->map[idx].state;
 }
+
+struct anv_bo_pool_bucket {
+   struct anv_bo *bos[8];
+   unsigned len;
+};
+
 /**
  * Implements a pool of re-usable BOs.  The interface is identical to that
  * of block_pool except that each block is its own BO.
@@ -911,7 +932,8 @@ struct anv_bo_pool {
 
    enum anv_bo_alloc_flags bo_alloc_flags;
 
-   struct util_sparse_array_free_list free_list[16];
+   simple_mtx_t mutex;
+   struct anv_bo_pool_bucket free_buckets[16];
 };
 
 void anv_bo_pool_init(struct anv_bo_pool *pool, struct anv_device *device,
@@ -2159,6 +2181,8 @@ struct anv_device {
    } accel_struct_build;
 
    struct vk_meta_device meta_device;
+
+   struct pb_slabs bo_slabs[3];
 };
 
 static inline uint32_t
@@ -2266,7 +2290,8 @@ anv_sanitize_map_params(struct anv_device *device,
 
 
 VkResult anv_device_alloc_bo(struct anv_device *device,
-                             const char *name, uint64_t size,
+                             const char *name, const uint64_t size,
+                             uint32_t alignment,
                              enum anv_bo_alloc_flags alloc_flags,
                              uint64_t explicit_address,
                              struct anv_bo **bo);
@@ -2382,6 +2407,14 @@ uint64_t anv_vma_alloc(struct anv_device *device,
 void anv_vma_free(struct anv_device *device,
                   struct util_vma_heap *vma_heap,
                   uint64_t address, uint64_t size);
+
+VkResult anv_bo_vma_alloc_or_close(struct anv_device *device,
+                                   struct anv_bo *bo,
+                                   enum anv_bo_alloc_flags alloc_flags,
+                                   uint64_t explicit_address);
+void anv_bo_vma_free(struct anv_device *device, struct anv_bo *bo);
+
+bool anv_bo_is_small_heap(enum anv_bo_alloc_flags alloc_flags);
 
 struct anv_reloc_list {
    bool                                         uses_relocs;

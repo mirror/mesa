@@ -319,6 +319,10 @@ variable:
     Enable memory allocation debugging
   ``quiet``
     Suppress probably-harmless warnings
+  ``noioopt``
+    Don't optimize IO
+  ``nopc``
+    No precompilation
 
 Vulkan Validation Layers
 ^^^^^^^^^^^^^^^^^^^^^^^^

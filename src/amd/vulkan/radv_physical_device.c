@@ -720,7 +720,7 @@ radv_physical_device_get_supported_extensions(const struct radv_physical_device 
       .EXT_provoking_vertex = true,
       .EXT_queue_family_foreign = true,
       .EXT_robustness2 = true,
-      .EXT_sample_locations = pdev->info.gfx_level < GFX10,
+      .EXT_sample_locations = true,
       .EXT_sampler_filter_minmax = radv_filter_minmax_enabled(pdev),
       .EXT_scalar_block_layout = pdev->info.gfx_level >= GFX7,
       .EXT_separate_stencil_usage = true,
@@ -1188,7 +1188,7 @@ radv_physical_device_get_features(const struct radv_physical_device *pdev, struc
       .extendedDynamicState3ColorWriteMask = !pdev->use_llvm,
       .extendedDynamicState3RasterizationSamples = true,
       .extendedDynamicState3ColorBlendEquation = !pdev->use_llvm,
-      .extendedDynamicState3SampleLocationsEnable = pdev->info.gfx_level < GFX10,
+      .extendedDynamicState3SampleLocationsEnable = true,
       .extendedDynamicState3LineRasterizationMode = true,
       .extendedDynamicState3ExtraPrimitiveOverestimationSize = false,
       .extendedDynamicState3AlphaToOneEnable = !pdev->use_llvm,
@@ -1757,7 +1757,8 @@ radv_get_physical_device_properties(struct radv_physical_device *pdev)
       .transformFeedbackDraw = true,
 
       /* VK_EXT_sample_locations */
-      .sampleLocationSampleCounts = VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT,
+      .sampleLocationSampleCounts = (pdev->info.gfx_level >= GFX10 ? VK_SAMPLE_COUNT_1_BIT : 0) |
+                                    VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT,
       .maxSampleLocationGridSize = (VkExtent2D){2, 2},
       .sampleLocationCoordinateRange = {0.0f, 0.9375f},
       .sampleLocationSubPixelBits = 4,
@@ -1787,7 +1788,7 @@ radv_get_physical_device_properties(struct radv_physical_device *pdev)
       .fragmentShadingRateWithShaderSampleMask = false,
       .fragmentShadingRateWithConservativeRasterization = true,
       .fragmentShadingRateWithFragmentShaderInterlock = pdev->info.gfx_level >= GFX11 && radv_has_pops(pdev),
-      .fragmentShadingRateWithCustomSampleLocations = false,
+      .fragmentShadingRateWithCustomSampleLocations = true,
       .fragmentShadingRateStrictMultiplyCombiner = true,
 
       /* VK_EXT_provoking_vertex */
@@ -2710,7 +2711,11 @@ VKAPI_ATTR void VKAPI_CALL
 radv_GetPhysicalDeviceMultisamplePropertiesEXT(VkPhysicalDevice physicalDevice, VkSampleCountFlagBits samples,
                                                VkMultisamplePropertiesEXT *pMultisampleProperties)
 {
+   VK_FROM_HANDLE(radv_physical_device, pdev, physicalDevice);
+
    VkSampleCountFlagBits supported_samples = VK_SAMPLE_COUNT_2_BIT | VK_SAMPLE_COUNT_4_BIT | VK_SAMPLE_COUNT_8_BIT;
+   if (pdev->info.gfx_level >= GFX10)
+      supported_samples |= VK_SAMPLE_COUNT_1_BIT;
 
    if (samples & supported_samples) {
       pMultisampleProperties->maxSampleLocationGridSize = (VkExtent2D){2, 2};

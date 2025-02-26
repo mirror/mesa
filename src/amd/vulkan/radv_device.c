@@ -1539,7 +1539,7 @@ radv_initialise_color_surface(struct radv_device *device, struct radv_color_buff
       .fmask_enabled = radv_image_has_fmask(iview->image),
       .cmask_enabled = radv_image_has_cmask(iview->image),
       .fast_clear_enabled = !(instance->debug_flags & RADV_DEBUG_NO_FAST_CLEARS),
-      .tc_compat_cmask_enabled = radv_image_is_tc_compat_cmask(iview->image),
+      .tc_compat_cmask_enabled = radv_image_is_tc_compat_cmask(iview->image) && !iview->disable_tc_compat_cmask_mrt,
       .dcc_enabled = radv_dcc_enabled(iview->image, iview->vk.base_mip_level) &&
                      (pdev->info.gfx_level >= GFX11 || !iview->disable_dcc_mrt),
       .gfx10 =

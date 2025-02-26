@@ -133,8 +133,7 @@ libglx = static_library(
 libgl = shared_library(
   gl_lib_name,
   [],
-  link_with : [libglapi_static],
-  link_whole : libglx,
+  link_whole : [libglapi_static, libglx],
   link_args : [ld_args_bsymbolic, ld_args_gc_sections, extra_ld_args_libgl],
   dependencies : [
     dep_libdrm, dep_dl, dep_m, dep_thread, dep_x11, dep_xcb_glx, dep_xcb,

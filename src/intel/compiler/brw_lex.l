@@ -86,6 +86,7 @@ goto            { yylval.integer = BRW_OPCODE_GOTO; return GOTO; }
 halt            { yylval.integer = BRW_OPCODE_HALT; return HALT; }
 if              { yylval.integer = BRW_OPCODE_IF; return IF; }
 illegal         { yylval.integer = BRW_OPCODE_ILLEGAL; return ILLEGAL; }
+join            { yylval.integer = BRW_OPCODE_JOIN; return JOIN; }
 jmpi            { yylval.integer = BRW_OPCODE_JMPI; return JMPI; }
 line            { yylval.integer = BRW_OPCODE_LINE; return LINE; }
 lrp             { yylval.integer = BRW_OPCODE_LRP; return LRP; }
@@ -367,13 +368,8 @@ sr[0-9]+        { yylval.integer = atoi(yytext + 2); return STATEREG; }
 ".u"    { yylval.integer = BRW_CONDITIONAL_U; return UNORDERED; }
 ".z"    { yylval.integer = BRW_CONDITIONAL_Z; return ZERO; }
 
- /* Eat up JIP and UIP token, their values will be parsed
-  * in numeric section
-  */
-"JIP: "         { BEGIN(LABEL); }
-"UIP: "         { BEGIN(LABEL); }
-"Jump: "        { }
-"Pop: "         { }
+"JIP: "         { BEGIN(LABEL); return JIP; }
+"UIP: "         { BEGIN(LABEL); return UIP; }
 [ \t]+          { }
 
 "MsgDesc: "             { BEGIN(MSGDESC); return MSGDESC_BEGIN; }

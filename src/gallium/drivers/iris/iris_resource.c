@@ -381,8 +381,9 @@ iris_memobj_create_from_handle(struct pipe_screen *pscreen,
 
    assert(whandle->type == WINSYS_HANDLE_TYPE_FD);
    assert(whandle->modifier == DRM_FORMAT_MOD_INVALID);
+   /* There is no information if memobj is protected or not */
    struct iris_bo *bo = iris_bo_import_dmabuf(screen->bufmgr, whandle->handle,
-                                              DRM_FORMAT_MOD_INVALID);
+                                              DRM_FORMAT_MOD_INVALID, 0);
    if (!bo) {
       free(memobj);
       return NULL;
@@ -461,7 +462,7 @@ iris_resource_disable_aux(struct iris_resource *res)
    res->aux.state = NULL;
 }
 
-static unsigned
+static enum bo_alloc_flags
 iris_resource_alloc_flags(const struct iris_screen *screen,
                           const struct pipe_resource *templ,
                           struct iris_resource *res)
@@ -1026,7 +1027,7 @@ static bool
 iris_resource_image_is_pat_compressible(const struct iris_screen *screen,
                                         const struct pipe_resource *templ,
                                         struct iris_resource *res,
-                                        unsigned flags)
+                                        enum bo_alloc_flags flags)
 {
    assert(templ->target != PIPE_BUFFER);
 
@@ -1125,7 +1126,7 @@ iris_resource_create_for_image(struct pipe_screen *pscreen,
    const char *name = "miptree";
    enum iris_memory_zone memzone = IRIS_MEMZONE_OTHER;
 
-   unsigned flags = iris_resource_alloc_flags(screen, templ, res);
+   enum bo_alloc_flags flags = iris_resource_alloc_flags(screen, templ, res);
 
    if (iris_resource_image_is_pat_compressible(screen, templ, res, flags))
       flags |= BO_ALLOC_COMPRESSED;
@@ -1324,6 +1325,7 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
    struct iris_screen *screen = (struct iris_screen *)pscreen;
    const struct intel_device_info *devinfo = screen->devinfo;
    struct iris_bufmgr *bufmgr = screen->bufmgr;
+   unsigned flags = 0;
 
    /* The gallium dri layer creates a pipe resource for each plane specified
     * by the format and modifier. Once all planes are present, we will merge
@@ -1334,14 +1336,17 @@ iris_resource_from_handle(struct pipe_screen *pscreen,
    if (!res)
       return NULL;
 
+   if (templ->bind & PIPE_BIND_PROTECTED)
+      flags |= BO_ALLOC_PROTECTED;
+
    switch (whandle->type) {
    case WINSYS_HANDLE_TYPE_FD:
       res->bo = iris_bo_import_dmabuf(bufmgr, whandle->handle,
-                                      whandle->modifier);
+                                      whandle->modifier, flags);
       break;
    case WINSYS_HANDLE_TYPE_SHARED:
       res->bo = iris_bo_gem_create_from_name(bufmgr, "winsys image",
-                                             whandle->handle);
+                                             whandle->handle, flags);
       break;
    default:
       unreachable("invalid winsys handle type");
@@ -1994,7 +1999,7 @@ iris_invalidate_buffer(struct iris_context *ice, struct iris_resource *res)
       return false;
 
    struct iris_bo *old_bo = res->bo;
-   unsigned flags = old_bo->real.protected ? BO_ALLOC_PROTECTED : BO_ALLOC_PLAIN;
+   enum bo_alloc_flags flags = old_bo->real.protected ? BO_ALLOC_PROTECTED : BO_ALLOC_PLAIN;
    struct iris_bo *new_bo =
       iris_bo_alloc(screen->bufmgr, res->bo->name, res->base.b.width0,
                     iris_buffer_alignment(res->base.b.width0),

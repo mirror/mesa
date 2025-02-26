@@ -2340,7 +2340,6 @@ prefer_cpu_access(const struct iris_resource *res,
    if (mmap_mode == IRIS_MMAP_NONE)
       return false;
 
-   const bool write = usage & PIPE_MAP_WRITE;
    const bool read = usage & PIPE_MAP_READ;
    const bool preserve =
       res->base.b.target == PIPE_BUFFER && !(usage & PIPE_MAP_DISCARD_RANGE);
@@ -2363,7 +2362,7 @@ prefer_cpu_access(const struct iris_resource *res,
       return false;
 
    /* Use the GPU for writes if it would compress the data. */
-   if (write && isl_aux_usage_has_compression(res->aux.usage))
+   if (map_would_stall  && isl_aux_usage_has_compression(res->aux.usage))
       return false;
 
    /* Writes & Cached CPU reads are fine as long as the primary is valid. */

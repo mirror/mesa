@@ -271,7 +271,8 @@ lower_ray_query_intrinsic(nir_builder *b,
          brw_nir_rt_mem_ray_addr(b, stack_addr, BRW_RT_BVH_LEVEL_WORLD);
 
       brw_nir_rt_query_mark_init(b, stack_addr);
-      brw_nir_rt_store_mem_ray_query_at_addr(b, ray_addr, &ray_defs);
+      brw_nir_rt_store_mem_ray_query_at_addr(b, ray_addr, &ray_defs,
+                                             state->devinfo);
 
       update_trace_ctrl_level(b, ctrl_level_deref,
                               NULL, NULL,
@@ -282,7 +283,7 @@ lower_ray_query_intrinsic(nir_builder *b,
 
    case nir_intrinsic_rq_proceed: {
       nir_def *not_done =
-         nir_inot(b, brw_nir_rt_query_done(b, stack_addr));
+         nir_inot(b, brw_nir_rt_query_done(b, stack_addr, state->devinfo));
       nir_def *not_done_then, *not_done_else;
 
       nir_push_if(b, not_done);
@@ -307,7 +308,8 @@ lower_ray_query_intrinsic(nir_builder *b,
          nir_trace_ray_intel(b, state->rq_globals, level, ctrl, .synchronous = true);
 
          struct brw_nir_rt_mem_hit_defs hit_in = {};
-         brw_nir_rt_load_mem_hit_from_addr(b, &hit_in, hw_stack_addr, false);
+         brw_nir_rt_load_mem_hit_from_addr(b, &hit_in, hw_stack_addr, false,
+                                           state->devinfo);
 
          if (shadow_stack_addr)
             spill_query(b, hw_stack_addr, shadow_stack_addr);
@@ -362,10 +364,13 @@ lower_ray_query_intrinsic(nir_builder *b,
       struct brw_nir_rt_mem_ray_defs object_ray_in = {};
       struct brw_nir_rt_mem_hit_defs hit_in = {};
       brw_nir_rt_load_mem_ray_from_addr(b, &world_ray_in, stack_addr,
-                                        BRW_RT_BVH_LEVEL_WORLD);
+                                        BRW_RT_BVH_LEVEL_WORLD,
+                                        state->devinfo);
       brw_nir_rt_load_mem_ray_from_addr(b, &object_ray_in, stack_addr,
-                                        BRW_RT_BVH_LEVEL_OBJECT);
-      brw_nir_rt_load_mem_hit_from_addr(b, &hit_in, stack_addr, committed);
+                                        BRW_RT_BVH_LEVEL_OBJECT,
+                                        state->devinfo);
+      brw_nir_rt_load_mem_hit_from_addr(b, &hit_in, stack_addr, committed,
+                                        state->devinfo);
 
       nir_def *sysval = NULL;
       switch (nir_intrinsic_ray_query_value(intrin)) {
@@ -398,21 +403,24 @@ lower_ray_query_intrinsic(nir_builder *b,
 
       case nir_ray_query_value_intersection_instance_custom_index: {
          struct brw_nir_rt_bvh_instance_leaf_defs leaf;
-         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr);
+         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr,
+                                           state->devinfo);
          sysval = leaf.instance_id;
          break;
       }
 
       case nir_ray_query_value_intersection_instance_id: {
          struct brw_nir_rt_bvh_instance_leaf_defs leaf;
-         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr);
+         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr,
+                                           state->devinfo);
          sysval = leaf.instance_index;
          break;
       }
 
       case nir_ray_query_value_intersection_instance_sbt_index: {
          struct brw_nir_rt_bvh_instance_leaf_defs leaf;
-         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr);
+         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr,
+                                           state->devinfo);
          sysval = leaf.contribution_to_hit_group_index;
          break;
       }
@@ -447,14 +455,16 @@ lower_ray_query_intrinsic(nir_builder *b,
 
       case nir_ray_query_value_intersection_object_to_world: {
          struct brw_nir_rt_bvh_instance_leaf_defs leaf;
-         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr);
+         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr,
+                                           state->devinfo);
          sysval = leaf.object_to_world[nir_intrinsic_column(intrin)];
          break;
       }
 
       case nir_ray_query_value_intersection_world_to_object: {
          struct brw_nir_rt_bvh_instance_leaf_defs leaf;
-         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr);
+         brw_nir_rt_load_bvh_instance_leaf(b, &leaf, hit_in.inst_leaf_ptr,
+                                           state->devinfo);
          sysval = leaf.world_to_object[nir_intrinsic_column(intrin)];
          break;
       }
@@ -508,7 +518,8 @@ lower_ray_query_impl(nir_function_impl *impl, struct lowering_state *state)
 
    state->rq_globals = nir_load_ray_query_global_intel(b);
 
-   brw_nir_rt_load_globals_addr(b, &state->globals, state->rq_globals);
+   brw_nir_rt_load_globals_addr(b, &state->globals, state->rq_globals,
+                                state->devinfo);
 
    nir_foreach_block_safe(block, impl) {
       nir_foreach_instr_safe(instr, block) {

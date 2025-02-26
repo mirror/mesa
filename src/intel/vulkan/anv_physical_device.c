@@ -1477,8 +1477,15 @@ get_properties(const struct anv_physical_device *pdevice,
       /* TODO */
       props->shaderGroupHandleSize = 32;
       props->maxRayRecursionDepth = 31;
-      /* MemRay::hitGroupSRStride is 16 bits */
-      props->maxShaderGroupStride = UINT16_MAX;
+      if (pdevice->info.ver >= 30) {
+         /* RTDispatchGlobals::missShaderStride is 13-bit wide with 8-bytes
+          * alignment.
+          */
+         props->maxShaderGroupStride = ((1U << 13) - 1) * 8;
+      } else {
+         /* MemRay::hitGroupSRStride is 16 bits */
+         props->maxShaderGroupStride = UINT16_MAX;
+      }
       /* MemRay::hitGroupSRBasePtr requires 16B alignment */
       props->shaderGroupBaseAlignment = 16;
       props->shaderGroupHandleAlignment = 16;

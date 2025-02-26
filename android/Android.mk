@@ -172,6 +172,8 @@ $(eval $(call mesa3d-lib,libgallium_dri,,MESA3D_GALLIUM_BIN))
 
 # Module 'libEGL_mesa', produces '/vendor/lib{64}/egl/libEGL_mesa.so'
 $(eval $(call mesa3d-lib,libEGL_mesa,egl,MESA3D_LIBEGL_BIN))
+# Module 'libGLES_mesa', produces '/vendor/lib{64}/egl/libGLES_mesa.so'
+$(eval $(call mesa3d-lib,libGLES_mesa,egl,MESA3D_LIBGLES_BIN))
 # Module 'libGLESv1_CM_mesa', produces '/vendor/lib{64}/egl/libGLESv1_CM_mesa.so'
 $(eval $(call mesa3d-lib,libGLESv1_CM_mesa,egl,MESA3D_LIBGLESV1_BIN))
 # Module 'libGLESv2_mesa', produces '/vendor/lib{64}/egl/libGLESv2_mesa.so'

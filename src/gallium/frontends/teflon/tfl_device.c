@@ -552,6 +552,7 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
                         context->tensors[node->inputs->data[1]].data.data == NULL;
             break;
          }
+#if 0
          case kTfLiteBuiltinConcatenation: {
             TfLiteConcatenationParams *params = node->builtin_data;
             supported = true;
@@ -597,6 +598,7 @@ PrepareDelegate(TfLiteContext *context, TfLiteDelegate *delegate)
          case kTfLiteBuiltinFullyConnected:
             supported = true;
             break;
+#endif
       }
 
       if (supported)
@@ -652,6 +654,49 @@ TfLiteDelegate *tflite_plugin_create_delegate(char **options_keys,
 
 void tflite_plugin_destroy_delegate(TfLiteDelegate *delegate);
 
+static struct pipe_loader_device *
+find_accel_device()
+{
+   struct pipe_loader_device *device = NULL;
+   struct pipe_loader_device **devs;
+
+   int n = pipe_loader_probe_accel(NULL, 0);
+   devs = (struct pipe_loader_device **)malloc(sizeof(*devs) * n);
+   pipe_loader_probe_accel(devs, n);
+
+   for (int i = 0; i < n; i++) {
+      if (strstr("rocket", devs[i]->driver_name))
+         device = devs[i];
+      else
+         pipe_loader_release(&devs[i], 1);
+   }
+   free(devs);
+
+   return device;
+}
+
+static struct pipe_loader_device *
+find_drm_device()
+{
+   struct pipe_loader_device *device = NULL;
+   struct pipe_loader_device **devs;
+
+   int n = pipe_loader_probe(NULL, 0, false);
+   devs = (struct pipe_loader_device **)malloc(sizeof(*devs) * n);
+   pipe_loader_probe(devs, n, false);
+
+   for (int i = 0; i < n; i++) {
+      if (strstr("etnaviv", devs[i]->driver_name) ||
+          strstr("rknpu", devs[i]->driver_name))
+         device = devs[i];
+      else
+         pipe_loader_release(&devs[i], 1);
+   }
+   free(devs);
+
+   return device;
+}
+
 __attribute__((visibility("default"))) TfLiteDelegate *tflite_plugin_create_delegate(char **options_keys,
                                                                                        char **options_values,
                                                                                        size_t num_options,
@@ -659,24 +704,15 @@ __attribute__((visibility("default"))) TfLiteDelegate *tflite_plugin_create_dele
 {
    struct teflon_delegate *delegate = (struct teflon_delegate *)calloc(1, sizeof(*delegate));
    struct pipe_screen *screen;
-   struct pipe_loader_device **devs;
 
    delegate->base.flags = kTfLiteDelegateFlagsAllowDynamicTensors | kTfLiteDelegateFlagsRequirePropagatedShapes;
    delegate->base.Prepare = &PrepareDelegate;
    delegate->base.CopyFromBufferHandle = &CopyFromBufferHandle;
    delegate->base.FreeBufferHandle = &FreeBufferHandle;
 
-   int n = pipe_loader_probe(NULL, 0, false);
-   devs = (struct pipe_loader_device **)malloc(sizeof(*devs) * n);
-   pipe_loader_probe(devs, n, false);
-
-   for (int i = 0; i < n; i++) {
-      if (strstr("etnaviv", devs[i]->driver_name))
-         delegate->dev = devs[i];
-      else
-         pipe_loader_release(&devs[i], 1);
-   }
-   free(devs);
+   delegate->dev = find_accel_device();
+   if (delegate->dev == NULL)
+      delegate->dev = find_drm_device();
 
    if (delegate->dev == NULL) {
       fprintf(stderr, "Couldn't open kernel device\n");

@@ -2734,9 +2734,7 @@ emit_intrinsic(struct ir3_context *ctx, nir_intrinsic_instr *intr)
       if (nir_src_is_const(intr->src[0])) {
          idx += nir_src_as_uint(intr->src[0]);
          for (int i = 0; i < dest_components; i++) {
-            dst[i] = create_uniform_typed(
-               b, idx + i,
-               intr->def.bit_size == 16 ? TYPE_F16 : TYPE_F32);
+            dst[i] = create_uniform(b, idx + i);
          }
          create_rpt = true;
       } else {

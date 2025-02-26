@@ -67,7 +67,12 @@ extern "C" {
  * Gallium interface limits us to 32k at the moment */
 #define PAN_MAX_MIP_LEVELS 16
 
-#define PAN_MAX_TEXEL_BUFFER_ELEMENTS 65536
+/* The largest size you can put in a MALI_ATTRIBUTE_BUFFER is 1 << 32, but be
+ * conservative and use 1 << 27 which is big enough for e.g. 16x 4K, is the
+ * value in the "initial implementation" of ARB_texture_buffer_object, and is
+ * what several other drivers do.
+ */
+#define PAN_MAX_TEXEL_BUFFER_ELEMENTS 1 << 27
 
 /* How many power-of-two levels in the BO cache do we want? 2^12
  * minimum chosen as it is the page size that all allocations are

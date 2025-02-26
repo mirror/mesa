@@ -9,6 +9,8 @@ libpanfrost_util_files = files(
   'pan_ir.c',
   'pan_ir.h',
   'pan_liveness.c',
+  'pan_lower_buf_image_coords.c',
+  'pan_lower_buf_tex_coords.c',
   'pan_lower_frag_coord_zw.c',
   'pan_lower_framebuffer.c',
   'pan_lower_helper_invocation.c',

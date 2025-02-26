@@ -226,9 +226,12 @@ get_image_section_info(const struct pan_image_view *iview,
    uint64_t base = plane->data.base + plane->data.offset;
    struct pan_image_section_info info = {0};
 
+   bool buf_to_2d = false;
+
    if (iview->buf.size) {
       assert(iview->dim == MALI_TEXTURE_DIMENSION_1D);
       base += iview->buf.offset;
+      buf_to_2d = true;
    }
 
    /* v4 does not support compression */
@@ -238,13 +241,18 @@ get_image_section_info(const struct pan_image_view *iview,
    /* panfrost_compression_tag() wants the dimension of the resource, not the
     * one of the image view (those might differ).
     */
-   unsigned tag = panfrost_compression_tag(desc, plane->layout.dim,
-                                           plane->layout.modifier);
+   unsigned tag = panfrost_compression_tag(
+      desc, buf_to_2d ? MALI_TEXTURE_DIMENSION_2D : plane->layout.dim,
+      plane->layout.modifier);
 
    info.pointer = panfrost_get_surface_pointer(
       &plane->layout, iview->dim, base | tag, level, index, sample);
-   panfrost_get_surface_strides(&plane->layout, level, &info.row_stride,
-                                &info.surface_stride);
+
+   if (buf_to_2d)
+      info.row_stride = (1 << 16) * util_format_get_blocksize(iview->format);
+   else
+      panfrost_get_surface_strides(&plane->layout, level, &info.row_stride,
+                                   &info.surface_stride);
 
    return info;
 }
@@ -732,6 +740,7 @@ GENX(panfrost_new_texture)(const struct pan_image_view *iview,
 
    unsigned width, height, depth;
 
+   /* Buffers are treated as 2D so that we can support larger than 16-bit dimensions */
    if (iview->buf.size) {
       assert(iview->dim == MALI_TEXTURE_DIMENSION_1D);
       assert(!iview->first_level && !iview->last_level);
@@ -739,8 +748,8 @@ GENX(panfrost_new_texture)(const struct pan_image_view *iview,
       assert(layout->nr_samples == 1);
       assert(layout->height == 1 && layout->depth == 1);
       assert(iview->buf.offset + iview->buf.size <= layout->width);
-      width = iview->buf.size;
-      height = 1;
+      width = MIN2(iview->buf.size, 1 << 16);
+      height = DIV_ROUND_UP(iview->buf.size, 1 << 16);
       depth = 1;
    } else {
       width = u_minify(layout->width, iview->first_level);
@@ -762,7 +771,7 @@ GENX(panfrost_new_texture)(const struct pan_image_view *iview,
    }
 
    pan_pack(out, TEXTURE, cfg) {
-      cfg.dimension = iview->dim;
+      cfg.dimension = iview->buf.size ? MALI_TEXTURE_DIMENSION_2D : iview->dim;
       cfg.format = mali_format;
       cfg.width = width;
       cfg.height = height;

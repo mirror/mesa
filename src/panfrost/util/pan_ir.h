@@ -425,6 +425,9 @@ uint32_t pan_nir_collect_noperspective_varyings_fs(nir_shader *s);
 void pan_nir_collect_varyings(nir_shader *s, struct pan_shader_info *info,
                               enum pan_mediump_vary mediump);
 
+bool pan_lower_buf_image_coords(nir_shader *s);
+bool pan_lower_buf_tex_coords(nir_shader *s);
+
 /*
  * Helper returning the subgroup size. Generally, this is equal to the number of
  * threads in a warp. For Midgard (including warping models), this returns 1, as

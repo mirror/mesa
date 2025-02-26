@@ -474,7 +474,10 @@ midgard_preprocess_nir(nir_shader *nir, unsigned gpu_id)
    NIR_PASS(_, nir, pan_nir_lower_image_ms);
 
    /* Midgard image ops coordinates are 16-bit instead of 32-bit */
+   NIR_PASS(_, nir, pan_lower_buf_image_coords);
    NIR_PASS(_, nir, midgard_nir_lower_image_bitsize);
+
+   NIR_PASS(_, nir, pan_lower_buf_tex_coords);
 
    if (nir->info.stage == MESA_SHADER_FRAGMENT)
       NIR_PASS(_, nir, nir_lower_helper_writes, true);

@@ -105,9 +105,9 @@ u_bit_scan(unsigned *mask)
 }
 
 #define u_foreach_bit(b, dword)                          \
-   for (uint32_t __dword = (dword), b;                     \
-        ((b) = ffs(__dword) - 1, __dword);      \
-        __dword &= ~(1 << (b)))
+   for (uint32_t __dword_##b = (dword), b;                     \
+        ((b) = ffs(__dword_##b) - 1, __dword_##b);      \
+        __dword_##b &= ~(1 << (b)))
 
 static inline int
 u_bit_scan64(uint64_t *mask)
@@ -118,9 +118,9 @@ u_bit_scan64(uint64_t *mask)
 }
 
 #define u_foreach_bit64(b, dword)                          \
-   for (uint64_t __dword = (dword), b;                     \
-        ((b) = ffsll(__dword) - 1, __dword);      \
-        __dword &= ~(1ull << (b)))
+   for (uint64_t __dword_##b = (dword), b;                     \
+        ((b) = ffsll(__dword_##b) - 1, __dword_##b);      \
+        __dword_##b &= ~(1ull << (b)))
 
 /* Determine if an uint32_t value is a power of two.
  *

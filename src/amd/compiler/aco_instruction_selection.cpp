@@ -967,13 +967,25 @@ emit_bcsel(isel_context* ctx, nir_alu_instr* instr, Temp dst)
    }
 
    if (!nir_src_is_divergent(&instr->src[0].src)) { /* uniform condition and values in sgpr */
-      if (dst.regClass() == s1 || dst.regClass() == s2) {
+      cond = bool_to_scalar_condition(ctx, cond);
+
+      bool els_zero = true;
+      for (unsigned i = 0; i < instr->def.num_components; i++) {
+         nir_scalar els_scalar = nir_scalar_chase_alu_src(nir_get_scalar(&instr->def, i), 2);
+         if (!nir_scalar_is_const(els_scalar) || nir_scalar_as_uint(els_scalar) != 0)
+            els_zero = false;
+      }
+
+      if (dst.regClass() == s1 && els_zero) {
+         /* Use s_mul_i32 because it doesn't require scc. */
+         bld.sop2(aco_opcode::s_mul_i32, Definition(dst), then, cond);
+      } else if (dst.regClass() == s1 || dst.regClass() == s2) {
          assert((then.regClass() == s1 || then.regClass() == s2) &&
                 els.regClass() == then.regClass());
          assert(dst.size() == then.size());
          aco_opcode op =
             dst.regClass() == s1 ? aco_opcode::s_cselect_b32 : aco_opcode::s_cselect_b64;
-         bld.sop2(op, Definition(dst), then, els, bld.scc(bool_to_scalar_condition(ctx, cond)));
+         bld.sop2(op, Definition(dst), then, els, bld.scc(cond));
       } else {
          isel_err(&instr->instr, "Unimplemented uniform bcsel bit size");
       }

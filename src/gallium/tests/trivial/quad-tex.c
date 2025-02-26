@@ -60,6 +60,8 @@
 #include "util/u_simple_shaders.h"
 /* to get a hardware pipe driver */
 #include "pipe-loader/pipe_loader.h"
+#include "target-helpers/drm_helper.h"
+#include "target-helpers/sw_helper.h"
 
 struct program
 {

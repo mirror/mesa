@@ -385,9 +385,7 @@ nvk_cmd_begin_end_query(struct nvk_cmd_buffer *cmd,
    struct nv_push *p;
    switch (pool->vk.query_type) {
    case VK_QUERY_TYPE_OCCLUSION:
-      p = nvk_cmd_buffer_push(cmd, 7 + end_size);
-
-      P_IMMD(p, NV9097, SET_ZPASS_PIXEL_COUNT, !end);
+      p = nvk_cmd_buffer_push(cmd, 5 + end_size);
 
       P_MTHD(p, NV9097, SET_REPORT_SEMAPHORE_A);
       P_NV9097_SET_REPORT_SEMAPHORE_A(p, report_addr >> 32);

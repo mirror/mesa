@@ -353,6 +353,9 @@ nvk_push_draw_state_init(struct nvk_queue *queue, struct nv_push *p)
       .output7 = OUTPUT7_FALSE,
    });
 
+   /* The blob driver just always leaves this on. */
+   P_IMMD(p, NV9097, SET_ZPASS_PIXEL_COUNT, ENABLE_TRUE);
+
    P_IMMD(p, NV9097, SET_POINT_SIZE, fui(1.0));
    P_IMMD(p, NV9097, SET_ATTRIBUTE_POINT_SIZE, { .enable = ENABLE_TRUE });
 

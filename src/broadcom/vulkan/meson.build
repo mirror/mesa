@@ -51,7 +51,7 @@ files_per_version = files(
 
 v3d_versions = ['42', '71']
 
-v3dv_flags = [v3d_simulator_arg]
+v3dv_flags = [v3d_simulator_arg, v3d_autoclif_arg]
 
 v3dv_deps = [
   dep_dl,

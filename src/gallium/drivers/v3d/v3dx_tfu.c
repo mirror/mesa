@@ -25,6 +25,29 @@
 #include "broadcom/common/v3d_tfu.h"
 #include "util/perf/cpu_trace.h"
 
+#if USE_V3D_AUTOCLIF
+#include "broadcom/clif/autoclif_dump.h"
+
+static void
+v3d_bos_array_read(void *dst,
+                   uint64_t src_addr,
+                   size_t size,
+                   void *p)
+{
+        struct v3d_bo **bos = (struct v3d_bo **)p;
+        for (int i = 0 ; i < 4; i++) {
+                if (src_addr >= bos[i]->offset &&
+                    src_addr < (bos[i]->offset + bos[i]->size)) {
+                        uint8_t *map = v3d_bo_map(bos[i]);
+                        memcpy(dst, map + (src_addr - bos[i]->offset), size);
+                        return;
+                }
+        }
+
+        unreachable("No BO found matching the address");
+}
+#endif
+
 bool
 v3dX(tfu)(struct pipe_context *pctx,
           struct pipe_resource *pdst,
@@ -191,6 +214,17 @@ v3dX(tfu)(struct pipe_context *pctx,
 
         tfu.v71.ioc |= (last_level - base_level) << V3D71_TFU_IOC_NUMMM_SHIFT;
 #endif /* V3D_VERSION >= 71*/
+
+#if USE_V3D_AUTOCLIF
+        if (V3D_DBG(AUTOCLIF)) {
+                struct v3d_bo *bos[4] = {
+                        dst->bo,
+                        src != dst ? src->bo : 0
+                };
+                autoclif_tfu_dump(screen->devinfo.qpu_count,
+                                  &tfu, v3d_bos_array_read, bos);
+        }
+#endif
 
         int ret = v3d_ioctl(screen->fd, DRM_IOCTL_V3D_SUBMIT_TFU, &tfu);
         if (ret != 0) {

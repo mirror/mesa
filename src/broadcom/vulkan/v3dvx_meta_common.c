@@ -926,13 +926,13 @@ v3dX(meta_emit_copy_image_rcl)(struct v3dv_job *job,
 
 void
 v3dX(meta_emit_tfu_job)(struct v3dv_cmd_buffer *cmd_buffer,
-                        uint32_t dst_bo_handle,
-                        uint32_t dst_offset,
+                        struct v3dv_bo *dst_bo,
+                        uint32_t extra_dst_offset,
                         enum v3d_tiling_mode dst_tiling,
                         uint32_t dst_padded_height_or_stride,
                         uint32_t dst_cpp,
-                        uint32_t src_bo_handle,
-                        uint32_t src_offset,
+                        struct v3dv_bo *src_bo,
+                        uint32_t extra_src_offset,
                         enum v3d_tiling_mode src_tiling,
                         uint32_t src_padded_height_or_stride,
                         uint32_t src_cpp,
@@ -943,12 +943,12 @@ v3dX(meta_emit_tfu_job)(struct v3dv_cmd_buffer *cmd_buffer,
    struct drm_v3d_submit_tfu tfu = {
       .ios = (height << 16) | width,
       .bo_handles = {
-         dst_bo_handle,
-         src_bo_handle != dst_bo_handle ? src_bo_handle : 0
+         dst_bo->handle,
+         src_bo->handle != dst_bo->handle ? src_bo->handle : 0
       },
    };
 
-   tfu.iia |= src_offset;
+   tfu.iia |= src_bo->offset + extra_src_offset;
 
 #if V3D_VERSION <= 42
    if (src_tiling == V3D_TILING_RASTER) {
@@ -971,7 +971,7 @@ v3dX(meta_emit_tfu_job)(struct v3dv_cmd_buffer *cmd_buffer,
    tfu.icfg |= format_plane->tex_type << V3D71_TFU_ICFG_OTYPE_SHIFT;
 #endif
 
-   tfu.ioa = dst_offset;
+   tfu.ioa = dst_bo->offset + extra_dst_offset;
 
 #if V3D_VERSION <= 42
    tfu.ioa |= (V3D33_TFU_IOA_FORMAT_LINEARTILE +
@@ -1029,7 +1029,7 @@ v3dX(meta_emit_tfu_job)(struct v3dv_cmd_buffer *cmd_buffer,
    }
 #endif
 
-   v3dv_cmd_buffer_add_tfu_job(cmd_buffer, &tfu);
+   v3dv_cmd_buffer_add_tfu_job(cmd_buffer, dst_bo, src_bo, &tfu);
 }
 
 static void

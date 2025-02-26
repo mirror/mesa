@@ -803,7 +803,8 @@ v3dv_job_init(struct v3dv_job *job,
 
    if (type == V3DV_JOB_TYPE_GPU_CL ||
        type == V3DV_JOB_TYPE_GPU_CL_INCOMPLETE ||
-       type == V3DV_JOB_TYPE_GPU_CSD) {
+       type == V3DV_JOB_TYPE_GPU_CSD ||
+       type == V3DV_JOB_TYPE_GPU_TFU) {
       job->bos =
          _mesa_set_create(NULL, _mesa_hash_pointer, _mesa_key_pointer_equal);
       job->bo_count = 0;
@@ -4123,6 +4124,8 @@ void v3dv_cmd_buffer_end_query(struct v3dv_cmd_buffer *cmd_buffer,
 
 void
 v3dv_cmd_buffer_add_tfu_job(struct v3dv_cmd_buffer *cmd_buffer,
+                            struct v3dv_bo *dst_bo,
+                            struct v3dv_bo *src_bo,
                             struct drm_v3d_submit_tfu *tfu)
 {
    struct v3dv_device *device = cmd_buffer->device;
@@ -4136,6 +4139,8 @@ v3dv_cmd_buffer_add_tfu_job(struct v3dv_cmd_buffer *cmd_buffer,
 
    v3dv_job_init(job, V3DV_JOB_TYPE_GPU_TFU, device, cmd_buffer, -1);
    job->tfu = *tfu;
+   _mesa_set_add(job->bos, dst_bo);
+   _mesa_set_add(job->bos, src_bo);
    list_addtail(&job->list_link, &cmd_buffer->jobs);
 }
 

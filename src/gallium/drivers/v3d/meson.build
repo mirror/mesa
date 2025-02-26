@@ -35,7 +35,7 @@ files_per_version = files(
   'v3dx_tfu.c',
 )
 
-v3d_args = ['-DV3D_BUILD_NEON', v3d_simulator_arg]
+v3d_args = ['-DV3D_BUILD_NEON', v3d_simulator_arg, v3d_autoclif_arg]
 
 v3d_versions = ['42', '71']
 

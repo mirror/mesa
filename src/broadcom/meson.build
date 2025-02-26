@@ -12,6 +12,10 @@ dep_v3d_hw = dependency('v3d_hw', required: false)
 with_v3d_hw = dep_v3d_hw.found()
 v3d_simulator_arg = '-DUSE_V3D_SIMULATOR=@0@'.format(with_v3d_hw.to_int())
 
+dep_v3d_autoclif = dependency('v3d_autoclif', required: false)
+with_v3d_autoclif = dep_v3d_autoclif.found()
+v3d_autoclif_arg = '-DUSE_V3D_AUTOCLIF=@0@'.format(with_v3d_autoclif.to_int())
+
 if with_gallium_v3d or with_broadcom_vk
   subdir('compiler')
   subdir('qpu')
@@ -19,6 +23,11 @@ endif
 
 if with_v3d_hw
   subdir('simulator')
+endif
+
+autoclif_files = []
+if with_v3d_autoclif
+  autoclif_files += files('clif/autoclif_dump.c')
 endif
 
 if with_tools.contains('drm-shim')
@@ -39,6 +48,12 @@ foreach ver : v3d_versions
     dependencies: [dep_valgrind, dep_thread],
   )
 endforeach
+
+clif_files = files(
+  'clif/clif_dump.c',
+  'clif/clif_dump.h',
+  'clif/clif_private.h'
+)
 
 v3d_args = ['-DV3D_BUILD_NEON']
 
@@ -62,15 +77,16 @@ libbroadcom_v3d = static_library(
   'broadcom_v3d',
   [
     files('common/v3d_debug.c', 'common/v3d_device_info.c', 'clif/clif_dump.c', 'common/v3d_util.c'),
+    autoclif_files,
     v3d_xml_pack,
   ],
   include_directories : [inc_include, inc_src, inc_broadcom],
-  c_args : [no_override_init_args],
+  c_args : [no_override_init_args, v3d_autoclif_arg],
   gnu_symbol_visibility : 'hidden',
   link_whole : v3d_libs + per_version_libs,
   link_with: [libv3d_neon],
   build_by_default : false,
-  dependencies: [dep_valgrind, dep_thread, idep_mesautil, dep_libdrm],
+  dependencies: [dep_v3d_autoclif, dep_valgrind, dep_thread, idep_mesautil, dep_libdrm],
 )
 
 subdir('perfcntrs')

@@ -1,0 +1,6 @@
+[wrap-file]
+directory = memoffset-0.9.0
+source_url = https://crates.io/api/v1/crates/memoffset/0.9.0/download
+source_filename = memoffset-0.9.0.tar.gz
+source_hash = 5a634b1c61a95585bd15607c6ab0c4e5b226e695ff2800ba0cdccddf208c406c
+patch_directory = memoffset

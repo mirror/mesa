@@ -1,0 +1,6 @@
+[wrap-file]
+directory = log-0.4.22
+source_url = https://crates.io/api/v1/crates/log/0.4.22/download
+source_filename = log-0.4.22.tar.gz
+source_hash = a7a70ba024b9dc04c27ea2f0c0548feb474ec5c54bba33a7f72f873a39d07b24
+patch_directory = log

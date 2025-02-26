@@ -125,3 +125,10 @@ if with_gallium_clover and not with_opencl_icd
     subdir: 'CL'
   )
 endif
+
+if with_magma and host_machine.system() == 'linux'
+  drm_h = files('drm-uapi/drm.h')
+  amdgpu_drm_h = files('drm-uapi/amdgpu_drm.h')
+  msm_drm_h = files('drm-uapi/msm_drm.h')
+  virtgpu_drm_h = files('drm-uapi/virtgpu_drm.h')
+endif

@@ -4,21 +4,20 @@ Dear ImGui
 This directory contains a copy of the Dear ImGui library
 (https://github.com/ocornut/imgui) at the following commit :
 
-commit f977871854af941289f2a9090dcc90f7aa3449a8
+commit 0582f7678a4447d9d36e3f2385d990f4885d44e1
 Author: omar <omarcornut@gmail.com>
-Date:   Fri Feb 15 13:10:22 2019 +0100
+Date:   Thu Jun 27 19:05:47 2024 +0200
 
-    ImFont: Minor adjustment to the structure.
-    Examples: Removed unused variable.
+   Nav: store NavJustMovedToIsTabbing + shuffle a few nav related fields.
 
 There is also a copy of the memory editor
 (https://github.com/ocornut/imgui_club) at the following commit :
 
-commit e680ad8d6b9278367d0f71a698beb96b70762ed4
+commit 63c7fed4b31c50c8a529b6c15ae7d7d9e89812a6
 Author: omar <omarcornut@gmail.com>
-Date:   Thu May 9 14:11:22 2019 +0200
+Date:   Tue May 28 10:19:43 2024 +0200
 
-    imgui_memory_editor: Silence compiler warning. (#13)
+   Fixed local variable names potentially colliding with user types. (#42)
 
 Embedding the library into one's project is main way people seems to
 work with ImGui. Since this is just for a debugging tool, we're not
